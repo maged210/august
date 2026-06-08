@@ -43,7 +43,7 @@ export const CLOSE_MAP_TOOL = {
 export const GO_TO_SCREEN_TOOL = {
   name: "go_to_screen",
   description:
-    'Navigate the command deck to one of its surfaces. Call this when he asks to go to, open, show, pull up, or switch to a screen — "go to markets", "show comms", "take me to intel", "back to presence". The deck slides to that surface.',
+    'Navigate the command deck to one of its surfaces. Call this when he asks to go to, open, show, pull up, or switch to a screen — "go to markets", "show comms", "take me to intel", "back to presence". The deck slides to that surface. Do NOT call this merely because he asked a data question you can answer directly (e.g. "where is NQ vs my levels?") — answer those from your data, and only navigate when he actually wants to move there.',
   input_schema: {
     type: "object" as const,
     properties: {

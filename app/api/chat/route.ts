@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { TOOLS, TOOL_GUIDANCE, SEP } from "@/lib/tools";
+import { getMarketsSnapshot } from "@/lib/markets";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
 export const runtime = "nodejs";
@@ -45,7 +46,14 @@ export async function POST(req: Request): Promise<Response> {
   // system prompt as a section separate from his persona. No-op when Upstash isn't
   // configured, so the chat loop itself is unchanged.
   const { profile, summaries } = await loadMemory();
-  const system = SYSTEM_PROMPT + buildMemorySection(profile, summaries) + TOOL_GUIDANCE;
+  // Live markets snapshot so AUGUST can answer "where's NQ vs my levels?" from real
+  // numbers. Cached in lib/markets; time-boxed so a cold fetch never slows a reply.
+  const marketsSnapshot = await Promise.race([
+    getMarketsSnapshot().catch(() => ""),
+    new Promise<string>((resolve) => setTimeout(() => resolve(""), 1200)),
+  ]);
+  const system =
+    SYSTEM_PROMPT + buildMemorySection(profile, summaries) + TOOL_GUIDANCE + marketsSnapshot;
 
   const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();

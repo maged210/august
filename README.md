@@ -129,8 +129,8 @@ the reply + command input, which stay on every surface).
   rings, audio-reactive off the mic and his TTS (loads `/public/circle.glb` instead if it
   exists), plus **the Brief** — one synthesis line per surface (stubbed in `lib/brief.ts`;
   live data wires in there later).
-- **Markets / Intel / Comms** are styled terminal placeholders with sample values and clear
-  `TODO: live data` markers — the look is real; the data lands in later passes.
+- **Markets is live** (see below). **Intel / Comms** remain styled terminal placeholders
+  with clear `TODO: live data` markers — their data lands in later passes.
 - The look-closer globe stays a global overlay, working from any surface.
 
 Scope so far is the shell — deck + 3D centerpiece + navigation. No live market data, web
@@ -143,7 +143,46 @@ search, or email auth yet; those are separate passes.
 | `components/Brief.tsx` | The Brief — per-surface synthesis lines |
 | `components/surfaces/*` | Markets / Intel / Comms placeholder surfaces |
 | `lib/screens.ts` | Surface ids + labels | 
-| `lib/brief.ts` | Brief lines (stubbed; live data drops in here) |
+| `lib/brief.ts` | Brief lines (Markets live; others stubbed) |
+| `lib/markets.ts` | Live free market data + per-source caching + AUGUST's snapshot (server) |
+| `app/api/markets/route.ts` | Cached JSON feed the Markets surface polls |
+
+## Markets (live, free data)
+
+The Markets surface is live and chart-rich, auto-refreshing on a ~30s poll. Every source is
+free and mostly keyless; per-source TTL caching in `lib/markets.ts` keeps us off rate limits.
+A graceful skeleton shows while data loads — never an endless spinner.
+
+**Wave 1 adds:** a sparkline on every watchlist row, a main price chart (candlesticks,
+1D/1W/1M, click a row to load that symbol — lightweight-charts), a dial-gauge cluster
+(Crypto Fear & Greed, VIX, and FRED macro: 10Y-2Y spread + financial stress), and expanded
+crypto (8 majors).
+
+| Panel | Source | Key? |
+| --- | --- | --- |
+| Crypto — 8 majors (price, 24h, sparkline) | CoinGecko | keyless |
+| Crypto chart candles | Coinbase (US-friendly) | keyless |
+| Price charts + row sparklines | lightweight-charts (lib) | — |
+| Index/commodity proxies (QQQ→NQ, SPY→ES, DIA→YM, USO→crude, GLD→gold) + their charts/sparklines | Yahoo chart | keyless |
+| NQ levels (R/P/S + O/N high/low) | computed from NDX prior-session OHLC (Yahoo) | keyless |
+| Movers (gainers / losers / active) | Yahoo screener | keyless |
+| VIX | Yahoo chart | keyless |
+| Fear & Greed (crypto) gauge | alternative.me | keyless |
+| Macro gauges — 10Y-2Y spread, financial stress | FRED | **free key** (`FRED_API_KEY`) |
+| Sector strip (11 SPDRs) | Yahoo chart | keyless |
+| Economic calendar (US, today) | faireconomy (ForexFactory mirror) | keyless |
+| **FLOW · LITE** | Yahoo screener — *unusual equity volume* | keyless |
+
+Index/ETF quotes are **delayed proxies**, not the live CME tape (labeled as such in the UI).
+
+**FLOW · LITE is honest.** Real options flow (sweeps, blocks, premium) is a paid feed. This
+panel is a free stand-in: *unusual volume* among the most-active equities (today's volume vs
+the 3-month average). It is **not** institutional options flow. To upgrade, swap `buildFlow()`
+in `lib/markets.ts` for a real provider (Unusual Whales / FlowAlgo / CBOE) — the surface only
+reads `FlowItem[]`, so nothing else changes.
+
+AUGUST reads this surface: the **Brief**'s Markets line is live, and he answers "where's NQ vs
+my levels?" from the live numbers (a cached snapshot is injected into his system prompt).
 
 ## Known v0 limits
 

@@ -138,6 +138,7 @@ Rules:
 - MERGE new information into the existing profile. Do not drop existing items unless they are clearly superseded or contradicted.
 - DEDUPE hard. Combine overlapping items. Keep every list tight and high-signal — prefer a few well-phrased items over many.
 - Record only DURABLE facts: identity, ongoing work, stable preferences, important people/projects. Ignore one-off chit-chat, transient state, and pleasantries.
+- NEVER store specific market prices, index levels, quotes, or figures (e.g. "NQ at 29,500", "VIX 18") — they go stale instantly and become wrong. Live market data lives on the Markets surface, not in memory.
 - Keep each item a short phrase, not a sentence.
 - If nothing new is durable, return the profile essentially unchanged.
 - Omit empty fields entirely rather than returning empty arrays.`;

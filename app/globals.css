@@ -411,10 +411,44 @@ body {
 /* markets */
 .markets-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: 0.95fr 1.5fr 0.95fr;
+  grid-template-rows: auto 1.25fr 1fr 1.05fr;
+  grid-template-areas:
+    "sectors sectors sectors"
+    "watch   chart   levels"
+    "watch   chart   gauges"
+    "movers  econ    flow";
+  gap: 14px;
   flex: 1;
   min-height: 0;
+}
+.mk-sectors {
+  grid-area: sectors;
+}
+.mk-watch {
+  grid-area: watch;
+  overflow-y: auto;
+}
+.mk-chart {
+  grid-area: chart;
+}
+.mk-levels {
+  grid-area: levels;
+}
+.mk-gauges {
+  grid-area: gauges;
+}
+.mk-econ {
+  grid-area: econ;
+  overflow-y: auto;
+}
+.mk-movers {
+  grid-area: movers;
+  overflow-y: auto;
+}
+.mk-flow {
+  grid-area: flow;
+  overflow-y: auto;
 }
 .term-table {
   width: 100%;
@@ -606,11 +640,19 @@ body {
   .surface {
     padding: 84px 22px 150px;
   }
-  .markets-grid,
   .intel-grid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
     overflow-y: auto;
+  }
+  .markets-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-template-areas: "sectors" "watch" "chart" "levels" "gauges" "movers" "econ" "flow";
+    overflow-y: auto;
+  }
+  .mk-chart {
+    min-height: 300px;
   }
   .intel-feed {
     grid-row: auto;
@@ -620,4 +662,383 @@ body {
     right: 22px;
     max-width: none;
   }
+}
+
+/* markets — live status + new panels */
+.mkt-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mkt-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ash);
+}
+.mkt-dot.live {
+  background: var(--pos);
+  box-shadow: 0 0 8px rgba(127, 176, 163, 0.85);
+  animation: mkt-pulse 2.4s ease-in-out infinite;
+}
+.mkt-dot.error {
+  background: var(--neg);
+}
+.mkt-dot.loading {
+  background: var(--steel);
+}
+@keyframes mkt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.mkt-status-text {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ash);
+}
+.muted {
+  color: var(--ash);
+  opacity: 0.4;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.sector-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sector-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+}
+.sector-name {
+  color: var(--ash);
+}
+
+.proxy-tag {
+  margin-left: 6px;
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--steel);
+  border: 1px solid rgba(110, 140, 168, 0.4);
+  border-radius: 2px;
+  padding: 1px 3px;
+  vertical-align: middle;
+}
+
+.lvl-res span:last-child {
+  color: var(--neg);
+}
+.lvl-sup span:last-child {
+  color: var(--pos);
+}
+.lvl-piv span:last-child {
+  color: var(--steel);
+}
+.lvl-note {
+  margin-top: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.6;
+}
+
+.sentiment {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sent-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sent-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ash);
+}
+.sent-val {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 26px;
+  color: var(--bone);
+  line-height: 1;
+}
+.sent-sub {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--steel);
+  letter-spacing: 0.1em;
+}
+
+.movers-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.movers-h {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ash);
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+.mover {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  padding: 4px 0;
+}
+.mover-sym {
+  color: var(--bone);
+}
+
+.flow-list {
+  list-style: none;
+}
+.flow-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.flow-sym {
+  color: var(--bone);
+}
+.flow-mult {
+  color: var(--steel);
+  text-align: right;
+}
+.flow-note {
+  margin-top: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ash);
+  opacity: 0.6;
+  line-height: 1.45;
+}
+
+/* ---- markets wave 1: charts, gauges, sparklines, skeletons ---- */
+
+/* price chart */
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chart-title {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--bone);
+}
+.tf-toggles {
+  display: flex;
+  gap: 4px;
+}
+.tf {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ash);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.tf:hover {
+  color: var(--bone);
+}
+.tf.active {
+  color: var(--steel);
+  border-color: rgba(110, 140, 168, 0.6);
+  background: rgba(110, 140, 168, 0.08);
+}
+.chart-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.chart-skeleton {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.5;
+}
+
+/* watchlist sparklines + clickable rows */
+.watch-table .watch-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.watch-table .watch-row:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+.watch-table .watch-row.sel td {
+  background: rgba(110, 140, 168, 0.1);
+}
+.watch-table .watch-row.sel .t-sym {
+  color: var(--steel);
+}
+.t-spark {
+  width: 90px;
+  padding: 4px 8px !important;
+}
+.spark {
+  width: 90px;
+  height: 26px;
+}
+
+/* gauge cluster */
+.gauge-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 8px;
+  align-content: start;
+}
+.gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.gauge-svg {
+  width: 100%;
+  max-width: 132px;
+  height: auto;
+}
+.gauge-val {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 17px;
+  color: var(--bone);
+  margin-top: -8px;
+}
+.gauge-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  margin-top: 3px;
+  text-align: center;
+}
+.gauge-note {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  color: var(--ash);
+  opacity: 0.6;
+  margin-top: 2px;
+  text-align: center;
+}
+.gauge-note.steel {
+  color: var(--steel);
+  opacity: 0.85;
+}
+
+/* loading skeletons */
+.skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 4px 0;
+}
+.skel-bar {
+  height: 11px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.09),
+    rgba(255, 255, 255, 0.04)
+  );
+  background-size: 200% 100%;
+  animation: skel 1.4s ease-in-out infinite;
+}
+@keyframes skel {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel-bar {
+    animation: none;
+  }
+}
+
+/* reply dock — a contained, translucent strip for AUGUST's responses on every
+   surface. Short (<= 30vh), internally scrolling, older lines fading at the top.
+   Never covers the dashboard widgets the way the old centered text did. */
+.reply-dock {
+  width: 100%;
+  max-width: 1500px;
+  max-height: 30vh;
+  overflow-y: auto;
+  background: rgba(10, 11, 14, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 13px 18px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+.reply-text {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bone);
+  opacity: 0.92;
+  white-space: pre-wrap;
+}
+.reply-interim {
+  font-size: 13px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--ash);
+}
+.reply-status {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 10px;
+  color: rgba(154, 154, 159, 0.45);
 }

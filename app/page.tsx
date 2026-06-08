@@ -118,10 +118,17 @@ export default function Home() {
   const sessionIdRef = useRef<string>("");
   const globeNonceRef = useRef(0);
   const deckRef = useRef<DeckHandle | null>(null);
+  const replyDockRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Keep the reply dock pinned to the newest line as the reply streams in.
+  useEffect(() => {
+    const el = replyDockRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [replyText]);
 
   // Boot: prime the voice list, detect mic support, resolve into idle.
   useEffect(() => {
@@ -392,17 +399,20 @@ export default function Home() {
 
       <Globe visible={globeVisible} target={globeTarget} onClose={() => setGlobeVisible(false)} />
 
-      {/* reply text + composer — fixed, available on every surface */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-5 px-4 pb-8 sm:pb-10">
-        <div className="flex min-h-[3.5rem] w-full max-w-[680px] flex-col items-center justify-end text-center">
-          {interim ? (
-            <p className="fade-in text-[15px] italic text-ash/70">{interim}</p>
-          ) : replyText ? (
-            <p className="fade-in text-[17px] leading-relaxed text-bone/90">{replyText}</p>
-          ) : statusLabel ? (
-            <p className="hud text-ash/40">{statusLabel}</p>
-          ) : null}
-        </div>
+      {/* reply dock + composer — fixed, available on every surface. A contained,
+          translucent strip that never covers the dashboard widgets. */}
+      <div className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10">
+        {replyText || interim ? (
+          <div className="reply-dock" ref={replyDockRef}>
+            {interim ? (
+              <p className="reply-interim">{interim}</p>
+            ) : (
+              <p className="reply-text">{replyText}</p>
+            )}
+          </div>
+        ) : statusLabel ? (
+          <div className="reply-status">{statusLabel}</div>
+        ) : null}
 
         <Composer
           onSend={handleSend}
