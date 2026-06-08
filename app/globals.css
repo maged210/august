@@ -196,3 +196,428 @@ body {
 .globe-overlay .maplibregl-ctrl-attrib a {
   color: var(--ash);
 }
+
+/* ===========================================================================
+   Command deck — four horizontally-paginated surfaces behind fixed chrome
+   =========================================================================== */
+:root {
+  --pos: #7fb0a3;
+  --neg: #bb7d72;
+  --line: rgba(255, 255, 255, 0.08);
+  --panel: rgba(255, 255, 255, 0.02);
+}
+
+.deck-scroll {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.deck-surface {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100vw;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow: hidden;
+}
+
+/* indicator dots — fixed, top-center */
+.deck-indicators {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.deck-dot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.deck-dot-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ash);
+  opacity: 0.35;
+  transition: opacity 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+}
+.deck-dot.active .deck-dot-mark {
+  opacity: 1;
+  background: var(--steel);
+  box-shadow: 0 0 8px rgba(110, 140, 168, 0.85);
+}
+.deck-dot-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 9px;
+  color: var(--ash);
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.3s ease, max-width 0.3s ease;
+}
+.deck-dot.active .deck-dot-label,
+.deck-dot:hover .deck-dot-label {
+  opacity: 0.85;
+  max-width: 90px;
+}
+
+/* presence */
+.presence-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.presence-3d {
+  position: absolute;
+  inset: 0;
+}
+.presence-3d canvas {
+  display: block;
+}
+
+/* the brief — AUGUST's per-surface synthesis, lower-left of Presence */
+.brief {
+  position: absolute;
+  left: 48px;
+  bottom: 150px;
+  max-width: 340px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 1.2s ease, transform 1.2s ease;
+  pointer-events: none;
+}
+.brief-in {
+  opacity: 1;
+  transform: none;
+}
+.brief-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-size: 9px;
+  color: var(--steel);
+  opacity: 0.85;
+  margin-bottom: 12px;
+}
+.brief-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.brief-line {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+.brief-surface {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 8.5px;
+  color: var(--ash);
+}
+.brief-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--bone);
+  opacity: 0.85;
+}
+.brief-todo {
+  margin-left: 6px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--steel);
+  opacity: 0.55;
+}
+
+/* generic terminal surface */
+.surface {
+  position: absolute;
+  inset: 0;
+  padding: 92px 48px 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  color: var(--bone);
+}
+.surface-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.surface-title {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.34em;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--bone);
+}
+.todo {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 9px;
+  color: var(--steel);
+  border: 1px solid rgba(110, 140, 168, 0.4);
+  border-radius: 3px;
+  padding: 3px 8px;
+  opacity: 0.85;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 9.5px;
+  color: var(--ash);
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* markets */
+.markets-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+}
+.term-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.term-table td {
+  padding: 7px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.t-sym {
+  color: var(--bone);
+  letter-spacing: 0.08em;
+}
+.t-desc {
+  color: var(--ash);
+  font-size: 11px;
+}
+.t-last {
+  color: var(--bone);
+  text-align: right;
+}
+.t-chg {
+  text-align: right;
+}
+.pos {
+  color: var(--pos);
+}
+.neg {
+  color: var(--neg);
+}
+.nq-price {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 24px;
+  color: var(--bone);
+  margin-bottom: 16px;
+}
+.nq-price .pos {
+  font-size: 13px;
+  margin-left: 8px;
+}
+.kv-list,
+.econ-list,
+.feed-list,
+.loglines {
+  list-style: none;
+}
+.kv-list li {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--ash);
+}
+.kv-list li span:last-child {
+  color: var(--bone);
+}
+.econ-list li {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.econ-t {
+  color: var(--steel);
+}
+.econ-e {
+  color: var(--bone);
+  opacity: 0.85;
+}
+.econ-i {
+  justify-self: end;
+  text-transform: uppercase;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ash);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+/* intel */
+.intel-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+}
+.intel-feed {
+  grid-row: 1 / span 2;
+}
+.feed-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.feed-src {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--steel);
+}
+.feed-head {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--bone);
+  opacity: 0.85;
+}
+.synth-body {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--bone);
+  opacity: 0.8;
+  margin-bottom: 14px;
+}
+.globe-hint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ash);
+  margin-bottom: 12px;
+}
+.globe-hint em {
+  color: var(--steel);
+  font-style: normal;
+}
+
+/* comms */
+.comms-log {
+  flex: 1;
+  min-height: 0;
+}
+.loglines {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.logline {
+  display: grid;
+  grid-template-columns: 56px 12px 130px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.log-t {
+  color: var(--steel);
+}
+.log-arrow {
+  color: var(--steel);
+  opacity: 0.7;
+}
+.log-from {
+  color: var(--bone);
+}
+.log-subj {
+  color: var(--ash);
+}
+.logline.personal .log-subj {
+  color: var(--bone);
+  opacity: 0.9;
+}
+.log-tag {
+  justify-self: end;
+  text-transform: uppercase;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ash);
+  opacity: 0.6;
+}
+.comms-foot {
+  margin-top: 16px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ash);
+  opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+  .surface {
+    padding: 84px 22px 150px;
+  }
+  .markets-grid,
+  .intel-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    overflow-y: auto;
+  }
+  .intel-feed {
+    grid-row: auto;
+  }
+  .brief {
+    left: 22px;
+    right: 22px;
+    max-width: none;
+  }
+}

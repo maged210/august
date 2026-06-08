@@ -117,6 +117,34 @@ Ask AUGUST to see a place — "show me Tokyo", "what does the Strait of Hormuz l
 
 Scope is the globe + fly-to only — no data layers (conflicts, ships, weather) yet.
 
+## Command deck
+
+The app is a horizontally-paginated deck of four full-screen surfaces — **Presence**,
+**Markets**, **Intel**, **Comms** — behind fixed chrome (the HUD, the indicator dots, and
+the reply + command input, which stay on every surface).
+
+- **Navigate** by swipe / trackpad, the **← →** arrow keys, the indicator dots, or by
+  asking AUGUST ("go to markets", "show comms") — a `go_to_screen` tool slides the deck.
+- **Presence** (home) is a Three.js centerpiece of slowly-rotating concentric mechanical
+  rings, audio-reactive off the mic and his TTS (loads `/public/circle.glb` instead if it
+  exists), plus **the Brief** — one synthesis line per surface (stubbed in `lib/brief.ts`;
+  live data wires in there later).
+- **Markets / Intel / Comms** are styled terminal placeholders with sample values and clear
+  `TODO: live data` markers — the look is real; the data lands in later passes.
+- The look-closer globe stays a global overlay, working from any surface.
+
+Scope so far is the shell — deck + 3D centerpiece + navigation. No live market data, web
+search, or email auth yet; those are separate passes.
+
+| Deck file | What it is |
+| --- | --- |
+| `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings, audio-reactive |
+| `components/Deck.tsx` | Horizontal scroll-snap deck + indicator dots + arrow keys + `goTo()` |
+| `components/Brief.tsx` | The Brief — per-surface synthesis lines |
+| `components/surfaces/*` | Markets / Intel / Comms placeholder surfaces |
+| `lib/screens.ts` | Surface ids + labels | 
+| `lib/brief.ts` | Brief lines (stubbed; live data drops in here) |
+
 ## Known v0 limits
 
 - **Voice input is desktop-Chrome.** It uses the browser Web Speech API
@@ -133,4 +161,4 @@ Scope is the globe + fly-to only — no data layers (conflicts, ships, weather) 
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS · `@anthropic-ai/sdk` (server-side) ·
-ElevenLabs TTS · Upstash Redis · MapLibre GL · Web Speech API · Canvas + SVG.
+ElevenLabs TTS · Upstash Redis · MapLibre GL · Three.js · Web Speech API · Canvas + SVG.

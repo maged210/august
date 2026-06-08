@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Circle, { type AugustState } from "@/components/Circle";
+import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
+import Deck, { type DeckHandle } from "@/components/Deck";
+import Brief from "@/components/Brief";
+import MarketsSurface from "@/components/surfaces/MarketsSurface";
+import IntelSurface from "@/components/surfaces/IntelSurface";
+import CommsSurface from "@/components/surfaces/CommsSurface";
+import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
+import type { AugustState } from "@/components/Presence3D";
+import type { GlobeTarget } from "@/components/Globe";
 import {
   createRecognizer,
   isRecognitionSupported,
@@ -12,11 +20,12 @@ import {
   type Recognizer,
   type SpeakHandle,
 } from "@/lib/speech";
-import dynamic from "next/dynamic";
-import type { GlobeTarget } from "@/components/Globe";
 
-// Load the globe (MapLibre / WebGL) only in the browser.
+// WebGL components load only in the browser.
+const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
 const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
+
+const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
 
 // Tool calls are framed in the chat stream with this separator (0x1F). Split
 // AUGUST's spoken words from any tool events without disturbing the text path.
@@ -49,10 +58,8 @@ function splitToolStream(raw: string): { text: string; tools: ToolEvent[] } {
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 // ---------------------------------------------------------------------------
-// Audio level sources (write 0..1 into a shared ref the Circle reads each frame)
-// ---------------------------------------------------------------------------
-
 // Real microphone amplitude via a Web Audio AnalyserNode — drives "listening".
+// ---------------------------------------------------------------------------
 async function startMicLevel(
   amplitudeRef: React.MutableRefObject<number>,
 ): Promise<() => void> {
@@ -110,6 +117,7 @@ export default function Home() {
   const listeningActiveRef = useRef(false);
   const sessionIdRef = useRef<string>("");
   const globeNonceRef = useRef(0);
+  const deckRef = useRef<DeckHandle | null>(null);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -193,6 +201,9 @@ export default function Home() {
         setGlobeVisible(true);
       } else if (t.tool === "close_map") {
         setGlobeVisible(false);
+      } else if (t.tool === "go_to_screen" && t.input) {
+        const idx = screenIndex(String(t.input.screen ?? ""));
+        if (idx >= 0) deckRef.current?.goTo(idx);
       }
     }
   }
@@ -258,7 +269,7 @@ export default function Home() {
         full += decoder.decode(value, { stream: true });
         const parsed = splitToolStream(full);
         setReplyText(parsed.text);
-        // Fire tool calls (globe fly-to / close) the moment they arrive — before
+        // Fire tool calls (globe / navigation) the moment they arrive — before
         // the narration streams in after them.
         if (parsed.tools.length > appliedTools) {
           applyToolEvents(parsed.tools.slice(appliedTools));
@@ -365,19 +376,24 @@ export default function Home() {
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden bg-charcoal">
       <BootHud />
 
-      {/* the circle is the star — always centered */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Circle state={state} amplitudeRef={amplitudeRef} />
-      </div>
-
-      <Globe
-        visible={globeVisible}
-        target={globeTarget}
-        onClose={() => setGlobeVisible(false)}
+      <Deck
+        ref={deckRef}
+        labels={DECK_LABELS}
+        surfaces={[
+          <div key="presence" className="presence-surface">
+            <Presence3D state={state} amplitudeRef={amplitudeRef} />
+            <Brief visible={booted} />
+          </div>,
+          <MarketsSurface key="markets" />,
+          <IntelSurface key="intel" />,
+          <CommsSurface key="comms" />,
+        ]}
       />
 
-      {/* reply text + composer, pinned bottom-center */}
-      <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-5 px-4 pb-8 sm:pb-10">
+      <Globe visible={globeVisible} target={globeTarget} onClose={() => setGlobeVisible(false)} />
+
+      {/* reply text + composer — fixed, available on every surface */}
+      <div className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-5 px-4 pb-8 sm:pb-10">
         <div className="flex min-h-[3.5rem] w-full max-w-[680px] flex-col items-center justify-end text-center">
           {interim ? (
             <p className="fade-in text-[15px] italic text-ash/70">{interim}</p>
@@ -406,7 +422,7 @@ export default function Home() {
 // ---------------------------------------------------------------------------
 
 function BootHud() {
-  const STATIC_LINES = ["SYSTEM INITIATED", "AUGUST · BUILD 0.06", "LOCATION — UNDISCLOSED"];
+  const STATIC_LINES = ["SYSTEM INITIATED", "AUGUST · BUILD 0.10", "LOCATION — UNDISCLOSED"];
   const [typed, setTyped] = useState<string[]>(["", "", ""]);
   const [showClock, setShowClock] = useState(false);
   const [zulu, setZulu] = useState("");

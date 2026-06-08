@@ -106,14 +106,18 @@ export async function POST(req: Request): Promise<Response> {
           );
           toolUseContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
           const label = typeof input.label === "string" ? input.label : "the location";
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tb.id,
-            content:
-              tb.name === "look_closer"
-                ? `The globe has opened and is now showing ${label}.`
-                : "The globe has closed; you're back to the orb.",
-          });
+          const screen = typeof input.screen === "string" ? input.screen : "presence";
+          let resultText: string;
+          if (tb.name === "look_closer") {
+            resultText = `The globe has opened and is now showing ${label}.`;
+          } else if (tb.name === "close_map") {
+            resultText = "The globe has closed; you're back to the orb.";
+          } else if (tb.name === "go_to_screen") {
+            resultText = `The deck is now on the ${screen} surface.`;
+          } else {
+            resultText = "Done.";
+          }
+          toolResults.push({ type: "tool_result", tool_use_id: tb.id, content: resultText });
         }
 
         // Turn 2 — continue with no tools so he speaks about it, in character.
