@@ -84,7 +84,115 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .fade-in,
-  .caret::after {
+  .caret::after,
+  .aug-marker-dot::after {
     animation: none;
   }
+}
+
+/* "Look closer" globe — a dark earth floating in space, over the orb. */
+.globe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  background: #05060a;
+  transition: opacity 800ms ease;
+}
+.globe-overlay.globe-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.globe-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #05060a;
+}
+/* space vignette — darkens the edges so the globe reads as floating */
+.globe-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, transparent 42%, rgba(0, 0, 0, 0.62) 100%);
+}
+.globe-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 8, 11, 0.55);
+  color: var(--ash);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.globe-close:hover {
+  color: var(--bone);
+  border-color: rgba(110, 140, 168, 0.6);
+}
+
+/* labeled fly-to marker — thin mono label + a softly glowing, pulsing point */
+.aug-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.aug-marker-label {
+  margin-bottom: 7px;
+  padding: 3px 9px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 9.5px;
+  color: var(--bone);
+  white-space: nowrap;
+  background: rgba(8, 8, 11, 0.78);
+  border: 1px solid rgba(110, 140, 168, 0.5);
+  border-radius: 3px;
+  box-shadow: 0 0 18px rgba(110, 140, 168, 0.22);
+}
+.aug-marker-dot {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--steel);
+  box-shadow: 0 0 10px 2px rgba(110, 140, 168, 0.9);
+}
+.aug-marker-dot::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(110, 140, 168, 0.55);
+  animation: aug-marker-pulse 2.4s ease-out infinite;
+}
+@keyframes aug-marker-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+
+/* keep MapLibre attribution legible + unobtrusive on the dark stage */
+.globe-overlay .maplibregl-ctrl-attrib {
+  background: rgba(8, 8, 11, 0.5);
+}
+.globe-overlay .maplibregl-ctrl-attrib a {
+  color: var(--ash);
 }
