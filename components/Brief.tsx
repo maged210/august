@@ -4,21 +4,27 @@ import { useEffect, useState } from "react";
 import { getBrief } from "@/lib/brief";
 
 // AUGUST's opening brief, shown on Presence. One synthesis line per surface.
-// The Markets line is LIVE (from /api/markets); the others are stubs until their
-// surfaces are wired.
+// Markets and Command lines are LIVE; the others are stubs until their surfaces
+// are wired.
 export default function Brief({ visible }: { visible: boolean }) {
   const base = getBrief();
-  const [marketsLine, setMarketsLine] = useState<string | null>(null);
+  const [live, setLive] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let alive = true;
-    const load = () =>
-      fetch("/api/markets", { cache: "no-store" })
+    const pull = (surface: string, url: string) =>
+      fetch(url, { cache: "no-store" })
         .then((r) => r.json())
         .then((j) => {
-          if (alive && typeof j?.briefLine === "string") setMarketsLine(j.briefLine);
+          if (alive && typeof j?.briefLine === "string") {
+            setLive((prev) => ({ ...prev, [surface]: j.briefLine }));
+          }
         })
         .catch(() => {});
+    const load = () => {
+      pull("markets", "/api/markets");
+      pull("command", "/api/command");
+    };
     load();
     const id = window.setInterval(load, 60_000);
     return () => {
@@ -28,7 +34,7 @@ export default function Brief({ visible }: { visible: boolean }) {
   }, []);
 
   const lines = base.map((l) =>
-    l.surface === "markets" && marketsLine ? { ...l, line: marketsLine, stub: false } : l,
+    live[l.surface] ? { ...l, line: live[l.surface], stub: false } : l,
   );
 
   return (

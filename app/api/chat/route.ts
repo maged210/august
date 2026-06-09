@@ -3,6 +3,7 @@ import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { TOOLS, TOOL_GUIDANCE, SEP } from "@/lib/tools";
 import { getMarketsSnapshot } from "@/lib/markets";
+import { getCommandSnapshot } from "@/lib/command";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
 export const runtime = "nodejs";
@@ -42,18 +43,25 @@ export async function POST(req: Request): Promise<Response> {
     return new Response("No messages provided.", { status: 400 });
   }
 
-  // Memory layer: load what AUGUST remembers about the user and append it to his
-  // system prompt as a section separate from his persona. No-op when Upstash isn't
-  // configured, so the chat loop itself is unchanged.
-  const { profile, summaries } = await loadMemory();
-  // Live markets snapshot so AUGUST can answer "where's NQ vs my levels?" from real
-  // numbers. Cached in lib/markets; time-boxed so a cold fetch never slows a reply.
-  const marketsSnapshot = await Promise.race([
-    getMarketsSnapshot().catch(() => ""),
-    new Promise<string>((resolve) => setTimeout(() => resolve(""), 1200)),
+  // Prep everything the system prompt needs in PARALLEL — memory (Upstash) and the
+  // live markets/command snapshots — so none of them serialize ahead of the model
+  // call. The snapshots are time-boxed so a cold fetch never delays the first token.
+  const timeBox = (p: Promise<string>, ms: number): Promise<string> =>
+    Promise.race([p, new Promise<string>((resolve) => setTimeout(() => resolve(""), ms))]);
+  const [{ profile, summaries }, marketsSnapshot, commandSnapshot] = await Promise.all([
+    loadMemory().catch(() => ({ profile: null, summaries: [] as Awaited<ReturnType<typeof loadMemory>>["summaries"] })),
+    timeBox(getMarketsSnapshot().catch(() => ""), 1200),
+    timeBox(getCommandSnapshot().catch(() => ""), 1200),
   ]);
-  const system =
-    SYSTEM_PROMPT + buildMemorySection(profile, summaries) + TOOL_GUIDANCE + marketsSnapshot;
+  // Cache the frozen prefix (persona + tool guidance) so repeat turns skip
+  // re-prefilling it — that's the time-to-first-token win. Volatile context (what he
+  // remembers + the live snapshots) rides in a second, uncached block after it.
+  const stableSystem = SYSTEM_PROMPT + TOOL_GUIDANCE;
+  const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot;
+  const system: Anthropic.TextBlockParam[] = [
+    { type: "text", text: stableSystem, cache_control: { type: "ephemeral" } },
+  ];
+  if (dynamicSystem.trim()) system.push({ type: "text", text: dynamicSystem });
 
   const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();

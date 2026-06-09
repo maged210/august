@@ -40,5 +40,11 @@ export function getBrief(): BriefLine[] {
       line: "Your inbox is quiet for now. I'll flag what matters when it lands.",
       stub: true,
     },
+    {
+      surface: "command",
+      label: "Command",
+      line: "The globe's warm — flights, quakes, and the day/night line.",
+      stub: true,
+    },
   ];
 }

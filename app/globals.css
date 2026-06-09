@@ -48,6 +48,16 @@ body {
   color: var(--ash);
 }
 
+/* Boot HUD: one tight block in the top-left corner. The tighter line-height keeps
+   its four lines clear of the surface titles below (which start at 92px), so the
+   timestamp line never overlaps a surface name. */
+.boot-hud {
+  line-height: 1.5;
+}
+.boot-hud > div {
+  white-space: nowrap;
+}
+
 .caret::after {
   content: "▋";
   margin-left: 1px;
@@ -1010,14 +1020,19 @@ body {
    Never covers the dashboard widgets the way the old centered text did. */
 .reply-dock {
   width: 100%;
-  max-width: 1500px;
-  max-height: 30vh;
+  /* A contained card docked just above the composer — narrow enough that the
+     surface widgets either side stay visible, height-capped + scrollable so a
+     long reply never grows to blanket the dashboard. */
+  max-width: 680px;
+  max-height: 24vh;
   overflow-y: auto;
-  background: rgba(10, 11, 14, 0.8);
+  overscroll-behavior: contain;
+  background: rgba(10, 11, 14, 0.82);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 13px 18px;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
   mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
@@ -1041,4 +1056,119 @@ body {
   letter-spacing: 0.22em;
   font-size: 10px;
   color: rgba(154, 154, 159, 0.45);
+}
+
+/* ---- Command surface — live intelligence globe ---- */
+.command-surface {
+  position: absolute;
+  inset: 0;
+  background: #05060a;
+  overflow: hidden;
+}
+.command-map {
+  position: absolute;
+  inset: 0;
+  /* Explicit 100% so the container keeps full height even though MapLibre's own
+     .maplibregl-map rule forces position:relative (which voids inset:0 and would
+     collapse the height to 0 — the cause of the black globe). */
+  width: 100%;
+  height: 100%;
+}
+.command-map canvas {
+  display: block;
+}
+.command-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
+}
+.command-hud {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  background: rgba(8, 8, 11, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+.command-hud .hud {
+  font-size: 9.5px;
+}
+.command-hud-sep {
+  color: var(--ash);
+  opacity: 0.4;
+}
+.command-layers {
+  position: absolute;
+  top: 50%;
+  left: 28px;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: rgba(8, 8, 11, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}
+.command-layers-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  transition: color 0.2s ease;
+}
+.layer-toggle:hover,
+.layer-toggle.on {
+  color: var(--bone);
+}
+.layer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid var(--ash);
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.layer-toggle.on .layer-dot {
+  background: var(--steel);
+  border-color: var(--steel);
+  box-shadow: 0 0 8px rgba(110, 140, 168, 0.8);
+}
+.layer-name {
+  white-space: nowrap;
+}
+.command-surface .maplibregl-ctrl-attrib {
+  background: rgba(8, 8, 11, 0.5);
+}
+.command-surface .maplibregl-ctrl-attrib a {
+  color: var(--ash);
 }

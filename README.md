@@ -103,49 +103,45 @@ and the app runs exactly as before.
 
 ## Look closer (the globe)
 
-Ask AUGUST to see a place — "show me Tokyo", "what does the Strait of Hormuz look like",
-"take me to Reykjavik" — and he opens a globe and flies there. No API key required.
+Ask AUGUST to see a place — "show me Tokyo", "show me flights over Europe", "take me to
+Reykjavik" — and he flies the **Command** globe there. No API key required.
 
 - **Claude tool use.** A `look_closer` tool (lat, lon, label, zoom) is defined server-side;
   Claude fills the coordinates from its own knowledge — no geocoding service. The chat route
   runs the tool-use continuation so he both flies the globe **and** says something in
   character about the place.
-- **MapLibre GL globe** with Carto's free dark-matter style — it fades in over the orb,
-  `flyTo`s the coordinates with a smooth arc, and drops a labeled marker.
-- **Dismiss it** with the ✕ control, or just say "close the map" / "go back" (a `close_map`
-  tool returns you to the orb).
-
-Scope is the globe + fly-to only — no data layers (conflicts, ships, weather) yet.
+- **One globe.** `look_closer` slides the deck to the Command surface and `flyTo`s the
+  coordinates with a smooth arc, dropping a labeled marker — the same live globe described
+  below, not a second one.
+- **Return** by saying "close the map" / "go back" (a `close_map` tool slides back to the orb).
 
 ## Command deck
 
-The app is a horizontally-paginated deck of four full-screen surfaces — **Presence**,
-**Markets**, **Intel**, **Comms** — behind fixed chrome (the HUD, the indicator dots, and
-the reply + command input, which stay on every surface).
+The app is a horizontally-paginated deck of five full-screen surfaces — **Presence**,
+**Markets**, **Intel**, **Comms**, **Command** — behind fixed chrome (the HUD, the indicator
+dots, and the reply + command input, which stay on every surface).
 
 - **Navigate** by swipe / trackpad, the **← →** arrow keys, the indicator dots, or by
-  asking AUGUST ("go to markets", "show comms") — a `go_to_screen` tool slides the deck.
+  asking AUGUST ("go to markets", "show command") — a `go_to_screen` tool slides the deck.
 - **Presence** (home) is a Three.js centerpiece of slowly-rotating concentric mechanical
   rings, audio-reactive off the mic and his TTS (loads `/public/circle.glb` instead if it
-  exists), plus **the Brief** — one synthesis line per surface (stubbed in `lib/brief.ts`;
-  live data wires in there later).
-- **Markets is live** (see below). **Intel / Comms** remain styled terminal placeholders
-  with clear `TODO: live data` markers — their data lands in later passes.
-- The look-closer globe stays a global overlay, working from any surface.
-
-Scope so far is the shell — deck + 3D centerpiece + navigation. No live market data, web
-search, or email auth yet; those are separate passes.
+  exists), plus **the Brief** — one synthesis line per surface (Markets and Command live).
+- **Markets** and **Command** are live (see below). **Intel / Comms** remain styled terminal
+  placeholders with clear `TODO: live data` markers — their data lands in later passes.
+- The look-closer globe **is** the Command surface — one globe AUGUST can fly.
 
 | Deck file | What it is |
 | --- | --- |
 | `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings, audio-reactive |
 | `components/Deck.tsx` | Horizontal scroll-snap deck + indicator dots + arrow keys + `goTo()` |
-| `components/Brief.tsx` | The Brief — per-surface synthesis lines |
-| `components/surfaces/*` | Markets / Intel / Comms placeholder surfaces |
-| `lib/screens.ts` | Surface ids + labels | 
-| `lib/brief.ts` | Brief lines (Markets live; others stubbed) |
+| `components/Brief.tsx` | The Brief — per-surface synthesis lines (Markets + Command live) |
+| `components/command/CommandGlobe.tsx` | MapLibre intelligence globe — flights / quakes / day-night, HUD, toggles |
+| `components/surfaces/*` | Markets / Intel / Comms surfaces |
+| `lib/screens.ts` | Surface ids + labels |
+| `lib/brief.ts` | Brief lines (Markets + Command live; others stubbed) |
 | `lib/markets.ts` | Live free market data + per-source caching + AUGUST's snapshot (server) |
-| `app/api/markets/route.ts` | Cached JSON feed the Markets surface polls |
+| `lib/command.ts` | Live flights (OpenSky) + quakes (USGS) + caching + AUGUST's snapshot (server) |
+| `app/api/{markets,flights,quakes,command}/route.ts` | Cached JSON feeds the surfaces poll |
 
 ## Markets (live, free data)
 
@@ -183,6 +179,30 @@ reads `FlowItem[]`, so nothing else changes.
 
 AUGUST reads this surface: the **Brief**'s Markets line is live, and he answers "where's NQ vs
 my levels?" from the live numbers (a cached snapshot is injected into his system prompt).
+
+## Command (live intelligence globe)
+
+The **Command** surface is a full-screen MapLibre globe (globe projection, Carto's free
+dark-matter style) in an OSIRIS-style command aesthetic. It's the same globe `look_closer`
+flies. Every layer is drawn in **WebGL** (no DOM markers) and fed by a cached server-side
+proxy route, so the free APIs are never hammered.
+
+| Layer | Source | Render | Refresh |
+| --- | --- | --- | --- |
+| **Flights** | OpenSky via `/api/flights` | symbol layer, rotated by heading | ~15s, viewport bbox |
+| **Earthquakes** | USGS all-day GeoJSON via `/api/quakes` | circle layer, sized/coloured by magnitude | 5 min |
+| **Day / Night** | computed from the sun (no source) | terminator polygon over the night side | 1 min |
+
+- **Flights** work **anonymously** (sparse, rate-limited). Set `OPENSKY_CLIENT_ID` /
+  `OPENSKY_CLIENT_SECRET` (free OAuth2 client creds) to densify. The feed is fetched only
+  while you're on the surface, capped (3,000), and viewport-culled for 60fps.
+- **HUD** (top): ZULU clock, active-layer count, live "N aircraft" / "M quakes (24h)".
+- **Toggles** (left, OSIRIS style): Flights / Quakes / Day-Night — more layers slot in later.
+- AUGUST reads it: the **Brief**'s Command line is live, and a cached snapshot in his prompt
+  lets him answer "what's on the globe?" and fly it ("show me flights over Europe").
+
+Wave 1 is flights + quakes + day/night. Ships, weather, fires, and conflict layers are
+later passes — each is one more cached proxy route + WebGL layer.
 
 ## Known v0 limits
 

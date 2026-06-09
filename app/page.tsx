@@ -10,7 +10,7 @@ import IntelSurface from "@/components/surfaces/IntelSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
 import type { AugustState } from "@/components/Presence3D";
-import type { GlobeTarget } from "@/components/Globe";
+import type { GlobeTarget } from "@/components/command/CommandGlobe";
 import {
   createRecognizer,
   isRecognitionSupported,
@@ -23,7 +23,7 @@ import {
 
 // WebGL components load only in the browser.
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
-const Globe = dynamic(() => import("@/components/Globe"), { ssr: false });
+const CommandGlobe = dynamic(() => import("@/components/command/CommandGlobe"), { ssr: false });
 
 const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
 
@@ -106,8 +106,8 @@ export default function Home() {
   const [interim, setInterim] = useState("");
   const [micSupported, setMicSupported] = useState(false);
   const [booted, setBooted] = useState(false);
-  const [globeVisible, setGlobeVisible] = useState(false);
-  const [globeTarget, setGlobeTarget] = useState<GlobeTarget | null>(null);
+  const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
+  const [activeScreen, setActiveScreen] = useState(0);
 
   const amplitudeRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -204,10 +204,10 @@ export default function Home() {
         const label = typeof t.input.label === "string" ? t.input.label : "";
         const zoom = typeof t.input.zoom === "number" ? t.input.zoom : undefined;
         globeNonceRef.current += 1;
-        setGlobeTarget({ lat, lon, label, zoom, key: globeNonceRef.current });
-        setGlobeVisible(true);
+        setCommandTarget({ lat, lon, label, zoom, key: globeNonceRef.current });
+        deckRef.current?.goTo(screenIndex("command"));
       } else if (t.tool === "close_map") {
-        setGlobeVisible(false);
+        deckRef.current?.goTo(screenIndex("presence"));
       } else if (t.tool === "go_to_screen" && t.input) {
         const idx = screenIndex(String(t.input.screen ?? ""));
         if (idx >= 0) deckRef.current?.goTo(idx);
@@ -386,6 +386,7 @@ export default function Home() {
       <Deck
         ref={deckRef}
         labels={DECK_LABELS}
+        onActiveChange={setActiveScreen}
         surfaces={[
           <div key="presence" className="presence-surface">
             <Presence3D state={state} amplitudeRef={amplitudeRef} />
@@ -394,10 +395,13 @@ export default function Home() {
           <MarketsSurface key="markets" />,
           <IntelSurface key="intel" />,
           <CommsSurface key="comms" />,
+          <CommandGlobe
+            key="command"
+            active={activeScreen === screenIndex("command")}
+            flyTo={commandTarget}
+          />,
         ]}
       />
-
-      <Globe visible={globeVisible} target={globeTarget} onClose={() => setGlobeVisible(false)} />
 
       {/* reply dock + composer — fixed, available on every surface. A contained,
           translucent strip that never covers the dashboard widgets. */}
@@ -432,40 +436,19 @@ export default function Home() {
 // ---------------------------------------------------------------------------
 
 function BootHud() {
-  const STATIC_LINES = ["SYSTEM INITIATED", "AUGUST · BUILD 0.10", "LOCATION — UNDISCLOSED"];
-  const [typed, setTyped] = useState<string[]>(["", "", ""]);
-  const [showClock, setShowClock] = useState(false);
+  const LINES = ["SYSTEM INITIATED", "AUGUST · BUILD 0.10", "LOCATION — UNDISCLOSED"];
+  const full = LINES.join("\n");
+  const [n, setN] = useState(0);
   const [zulu, setZulu] = useState("");
 
-  // Typewriter through the three static lines.
+  // Typewriter driven by ONE character index over the joined block, so even if React
+  // double-invokes this effect (StrictMode / HMR) the chains converge instead of
+  // racing line-by-line — one tidy block, never doubled or overlapping.
   useEffect(() => {
-    let line = 0;
-    let char = 0;
-    let timer = 0;
-    const tick = () => {
-      if (line >= STATIC_LINES.length) {
-        setShowClock(true);
-        return;
-      }
-      char += 1;
-      const current = STATIC_LINES[line].slice(0, char);
-      setTyped((prev) => {
-        const nextArr = [...prev];
-        nextArr[line] = current;
-        return nextArr;
-      });
-      if (char >= STATIC_LINES[line].length) {
-        line += 1;
-        char = 0;
-        timer = window.setTimeout(tick, 190);
-      } else {
-        timer = window.setTimeout(tick, 26);
-      }
-    };
-    timer = window.setTimeout(tick, 260);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (n >= full.length) return;
+    const id = window.setTimeout(() => setN((v) => Math.min(full.length, v + 1)), n === 0 ? 260 : 27);
+    return () => window.clearTimeout(id);
+  }, [n, full.length]);
 
   // Live ZULU timestamp.
   useEffect(() => {
@@ -475,16 +458,17 @@ function BootHud() {
     return () => window.clearInterval(id);
   }, []);
 
+  const shown = full.slice(0, n).split("\n");
+  const done = n >= full.length;
+
   return (
-    <div className="hud fixed left-5 top-5 z-30 select-none">
-      {typed.map((t, i) =>
-        t ? (
-          <div key={i} className="opacity-70">
-            {t}
-          </div>
-        ) : null,
-      )}
-      {showClock ? <div className="fade-in opacity-90">{zulu}</div> : null}
+    <div className="boot-hud hud fixed left-5 top-5 z-30 select-none">
+      {LINES.map((_, i) => (
+        <div key={i} className="opacity-70">
+          {shown[i] ?? ""}
+        </div>
+      ))}
+      {done ? <div className="fade-in opacity-90">{zulu}</div> : null}
     </div>
   );
 }
