@@ -102,7 +102,10 @@ export async function getFlights(bbox?: BBox): Promise<Flights> {
       });
       if (features.length >= FLIGHT_CAP) break;
     }
-    lastFlightCount = features.length;
+    // Only a non-empty fetch updates the shared count. OpenSky's anon tier returns
+    // 200 with empty `states` when rate-limited — writing that 0 made the Brief say
+    // "0 aircraft tracked" while the HUD still showed the last real count.
+    if (features.length > 0) lastFlightCount = features.length;
     return { type: "FeatureCollection", features, count: features.length, source: token ? "opensky-auth" : "opensky-anon" };
   });
 }

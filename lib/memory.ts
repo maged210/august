@@ -17,7 +17,13 @@ import { USER_NAME } from "./persona";
 const PROFILE_KEY = "august:profile";
 const SUMMARIES_KEY = "august:summaries";
 const SUMMARIES_CAP = 50; // how many session summaries we retain
-const SUMMARIES_LOAD = 10; // how many we surface to the system prompt
+const SUMMARIES_LOAD = 6; // how many we read for the system prompt
+const SUMMARIES_PROMPT = 4; // how many actually reach the prompt
+const SUMMARY_CHARS = 240; // per-summary cap in the prompt
+const ITEM_CHARS = 110; // per-profile-item cap in the prompt
+
+const clip = (s: string, n: number): string =>
+  s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 
 const MEMORY_MODEL = "claude-haiku-4-5"; // cheap model for the background update
 
@@ -56,10 +62,12 @@ export async function loadMemory(): Promise<{
   const redis = getRedis();
   if (!redis) return { profile: null, summaries: [] };
   try {
-    const [profile, summaries] = await Promise.all([
-      redis.get<Profile>(PROFILE_KEY),
-      redis.lrange<SessionSummary>(SUMMARIES_KEY, 0, SUMMARIES_LOAD - 1),
-    ]);
+    // One HTTP round trip, not two. MGET can't combine these (GET + LRANGE are
+    // different types), but an Upstash pipeline ships both in a single request.
+    const pipe = redis.pipeline();
+    pipe.get(PROFILE_KEY);
+    pipe.lrange(SUMMARIES_KEY, 0, SUMMARIES_LOAD - 1);
+    const [profile, summaries] = await pipe.exec<[Profile | null, SessionSummary[]]>();
     return { profile: profile ?? null, summaries: summaries ?? [] };
   } catch {
     return { profile: null, summaries: [] };
@@ -95,20 +103,27 @@ export function buildMemorySection(
       `If he asks what you remember about him, tell him plainly and warmly, in your own words.`,
   );
 
+  // Trimmed on purpose: prompt weight slows time-to-first-token. The full memory
+  // stays in Redis — only a capped slice reaches the system prompt.
   if (profileHasContent(profile)) {
     out.push(`\nAbout him:`);
     if (profile.name) out.push(`- Name: ${profile.name}`);
-    if (profile.working_on?.length) out.push(`- Working on: ${profile.working_on.join("; ")}`);
-    if (profile.preferences?.length) out.push(`- Prefers: ${profile.preferences.join("; ")}`);
-    if (profile.people?.length) out.push(`- People in his life: ${profile.people.join("; ")}`);
-    if (profile.facts?.length) for (const f of profile.facts) out.push(`- ${f}`);
+    const list = (items: string[] | undefined, cap: number) =>
+      (items ?? []).slice(0, cap).map((x) => clip(x, ITEM_CHARS));
+    const working = list(profile.working_on, 6);
+    if (working.length) out.push(`- Working on: ${working.join("; ")}`);
+    const prefers = list(profile.preferences, 6);
+    if (prefers.length) out.push(`- Prefers: ${prefers.join("; ")}`);
+    const people = list(profile.people, 6);
+    if (people.length) out.push(`- People in his life: ${people.join("; ")}`);
+    for (const f of list(profile.facts, 8)) out.push(`- ${f}`);
   }
 
   if (summaries.length) {
     out.push(`\nRecent conversations (most recent first):`);
-    for (const s of summaries) {
+    for (const s of summaries.slice(0, SUMMARIES_PROMPT)) {
       const date = (s.ts || "").slice(0, 10);
-      out.push(`- ${date ? date + ": " : ""}${s.text}`);
+      out.push(`- ${date ? date + ": " : ""}${clip(s.text || "", SUMMARY_CHARS)}`);
     }
   }
 

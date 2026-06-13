@@ -264,12 +264,17 @@ body {
   border-radius: 50%;
   background: var(--ash);
   opacity: 0.35;
-  transition: opacity 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    opacity var(--dur-med) var(--ease),
+    background var(--dur-med) var(--ease),
+    box-shadow var(--dur-med) var(--ease),
+    transform var(--dur-med) var(--ease);
 }
 .deck-dot.active .deck-dot-mark {
   opacity: 1;
   background: var(--steel);
   box-shadow: 0 0 8px rgba(110, 140, 168, 0.85);
+  transform: scale(1.45);
 }
 .deck-dot-label {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -281,7 +286,9 @@ body {
   max-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  transition: opacity 0.3s ease, max-width 0.3s ease;
+  transition:
+    opacity var(--dur-med) var(--ease),
+    max-width var(--dur-med) var(--ease);
 }
 .deck-dot.active .deck-dot-label,
 .deck-dot:hover .deck-dot-label {
@@ -365,7 +372,9 @@ body {
 .surface {
   position: absolute;
   inset: 0;
-  padding: 92px 48px 140px;
+  /* Bottom padding reserves space for the composer + the collapsed reply panel,
+     so no widget (e.g. the Intel GLOBE card) hides behind them. */
+  padding: 92px 48px clamp(160px, 22vh, 250px);
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -583,7 +592,37 @@ body {
   line-height: 1.6;
   color: var(--bone);
   opacity: 0.8;
+  margin-bottom: 10px;
+}
+.synth-meta {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  color: var(--ash);
+  opacity: 0.45;
+  text-transform: uppercase;
   margin-bottom: 14px;
+}
+.feed-link {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--bone);
+  opacity: 0.85;
+  text-decoration: none;
+}
+.feed-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-decoration-color: rgba(232, 230, 225, 0.3);
+  text-underline-offset: 3px;
+}
+.feed-time {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--ash);
+  opacity: 0.45;
 }
 .globe-hint {
   font-size: 13px;
@@ -648,7 +687,7 @@ body {
 
 @media (max-width: 720px) {
   .surface {
-    padding: 84px 22px 150px;
+    padding: 84px 22px clamp(170px, 24vh, 260px);
   }
   .intel-grid {
     grid-template-columns: 1fr;
@@ -1022,20 +1061,108 @@ body {
   width: 100%;
   /* A contained card docked just above the composer — narrow enough that the
      surface widgets either side stay visible, height-capped + scrollable so a
-     long reply never grows to blanket the dashboard. */
+     long reply never grows to blanket the dashboard. Click to expand into the
+     session transcript; ✕ / Esc / click-outside dismiss it. */
   max-width: 680px;
   max-height: 24vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
   background: rgba(10, 11, 14, 0.82);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  padding: 13px 18px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+  padding: 8px 18px 13px;
+  cursor: pointer;
+  /* The fixed wrapper above is pointer-events-none; the dock re-enables itself. */
+  pointer-events: auto;
+}
+.reply-dock.history {
+  max-height: 54vh;
+  cursor: default;
+}
+.dock-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 5px;
+  flex: none;
+}
+.dock-ctl {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(154, 154, 159, 0.75);
+  transition: color 0.15s;
+}
+.dock-ctl:hover {
+  color: var(--bone);
+}
+.dock-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+}
+.dock-line {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--bone);
+  opacity: 0.9;
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+.dock-line.you {
+  opacity: 0.55;
+}
+.dock-who {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: #6e8ca8;
+  margin-right: 8px;
+}
+.composer-row {
+  display: flex;
+  width: 100%;
+  max-width: 770px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* The fixed wrapper above is pointer-events-none; the row re-enables itself. */
+  pointer-events: auto;
+}
+.composer-ctls {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.ctl-round {
+  height: 38px;
+  width: 38px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  color: var(--ash);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.ctl-round:hover {
+  color: var(--bone);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.ctl-round.on {
+  color: #6e8ca8;
+  border-color: rgba(110, 140, 168, 0.55);
 }
 .reply-text {
   font-size: 13.5px;
@@ -1084,6 +1211,32 @@ body {
   pointer-events: none;
   background: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
 }
+.command-reset {
+  position: absolute;
+  /* Very top-right corner — clear of BOTH the reply dock/composer band at the
+     bottom AND the centered HUD row (which spans ~580px and would collide with
+     anything at its height on viewports under ~770px). Side inset for notches. */
+  right: calc(env(safe-area-inset-right, 0px) + 18px);
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  z-index: 5;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  color: var(--ash);
+  border: 1px solid var(--line);
+  background: rgba(10, 11, 14, 0.55);
+  padding: 7px 12px;
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.command-reset:hover {
+  color: var(--bone);
+  border-color: rgba(255, 255, 255, 0.22);
+}
 .command-hud {
   position: absolute;
   top: 84px;
@@ -1110,7 +1263,7 @@ body {
 .command-layers {
   position: absolute;
   top: 50%;
-  left: 28px;
+  left: calc(env(safe-area-inset-left, 0px) + 28px);
   transform: translateY(-50%);
   z-index: 4;
   display: flex;
@@ -1171,4 +1324,200 @@ body {
 }
 .command-surface .maplibregl-ctrl-attrib a {
   color: var(--ash);
+}
+
+/* ======================================================================
+   SHELL POLISH — one motion system, sound-adjacent states, mobile pass.
+   ====================================================================== */
+
+:root {
+  /* The motion language. Every animation in the shell uses these. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms; /* micro-interactions */
+  --dur-med: 300ms; /* panels */
+  --dur-slow: 560ms; /* surface transitions */
+}
+
+/* ---- chrome parallax (JS sets --chrome-drift while the deck scrolls; it eases
+       back to 0 at rest, so chrome sits pixel-perfect when idle) ---- */
+.boot-hud {
+  top: calc(env(safe-area-inset-top, 0px) + 20px);
+  left: calc(env(safe-area-inset-left, 0px) + 20px);
+  transform: translateX(var(--chrome-drift, 0px));
+}
+.deck-indicators {
+  top: calc(env(safe-area-inset-top, 0px) + 18px);
+  transform: translateX(calc(-50% + var(--chrome-drift, 0px) * 1.4));
+}
+
+/* ---- cards: fade + rise once on mount (insertion), staggered. Data refreshes
+       update in place without remounting, so they never re-animate. ---- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.panel {
+  animation: rise-in var(--dur-med) var(--ease) backwards;
+}
+.panel:nth-child(2) { animation-delay: 40ms; }
+.panel:nth-child(3) { animation-delay: 80ms; }
+.panel:nth-child(4) { animation-delay: 120ms; }
+.panel:nth-child(5) { animation-delay: 160ms; }
+.panel:nth-child(6) { animation-delay: 200ms; }
+.panel:nth-child(7) { animation-delay: 240ms; }
+.panel:nth-child(8) { animation-delay: 280ms; }
+
+/* ---- reply dock: slides/fades up on open, eases out on dismiss ---- */
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.reply-dock {
+  animation: dock-in var(--dur-med) var(--ease);
+}
+@keyframes dock-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.reply-dock.closing {
+  animation: dock-out var(--dur-fast) ease-in forwards;
+  pointer-events: none;
+}
+
+/* ---- shared widget states (loading shimmer lives on .skel-bar already) ---- */
+.widget-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: rgba(154, 154, 159, 0.55);
+}
+.widget-state-sep {
+  opacity: 0.5;
+}
+.widget-retry {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--ash);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.widget-retry:hover {
+  color: var(--bone);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ---- sound toggle ---- */
+.ctl-round.off {
+  opacity: 0.45;
+}
+
+/* ---- safe areas (phone notches / home bars) ---- */
+.dock-wrap {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+@media (min-width: 640px) {
+  .dock-wrap {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
+  }
+}
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* ---- mobile pass (~390px) ---- */
+@media (max-width: 480px) {
+  /* HUD condenses to essentials: location + live clock */
+  .boot-hud > div:nth-child(1),
+  .boot-hud > div:nth-child(2) {
+    display: none;
+  }
+  .deck-indicators {
+    gap: 10px;
+  }
+  .deck-dot {
+    padding: 8px 4px; /* thumb-sized */
+  }
+  .composer-row {
+    gap: 8px;
+  }
+  .composer-row form {
+    padding: 10px 18px;
+  }
+  .composer-row input {
+    font-size: 16px; /* 16px stops iOS focus-zoom */
+  }
+  .ctl-round {
+    height: 44px;
+    width: 44px;
+  }
+  .reply-dock {
+    max-height: 32vh;
+    padding: 8px 14px 11px;
+  }
+  .reply-dock.history {
+    max-height: 50vh;
+  }
+  .command-hud {
+    top: calc(env(safe-area-inset-top, 0px) + 54px);
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 2px;
+    max-width: 92vw;
+  }
+  .command-layers {
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+  }
+  .command-reset {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 10px);
+    padding: 9px 12px; /* thumb-sized */
+  }
+  .surface {
+    gap: 14px;
+  }
+}
+
+/* ---- reduced motion: nonessential animation off, instantly ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important; /* stagger delays would otherwise hold panels invisible */
+    transition-duration: 0.01ms !important;
+  }
+  .deck-scroll {
+    scroll-behavior: auto;
+  }
+  .boot-hud {
+    transform: none !important;
+  }
+  /* The indicators' translateX(-50%) is CENTERING, not motion — keep it. The
+     drift var is already 0 here (Deck skips the parallax effect entirely). */
+  .deck-indicators {
+    transform: translateX(-50%) !important;
+  }
 }

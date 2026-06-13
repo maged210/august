@@ -189,6 +189,13 @@ export default function Presence3D({ state, amplitudeRef }: Props) {
     let easedAccent = 0;
     let easedGlow = 0.28;
     let easedSpeed = 1;
+    let easedScale = 1;
+    // Reduced motion: rotation slows to a near-still drift, breathing stops, and
+    // amplitude response is minimal — the circle stays informative, not animated.
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const motion = reduced ? 0.12 : 1;
 
     const render = () => {
       raf = requestAnimationFrame(render);
@@ -201,46 +208,56 @@ export default function Presence3D({ state, amplitudeRef }: Props) {
       let speedTarget = 1;
       let accentTarget = 0;
       let glowTarget = 0.28;
+      let scaleTarget = 1;
       switch (st) {
         case "listening":
+          // calm pulse synced to the mic level
           speedTarget = 1.5 + amp * 2.2;
           accentTarget = 0.5 + amp * 0.4;
           glowTarget = 0.5 + amp * 0.6;
+          scaleTarget = 1.01;
           break;
         case "thinking":
           speedTarget = 2.2;
           accentTarget = 0.18 + 0.1 * (0.5 + 0.5 * Math.sin(t * 1.6));
           glowTarget = 0.4;
+          scaleTarget = 1.008;
           break;
         case "speaking":
+          // brightens and expands slightly while AUGUST speaks
           speedTarget = 1.4 + amp * 2.6;
           accentTarget = 0.36 + amp * 0.3;
           glowTarget = 0.45 + amp * 0.7;
+          scaleTarget = 1.03;
           break;
         default:
           speedTarget = 1;
           accentTarget = 0;
           glowTarget = 0.28;
+          scaleTarget = 1;
           break;
       }
 
       easedSpeed += (speedTarget - easedSpeed) * Math.min(1, dt * 3);
       easedAccent += (accentTarget - easedAccent) * Math.min(1, dt * 4);
       easedGlow += (glowTarget - easedGlow) * Math.min(1, dt * 3);
+      easedScale += (scaleTarget - easedScale) * Math.min(1, dt * 3);
 
-      gA.rotation.z += dt * 0.06 * easedSpeed;
-      gB.rotation.z -= dt * 0.11 * easedSpeed;
-      gC.rotation.z += dt * 0.17 * easedSpeed;
-      gHub.rotation.z -= dt * 0.24 * easedSpeed;
-      gAccent.rotation.z += dt * 0.09 * easedSpeed;
+      gA.rotation.z += dt * 0.06 * easedSpeed * motion;
+      gB.rotation.z -= dt * 0.11 * easedSpeed * motion;
+      gC.rotation.z += dt * 0.17 * easedSpeed * motion;
+      gHub.rotation.z -= dt * 0.24 * easedSpeed * motion;
+      gAccent.rotation.z += dt * 0.09 * easedSpeed * motion;
 
       accentMat.opacity = easedAccent;
       accentArcMat.opacity = easedAccent * 0.9;
       glowMat.opacity = easedGlow;
-      glow.scale.setScalar(1 + Math.sin(t * 0.7) * 0.04 + amp * 0.25);
+      glow.scale.setScalar(1 + (reduced ? 0 : Math.sin(t * 0.7) * 0.04) + amp * 0.25);
 
-      root.scale.setScalar(1 + Math.sin(t * 0.8) * 0.012 + amp * 0.05);
-      root.rotation.z = Math.sin(t * 0.08) * 0.04;
+      // slow breathing at idle; amplitude rides on top while talking/listening
+      const breathe = reduced ? 0 : Math.sin(t * 0.8) * 0.012;
+      root.scale.setScalar(easedScale + breathe + amp * (reduced ? 0.015 : 0.05));
+      root.rotation.z = reduced ? 0 : Math.sin(t * 0.08) * 0.04;
 
       renderer.render(scene, camera);
     };

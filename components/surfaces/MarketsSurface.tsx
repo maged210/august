@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Markets } from "@/lib/markets";
 import Gauge from "@/components/markets/Gauge";
+import WidgetState from "@/components/WidgetState";
 
 // WebGL/canvas chart components — browser only.
 const PriceChart = dynamic(() => import("@/components/markets/PriceChart"), { ssr: false });
@@ -28,14 +29,6 @@ const last = (n: number) =>
     ? n.toLocaleString("en-US", { maximumFractionDigits: 0 })
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const Skel = ({ n = 4 }: { n?: number }) => (
-  <div className="skel-rows">
-    {Array.from({ length: n }).map((_, i) => (
-      <div key={i} className="skel-bar" style={{ width: `${55 + ((i * 23) % 40)}%` }} />
-    ))}
-  </div>
-);
-
 type Selected = { sym: string; kind: string; label: string };
 const DEFAULT_SELECTED: Selected = { sym: "QQQ", kind: "yahoo", label: "QQQ · NQ proxy" };
 
@@ -45,31 +38,33 @@ export default function MarketsSurface() {
   const [updated, setUpdated] = useState("");
   const [selected, setSelected] = useState<Selected>(DEFAULT_SELECTED);
 
+  // Exposed so the shared error state's RETRY button can refetch directly.
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/markets", { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const j: Markets = await res.json();
+      setData(j);
+      setStatus("live");
+      setUpdated(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    } catch {
+      setStatus((s) => (s === "live" ? "live" : "error"));
+    }
+  }, []);
+
   useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/markets", { cache: "no-store" });
-        if (!res.ok) throw new Error();
-        const j: Markets = await res.json();
-        if (!alive) return;
-        setData(j);
-        setStatus("live");
-        setUpdated(new Date().toLocaleTimeString("en-US", { hour12: false }));
-      } catch {
-        if (alive) setStatus((s) => (s === "live" ? "live" : "error"));
-      }
-    };
     load();
     const id = window.setInterval(load, REFRESH_MS);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, []);
+    return () => window.clearInterval(id);
+  }, [load]);
 
   const levels = data?.levels ?? null;
   const fredMissing = !!data && !data.macro.fredAvailable;
+  // Shared non-data state for every panel: skeleton while connecting, FEED
+  // OFFLINE · RETRY if the first load failed. Stale data keeps rendering as data.
+  const fallback = (rows: number) => (
+    <WidgetState state={status === "error" ? "error" : "loading"} rows={rows} onRetry={load} />
+  );
 
   return (
     <div className="surface markets-surface">
@@ -92,16 +87,20 @@ export default function MarketsSurface() {
         <section className="panel mk-sectors">
           <div className="panel-head">Sectors</div>
           {data ? (
-            <div className="sector-strip">
-              {data.sectors.map((s) => (
-                <div key={s.etf} className="sector-chip" title={s.etf}>
-                  <span className="sector-name">{s.name}</span>
-                  <span className={sign(s.chgPct)}>{pct(s.chgPct)}</span>
-                </div>
-              ))}
-            </div>
+            data.sectors.length ? (
+              <div className="sector-strip">
+                {data.sectors.map((s) => (
+                  <div key={s.etf} className="sector-chip" title={s.etf}>
+                    <span className="sector-name">{s.name}</span>
+                    <span className={sign(s.chgPct)}>{pct(s.chgPct)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <WidgetState state="empty" />
+            )
           ) : (
-            <Skel n={2} />
+            fallback(2)
           )}
         </section>
 
@@ -109,6 +108,9 @@ export default function MarketsSurface() {
         <section className="panel mk-watch">
           <div className="panel-head">Watchlist · click to chart</div>
           {data ? (
+            !data.watchlist.length ? (
+              <WidgetState state="empty" />
+            ) : (
             <table className="term-table watch-table">
               <tbody>
                 {data.watchlist.map((q) => (
@@ -132,8 +134,9 @@ export default function MarketsSurface() {
                 ))}
               </tbody>
             </table>
+            )
           ) : (
-            <Skel n={8} />
+            fallback(8)
           )}
         </section>
 
@@ -176,7 +179,7 @@ export default function MarketsSurface() {
               <div className="lvl-note">{levels.proxy} · prior session</div>
             </>
           ) : (
-            <Skel n={5} />
+            fallback(5)
           )}
         </section>
 
@@ -246,6 +249,11 @@ export default function MarketsSurface() {
         <section className="panel mk-movers">
           <div className="panel-head">Movers</div>
           {data ? (
+            !data.movers.gainers.length &&
+            !data.movers.losers.length &&
+            !data.movers.actives.length ? (
+              <WidgetState state="empty" />
+            ) : (
             <div className="movers-cols">
               <div>
                 <div className="movers-h pos">Gainers</div>
@@ -275,8 +283,9 @@ export default function MarketsSurface() {
                 ))}
               </div>
             </div>
+            )
           ) : (
-            <Skel n={5} />
+            fallback(5)
           )}
         </section>
 
@@ -298,7 +307,7 @@ export default function MarketsSurface() {
               )}
             </ul>
           ) : (
-            <Skel n={4} />
+            fallback(4)
           )}
         </section>
 
@@ -308,17 +317,21 @@ export default function MarketsSurface() {
             Flow · Lite <span className="todo">proxy</span>
           </div>
           {data ? (
-            <ul className="flow-list">
-              {data.flow.map((f) => (
-                <li key={f.sym}>
-                  <span className="flow-sym">{f.sym}</span>
-                  <span className={sign(f.chgPct)}>{pct(f.chgPct)}</span>
-                  <span className="flow-mult">{f.volMult.toFixed(1)}× vol</span>
-                </li>
-              ))}
-            </ul>
+            data.flow.length ? (
+              <ul className="flow-list">
+                {data.flow.map((f) => (
+                  <li key={f.sym}>
+                    <span className="flow-sym">{f.sym}</span>
+                    <span className={sign(f.chgPct)}>{pct(f.chgPct)}</span>
+                    <span className="flow-mult">{f.volMult.toFixed(1)}× vol</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <WidgetState state="empty" />
+            )
           ) : (
-            <Skel n={5} />
+            fallback(5)
           )}
           <div className="flow-note">
             Unusual equity volume — free stand-in for options flow (real flow is paid).

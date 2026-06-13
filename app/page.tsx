@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
@@ -20,6 +20,7 @@ import {
   type Recognizer,
   type SpeakHandle,
 } from "@/lib/speech";
+import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
 // WebGL components load only in the browser.
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
@@ -108,6 +109,12 @@ export default function Home() {
   const [booted, setBooted] = useState(false);
   const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState(0);
+  // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [dockClosing, setDockClosing] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
 
   const amplitudeRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -119,6 +126,18 @@ export default function Home() {
   const globeNonceRef = useRef(0);
   const deckRef = useRef<DeckHandle | null>(null);
   const replyDockRef = useRef<HTMLDivElement | null>(null);
+  const dockWrapRef = useRef<HTMLDivElement | null>(null);
+  const mutedRef = useRef(false);
+  const soundOnRef = useRef(true);
+  const closeTimerRef = useRef(0);
+  // Generation counter + abort: a new send (or the stop control) supersedes any
+  // in-flight stream, so a stale closure can never write over the new turn's UI.
+  const genRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  // True while AUGUST himself is sliding the deck (tool nav) — his narration should
+  // stay on screen; only USER surface changes dismiss the reply panel.
+  const augNavRef = useRef(false);
+  const augNavTimerRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -128,7 +147,48 @@ export default function Home() {
   useEffect(() => {
     const el = replyDockRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [replyText]);
+  }, [replyText, historyOpen, messages]);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  // Open/close the reply panel with the dock-in/dock-out animations.
+  const openPanel = useCallback(() => {
+    window.clearTimeout(closeTimerRef.current);
+    setDockClosing(false);
+    setPanelOpen(true);
+  }, []);
+
+  const closePanel = useCallback(() => {
+    setDockClosing(true);
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      setPanelOpen(false);
+      setHistoryOpen(false);
+      setDockClosing(false);
+    }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
+  }, []);
+
+  // Esc dismisses the reply panel (works even while typing in the composer).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePanel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closePanel]);
+
+  // Clicking anywhere outside the dock + composer cluster dismisses the panel.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (t && dockWrapRef.current && !dockWrapRef.current.contains(t)) closePanel();
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [panelOpen, closePanel]);
 
   // Boot: prime the voice list, detect mic support, resolve into idle.
   useEffect(() => {
@@ -140,9 +200,21 @@ export default function Home() {
     }
     primeVoices();
     setMicSupported(isRecognitionSupported());
+    try {
+      if (window.localStorage.getItem("aug-muted") === "1") {
+        setMuted(true);
+        mutedRef.current = true;
+      }
+    } catch {
+      /* private mode — mute just won't persist */
+    }
+    const on = soundEnabled();
+    setSoundOn(on);
+    soundOnRef.current = on;
     const id = window.setTimeout(() => {
       setState("idle");
       setBooted(true);
+      if (soundOnRef.current && !mutedRef.current) playTone("ready");
     }, 2200);
     return () => window.clearTimeout(id);
   }, []);
@@ -176,7 +248,53 @@ export default function Home() {
     amplitudeRef.current = 0;
   }
 
+  // UI tones obey both switches: the sound toggle, and the voice mute
+  // (sounds never play while muted).
+  function uiTone(name: UiTone) {
+    if (!soundOnRef.current || mutedRef.current) return;
+    playTone(name);
+  }
+
+  function toggleMute() {
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    setMuted(next);
+    try {
+      window.localStorage.setItem("aug-muted", next ? "1" : "0");
+    } catch {
+      /* non-persistent */
+    }
+    if (next) {
+      stopSpeaking();
+      setState((s) => (s === "speaking" ? "idle" : s));
+    } else if (soundOnRef.current) {
+      playTone("toggle"); // only audible feedback on UNmute — never while muted
+    }
+  }
+
+  function toggleSound() {
+    const next = !soundOnRef.current;
+    soundOnRef.current = next;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next && !mutedRef.current) playTone("toggle");
+  }
+
+  function stopGeneration() {
+    // Halts the in-flight stream; the partial text stays on screen.
+    abortRef.current?.abort();
+  }
+
+  function stopVoice() {
+    stopSpeaking();
+    setState((s) => (s === "speaking" ? "idle" : s));
+  }
+
   function speakReply(text: string) {
+    if (mutedRef.current) {
+      setState("idle");
+      return;
+    }
     setState("speaking");
     speakHandleRef.current = speak(text, {
       onLevel: (v) => {
@@ -195,6 +313,15 @@ export default function Home() {
     });
   }
 
+  // Flag the next surface change as AUGUST-driven so it doesn't dismiss his reply.
+  function markAugNav() {
+    augNavRef.current = true;
+    window.clearTimeout(augNavTimerRef.current);
+    augNavTimerRef.current = window.setTimeout(() => {
+      augNavRef.current = false;
+    }, 1600);
+  }
+
   function applyToolEvents(tools: ToolEvent[]) {
     for (const t of tools) {
       if (t.tool === "look_closer" && t.input) {
@@ -205,15 +332,40 @@ export default function Home() {
         const zoom = typeof t.input.zoom === "number" ? t.input.zoom : undefined;
         globeNonceRef.current += 1;
         setCommandTarget({ lat, lon, label, zoom, key: globeNonceRef.current });
+        markAugNav();
         deckRef.current?.goTo(screenIndex("command"));
       } else if (t.tool === "close_map") {
+        markAugNav();
         deckRef.current?.goTo(screenIndex("presence"));
       } else if (t.tool === "go_to_screen" && t.input) {
         const idx = screenIndex(String(t.input.screen ?? ""));
-        if (idx >= 0) deckRef.current?.goTo(idx);
+        if (idx >= 0) {
+          markAugNav();
+          deckRef.current?.goTo(idx);
+        }
       }
     }
   }
+
+  // USER surface changes dismiss the reply panel — a stale reply must not follow
+  // you across the deck. AUGUST's own navigation keeps his narration visible.
+  // useCallback is load-bearing: Deck keys its debounced scroll effect on this
+  // prop's identity, and an unstable function would re-subscribe the effect on
+  // every streamed chunk — clearing the pending debounce and silently losing
+  // active-surface tracking (stale dots, globe never activates).
+  const handleSurfaceChange = useCallback(
+    (i: number) => {
+      if (augNavRef.current) {
+        // AUGUST is driving — update the indicator (CommandGlobe needs this)
+        // but keep the reply panel open so his narration stays visible.
+        setActiveScreen(i);
+        return;
+      }
+      setActiveScreen(i);
+      closePanel();
+    },
+    [closePanel],
+  );
 
   function forgetMemory() {
     // Wipe persistent memory (Upstash) and reset the on-screen conversation.
@@ -227,6 +379,8 @@ export default function Home() {
     messagesRef.current = [];
     setMessages([]);
     setInterim("");
+    openPanel();
+    setHistoryOpen(false);
     const line = "Done. I've let it go — we start clean.";
     setReplyText(line);
     speakReply(line);
@@ -242,15 +396,21 @@ export default function Home() {
     }
 
     primeAudio();
-    stopSpeaking();
+    stopSpeaking(); // a new message always cuts current speech
     stopListening();
+    abortRef.current?.abort(); // ...and supersedes any in-flight generation
+    const gen = ++genRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const next = [...messagesRef.current, { role: "user" as const, content: text }];
     messagesRef.current = next;
     setMessages(next);
     setInterim("");
     setReplyText("");
+    openPanel(); // a new reply (re)opens the panel
     setState("thinking");
+    uiTone("send");
 
     let full = "";
     try {
@@ -258,10 +418,13 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: next }),
+        signal: controller.signal,
       });
+      if (gen !== genRef.current) return; // superseded while connecting
 
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => "");
+        if (gen !== genRef.current) return; // superseded while reading the error body
         setReplyText(errText || "— AUGUST is unreachable —");
         setState("idle");
         return;
@@ -272,6 +435,7 @@ export default function Home() {
       let appliedTools = 0;
       for (;;) {
         const { value, done } = await reader.read();
+        if (gen !== genRef.current) return; // superseded mid-stream — the new turn owns the UI
         if (done) break;
         full += decoder.decode(value, { stream: true });
         const parsed = splitToolStream(full);
@@ -292,6 +456,7 @@ export default function Home() {
         const withAssistant = [...next, { role: "assistant" as const, content: reply }];
         messagesRef.current = withAssistant;
         setMessages(withAssistant);
+        uiTone("reply");
         speakReply(reply);
         // Background: update long-term memory. Fire-and-forget — never blocks the reply.
         void fetch("/api/memory", {
@@ -307,7 +472,13 @@ export default function Home() {
       } else {
         setState("idle");
       }
-    } catch {
+    } catch (err) {
+      if (gen !== genRef.current) return; // superseded — stay silent
+      if ((err as Error)?.name === "AbortError") {
+        // User hit stop: keep the partial text on screen, halt cleanly.
+        setState("idle");
+        return;
+      }
       setReplyText("— connection lost —");
       setState("idle");
     }
@@ -326,6 +497,7 @@ export default function Home() {
     stopSpeaking();
     setReplyText("");
     setInterim("");
+    openPanel(); // the panel shows what the mic is hearing
     listeningActiveRef.current = true;
     setState("listening");
 
@@ -386,7 +558,7 @@ export default function Home() {
       <Deck
         ref={deckRef}
         labels={DECK_LABELS}
-        onActiveChange={setActiveScreen}
+        onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
             <Presence3D state={state} amplitudeRef={amplitudeRef} />
@@ -404,30 +576,183 @@ export default function Home() {
       />
 
       {/* reply dock + composer — fixed, available on every surface. A contained,
-          translucent strip that never covers the dashboard widgets. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10">
-        {replyText || interim ? (
-          <div className="reply-dock" ref={replyDockRef}>
-            {interim ? (
-              <p className="reply-interim">{interim}</p>
-            ) : (
-              <p className="reply-text">{replyText}</p>
-            )}
+          translucent card that never covers the dashboard widgets: dismissible
+          (✕ / Esc / click outside), expandable into the session transcript. */}
+      {/* pointer-events-none is load-bearing: the transparent full-width wrapper must
+          never eat clicks meant for the surfaces beneath (globe reset, drag, click-
+          outside dismissal). The dock and composer row re-enable their own events. */}
+      <div
+        ref={dockWrapRef}
+        className="dock-wrap pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
+      >
+        {panelOpen && (replyText || interim || (historyOpen && messages.length > 0)) ? (
+          <div
+            className={`reply-dock${historyOpen ? " history" : ""}${dockClosing ? " closing" : ""}`}
+            role="log"
+            onClick={() => {
+              // Don't expand when the user was selecting text to copy — the view
+              // swap would unmount the node and destroy the selection.
+              if (!historyOpen && !window.getSelection()?.toString()) setHistoryOpen(true);
+            }}
+          >
+            <div className="dock-head">
+              <button
+                type="button"
+                className="dock-ctl"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHistoryOpen((v) => !v);
+                }}
+              >
+                {historyOpen ? "▾ reply" : "▸ transcript"}
+              </button>
+              <button
+                type="button"
+                className="dock-ctl dock-x"
+                aria-label="Dismiss"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closePanel();
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="dock-body" ref={replyDockRef}>
+              {historyOpen ? (
+                <>
+                  {messages.map((m, i) => (
+                    <p key={i} className={`dock-line${m.role === "user" ? " you" : ""}`}>
+                      <span className="dock-who">{m.role === "user" ? "YOU" : "AUGUST"}</span>
+                      {m.content}
+                    </p>
+                  ))}
+                  {/* Any reply text not yet finalized into messages — a streaming
+                      reply, a stopped partial, or the connection-lost line — must
+                      stay visible in the transcript view too. */}
+                  {(() => {
+                    const last = messages[messages.length - 1];
+                    const finalized =
+                      !!last && last.role === "assistant" && last.content === replyText;
+                    return replyText && !finalized ? (
+                      <p className="dock-line">
+                        <span className="dock-who">AUGUST</span>
+                        {replyText}
+                      </p>
+                    ) : null;
+                  })()}
+                  {interim ? <p className="reply-interim">{interim}</p> : null}
+                </>
+              ) : interim ? (
+                <p className="reply-interim">{interim}</p>
+              ) : (
+                <p className="reply-text">{replyText}</p>
+              )}
+            </div>
           </div>
         ) : statusLabel ? (
           <div className="reply-status">{statusLabel}</div>
         ) : null}
 
-        <Composer
-          onSend={handleSend}
-          onToggleMic={toggleMic}
-          listening={state === "listening"}
-          busy={state === "thinking"}
-          micSupported={micSupported}
-          autoFocus={booted}
-        />
+        <div className="composer-row">
+          <Composer
+            onSend={handleSend}
+            onToggleMic={toggleMic}
+            listening={state === "listening"}
+            busy={state === "thinking"}
+            micSupported={micSupported}
+            autoFocus={booted}
+          />
+          <div className="composer-ctls">
+            {state === "thinking" ? (
+              <button
+                type="button"
+                className="ctl-round"
+                onClick={stopGeneration}
+                title="Stop generating"
+                aria-label="Stop generating"
+              >
+                <StopIcon />
+              </button>
+            ) : state === "speaking" ? (
+              <button
+                type="button"
+                className="ctl-round"
+                onClick={stopVoice}
+                title="Stop voice"
+                aria-label="Stop voice"
+              >
+                <StopIcon />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={`ctl-round${muted ? " on" : ""}`}
+              onClick={toggleMute}
+              title={muted ? "Voice muted — click to unmute" : "Mute voice"}
+              aria-pressed={muted}
+              aria-label={muted ? "Unmute voice" : "Mute voice"}
+            >
+              {muted ? <VoiceOffIcon /> : <VoiceIcon />}
+            </button>
+            <button
+              type="button"
+              className={`ctl-round${soundOn ? "" : " off"}`}
+              onClick={toggleSound}
+              title={soundOn ? "UI sounds on" : "UI sounds off"}
+              aria-pressed={soundOn}
+              aria-label={soundOn ? "Turn UI sounds off" : "Turn UI sounds on"}
+            >
+              <ToneIcon off={!soundOn} />
+            </button>
+          </div>
+        </div>
       </div>
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Small control icons (match the Composer's mic icon style).
+// ---------------------------------------------------------------------------
+
+function StopIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
+      <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function VoiceIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9.5 9.5 0 0 1 0 13" />
+    </svg>
+  );
+}
+
+function VoiceOffIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
+      <line x1="15" y1="9" x2="21" y2="15" />
+      <line x1="21" y1="9" x2="15" y2="15" />
+    </svg>
+  );
+}
+
+function ToneIcon({ off }: { off?: boolean }) {
+  // A small note — the UI-tones toggle (distinct from the voice speaker).
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 18V6l10-2v12" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="16.5" cy="16" r="2.5" />
+      {off ? <line x1="3" y1="3" x2="21" y2="21" /> : null}
+    </svg>
   );
 }
 

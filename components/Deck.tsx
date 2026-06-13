@@ -25,13 +25,23 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
 ) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [active, setActive] = useState(0);
+  // Ref mirrors active for change-detection inside the scroll handler without
+  // needing a setState updater — calling onActiveChange inside an updater would
+  // invoke the parent's setState during Deck's render, which React forbids.
+  const activeRef = useRef(0);
   const count = surfaces.length;
 
   const goTo = (index: number) => {
     const el = scrollRef.current;
     if (!el) return;
     const i = Math.max(0, Math.min(count - 1, index));
-    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+    // An explicit "smooth" overrides CSS scroll-behavior, so reduced motion has
+    // to be honored here — the deck slide is the largest animation in the app.
+    const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches
+      ? "auto"
+      : "smooth";
+    el.scrollTo({ left: i * el.clientWidth, behavior });
   };
 
   useImperativeHandle(ref, () => ({ goTo }), [count]);
@@ -45,10 +55,14 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       window.clearTimeout(t);
       t = window.setTimeout(() => {
         const i = Math.round(el.scrollLeft / el.clientWidth);
-        setActive((prev) => {
-          if (i !== prev) onActiveChange?.(i);
-          return i;
-        });
+        if (i === activeRef.current) return; // no change — nothing to do
+        activeRef.current = i;
+        setActive(i);
+        // Defer the parent callback to after paint — calling onActiveChange
+        // synchronously here (or inside a setState updater) would setState on
+        // Home while Deck is still rendering, triggering React's "update during
+        // render of different component" warning.
+        requestAnimationFrame(() => onActiveChange?.(i));
       }, 60);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -57,6 +71,48 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       window.clearTimeout(t);
     };
   }, [onActiveChange]);
+
+  // Chrome parallax: while the deck scrolls, fixed chrome (boot HUD, indicator
+  // dots) drifts a few px against the scroll velocity and eases back to 0 at
+  // rest. Velocity-based, so there is no discontinuity at snap midpoints. The
+  // rAF loop sleeps once settled and wakes on the next scroll event.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let raf = 0;
+    let lastLeft = el.scrollLeft;
+    let drift = 0;
+    let settled = 0;
+    const tick = () => {
+      const left = el.scrollLeft;
+      const vel = left - lastLeft;
+      lastLeft = left;
+      const target = Math.max(-9, Math.min(9, -vel * 0.18));
+      drift += (target - drift) * 0.16;
+      settled = vel === 0 && Math.abs(drift) < 0.05 ? settled + 1 : 0;
+      document.documentElement.style.setProperty("--chrome-drift", `${drift.toFixed(2)}px`);
+      if (settled > 30) {
+        document.documentElement.style.setProperty("--chrome-drift", "0px");
+        raf = 0;
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    const wake = () => {
+      if (!raf) {
+        lastLeft = el.scrollLeft;
+        settled = 0;
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    el.addEventListener("scroll", wake, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", wake);
+      if (raf) cancelAnimationFrame(raf);
+      document.documentElement.style.removeProperty("--chrome-drift");
+    };
+  }, []);
 
   // Arrow keys — but never hijack typing in the composer.
   useEffect(() => {

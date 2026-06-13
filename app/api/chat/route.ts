@@ -6,10 +6,28 @@ import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
+//
+// Runtime: Node, deliberately — not Edge. Nothing in the deps blocks Edge
+// (@anthropic-ai/sdk and @upstash/redis are both fetch-based), but on today's
+// Vercel the Edge runtime is no longer recommended and runs on the same Fluid
+// Compute infrastructure as Node — no cold-start win — while it WOULD fragment
+// the in-memory markets/command snapshot caches per isolate. Locally (next dev)
+// there are no cold starts at all. The [chat] timing log below shows where the
+// time actually goes; fix from measurement, not folklore.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+
+// One client for the process — reusing it keeps the HTTPS connection pool warm,
+// shaving the per-request TLS handshake off time-to-first-token.
+let _client: Anthropic | null = null;
+function getClient(apiKey: string): Anthropic {
+  if (!_client || (_client.apiKey as string | null) !== apiKey) {
+    _client = new Anthropic({ apiKey });
+  }
+  return _client;
+}
 
 export async function POST(req: Request): Promise<Response> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -45,14 +63,27 @@ export async function POST(req: Request): Promise<Response> {
 
   // Prep everything the system prompt needs in PARALLEL — memory (Upstash) and the
   // live markets/command snapshots — so none of them serialize ahead of the model
-  // call. The snapshots are time-boxed so a cold fetch never delays the first token.
-  const timeBox = (p: Promise<string>, ms: number): Promise<string> =>
-    Promise.race([p, new Promise<string>((resolve) => setTimeout(() => resolve(""), ms))]);
+  // call. Everything is time-boxed: if Redis is slow we proceed WITHOUT memory
+  // (300ms cap) rather than stall the reply; snapshots get 1200ms.
+  type Mem = Awaited<ReturnType<typeof loadMemory>>;
+  const EMPTY_MEM: Mem = { profile: null, summaries: [] };
+  const timeBox = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+
+  const t0 = Date.now();
+  let memMs = -1; // -1 = memory missed the 300ms window (reply went out without it)
+  const memTimed = loadMemory()
+    .catch(() => EMPTY_MEM)
+    .then((r) => {
+      memMs = Date.now() - t0;
+      return r;
+    });
   const [{ profile, summaries }, marketsSnapshot, commandSnapshot] = await Promise.all([
-    loadMemory().catch(() => ({ profile: null, summaries: [] as Awaited<ReturnType<typeof loadMemory>>["summaries"] })),
-    timeBox(getMarketsSnapshot().catch(() => ""), 1200),
-    timeBox(getCommandSnapshot().catch(() => ""), 1200),
+    timeBox(memTimed, 300, EMPTY_MEM),
+    timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
+    timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
   ]);
+  const prepMs = Date.now() - t0;
   // Cache the frozen prefix (persona + tool guidance) so repeat turns skip
   // re-prefilling it — that's the time-to-first-token win. Volatile context (what he
   // remembers + the live snapshots) rides in a second, uncached block after it.
@@ -63,11 +94,33 @@ export async function POST(req: Request): Promise<Response> {
   ];
   if (dynamicSystem.trim()) system.push({ type: "text", text: dynamicSystem });
 
-  const client = new Anthropic({ apiKey });
+  const client = getClient(apiKey);
   const encoder = new TextEncoder();
 
+  // Time-to-first-token: marked the first time ANY byte is enqueued to the client.
+  let ttftMs = -1;
+  const mark = () => {
+    if (ttftMs === -1) ttftMs = Date.now() - t0;
+  };
+
+  // Client aborts (the stop control, or a superseding send) cancel this stream —
+  // that's routine, not an error. Track it so we neither log fake "[chat] stream
+  // error"s nor throw on enqueue/close after cancellation.
+  let aborted = false;
+
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      aborted = true;
+    },
     async start(controller) {
+      const send = (bytes: Uint8Array) => {
+        if (aborted) return;
+        try {
+          controller.enqueue(bytes);
+        } catch {
+          aborted = true;
+        }
+      };
       try {
         // Turn 1 — give AUGUST his tools. Stream any text live (as before).
         const stream1 = await client.messages.create({
@@ -83,6 +136,7 @@ export async function POST(req: Request): Promise<Response> {
         let firstText = "";
 
         for await (const event of stream1) {
+          if (aborted) break;
           if (event.type === "content_block_start") {
             const block = event.content_block;
             if (block.type === "tool_use") {
@@ -92,7 +146,8 @@ export async function POST(req: Request): Promise<Response> {
             const delta = event.delta;
             if (delta.type === "text_delta") {
               firstText += delta.text;
-              controller.enqueue(encoder.encode(delta.text));
+              mark();
+              send(encoder.encode(delta.text));
             } else if (delta.type === "input_json_delta") {
               const tb = toolBlocks.get(event.index);
               if (tb) tb.json += delta.partial_json;
@@ -100,8 +155,9 @@ export async function POST(req: Request): Promise<Response> {
           }
         }
 
-        // No tool call → it's a plain reply; we're done.
-        if (toolBlocks.size === 0) return;
+        // No tool call → it's a plain reply; we're done. Same if the client left —
+        // don't pay for a narration turn nobody will see.
+        if (toolBlocks.size === 0 || aborted) return;
 
         // Emit each tool call now (the globe reacts immediately) and prepare a
         // tool_result turn so AUGUST narrates the place he just opened.
@@ -117,9 +173,8 @@ export async function POST(req: Request): Promise<Response> {
               input = {};
             }
           }
-          controller.enqueue(
-            encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP),
-          );
+          mark();
+          send(encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP));
           toolUseContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
           const label = typeof input.label === "string" ? input.label : "the location";
           const screen = typeof input.screen === "string" ? input.screen : "presence";
@@ -155,19 +210,33 @@ export async function POST(req: Request): Promise<Response> {
 
         let needSpace = firstText.trim().length > 0;
         for await (const event of stream2) {
+          if (aborted) break;
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             if (needSpace) {
-              controller.enqueue(encoder.encode(" "));
+              send(encoder.encode(" "));
               needSpace = false;
             }
-            controller.enqueue(encoder.encode(event.delta.text));
+            mark();
+            send(encoder.encode(event.delta.text));
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "unknown error";
-        controller.enqueue(encoder.encode(`\n[AUGUST is unreachable — ${msg}]`));
+        if (!aborted) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          console.error("[chat] stream error:", msg);
+          send(encoder.encode(`\n[AUGUST is unreachable — ${msg}]`));
+        }
       } finally {
-        controller.close();
+        const mem =
+          memMs < 0 ? "miss(>300ms)" : memMs > 300 ? `${memMs}ms(missed window)` : `${memMs}ms`;
+        console.log(
+          `[chat] memory=${mem} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms${aborted ? " (client aborted)" : ""}`,
+        );
+        try {
+          controller.close();
+        } catch {
+          /* already canceled */
+        }
       }
     },
   });

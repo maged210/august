@@ -15,9 +15,30 @@ const sans = Inter({
   display: "swap",
 });
 
+// metadataBase makes the OG image URL absolute when the link is unfurled. Set it
+// ONLY when NEXT_PUBLIC_SITE_URL is configured: an explicit value beats Next's
+// built-in Vercel fallback (VERCEL_PROJECT_PRODUCTION_URL), so hardcoding a
+// localhost default would ship localhost og:image URLs to production.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
+const TAGLINE = "A private intelligence companion.";
+
 export const metadata: Metadata = {
+  ...(SITE_URL ? { metadataBase: new URL(SITE_URL) } : {}),
   title: "AUGUST",
-  description: "A personal AI companion.",
+  description: TAGLINE,
+  applicationName: "AUGUST",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "AUGUST" },
+  openGraph: {
+    title: "AUGUST",
+    description: TAGLINE,
+    siteName: "AUGUST",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AUGUST",
+    description: TAGLINE,
+  },
 };
 
 export const viewport: Viewport = {
@@ -25,6 +46,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover", // draw under notches; safe-area insets handle the rest
 };
 
 export default function RootLayout({

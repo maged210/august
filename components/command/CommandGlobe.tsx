@@ -349,6 +349,25 @@ export default function CommandGlobe({ active, flyTo }: Props) {
         <span className="hud">{quakes != null ? quakes : "—"} quakes / 24h</span>
       </div>
 
+      {/* reset view — back to the home framing (drag-rotate / scroll-zoom are native) */}
+      <button
+        type="button"
+        className="command-reset"
+        title="Reset view"
+        onClick={() => {
+          mapRef.current?.flyTo({
+            center: [12, 24],
+            zoom: 1.55,
+            bearing: 0,
+            pitch: 0,
+            duration: 1400,
+            essential: true,
+          });
+        }}
+      >
+        ⌖ RESET
+      </button>
+
       {/* left layer toggles */}
       <div className="command-layers">
         <div className="command-layers-head">LAYERS</div>

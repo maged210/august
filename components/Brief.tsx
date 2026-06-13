@@ -24,9 +24,12 @@ export default function Brief({ visible }: { visible: boolean }) {
     const load = () => {
       pull("markets", "/api/markets");
       pull("command", "/api/command");
+      pull("intel", "/api/intel");
     };
     load();
-    const id = window.setInterval(load, 60_000);
+    // 30s: the Command brief line shares lastFlightCount with the globe's HUD —
+    // poll tightly enough that the two never visibly disagree for long.
+    const id = window.setInterval(load, 30_000);
     return () => {
       alive = false;
       window.clearInterval(id);

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "august",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".claude/dev.ps1"],
       "port": 3000
     }
   ]
