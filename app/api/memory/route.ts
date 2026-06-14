@@ -2,11 +2,15 @@
 // exchange (never blocking the reply) and to wipe memory via /forget.
 // All Upstash + model work happens server-side.
 import { updateMemoryFromExchange, clearMemory } from "@/lib/memory";
+import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request): Promise<Response> {
+  const rl = await checkRateLimit("memory", getIp(req));
+  if (!rl.ok) return rateLimitedResponse(rl.reset);
+
   let body: unknown;
   try {
     body = await req.json();

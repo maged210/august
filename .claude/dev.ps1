@@ -9,8 +9,27 @@ Set-Location $root
 
 $envFile = Join-Path $root ".env.local"
 if (Test-Path $envFile) {
-  $line = Get-Content $envFile | Where-Object { $_ -match '^\s*ANTHROPIC_API_KEY\s*=' } | Select-Object -First 1
-  if ($line) { $env:ANTHROPIC_API_KEY = ($line -replace '^\s*ANTHROPIC_API_KEY\s*=', '').Trim() }
+  $envLines = Get-Content $envFile
+  $keys = @(
+    "ANTHROPIC_API_KEY",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "ELEVENLABS_API_KEY",
+    "ELEVENLABS_VOICE_ID",
+    "OPENSKY_USER",
+    "OPENSKY_PASS",
+    "OPENSKY_CLIENT_ID",
+    "OPENSKY_CLIENT_SECRET",
+    "FRED_API_KEY",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "APP_ORIGIN",
+    "CRON_SECRET"
+  )
+  foreach ($key in $keys) {
+    $line = $envLines | Where-Object { $_ -match "^\s*${key}\s*=" } | Select-Object -First 1
+    if ($line) { Set-Item -Path "Env:\$key" -Value ($line -replace "^\s*${key}\s*=", "").Trim() }
+  }
 }
 Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue
 

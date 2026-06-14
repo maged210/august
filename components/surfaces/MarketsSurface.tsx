@@ -145,7 +145,7 @@ export default function MarketsSurface() {
 
         {/* NQ levels */}
         <section className="panel mk-levels">
-          <div className="panel-head">NQ · Levels</div>
+          <div className="panel-head">{data?.levels?.proxy ?? "NQ"} · Levels</div>
           {levels ? (
             <>
               <div className="nq-price">

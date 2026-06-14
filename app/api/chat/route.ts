@@ -4,6 +4,7 @@ import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { TOOLS, TOOL_GUIDANCE, SEP } from "@/lib/tools";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
+import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
 //
@@ -30,6 +31,9 @@ function getClient(apiKey: string): Anthropic {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const rl = await checkRateLimit("chat", getIp(req));
+  if (!rl.ok) return rateLimitedResponse(rl.reset);
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(

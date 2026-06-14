@@ -11,6 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
     "@types/three": "^0.184.1",
+    "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "lightweight-charts": "^5.2.0",
     "maplibre-gl": "^5.24.0",

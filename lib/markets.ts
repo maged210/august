@@ -184,12 +184,19 @@ async function getCrypto(): Promise<CryptoRow[]> {
 }
 
 // --- index / commodity proxies -------------------------------------------
-const PROXIES: Array<{ y: string; sym: string; desc: string }> = [
-  { y: "QQQ", sym: "NQ", desc: "Nasdaq 100 · QQQ" },
-  { y: "SPY", sym: "ES", desc: "S&P 500 · SPY" },
-  { y: "DIA", sym: "YM", desc: "Dow · DIA" },
-  { y: "USO", sym: "CL", desc: "Crude · USO" },
-  { y: "GLD", sym: "GC", desc: "Gold · GLD" },
+// Scale factors map ETF prices to approximate futures-equivalent levels so a
+// trader sees numbers in the right range (NQ ~21k, not QQQ ~530).
+//   NQ ≈ QQQ × 40  (QQQ NAV = NDX/40 since launch; NQ converges to NDX at expiry)
+//   ES ≈ SPY × 10  (SPY NAV = SPX/10)
+//   YM ≈ DIA × 100 (DIA NAV = DJIA/100)
+//   GC ≈ GLD × 10  (GLD holds 0.1 troy oz per share)
+//   USO has no clean multiplier to CL futures due to roll costs — shown as ETF price
+const PROXIES: Array<{ y: string; sym: string; desc: string; scale: number }> = [
+  { y: "QQQ", sym: "NQ", desc: "QQQ × 40 est.", scale: 40 },
+  { y: "SPY", sym: "ES", desc: "SPY × 10 est.", scale: 10 },
+  { y: "DIA", sym: "YM", desc: "DIA × 100 est.", scale: 100 },
+  { y: "USO", sym: "USO", desc: "Crude · USO ETF", scale: 1 },
+  { y: "GLD", sym: "GC", desc: "GLD × 10 est.", scale: 10 },
 ];
 async function getProxies(): Promise<Quote[]> {
   // No outer cache — each yahooChart is cached per-symbol, so the QQQ here and the
@@ -200,7 +207,7 @@ async function getProxies(): Promise<Quote[]> {
       return {
         sym: p.sym,
         desc: p.desc,
-        last: c.price,
+        last: c.price * p.scale,
         chgPct: c.chgPct,
         proxy: true,
         spark: downsample(c.closes, 24),
@@ -212,21 +219,22 @@ async function getProxies(): Promise<Quote[]> {
 }
 
 async function getLevels(): Promise<Levels | null> {
-  // Derive from QQQ — the SAME instrument as the watchlist NQ row — so the headline
-  // level and the watchlist value are on one scale and match. (Was ^NDX, ~29k, which
-  // mismatched the ~718 QQQ proxy beside it.)
+  // Derive pivot levels from QQQ, then scale × 40 so levels appear in NQ futures
+  // range (~21k) rather than ETF range (~530). Same multiplier as the watchlist NQ
+  // row so the price and levels are on the same scale.
+  const SCALE = 40;
   const c = await yahooChart("QQQ");
   if (!c.prior) return null;
   const { h, l, c: close } = c.prior;
   const pivot = (h + l + close) / 3;
   return {
-    proxy: "QQQ · NQ proxy",
-    current: c.price,
-    resistance: 2 * pivot - l,
-    pivot,
-    support: 2 * pivot - h,
-    onHigh: h,
-    onLow: l,
+    proxy: "NQ · QQQ × 40 est.",
+    current: c.price * SCALE,
+    resistance: (2 * pivot - l) * SCALE,
+    pivot: pivot * SCALE,
+    support: (2 * pivot - h) * SCALE,
+    onHigh: h * SCALE,
+    onLow: l * SCALE,
     above: c.price >= pivot,
   };
 }
@@ -452,7 +460,7 @@ function buildBriefLine(levels: Levels | null, vix: number | null, fng: { label:
           ? "below pivot, above support"
           : "leaning on support";
   const tail = vix ? ` VIX ${vix.toFixed(1)}${fng ? `, ${fng.label.toLowerCase()}` : ""}.` : "";
-  return `NQ near ${nq}, ${where}.${tail}`;
+  return `NQ ~${nq} (est.), ${where}.${tail}`;
 }
 
 function buildSnapshot(
@@ -469,18 +477,21 @@ function buildSnapshot(
     "When he asks where something is trading, about his levels, or \"where's NQ vs my levels\", ANSWER directly from these numbers in your own voice — do not just send him to a screen. Only use go_to_screen when he explicitly asks to open or see a surface.",
   );
   lines.push(
-    "CRITICAL: these are the CURRENT live numbers. Use ONLY them for any market price or level. IGNORE any specific market figures you may remember from past conversations — those are stale and wrong (markets move; earlier numbers were also on a mismatched scale). Never say \"based on our last conversation\" for prices; quote the live values below.",
+    "CRITICAL: these are the CURRENT live numbers. Use ONLY them for any market price or level. IGNORE any specific market figures you may remember from past conversations — those are stale and wrong (markets move). Never say \"based on our last conversation\" for prices; quote the live values below.",
+  );
+  lines.push(
+    "NOTE ON SCALE: NQ/ES/YM/GC prices below are ETF-proxy estimates (QQQ×40, SPY×10, DIA×100, GLD×10) scaled to futures-equivalent range — NOT the live CME tape. USO is the raw ETF price. % changes are accurate; absolute levels are approximate.",
   );
   if (levels) {
     lines.push(
       `His NQ levels — the daily pivot levels on his Markets surface; when he says "my levels" he means THESE: ` +
         `resistance ${fmt(levels.resistance)}, pivot ${fmt(levels.pivot)}, support ${fmt(levels.support)}; ` +
         `overnight high ${fmt(levels.onHigh)}, low ${fmt(levels.onLow)}. ` +
-        `NQ (via ${levels.proxy}) is ${fmt(levels.current)} right now — ${levels.above ? "above" : "below"} the pivot.`,
+        `NQ (${levels.proxy}) is ~${fmt(levels.current)} right now — ${levels.above ? "above" : "below"} the pivot.`,
     );
   }
   const w = (s: string) => watchlist.find((q) => q.sym === s);
-  const idx = ["ES", "NQ", "YM", "CL", "GC"].map((s) => (w(s) ? `${s} ${pct(w(s)!.chgPct)}` : null)).filter(Boolean);
+  const idx = ["ES", "NQ", "YM", "USO", "GC"].map((s) => (w(s) ? `${s} ${pct(w(s)!.chgPct)}` : null)).filter(Boolean);
   if (idx.length) lines.push(`Index/commodity proxies: ${idx.join(", ")}.`);
   const cr = ["BTC", "ETH"].map((s) => (w(s) ? `${s} ${fmt(w(s)!.last, 0)} (${pct(w(s)!.chgPct)})` : null)).filter(Boolean);
   if (cr.length) lines.push(`Crypto: ${cr.join(", ")}.`);

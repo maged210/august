@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import Brief from "@/components/Brief";
+import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import MarketsSurface from "@/components/surfaces/MarketsSurface";
 import IntelSurface from "@/components/surfaces/IntelSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
@@ -115,6 +116,11 @@ export default function Home() {
   const [dockClosing, setDockClosing] = useState(false);
   const [muted, setMuted] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
+  // Morning Brief — the once-a-day spoken read, surfaced on Presence.
+  const [brief, setBrief] = useState<MorningBriefData | null>(null);
+  const [briefStatus, setBriefStatus] = useState<BriefStatus>("checking");
+  const [briefPlaying, setBriefPlaying] = useState(false);
+  const [briefDismissed, setBriefDismissed] = useState(false);
 
   const amplitudeRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -237,6 +243,9 @@ export default function Home() {
     speakHandleRef.current?.cancel();
     speakHandleRef.current = null;
     amplitudeRef.current = 0;
+    // The brief shares the single speak handle — if it was reading, the card's
+    // control must fall back from Stop to Replay.
+    setBriefPlaying(false);
   }
 
   function stopListening() {
@@ -311,6 +320,116 @@ export default function Home() {
         setState("idle");
       },
     });
+  }
+
+  // --- Morning Brief --------------------------------------------------------
+  // Dismissal persists per-day so it doesn't reappear on every app open.
+  const briefDismissKey = "aug-brief-dismissed";
+  function isBriefDismissed(date: string): boolean {
+    try {
+      return window.localStorage.getItem(briefDismissKey) === date;
+    } catch {
+      return false;
+    }
+  }
+
+  // On boot, ask whether today's brief is already waiting (cheap GET, never compiles).
+  useEffect(() => {
+    if (!booted) return;
+    let cancelled = false;
+    fetch("/api/brief", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((j: { ready?: boolean; brief?: MorningBriefData | null }) => {
+        if (cancelled) return;
+        if (j.ready && j.brief) {
+          if (isBriefDismissed(j.brief.date)) setBriefDismissed(true);
+          else setBrief(j.brief);
+          setBriefStatus("ready");
+        } else {
+          setBriefStatus("none");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBriefStatus("none");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [booted]);
+
+  // Speak the brief — reuses the chat speech path so AUGUST's orb pulses to his
+  // real voice. Gated behind this click so the browser autoplay policy is satisfied.
+  function playBrief() {
+    if (!brief) return;
+    if (mutedRef.current) {
+      // Muted: don't speak (and don't tear down anything in flight just to say so).
+      // The card already shows the text; nudge him to unmute to hear it.
+      setReplyText("Voice is muted — unmute to hear the brief.");
+      openPanel();
+      return;
+    }
+    primeAudio();
+    stopSpeaking();
+    stopListening();
+    abortRef.current?.abort(); // a brief read supersedes any in-flight chat too
+    setBriefPlaying(true);
+    setState("speaking");
+    speakHandleRef.current = speak(brief.text, {
+      onLevel: (v) => {
+        amplitudeRef.current = v;
+      },
+      onEnd: () => {
+        amplitudeRef.current = 0;
+        speakHandleRef.current = null;
+        setBriefPlaying(false);
+        setState("idle");
+      },
+      onError: () => {
+        amplitudeRef.current = 0;
+        speakHandleRef.current = null;
+        setBriefPlaying(false);
+        setState("idle");
+      },
+    });
+  }
+
+  // "Brief me" — compile on demand when none is waiting yet.
+  function compileBriefNow() {
+    setBriefStatus("compiling");
+    fetch("/api/brief", { method: "POST" })
+      .then(async (r) => {
+        if (r.status === 429) throw new Error("rate");
+        if (!r.ok) throw new Error("compile");
+        return r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>;
+      })
+      .then((j) => {
+        if (j.ready && j.brief) {
+          // Deliberate re-request: clear any same-day dismissal so it survives reload.
+          try {
+            window.localStorage.removeItem(briefDismissKey);
+          } catch {
+            /* private mode */
+          }
+          setBrief(j.brief);
+          setBriefDismissed(false);
+          setBriefStatus("ready");
+        } else {
+          setBriefStatus("error");
+        }
+      })
+      .catch(() => setBriefStatus("error"));
+  }
+
+  function dismissBrief() {
+    if (brief) {
+      try {
+        window.localStorage.setItem(briefDismissKey, brief.date);
+      } catch {
+        /* private mode — won't persist */
+      }
+    }
+    if (briefPlaying) stopSpeaking();
+    setBriefDismissed(true);
   }
 
   // Flag the next surface change as AUGUST-driven so it doesn't dismiss his reply.
@@ -421,6 +540,14 @@ export default function Home() {
         signal: controller.signal,
       });
       if (gen !== genRef.current) return; // superseded while connecting
+
+      if (res.status === 429) {
+        const body = await res.json().catch(() => ({})) as { message?: string };
+        if (gen !== genRef.current) return;
+        setReplyText(body.message ?? "Easy — too many requests. Give it a second.");
+        setState("idle");
+        return;
+      }
 
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => "");
@@ -563,6 +690,17 @@ export default function Home() {
           <div key="presence" className="presence-surface">
             <Presence3D state={state} amplitudeRef={amplitudeRef} />
             <Brief visible={booted} />
+            {booted && !briefDismissed ? (
+              <MorningBrief
+                brief={brief}
+                status={briefStatus}
+                playing={briefPlaying}
+                onPlay={playBrief}
+                onStop={stopVoice}
+                onCompile={compileBriefNow}
+                onDismiss={dismissBrief}
+              />
+            ) : null}
           </div>,
           <MarketsSurface key="markets" />,
           <IntelSurface key="intel" />,

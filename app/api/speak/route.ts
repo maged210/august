@@ -1,11 +1,16 @@
 // ElevenLabs TTS proxy. Reads ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID from
 // server env only — the key never reaches the client. Streams the audio through.
+import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ELEVEN_MODEL = "eleven_turbo_v2_5"; // low-latency
 
 export async function POST(req: Request): Promise<Response> {
+  const rl = await checkRateLimit("speak", getIp(req));
+  if (!rl.ok) return rateLimitedResponse(rl.reset);
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   const voiceId = process.env.ELEVENLABS_VOICE_ID;
 

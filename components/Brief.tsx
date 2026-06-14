@@ -25,6 +25,7 @@ export default function Brief({ visible }: { visible: boolean }) {
       pull("markets", "/api/markets");
       pull("command", "/api/command");
       pull("intel", "/api/intel");
+      pull("comms", "/api/inbox");
     };
     load();
     // 30s: the Command brief line shares lastFlightCount with the globe's HUD —
