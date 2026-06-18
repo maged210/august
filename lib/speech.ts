@@ -103,9 +103,16 @@ export function speak(text: string, cb: SpeakCallbacks = {}): SpeakHandle {
     } catch {
       // ElevenLabs unavailable/failed — fall back to the browser voice.
       if (cancelled) return;
-      const fb = playBrowser(text, cb);
-      if (cancelled) fb.stop();
-      else stopActive = fb.stop;
+      try {
+        const fb = playBrowser(text, cb);
+        if (cancelled) fb.stop();
+        else stopActive = fb.stop;
+      } catch (e) {
+        // Even the browser fallback threw on start — guarantee onEnd so callers
+        // (the speech queue, concludeSpeech, the brief) never stall waiting on it.
+        cb.onError?.(e);
+        cb.onEnd?.();
+      }
     }
   })();
 
@@ -157,6 +164,7 @@ async function playElevenLabs(
   let raf = 0;
   let level = 0;
   let stopped = false;
+  let watchdog = 0;
 
   const tick = () => {
     analyser.getByteTimeDomainData(data);
@@ -175,6 +183,7 @@ async function playElevenLabs(
     if (stopped) return;
     stopped = true;
     cancelAnimationFrame(raf);
+    if (watchdog) clearTimeout(watchdog);
     try {
       source.onended = null;
       source.stop();
@@ -198,6 +207,18 @@ async function playElevenLabs(
 
   cb.onStart?.();
   source.start();
+  // Safety net: if onended never fires (AudioContext interrupted, tab/audio-focus
+  // suspended mid-playback), end the chunk after its known duration so a sequential
+  // speech queue — and the voice-mode mic re-arm that hangs off onEnd — can't stall.
+  watchdog = window.setTimeout(
+    () => {
+      if (!stopped) {
+        stop();
+        cb.onEnd?.();
+      }
+    },
+    Math.ceil(audioBuf.duration * 1000) + 800,
+  );
   tick();
 
   return { stop };
@@ -278,6 +299,89 @@ function playBrowser(text: string, cb: SpeakCallbacks): { stop: () => void } {
   tick();
 
   return { stop };
+}
+
+// ---------------------------------------------------------------------------
+// Sequential speech queue — speak text in ordered chunks, reusing speak().
+//
+// Lets a streamed reply start talking on its first sentence while the rest is
+// still generating: push the first sentence early, push the remainder when the
+// stream ends, then end(). Each chunk is a normal /api/speak call, so it keeps
+// the Daniel voice + the amplitude envelope and inherits the browser-voice
+// fallback. onStart fires once (first audio), onEnd once (after the last chunk
+// drains). Conservative chunking keeps it to ~1-2 /api/speak calls per turn.
+// ---------------------------------------------------------------------------
+
+export type SpeechQueue = {
+  /** Queue a chunk to speak after the ones already queued. */
+  push: (text: string) => void;
+  /** No more chunks coming — onEnd fires once the queue drains. */
+  end: () => void;
+  /** Stop immediately and drop anything pending. */
+  cancel: () => void;
+};
+
+export function createSpeechQueue(cb: SpeakCallbacks = {}): SpeechQueue {
+  const pending: string[] = [];
+  let active: SpeakHandle | null = null;
+  let playing = false;
+  let ended = false;
+  let started = false;
+  let finished = false;
+  let cancelled = false;
+
+  const pump = () => {
+    if (cancelled || playing) return;
+    const next = pending.shift();
+    if (next === undefined) {
+      if (ended && !finished) {
+        finished = true;
+        cb.onEnd?.();
+      }
+      return;
+    }
+    playing = true;
+    active = speak(next, {
+      onStart: () => {
+        if (!started) {
+          started = true;
+          cb.onStart?.();
+        }
+      },
+      onLevel: cb.onLevel,
+      // speak() always lands on onEnd (even when it fell back / errored), so
+      // onEnd is the single "advance" signal; onError is informational only.
+      onError: (e) => cb.onError?.(e),
+      onEnd: () => {
+        playing = false;
+        active = null;
+        if (!cancelled) pump();
+      },
+    });
+  };
+
+  return {
+    push: (text) => {
+      if (cancelled || ended) return;
+      const t = text.trim();
+      if (!t) return;
+      pending.push(t);
+      pump();
+    },
+    end: () => {
+      if (cancelled) return;
+      ended = true;
+      if (!playing) pump();
+    },
+    cancel: () => {
+      if (cancelled) return;
+      cancelled = true;
+      pending.length = 0;
+      active?.cancel();
+      active = null;
+      cb.onLevel?.(0);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

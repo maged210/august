@@ -13,12 +13,14 @@ import type { AugustState, Theme } from "@/components/Presence3D";
 import type { GlobeTarget } from "@/components/command/CommandGlobe";
 import {
   createRecognizer,
+  createSpeechQueue,
   isRecognitionSupported,
   primeAudio,
   primeVoices,
   speak,
   type Recognizer,
   type SpeakHandle,
+  type SpeechQueue,
 } from "@/lib/speech";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
@@ -57,6 +59,17 @@ function splitToolStream(raw: string): { text: string; tools: ToolEvent[] } {
 }
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+
+// Index just past the first sentence terminator (for streaming TTS): lets the
+// queue start speaking sentence one while the rest of the reply still generates.
+// Returns -1 if no usable boundary yet. The min length avoids splitting on a
+// stray early "1." / "Mr." into a tiny fragment.
+function firstSentenceEnd(s: string): number {
+  const m = s.match(/[.!?…]["')\]]?(?:\s|$)/);
+  if (!m || m.index === undefined) return -1;
+  const end = m.index + m[0].length;
+  return end >= 18 ? end : -1;
+}
 
 // ---------------------------------------------------------------------------
 // Real microphone amplitude via a Web Audio AnalyserNode — drives "listening".
@@ -123,13 +136,27 @@ export default function Home() {
   const [briefOpen, setBriefOpen] = useState(false);
   // White / black theme — persisted; the toggle flips the whole token system.
   const [theme, setTheme] = useState<Theme>("dark");
+  // Hands-free voice mode: a continuous listen → think → speak → listen loop.
+  const [voiceMode, setVoiceMode] = useState(false);
+  // One-shot screen-reader announcements for the privacy-critical transitions
+  // (mic goes live / off) — a persistent live region the visual bar can't cover.
+  const [voiceAnnounce, setVoiceAnnounce] = useState("");
 
   const amplitudeRef = useRef(0);
+  // Voice-mode loop refs (read inside recognizer/speech callbacks that outlive a render).
+  const voiceModeRef = useRef(false);
+  const speechQueueRef = useRef<SpeechQueue | null>(null);
+  const reArmTimerRef = useRef(0);
+  const voiceErrorsRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
   const speakHandleRef = useRef<SpeakHandle | null>(null);
   const recognizerRef = useRef<Recognizer | null>(null);
   const micCleanupRef = useRef<(() => void) | null>(null);
   const listeningActiveRef = useRef(false);
+  // Monotonic counter stamped per beginListening() call so stale async callbacks
+  // from a prior recognizer (fired after we've torn it down and started a new one)
+  // are ignored rather than corrupting shared refs or triggering double re-arms.
+  const recSessionRef = useRef(0);
   const sessionIdRef = useRef<string>("");
   const globeNonceRef = useRef(0);
   const deckRef = useRef<DeckHandle | null>(null);
@@ -179,13 +206,17 @@ export default function Home() {
     }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
   }, []);
 
-  // Esc dismisses the reply panel (works even while typing in the composer).
+  // Esc exits hands-free voice mode first (it's the bigger thing to back out of);
+  // otherwise it dismisses the reply panel. Works even while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePanel();
+      if (e.key !== "Escape") return;
+      if (voiceModeRef.current) exitVoiceMode();
+      else closePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closePanel]);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
@@ -239,12 +270,16 @@ export default function Home() {
       micCleanupRef.current?.();
       recognizerRef.current?.stop();
       speakHandleRef.current?.cancel();
+      speechQueueRef.current?.cancel();
+      window.clearTimeout(reArmTimerRef.current);
     };
   }, []);
 
   function stopSpeaking() {
     speakHandleRef.current?.cancel();
     speakHandleRef.current = null;
+    speechQueueRef.current?.cancel();
+    speechQueueRef.current = null;
     amplitudeRef.current = 0;
     // The brief shares the single speak handle — if it was reading, the card's
     // control must fall back from Stop to Replay.
@@ -298,13 +333,50 @@ export default function Home() {
   }
 
   function stopVoice() {
+    // Skip his current speech. In voice mode that hands the turn back to you
+    // (re-arm); otherwise settle to idle.
     stopSpeaking();
-    setState((s) => (s === "speaking" ? "idle" : s));
+    concludeSpeech();
+  }
+
+  // --- Hands-free voice mode ------------------------------------------------
+  // A continuous loop: listen (user mic → orb) → think → speak (Daniel → orb) →
+  // listen again, no per-turn buttons. It reuses the existing recognizer, the
+  // existing /api/chat brain (persona + memory + tools), and ElevenLabs speak().
+  // BARGE-IN is intentionally out of scope for v1 — AUGUST finishes speaking
+  // before the mic re-opens. The hook for it would live here: while the speech
+  // queue plays, run a lightweight mic VAD and, on detected user speech, call
+  // stopSpeaking() + beginListening(). Not built now (needs echo cancellation so
+  // his own voice doesn't trigger it).
+
+  // Single-slot timer, last-writer-wins: re-arm callers (concludeSpeech, silence
+  // onEnd, benign-error onError) are mutually exclusive within a turn, so clearing
+  // the prior pending re-arm before scheduling a new one is intentional de-dup —
+  // never two live re-arms at once. The fire-time check makes a late timer a no-op
+  // after exit (voiceModeRef cleared) or once listening has already resumed.
+  function reArmListen(delay: number) {
+    window.clearTimeout(reArmTimerRef.current);
+    reArmTimerRef.current = window.setTimeout(() => {
+      if (voiceModeRef.current && !listeningActiveRef.current) beginListening();
+    }, delay);
+  }
+
+  // The single continuation after ANY spoken turn ends: in voice mode, loop back
+  // to listening; otherwise settle to idle.
+  function concludeSpeech() {
+    amplitudeRef.current = 0;
+    speakHandleRef.current = null;
+    speechQueueRef.current = null;
+    // In voice mode, loop straight back to listening (beginListening flips the
+    // state ~150ms later); the orb stays at its calm speaking baseline in the gap
+    // — no "thinking" flash after he's already finished talking.
+    if (voiceModeRef.current) reArmListen(150);
+    else setState("idle");
   }
 
   function speakReply(text: string) {
     if (mutedRef.current) {
-      setState("idle");
+      concludeSpeech();
       return;
     }
     setState("speaking");
@@ -312,17 +384,230 @@ export default function Home() {
       onLevel: (v) => {
         amplitudeRef.current = v;
       },
-      onEnd: () => {
-        amplitudeRef.current = 0;
-        speakHandleRef.current = null;
-        setState("idle");
+      onEnd: () => concludeSpeech(),
+      onError: () => concludeSpeech(),
+    });
+  }
+
+  // Open the mic for one utterance. Shared by tap-to-talk and the voice-mode
+  // loop; the recognizer callbacks branch on voiceModeRef for re-arm vs idle.
+  function beginListening() {
+    stopListening(); // tear down any prior capture first
+    primeAudio();
+    stopSpeaking();
+    if (!voiceModeRef.current) setReplyText(""); // tap clears; voice keeps last reply visible
+    setInterim("");
+    openPanel();
+    listeningActiveRef.current = true;
+    setState("listening");
+
+    // Stamp this recognizer instance. Callbacks capture mySession at creation time
+    // and bail immediately if recSessionRef has moved on — prevents a stale onerror/
+    // onend (fired async after stopListening → rec.stop()) from corrupting the new
+    // session's listeningActiveRef or scheduling a spurious re-arm.
+    const mySession = ++recSessionRef.current;
+
+    startMicLevel(amplitudeRef)
+      .then((cleanup) => {
+        if (listeningActiveRef.current) micCleanupRef.current = cleanup;
+        else cleanup();
+      })
+      .catch(() => {
+        /* analyser is optional — recognition still works without the orb meter */
+      });
+
+    const rec = createRecognizer({
+      onPartial: (t) => {
+        if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
+        setInterim(t);
       },
-      onError: () => {
+      onResult: (t) => {
+        if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
+        listeningActiveRef.current = false;
+        micCleanupRef.current?.();
+        micCleanupRef.current = null;
         amplitudeRef.current = 0;
-        speakHandleRef.current = null;
-        setState("idle");
+        setInterim("");
+        voiceErrorsRef.current = 0; // a clean capture clears the error streak
+        if (voiceModeRef.current) handleTranscript(t);
+        else handleSend(t);
+      },
+      onEnd: () => {
+        if (recSessionRef.current !== mySession) return; // stale — already restarted
+        micCleanupRef.current?.();
+        micCleanupRef.current = null;
+        amplitudeRef.current = 0;
+        if (listeningActiveRef.current) {
+          // ended on silence with no transcript — restart promptly
+          listeningActiveRef.current = false;
+          setInterim("");
+          if (voiceModeRef.current) reArmListen(300);
+          else setState((s) => (s === "listening" ? "idle" : s));
+        }
+      },
+      onError: (err) => {
+        if (recSessionRef.current !== mySession) return; // stale — ignore completely
+        micCleanupRef.current?.();
+        micCleanupRef.current = null;
+        amplitudeRef.current = 0;
+        const wasActive = listeningActiveRef.current;
+        listeningActiveRef.current = false;
+        setInterim("");
+
+        // Intentional stop (new turn / exit called rec.stop()) — don't re-arm.
+        if (err === "aborted") {
+          if (!voiceModeRef.current && wasActive) setState((s) => (s === "listening" ? "idle" : s));
+          return;
+        }
+
+        // Fatal: mic permission denied or hardware unavailable.
+        if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
+          if (wasActive) micBlocked();
+          return;
+        }
+
+        // no-speech: the browser timed out waiting for the user to speak.
+        // This is normal during pauses and must NOT count as a failure — doing so
+        // was what caused voiceTrouble() to fire after a few seconds of silence.
+        if (err === "no-speech") {
+          if (voiceModeRef.current && wasActive) reArmListen(300);
+          else if (!voiceModeRef.current && wasActive) setState((s) => (s === "listening" ? "idle" : s));
+          return;
+        }
+
+        // Transient (network / bad-grammar / etc.): count genuine failures and
+        // back out only after several consecutive real errors. Guard wasActive so
+        // a stale error from a recognizer we deliberately stopped doesn't re-arm.
+        if (voiceModeRef.current && wasActive) {
+          voiceErrorsRef.current += 1;
+          if (voiceErrorsRef.current >= 5) {
+            voiceTrouble();
+            return;
+          }
+          reArmListen(600);
+        } else if (!voiceModeRef.current && wasActive) {
+          setState((s) => (s === "listening" ? "idle" : s));
+        }
       },
     });
+    recognizerRef.current = rec;
+    rec.start();
+  }
+
+  function enterVoiceMode() {
+    if (!micSupported) {
+      setReplyText(
+        "Hands-free voice needs Chrome's speech recognition, which isn't available here. Text and tap-to-talk still work.",
+      );
+      openPanel();
+      return;
+    }
+    voiceModeRef.current = true;
+    setVoiceMode(true);
+    voiceErrorsRef.current = 0;
+    setVoiceAnnounce("Voice mode on — microphone live.");
+    uiTone("ready");
+    primeAudio();
+    beginListening();
+  }
+
+  function exitVoiceMode() {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    window.clearTimeout(reArmTimerRef.current);
+    abortRef.current?.abort(); // drop any in-flight reply
+    stopListening();
+    stopSpeaking();
+    setInterim("");
+    setState((s) => (s === "boot" ? s : "idle"));
+    setVoiceAnnounce("Voice mode off.");
+    uiTone("toggle");
+  }
+
+  function toggleVoiceMode() {
+    if (voiceModeRef.current) exitVoiceMode();
+    else enterVoiceMode();
+  }
+
+  // Permission/hardware denial: stop the loop, keep text working, say so plainly.
+  function micBlocked() {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    window.clearTimeout(reArmTimerRef.current);
+    listeningActiveRef.current = false;
+    setState((s) => (s === "listening" ? "idle" : s));
+    setReplyText(
+      "I can't reach your microphone — check this site's mic permission in the browser. You can still talk to me by typing.",
+    );
+    setVoiceAnnounce("Microphone unavailable — voice mode off. Text still works.");
+    openPanel();
+  }
+
+  // Repeated recognizer failures (e.g. flaky network STT): back out gracefully.
+  function voiceTrouble() {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    window.clearTimeout(reArmTimerRef.current);
+    listeningActiveRef.current = false;
+    setState((s) => (s === "listening" ? "idle" : s));
+    setReplyText("Speech recognition kept dropping — I've turned voice mode off. Text still works.");
+    setVoiceAnnounce("Voice mode off — speech recognition was unavailable.");
+    openPanel();
+  }
+
+  // A couple of spoken commands handled locally (no brain round-trip). Everything
+  // else flows to /api/chat, where the existing tools (go_to_screen, look_closer,
+  // close_map) already act on his words. Returns true if handled here.
+  function tryVoiceCommand(raw: string): boolean {
+    const t = raw.trim().toLowerCase().replace(/[.!?,]+$/g, "");
+    if (
+      voiceModeRef.current &&
+      (t === "exit voice mode" ||
+        t === "stop listening" ||
+        t === "stop voice mode" ||
+        t === "turn off voice mode" ||
+        t === "turn off voice" ||
+        t === "exit voice" ||
+        t === "end voice mode")
+    ) {
+      exitVoiceMode();
+      setReplyText("Voice mode off.");
+      openPanel();
+      return true;
+    }
+    if (
+      t.length <= 32 &&
+      /\b(brief me|play (?:the |my )?brief|read (?:me )?the brief|morning brief)\b/.test(t)
+    ) {
+      voiceBrief();
+      return true;
+    }
+    return false;
+  }
+
+  function handleTranscript(t: string) {
+    if (tryVoiceCommand(t)) return;
+    handleSend(t);
+  }
+
+  // "Brief me" by voice: play it if ready, else summon + compile and keep the
+  // loop alive (the card offers playback once it lands).
+  function voiceBrief() {
+    setInterim("");
+    if (brief) {
+      if (mutedRef.current) {
+        setReplyText("Voice is muted — unmute to hear the brief.");
+        openPanel();
+        concludeSpeech();
+      } else {
+        playBrief(); // its onEnd routes through concludeSpeech (re-arm in voice mode)
+      }
+      return;
+    }
+    summonBrief(); // compiles if none yet + opens the card
+    setReplyText("Pulling your brief together…");
+    openPanel();
+    concludeSpeech();
   }
 
   // --- Morning Brief --------------------------------------------------------
@@ -424,16 +709,12 @@ export default function Home() {
         amplitudeRef.current = v;
       },
       onEnd: () => {
-        amplitudeRef.current = 0;
-        speakHandleRef.current = null;
         setBriefPlaying(false);
-        setState("idle");
+        concludeSpeech();
       },
       onError: () => {
-        amplitudeRef.current = 0;
-        speakHandleRef.current = null;
         setBriefPlaying(false);
-        setState("idle");
+        concludeSpeech();
       },
     });
   }
@@ -592,7 +873,7 @@ export default function Home() {
         const body = await res.json().catch(() => ({})) as { message?: string };
         if (gen !== genRef.current) return;
         setReplyText(body.message ?? "Easy — too many requests. Give it a second.");
-        setState("idle");
+        concludeSpeech(); // re-arms the mic in voice mode so the loop survives
         return;
       }
 
@@ -600,13 +881,34 @@ export default function Home() {
         const errText = await res.text().catch(() => "");
         if (gen !== genRef.current) return; // superseded while reading the error body
         setReplyText(errText || "— AUGUST is unreachable —");
-        setState("idle");
+        concludeSpeech(); // keep the voice-mode loop alive after a failed turn
         return;
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let appliedTools = 0;
+
+      // Streaming TTS: start speaking the first sentence the moment it lands so
+      // playback begins before the full reply finishes generating; the remainder
+      // is spoken as one more chunk at the end. ~1-2 /api/speak calls per turn
+      // (the route is rate-limited to 15/min), reusing the Daniel voice + orb.
+      // The queue's onEnd → concludeSpeech, which re-arms the mic in voice mode.
+      let queue: SpeechQueue | null = null;
+      let spokenLen = 0;
+      const makeQueue = (): SpeechQueue =>
+        createSpeechQueue({
+          onStart: () => {
+            if (gen === genRef.current) setState("speaking");
+          },
+          onLevel: (v) => {
+            amplitudeRef.current = v;
+          },
+          onEnd: () => {
+            if (gen === genRef.current) concludeSpeech();
+          },
+        });
+
       for (;;) {
         const { value, done } = await reader.read();
         if (gen !== genRef.current) return; // superseded mid-stream — the new turn owns the UI
@@ -620,6 +922,20 @@ export default function Home() {
           applyToolEvents(parsed.tools.slice(appliedTools));
           appliedTools = parsed.tools.length;
         }
+        // Eager first-sentence speech for a fast spoken start — voice mode only,
+        // where hands-free latency matters most. Typed replies stay a single
+        // smooth /api/speak call (no mid-reply gap, no extra rate-limit pressure).
+        if (voiceModeRef.current && !mutedRef.current && spokenLen === 0) {
+          const b = firstSentenceEnd(parsed.text);
+          if (b > 0) {
+            if (!queue) {
+              queue = makeQueue();
+              speechQueueRef.current = queue;
+            }
+            queue.push(parsed.text.slice(0, b));
+            spokenLen = b;
+          }
+        }
       }
 
       const { text: spoken, tools } = splitToolStream(full);
@@ -631,7 +947,23 @@ export default function Home() {
         messagesRef.current = withAssistant;
         setMessages(withAssistant);
         uiTone("reply");
-        speakReply(reply);
+
+        if (mutedRef.current) {
+          queue?.cancel(); // muted mid-reply: drop any eagerly-started audio
+          concludeSpeech(); // no audio — but keep the voice-mode loop alive
+        } else if (queue) {
+          // We started speaking sentence one mid-stream — speak the remainder.
+          const remainder = spoken.slice(spokenLen).trim();
+          if (remainder) queue.push(remainder);
+          queue.end(); // onEnd → concludeSpeech once the queue drains
+        } else {
+          // Short reply / no sentence boundary mid-stream — speak it whole.
+          const q = makeQueue();
+          speechQueueRef.current = q;
+          q.push(reply);
+          q.end();
+        }
+
         // Background: update long-term memory. Fire-and-forget — never blocks the reply.
         void fetch("/api/memory", {
           method: "POST",
@@ -644,21 +976,25 @@ export default function Home() {
           }),
         }).catch(() => {});
       } else {
-        setState("idle");
+        concludeSpeech();
       }
     } catch (err) {
       if (gen !== genRef.current) return; // superseded — stay silent
       if ((err as Error)?.name === "AbortError") {
-        // User hit stop: keep the partial text on screen, halt cleanly.
+        // Stop/exit/supersede: intentional halt. Don't re-arm here — exitVoiceMode
+        // already cleared voiceModeRef, and a superseding turn owns the next step.
         setState("idle");
         return;
       }
       setReplyText("— connection lost —");
-      setState("idle");
+      concludeSpeech(); // re-arm the mic in voice mode so the loop recovers
     }
   }
 
   function toggleMic() {
+    // Voice mode owns the mic and re-arms automatically — its own toggle controls
+    // it, so a manual tap here is a no-op while hands-free is on.
+    if (voiceModeRef.current) return;
     if (listeningActiveRef.current) {
       // Tap again = cancel listening (no send).
       stopListening();
@@ -666,60 +1002,7 @@ export default function Home() {
       setState("idle");
       return;
     }
-
-    primeAudio();
-    stopSpeaking();
-    setReplyText("");
-    setInterim("");
-    openPanel(); // the panel shows what the mic is hearing
-    listeningActiveRef.current = true;
-    setState("listening");
-
-    startMicLevel(amplitudeRef)
-      .then((cleanup) => {
-        if (listeningActiveRef.current) micCleanupRef.current = cleanup;
-        else cleanup();
-      })
-      .catch(() => {
-        /* analyser is optional — listening still works without it */
-      });
-
-    const rec = createRecognizer({
-      onPartial: (t) => {
-        if (listeningActiveRef.current) setInterim(t);
-      },
-      onResult: (t) => {
-        if (!listeningActiveRef.current) return;
-        listeningActiveRef.current = false;
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        setInterim("");
-        handleSend(t);
-      },
-      onEnd: () => {
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        if (listeningActiveRef.current) {
-          listeningActiveRef.current = false;
-          setInterim("");
-          setState((s) => (s === "listening" ? "idle" : s));
-        }
-      },
-      onError: () => {
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        if (listeningActiveRef.current) {
-          listeningActiveRef.current = false;
-          setInterim("");
-          setState((s) => (s === "listening" ? "idle" : s));
-        }
-      },
-    });
-    recognizerRef.current = rec;
-    rec.start();
+    beginListening();
   }
 
   const statusLabel =
@@ -729,6 +1012,11 @@ export default function Home() {
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
       <BootHud />
       <FrameTicks />
+      {/* Always-present live region for the privacy-critical voice transitions —
+          a conditionally-mounted bar wouldn't announce its first "mic live" state. */}
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">
+        {voiceAnnounce}
+      </div>
 
       <Deck
         ref={deckRef}
@@ -845,8 +1133,32 @@ export default function Home() {
               )}
             </div>
           </div>
-        ) : statusLabel ? (
+        ) : statusLabel && !voiceMode ? (
           <div className="reply-status">{statusLabel}</div>
+        ) : null}
+
+        {voiceMode ? (
+          <div className={`voice-bar voice-${state}`}>
+            <span className="voice-bar-dot" aria-hidden />
+            <span className="voice-bar-label">
+              {state === "listening"
+                ? "Listening…"
+                : state === "thinking"
+                  ? "Thinking…"
+                  : state === "speaking"
+                    ? "Speaking"
+                    : "Voice mode on"}
+            </span>
+            <button
+              type="button"
+              className="voice-bar-exit"
+              onClick={exitVoiceMode}
+              aria-label="Exit hands-free voice mode"
+              title="Exit voice mode (Esc)"
+            >
+              Exit
+            </button>
+          </div>
         ) : null}
 
         <div className="composer-row">
@@ -859,6 +1171,23 @@ export default function Home() {
             autoFocus={booted}
           />
           <div className="composer-ctls">
+            <button
+              type="button"
+              className={`ctl-round ctl-voice${voiceMode ? " on" : ""}`}
+              onClick={toggleVoiceMode}
+              disabled={!micSupported || !booted}
+              title={
+                !micSupported
+                  ? "Hands-free voice needs Chrome"
+                  : voiceMode
+                    ? "Exit voice mode (Esc)"
+                    : "Hands-free voice mode"
+              }
+              aria-pressed={voiceMode}
+              aria-label={voiceMode ? "Exit hands-free voice mode" : "Enter hands-free voice mode"}
+            >
+              <VoiceModeIcon active={voiceMode} />
+            </button>
             {state === "thinking" ? (
               <button
                 type="button"
@@ -924,6 +1253,30 @@ function StopIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
       <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+// A centered audio waveform — the "hands-free voice" metaphor, kept distinct
+// from the Composer's tap-to-talk mic and the sound toggle so the cluster reads
+// clearly. The live/breathing treatment comes from .ctl-voice.on in CSS.
+function VoiceModeIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.4 : 2}
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <line x1="3" y1="9.5" x2="3" y2="14.5" />
+      <line x1="7.5" y1="6" x2="7.5" y2="18" />
+      <line x1="12" y1="3" x2="12" y2="21" />
+      <line x1="16.5" y1="6" x2="16.5" y2="18" />
+      <line x1="21" y1="9.5" x2="21" y2="14.5" />
     </svg>
   );
 }

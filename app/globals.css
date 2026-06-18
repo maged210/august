@@ -1698,6 +1698,109 @@ body::after {
   color: var(--steel);
   border-color: var(--accent-line);
 }
+.ctl-round:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.ctl-round:disabled:hover {
+  color: var(--ash);
+  border-color: rgb(var(--wash-rgb) / 0.1);
+  background: rgb(var(--wash-rgb) / 0.03);
+}
+
+/* Voice-mode toggle — when live it fills with the accent and breathes, an
+   unmistakable "the mic is on" cue (privacy). Contrast colour is --charcoal (the
+   stage), which is dark-on-accent in dark theme and light-on-accent in light. */
+.ctl-voice.on,
+.ctl-voice.on:hover {
+  color: var(--charcoal);
+  background: var(--steel);
+  border-color: var(--steel);
+  animation: voice-live 1.8s var(--ease) infinite;
+}
+@keyframes voice-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgb(var(--steel-rgb) / 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgb(var(--steel-rgb) / 0.4);
+  }
+}
+
+/* The persistent "voice mode is live" bar above the composer — shows whose turn
+   it is (listening / thinking / speaking) and an obvious way out. */
+.voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 6px 6px 13px;
+  border-radius: var(--r-full);
+  background: rgb(var(--wash-rgb) / 0.04);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  animation: voice-bar-in var(--dur-med) var(--ease) backwards;
+}
+@keyframes voice-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.voice-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--steel);
+  animation: voice-pulse 1.5s var(--ease) infinite;
+}
+@keyframes voice-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--steel-rgb) / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgb(var(--steel-rgb) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--steel-rgb) / 0);
+  }
+}
+.voice-bar.voice-thinking .voice-bar-dot {
+  background: var(--ash);
+  animation-duration: 2.4s;
+}
+.voice-bar.voice-speaking .voice-bar-dot {
+  animation-duration: 0.85s;
+}
+.voice-bar-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.voice-bar-exit {
+  margin-left: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ash);
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: var(--r-full);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.voice-bar-exit:hover {
+  color: var(--bone);
+  border-color: var(--line-strong);
+}
 .reply-text {
   font-size: 13.5px;
   line-height: 1.6;
@@ -2108,6 +2211,12 @@ body {
   .ctl-round {
     height: 44px;
     width: 44px;
+  }
+  /* On a phone there's no Esc — the in-bar Exit is the primary way out, so give it
+     a thumb-sized hit area. */
+  .voice-bar-exit {
+    padding: 9px 14px;
+    font-size: 10px;
   }
   .reply-dock {
     max-height: 32vh;
