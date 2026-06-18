@@ -2,12 +2,133 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   AUGUST · DESIGN SYSTEM — one source of truth.
+   Near-monochrome dark + ONE cold accent (steel). The luxury is restraint,
+   precision and consistency — not glow-on-everything. Every value here is a
+   token; surfaces inherit, never reinvent.
+   ============================================================================ */
 :root {
-  --charcoal: #08080b;
-  --bone: #e8e6e1;
-  --ash: #9a9a9f;
-  --graphite: #3a3a40;
-  --steel: #6e8ca8;
+  /* — Palette — near-black stage, monochrome ink, one restrained accent ----- */
+  --charcoal: #08080b; /* the stage */
+  --charcoal-2: #0c0d11; /* a half-step up — raised surface base */
+  --bone: #e8e6e1; /* primary text */
+  --ash: #9a9a9f; /* secondary text */
+  --ink-mute: #6b6b72; /* tertiary / disabled text */
+  --graphite: #3a3a40; /* structural dividers */
+  --steel: #6e8ca8; /* THE accent — active/live states ONLY */
+  --steel-rgb: 110 140 168; /* same accent for rgb(var(--steel-rgb) / a) */
+  --pos: #7fb0a3; /* up / gain */
+  --pos-rgb: 127 176 163;
+  --neg: #bb7d72; /* down / loss */
+  --neg-rgb: 187 125 114;
+
+  /* — Hairlines, panels, glass --------------------------------------------- */
+  --wash-rgb: 255 255 255; /* neutral wash (hairlines/fills/edges); flips in light */
+  --line: rgb(var(--wash-rgb) / 0.08); /* default hairline */
+  --line-strong: rgb(var(--wash-rgb) / 0.14); /* emphasized hairline */
+  --accent-line: rgb(var(--steel-rgb) / 0.5); /* active hairline */
+  --panel: rgb(var(--wash-rgb) / 0.02); /* flat panel fill */
+  --glass: rgba(12, 13, 17, 0.72); /* backdrop-blur card fill */
+  --glass-strong: rgba(10, 11, 14, 0.86); /* heavier glass (brief/dock) */
+
+  /* — Spacing — 8px base scale --------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* — Radii ----------------------------------------------------------------- */
+  --r-xs: 3px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
+  --r-full: 9999px;
+
+  /* — Elevation — layered shadow on near-black + the one accent glow -------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.42);
+  --shadow-3: 0 16px 44px rgba(0, 0, 0, 0.5);
+  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.22);
+
+  /* — Type — the mono is AUGUST's identity; one sans display moment for heads */
+  --fs-micro: 8.5px; /* hud ticks, tags */
+  --fs-label: 10px; /* eyebrows, labels */
+  --fs-caption: 11px;
+  --fs-body: 13px;
+  --fs-md: 14.5px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-display: 28px; /* the single refined display size */
+  --track-hud: 0.24em; /* widest — hud/system lines */
+  --track-label: 0.16em; /* labels */
+  --track-tight: -0.01em; /* display headers only */
+
+  /* — Motion — signature easings + durations (used everywhere, for coherence)
+     --ease     expressive ease-out for entrances (settles with weight)
+     --ease-snappy   crisp ease for hover/press/toggles
+     --ease-spring   weighted, faint overshoot for tactile interactions ------- */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snappy: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --dur-fast: 150ms; /* micro-interactions */
+  --dur-med: 300ms; /* panels */
+  --dur-slow: 560ms; /* surface transitions */
+
+  /* Atmosphere — overridden per theme so vignette + grain flip with the toggle. */
+  --vignette: radial-gradient(
+    125% 125% at 50% 44%,
+    transparent 40%,
+    rgba(0, 0, 0, 0.34) 76%,
+    rgba(0, 0, 0, 0.62) 100%
+  );
+  --grain-opacity: 0.04;
+}
+
+/* ----------------------------------------------------------------------------
+   LIGHT THEME — the reference look: off-white stage, near-black glossy orb,
+   telemetry in dark ink, a calmer steel accent. The toggle flips ONE source of
+   truth: only token VALUES change here, every class inherits. (Tokens keep their
+   dark-semantic names — --charcoal is the stage, --bone the primary ink — so the
+   whole app re-themes without touching a single rule.)
+   ---------------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  --charcoal: #f3f2ed; /* off-white stage */
+  --charcoal-2: #e9e8e1; /* raised surface */
+  --bone: #18191c; /* primary ink */
+  --ash: #5c5d63; /* secondary ink */
+  --ink-mute: #8c8d92; /* tertiary */
+  --graphite: #cfcec7; /* dividers */
+  --steel: #3f5670; /* the accent — calmer on white, not loud cyan */
+  --steel-rgb: 63 86 112;
+  --pos: #3c6f5e;
+  --pos-rgb: 60 111 94;
+  --neg: #a8584c;
+  --neg-rgb: 168 88 76;
+
+  --wash-rgb: 22 24 30; /* near-black wash on the off-white stage */
+  --line: rgba(0, 0, 0, 0.1);
+  --line-strong: rgba(0, 0, 0, 0.17);
+  --panel: rgba(0, 0, 0, 0.022);
+  --glass: rgba(243, 242, 237, 0.72);
+  --glass-strong: rgba(247, 246, 241, 0.86);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.07);
+  --shadow-2: 0 8px 24px rgba(20, 22, 28, 0.1);
+  --shadow-3: 0 16px 44px rgba(20, 22, 28, 0.13);
+
+  --vignette: radial-gradient(
+    130% 130% at 50% 46%,
+    transparent 52%,
+    rgba(20, 22, 28, 0.05) 82%,
+    rgba(20, 22, 28, 0.1) 100%
+  );
+  --grain-opacity: 0.03;
 }
 
 html,
@@ -22,20 +143,42 @@ body {
   text-rendering: optimizeLegibility;
   overflow: hidden;
   overscroll-behavior: none;
+  transition:
+    background-color var(--dur-med) var(--ease),
+    color var(--dur-med) var(--ease);
 }
 
-/* Faint vignette drawn over the whole stage — darkens the edges, frames the circle. */
+/* The stage paints the themed background directly (so the toggle flips it even
+   over the body), with a smooth cross-fade between themes. */
+.stage-vignette {
+  background: var(--charcoal);
+  transition: background var(--dur-med) var(--ease);
+}
+
+/* Faint vignette drawn over the whole stage — frames the centre. Themed via
+   --vignette so it softens to near-nothing on the off-white light stage. */
 .stage-vignette::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  background: radial-gradient(
-    120% 120% at 50% 46%,
-    transparent 38%,
-    rgba(0, 0, 0, 0.55) 100%
-  );
+  background: var(--vignette);
+}
+
+/* Film grain — a barely-there static noise layer over the whole stage for a
+   filmic, instrument-like surface. Sits above the surfaces + vignette but below
+   the dock (z-20) and boot HUD (z-30), so it never touches control/HUD legibility.
+   Static (no animation) and GPU-composited — effectively free. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
 }
 
 /* Condensed technical mono for the HUD and labels. */
@@ -56,6 +199,96 @@ body {
 }
 .boot-hud > div {
   white-space: nowrap;
+}
+/* HUD hierarchy: the AUGUST·BUILD line carries the identity (brighter, tracked a
+   hair wider); the others recede; the live ZULU clock sits quietest of all. */
+.boot-brand {
+  color: var(--bone);
+  opacity: 0.95;
+  letter-spacing: 0.26em;
+}
+.boot-zulu {
+  opacity: 0.55;
+}
+
+/* Corner frame ticks — thin L-marks framing the stage. Precise periphery, calm
+   centre (Westworld/Bloomberg). Above the grain, below the dock + boot HUD. */
+.frame-ticks {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  animation: chrome-fade 900ms var(--ease) 220ms both;
+}
+.frame-tick {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 0 solid var(--line-strong);
+  opacity: 0.5;
+}
+.frame-tick.tl {
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: calc(env(safe-area-inset-left, 0px) + 14px);
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+.frame-tick.tr {
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+.frame-tick.bl {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  left: calc(env(safe-area-inset-left, 0px) + 14px);
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+.frame-tick.br {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  right: calc(env(safe-area-inset-right, 0px) + 14px);
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+/* Boot-in: the frame assembles on load — indicator dots settle in one after
+   another, the corner ticks fade up. Short, with the signature ease, then still. */
+@keyframes chrome-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dot-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.deck-dot {
+  animation: dot-in 520ms var(--ease) backwards;
+}
+.deck-dot:nth-child(1) {
+  animation-delay: 260ms;
+}
+.deck-dot:nth-child(2) {
+  animation-delay: 320ms;
+}
+.deck-dot:nth-child(3) {
+  animation-delay: 380ms;
+}
+.deck-dot:nth-child(4) {
+  animation-delay: 440ms;
+}
+.deck-dot:nth-child(5) {
+  animation-delay: 500ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-ticks,
+  .deck-dot {
+    animation: none;
+  }
 }
 
 .caret::after {
@@ -139,7 +372,7 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--wash-rgb) / 0.14);
   background: rgba(8, 8, 11, 0.55);
   color: var(--ash);
   cursor: pointer;
@@ -148,7 +381,7 @@ body {
 }
 .globe-close:hover {
   color: var(--bone);
-  border-color: rgba(110, 140, 168, 0.6);
+  border-color: rgb(var(--steel-rgb) / 0.6);
 }
 
 /* labeled fly-to marker — thin mono label + a softly glowing, pulsing point */
@@ -168,9 +401,9 @@ body {
   color: var(--bone);
   white-space: nowrap;
   background: rgba(8, 8, 11, 0.78);
-  border: 1px solid rgba(110, 140, 168, 0.5);
+  border: 1px solid rgb(var(--steel-rgb) / 0.5);
   border-radius: 3px;
-  box-shadow: 0 0 18px rgba(110, 140, 168, 0.22);
+  box-shadow: 0 0 18px rgb(var(--steel-rgb) / 0.22);
 }
 .aug-marker-dot {
   position: relative;
@@ -178,14 +411,14 @@ body {
   height: 9px;
   border-radius: 50%;
   background: var(--steel);
-  box-shadow: 0 0 10px 2px rgba(110, 140, 168, 0.9);
+  box-shadow: 0 0 10px 2px rgb(var(--steel-rgb) / 0.9);
 }
 .aug-marker-dot::after {
   content: "";
   position: absolute;
   inset: -5px;
   border-radius: 50%;
-  border: 1px solid rgba(110, 140, 168, 0.55);
+  border: 1px solid rgb(var(--steel-rgb) / 0.55);
   animation: aug-marker-pulse 2.4s ease-out infinite;
 }
 @keyframes aug-marker-pulse {
@@ -210,12 +443,7 @@ body {
 /* ===========================================================================
    Command deck — four horizontally-paginated surfaces behind fixed chrome
    =========================================================================== */
-:root {
-  --pos: #7fb0a3;
-  --neg: #bb7d72;
-  --line: rgba(255, 255, 255, 0.08);
-  --panel: rgba(255, 255, 255, 0.02);
-}
+/* tokens consolidated into the design-system :root at the top of this file */
 
 .deck-scroll {
   position: absolute;
@@ -236,6 +464,8 @@ body {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   overflow: hidden;
+  /* JS (Deck) drives scale+opacity depth during the swipe; scale from the centre */
+  transform-origin: center center;
 }
 
 /* indicator dots — fixed, top-center */
@@ -268,12 +498,12 @@ body {
     opacity var(--dur-med) var(--ease),
     background var(--dur-med) var(--ease),
     box-shadow var(--dur-med) var(--ease),
-    transform var(--dur-med) var(--ease);
+    transform var(--dur-med) var(--ease-spring);
 }
 .deck-dot.active .deck-dot-mark {
   opacity: 1;
   background: var(--steel);
-  box-shadow: 0 0 8px rgba(110, 140, 168, 0.85);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.85);
   transform: scale(1.45);
 }
 .deck-dot-label {
@@ -290,8 +520,10 @@ body {
     opacity var(--dur-med) var(--ease),
     max-width var(--dur-med) var(--ease);
 }
-.deck-dot.active .deck-dot-label,
-.deck-dot:hover .deck-dot-label {
+/* The active dot's highlight already says where you are, so its label no longer
+   auto-shows (keeps the top-centre uncrowded); labels reveal on hover/focus. */
+.deck-dot:hover .deck-dot-label,
+.deck-dot:focus-visible .deck-dot-label {
   opacity: 0.85;
   max-width: 90px;
 }
@@ -370,39 +602,58 @@ body {
 
 /* Morning Brief — the once-a-day spoken read, presented top-centre on Presence.
    Distinct from THE BRIEF (lower-left per-surface lines). */
+/* Docked to the right (the free mid-right zone between the corner readouts) so the
+   orb stays the central hero, visible + erupting while AUGUST delivers. */
 .morning-brief {
   position: absolute;
-  top: clamp(18px, 7vh, 64px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(560px, calc(100% - 40px));
-  z-index: 6;
+  top: 50%;
+  right: clamp(20px, 3.5vw, 52px);
+  left: auto;
+  transform: translateY(-50%);
+  width: clamp(300px, 32vw, 380px);
+  z-index: 8;
   pointer-events: auto;
-  animation: mb-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: mb-in 0.6s var(--ease) both;
 }
 @keyframes mb-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -10px);
+    transform: translate(26px, -50%);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translate(0, -50%);
+  }
+}
+/* Bottom-sheet slide for the mobile layout (see the media query below). */
+@keyframes mb-in-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 .mb-card {
-  background: rgba(10, 11, 14, 0.86);
+  background: var(--glass-strong);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3), inset 0 1px 0 rgb(var(--wash-rgb) / 0.04);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  padding: 13px 18px 14px;
+  padding: var(--sp-3) var(--sp-4) 14px;
+  /* Capped to the viewport with the body text scrolling, so a long brief docked
+     at the side never overflows top/bottom (head + controls stay pinned). */
+  display: flex;
+  flex-direction: column;
+  max-height: min(76vh, 600px);
 }
 .mb-card.playing {
-  border-color: rgba(110, 140, 168, 0.4);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(110, 140, 168, 0.2);
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-3), 0 0 0 1px var(--accent-line), inset 0 1px 0 rgb(var(--steel-rgb) / 0.06);
 }
 .mb-head {
   display: flex;
@@ -440,6 +691,11 @@ body {
   line-height: 1.62;
   color: var(--bone);
   opacity: 0.92;
+  /* The scroll region when the brief is long; head + foot stay pinned. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mb-foot {
   display: flex;
@@ -447,6 +703,7 @@ body {
   gap: 12px;
   margin-top: 13px;
   flex-wrap: wrap;
+  flex: none;
 }
 .mb-btn {
   display: inline-flex;
@@ -460,13 +717,13 @@ body {
   border-radius: 8px;
   border: 1px solid var(--line);
   color: var(--bone);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--wash-rgb) / 0.03);
   transition: border-color 0.15s, background 0.15s, color 0.15s;
   flex: none;
 }
 .mb-btn:hover {
-  border-color: rgba(110, 140, 168, 0.5);
-  background: rgba(110, 140, 168, 0.1);
+  border-color: rgb(var(--steel-rgb) / 0.5);
+  background: rgb(var(--steel-rgb) / 0.1);
 }
 .mb-play {
   color: var(--steel);
@@ -496,10 +753,10 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(10, 11, 14, 0.82);
+  background: var(--glass-strong);
   border: 1px solid var(--line);
-  border-radius: 9999px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  border-radius: var(--r-full);
+  box-shadow: var(--shadow-2);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 8px 10px 8px 16px;
@@ -569,7 +826,7 @@ body {
   letter-spacing: 0.16em;
   font-size: 9px;
   color: var(--steel);
-  border: 1px solid rgba(110, 140, 168, 0.4);
+  border: 1px solid rgb(var(--steel-rgb) / 0.4);
   border-radius: 3px;
   padding: 3px 8px;
   opacity: 0.85;
@@ -577,7 +834,7 @@ body {
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--r-md);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
@@ -645,7 +902,7 @@ body {
 }
 .term-table td {
   padding: 7px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
 }
 .t-sym {
   color: var(--bone);
@@ -690,7 +947,7 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
   color: var(--ash);
 }
 .kv-list li span:last-child {
@@ -704,7 +961,7 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11.5px;
   padding: 7px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
 }
 .econ-t {
   color: var(--steel);
@@ -741,7 +998,7 @@ body {
   flex-direction: column;
   gap: 3px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
 }
 .feed-src {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -818,7 +1075,7 @@ body {
   gap: 12px;
   align-items: baseline;
   padding: 9px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
 }
 .log-t {
   color: var(--steel);
@@ -877,7 +1134,7 @@ body {
   letter-spacing: 0.14em;
   font-size: 9px;
   color: var(--pos);
-  border: 1px solid rgba(127, 176, 163, 0.4);
+  border: 1px solid rgb(var(--pos-rgb) / 0.4);
   border-radius: 3px;
   padding: 3px 8px;
   max-width: 52%;
@@ -890,8 +1147,8 @@ body {
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--steel);
-  background: rgba(110, 140, 168, 0.08);
-  border: 1px solid rgba(110, 140, 168, 0.25);
+  background: rgb(var(--steel-rgb) / 0.08);
+  border: 1px solid rgb(var(--steel-rgb) / 0.25);
   border-radius: 4px;
   padding: 8px 12px;
   margin-bottom: 14px;
@@ -918,7 +1175,7 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11.5px;
   color: var(--steel);
-  background: rgba(110, 140, 168, 0.1);
+  background: rgb(var(--steel-rgb) / 0.1);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -968,9 +1225,16 @@ body {
     right: 22px;
     max-width: none;
   }
+  /* Mobile: a full-width bottom sheet docked above the composer, so the orb stays
+     visible up top while the brief is delivered. */
   .morning-brief {
-    top: 14px;
-    width: calc(100% - 24px);
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
+    animation: mb-in-sheet 0.5s var(--ease) both;
   }
   .mb-text {
     font-size: 13.5px;
@@ -991,7 +1255,7 @@ body {
 }
 .mkt-dot.live {
   background: var(--pos);
-  box-shadow: 0 0 8px rgba(127, 176, 163, 0.85);
+  box-shadow: 0 0 8px rgb(var(--pos-rgb) / 0.85);
   animation: mkt-pulse 2.4s ease-in-out infinite;
 }
 .mkt-dot.error {
@@ -1048,7 +1312,7 @@ body {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--steel);
-  border: 1px solid rgba(110, 140, 168, 0.4);
+  border: 1px solid rgb(var(--steel-rgb) / 0.4);
   border-radius: 2px;
   padding: 1px 3px;
   vertical-align: middle;
@@ -1141,7 +1405,7 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11.5px;
   padding: 5px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
 }
 .flow-sym {
   color: var(--bone);
@@ -1195,8 +1459,8 @@ body {
 }
 .tf.active {
   color: var(--steel);
-  border-color: rgba(110, 140, 168, 0.6);
-  background: rgba(110, 140, 168, 0.08);
+  border-color: rgb(var(--steel-rgb) / 0.6);
+  background: rgb(var(--steel-rgb) / 0.08);
 }
 .chart-body {
   position: relative;
@@ -1222,10 +1486,10 @@ body {
   transition: background 0.15s ease;
 }
 .watch-table .watch-row:hover td {
-  background: rgba(255, 255, 255, 0.025);
+  background: rgb(var(--wash-rgb) / 0.025);
 }
 .watch-table .watch-row.sel td {
-  background: rgba(110, 140, 168, 0.1);
+  background: rgb(var(--steel-rgb) / 0.1);
 }
 .watch-table .watch-row.sel .t-sym {
   color: var(--steel);
@@ -1297,9 +1561,9 @@ body {
   border-radius: 3px;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.04),
-    rgba(255, 255, 255, 0.09),
-    rgba(255, 255, 255, 0.04)
+    rgb(var(--wash-rgb) / 0.04),
+    rgb(var(--wash-rgb) / 0.09),
+    rgb(var(--wash-rgb) / 0.04)
   );
   background-size: 200% 100%;
   animation: skel 1.4s ease-in-out infinite;
@@ -1331,10 +1595,10 @@ body {
   max-height: 24vh;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 11, 14, 0.82);
+  background: var(--glass-strong);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.42);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3), inset 0 1px 0 rgb(var(--wash-rgb) / 0.04);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 8px 18px 13px;
@@ -1412,21 +1676,27 @@ body {
   display: grid;
   place-items: center;
   color: var(--ash);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgb(var(--wash-rgb) / 0.1);
+  background: rgb(var(--wash-rgb) / 0.03);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   transition:
-    color 0.15s,
-    border-color 0.15s;
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .ctl-round:hover {
   color: var(--bone);
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: var(--line-strong);
+  background: rgb(var(--wash-rgb) / 0.06);
+}
+.ctl-round:active {
+  transform: scale(0.9);
 }
 .ctl-round.on {
-  color: #6e8ca8;
-  border-color: rgba(110, 140, 168, 0.55);
+  color: var(--steel);
+  border-color: var(--accent-line);
 }
 .reply-text {
   font-size: 13.5px;
@@ -1449,12 +1719,26 @@ body {
   color: rgba(154, 154, 159, 0.45);
 }
 
-/* ---- Command surface — live intelligence globe ---- */
+/* ---- World surface — live intelligence globe + intel wires ---- */
 .command-surface {
   position: absolute;
   inset: 0;
   background: #05060a;
   overflow: hidden;
+  /* The globe stage is a dark space backdrop in BOTH themes, so its glass chrome
+     (HUD, layers rail, reset, intel panel) must stay light-on-dark even when the
+     app goes light. Re-pin the text/accent/hairline tokens to their dark values
+     for everything inside the surface — otherwise light theme flips them dark and
+     they vanish against the dark glass. */
+  --bone: #e8e6e1;
+  --ash: #9a9a9f;
+  --ink-mute: #6b6b72;
+  --graphite: #3a3a40;
+  --charcoal: #08080b;
+  --steel: #6e8ca8;
+  --steel-rgb: 110 140 168;
+  --wash-rgb: 255 255 255;
+  --line: rgb(var(--wash-rgb) / 0.08);
 }
 .command-map {
   position: absolute;
@@ -1499,7 +1783,7 @@ body {
 }
 .command-reset:hover {
   color: var(--bone);
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgb(var(--wash-rgb) / 0.22);
 }
 .command-hud {
   position: absolute;
@@ -1578,11 +1862,107 @@ body {
 .layer-toggle.on .layer-dot {
   background: var(--steel);
   border-color: var(--steel);
-  box-shadow: 0 0 8px rgba(110, 140, 168, 0.8);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.8);
 }
 .layer-name {
   white-space: nowrap;
 }
+
+/* INTEL panel — world news wires + AUGUST's synthesis, folded onto the globe as
+   a collapsible glass panel docked right (a sibling to the left LAYERS rail).
+   pointer-events live on the box only, so the globe keeps drag/zoom elsewhere. */
+.command-intel {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 60px);
+  right: calc(env(safe-area-inset-right, 0px) + 18px);
+  bottom: auto;
+  z-index: 4;
+  width: 312px;
+  max-width: 34vw;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72vh, 560px);
+  background: rgba(8, 8, 11, 0.5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.command-intel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.command-intel-head:hover {
+  background: rgb(var(--wash-rgb) / 0.03);
+}
+.command-intel.open .command-intel-head {
+  border-bottom: 1px solid var(--line);
+}
+.command-intel-title {
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.command-intel-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--ash);
+}
+.command-intel-chev {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ash);
+  width: 10px;
+  text-align: center;
+}
+.command-intel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 13px 14px 15px;
+  overflow-y: auto;
+}
+.ci-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+.command-intel .feed-list li {
+  padding: 7px 0;
+}
+.command-intel .feed-link,
+.command-intel .feed-head {
+  font-size: 12px;
+}
+.command-intel .synth-body {
+  font-size: 12px;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
 .command-surface .maplibregl-ctrl-attrib {
   background: rgba(8, 8, 11, 0.5);
 }
@@ -1592,15 +1972,8 @@ body {
 
 /* ======================================================================
    SHELL POLISH — one motion system, sound-adjacent states, mobile pass.
+   (Motion tokens —ease/dur— now live in the design-system :root up top.)
    ====================================================================== */
-
-:root {
-  /* The motion language. Every animation in the shell uses these. */
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 150ms; /* micro-interactions */
-  --dur-med: 300ms; /* panels */
-  --dur-slow: 560ms; /* surface transitions */
-}
 
 /* ---- chrome parallax (JS sets --chrome-drift while the deck scrolls; it eases
        back to 0 at rest, so chrome sits pixel-perfect when idle) ---- */
@@ -1688,7 +2061,7 @@ body {
 }
 .widget-retry:hover {
   color: var(--bone);
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: rgb(var(--wash-rgb) / 0.25);
 }
 
 /* ---- sound toggle ---- */
@@ -1783,5 +2156,440 @@ body {
      drift var is already 0 here (Deck skips the parallax effect entirely). */
   .deck-indicators {
     transform: translateX(-50%) !important;
+  }
+}
+
+/* ======================================================================
+   MICRO-INTERACTIONS — crafted hover / focus / press with weight, glass,
+   and staggered reveals. GPU transforms + opacity only. The global
+   reduced-motion block above neutralizes every bit of this instantly.
+   ====================================================================== */
+
+/* Weighted press: controls dip on press and spring back. */
+.mb-btn,
+.dock-ctl,
+.dock-x,
+.mb-x,
+.widget-retry,
+.comms-connect-btn,
+.command-reset,
+.globe-close,
+.deck-dot {
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy),
+    transform var(--dur-fast) var(--ease-spring);
+}
+.mb-btn:active,
+.dock-ctl:active,
+.dock-x:active,
+.mb-x:active,
+.widget-retry:active,
+.comms-connect-btn:active,
+.command-reset:active,
+.deck-dot:active,
+.feed-link:active {
+  transform: scale(0.94);
+}
+
+/* Focus-visible: one restrained accent ring (charcoal gap + steel), keyboard
+   only — pointer clicks don't ring. */
+.ctl-round:focus-visible,
+.mb-btn:focus-visible,
+.dock-ctl:focus-visible,
+.dock-x:focus-visible,
+.mb-x:focus-visible,
+.widget-retry:focus-visible,
+.comms-connect-btn:focus-visible,
+.command-reset:focus-visible,
+.globe-close:focus-visible,
+.deck-dot:focus-visible,
+.feed-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--charcoal), 0 0 0 3px var(--accent-line);
+  border-radius: var(--r-sm);
+}
+
+/* Chat composer: a soft accent halo + faint lift when focused. */
+.composer-form {
+  transition:
+    border-color var(--dur-med) var(--ease),
+    box-shadow var(--dur-med) var(--ease);
+}
+.composer-form:focus-within {
+  box-shadow:
+    0 0 0 1px rgb(var(--steel-rgb) / 0.4),
+    0 10px 34px rgb(var(--steel-rgb) / 0.07);
+}
+
+/* Panels: a barely-lit top edge for premium depth — glass without the blur cost
+   on the dense, scrolling data surfaces (floating overlays keep true blur). */
+.panel {
+  box-shadow: inset 0 1px 0 rgb(var(--wash-rgb) / 0.03);
+}
+
+/* Interactive rows warm toward the accent on hover. */
+.watch-row,
+.logline,
+.feed-list > li {
+  transition: background var(--dur-fast) var(--ease-snappy);
+}
+.watch-row:not(.sel):hover {
+  background: rgb(var(--steel-rgb) / 0.06);
+}
+
+/* Log + feed lines settle in, staggered, on first mount. Data refreshes update
+   in place with stable keys, so they never re-animate. */
+@keyframes log-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+.loglines > li,
+.feed-list > li {
+  animation: log-in var(--dur-med) var(--ease) backwards;
+}
+.loglines > li:nth-child(1),
+.feed-list > li:nth-child(1) {
+  animation-delay: 30ms;
+}
+.loglines > li:nth-child(2),
+.feed-list > li:nth-child(2) {
+  animation-delay: 70ms;
+}
+.loglines > li:nth-child(3),
+.feed-list > li:nth-child(3) {
+  animation-delay: 110ms;
+}
+.loglines > li:nth-child(4),
+.feed-list > li:nth-child(4) {
+  animation-delay: 150ms;
+}
+.loglines > li:nth-child(5),
+.feed-list > li:nth-child(5) {
+  animation-delay: 190ms;
+}
+.loglines > li:nth-child(6),
+.feed-list > li:nth-child(6) {
+  animation-delay: 230ms;
+}
+.loglines > li:nth-child(n + 7),
+.feed-list > li:nth-child(n + 7) {
+  animation-delay: 270ms;
+}
+
+/* ======================================================================
+   PRESENCE HOME — radial telemetry around the hero orb, summonable brief,
+   theme-aware composer. (Stage A of the Presence rebuild.)
+   ====================================================================== */
+
+/* The orb canvas fills the surface; telemetry + center sit above it. */
+.presence-3d {
+  z-index: 1;
+}
+
+/* Radial telemetry overlay — decorative, non-interactive, fades in on boot. */
+.telemetry {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s var(--ease);
+}
+.telemetry-in {
+  opacity: 1;
+}
+/* While faded (e.g. brief open), the invisible readouts must not catch clicks. */
+.telemetry:not(.telemetry-in) .readout-nav {
+  pointer-events: none;
+}
+.telemetry-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+/* Faint orbital lattice + ticks (the accent reads on both stages because the
+   steel token is light on dark, dark on light). */
+.lattice {
+  fill: none;
+  stroke: rgb(var(--steel-rgb) / 0.16);
+  stroke-width: 1;
+}
+.lattice-2 {
+  stroke: rgb(var(--steel-rgb) / 0.09);
+}
+.tick {
+  stroke: rgb(var(--steel-rgb) / 0.14);
+  stroke-width: 1;
+}
+.tick-major {
+  stroke: rgb(var(--steel-rgb) / 0.32);
+}
+.leader {
+  stroke: rgb(var(--steel-rgb) / 0.28);
+  stroke-width: 1;
+  transition:
+    stroke var(--dur-fast) var(--ease-snappy),
+    stroke-width var(--dur-fast) var(--ease-snappy);
+}
+.leader-node {
+  fill: rgb(var(--steel-rgb) / 0.6);
+  transition: fill var(--dur-fast) var(--ease-snappy);
+}
+/* Leader/node light up when their readout is hovered/focused (driven by React). */
+.lead-hot .leader {
+  stroke: rgb(var(--steel-rgb) / 0.75);
+  stroke-width: 1.5;
+}
+.lead-hot .leader-node {
+  fill: var(--steel);
+}
+
+/* Peripheral organ readouts — label · value · sub, theme-following ink. The four
+   surface-backed ones are <button>s that navigate the deck; MEMORY is a static
+   <div>. The inline positioning transform means hover/press use colour + opacity
+   (not transform) so the two never fight. */
+.readout {
+  position: absolute;
+  white-space: nowrap;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1.3;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 6px 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  pointer-events: none;
+}
+.readout-label,
+.readout-value,
+.readout-sub {
+  display: block;
+}
+.readout-label {
+  font-size: var(--fs-label);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bone);
+  opacity: 0.92;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    text-shadow var(--dur-fast) var(--ease-snappy);
+}
+.readout-value {
+  margin-top: 4px;
+  font-size: var(--fs-body);
+  letter-spacing: 0.08em;
+  color: var(--bone);
+  opacity: 0.78;
+  transition: opacity var(--dur-fast) var(--ease-snappy);
+}
+.readout-sub {
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.75;
+}
+
+/* Navigable readouts — clickable hub controls: glow on the label, brighten the
+   value + leader, dim briefly on press. */
+.readout-nav {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: var(--r-md);
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    opacity var(--dur-fast) var(--ease-snappy);
+}
+.readout-nav:hover {
+  background: rgb(var(--steel-rgb) / 0.05);
+}
+.readout-nav:hover .readout-label,
+.readout-nav:focus-visible .readout-label {
+  color: var(--steel);
+  text-shadow: 0 0 14px rgb(var(--steel-rgb) / 0.55);
+}
+.readout-nav:hover .readout-value,
+.readout-nav:focus-visible .readout-value {
+  opacity: 1;
+}
+.readout-nav:active {
+  opacity: 0.55;
+}
+.readout-nav:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--charcoal), 0 0 0 3px var(--accent-line);
+}
+
+/* Centre label — always light, since it sits over the dark glossy orb in BOTH
+   themes (the reference: white "SYSTEM ACTIVE" on the black sphere). */
+.presence-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 3;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.presence-center-t1 {
+  font-size: 16px;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: rgba(233, 239, 246, 0.92);
+}
+.presence-center-t2 {
+  margin-top: 7px;
+  font-size: 9px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: rgba(233, 239, 246, 0.5);
+}
+
+/* Summon chip — re-opens the Morning Brief. Tucked into the top-right corner (out
+   of the centre stack so the orb + deck dots breathe), clear of the corner tick. */
+.brief-summon {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: calc(env(safe-area-inset-right, 0px) + clamp(40px, 5vw, 72px));
+  left: auto;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ash);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  padding: 7px 15px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    transform var(--dur-fast) var(--ease-spring);
+}
+.brief-summon:hover {
+  color: var(--bone);
+  border-color: var(--line-strong);
+}
+.brief-summon:active {
+  transform: scale(0.96);
+}
+.brief-summon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--charcoal), 0 0 0 3px var(--accent-line);
+}
+.brief-summon-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--steel);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.7);
+}
+
+/* Composer — theme-aware (was Tailwind white-alpha; now token-driven). */
+.composer-form {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.composer-form:focus-within {
+  border-color: var(--accent-line);
+}
+.composer-input {
+  color: var(--bone);
+}
+.composer-input::placeholder {
+  color: var(--ash);
+  opacity: 0.6;
+}
+.composer-mic {
+  color: var(--ash);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.composer-mic:hover {
+  color: var(--bone);
+  background: rgb(var(--wash-rgb) / 0.06);
+}
+.composer-mic.on {
+  color: var(--steel);
+  background: rgb(var(--steel-rgb) / 0.18);
+}
+.composer-mic-ping {
+  background: rgb(var(--steel-rgb) / 0.2);
+}
+
+/* Mobile: tighten the radial type so readouts stay legible + on-screen. */
+@media (max-width: 760px) {
+  .readout-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+  }
+  .readout-value {
+    font-size: 11.5px;
+  }
+  .readout-sub {
+    font-size: 8px;
+  }
+  .presence-center-t1 {
+    font-size: 13px;
+  }
+  /* World intel panel — at narrow widths the centered HUD collides with anything
+     right-docked (see the reset-pill note), so the panel drops to a compact chip
+     top-right (collapsed by default; IntelPanel's JS open-default uses the SAME
+     760px threshold so there's no styled-desktop-but-collapsed seam). It clears
+     the HUD and the bottom composer; expanded, it spans full-width and scrolls. */
+  .command-intel {
+    top: calc(env(safe-area-inset-top, 0px) + 132px);
+    right: calc(env(safe-area-inset-right, 0px) + 10px);
+    left: auto;
+    width: min(248px, 62vw);
+    max-width: none;
+    max-height: 44vh;
+  }
+  .command-intel.open {
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+    right: calc(env(safe-area-inset-right, 0px) + 10px);
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telemetry {
+    transition: none;
+  }
+}
+
+/* Smooth theme flip — page.tsx sets [data-theming] on <html> for ~460ms during a
+   toggle; everything cross-fades its colours, then the attribute clears so there's
+   no permanent transition cost. Gated to no-preference so reduced-motion users get
+   an instant flip. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theming] *,
+  :root[data-theming] *::before,
+  :root[data-theming] *::after {
+    transition:
+      background-color 0.42s var(--ease),
+      color 0.42s var(--ease),
+      border-color 0.42s var(--ease),
+      fill 0.42s var(--ease),
+      stroke 0.42s var(--ease),
+      box-shadow 0.42s var(--ease) !important;
   }
 }

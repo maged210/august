@@ -38,7 +38,7 @@ export default function Composer({
   return (
     <form
       onSubmit={submit}
-      className="pointer-events-auto flex w-full max-w-[640px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-3 backdrop-blur-sm transition-colors focus-within:border-steel/50"
+      className="composer-form pointer-events-auto flex w-full max-w-[640px] items-center gap-2 rounded-full px-5 py-3 backdrop-blur-sm"
     >
       <input
         ref={inputRef}
@@ -47,7 +47,7 @@ export default function Composer({
         placeholder={listening ? "Listening…" : "Say something to AUGUST"}
         spellCheck={false}
         autoComplete="off"
-        className="min-w-0 flex-1 bg-transparent text-[15px] text-bone placeholder:text-ash/50 focus:outline-none"
+        className="composer-input min-w-0 flex-1 bg-transparent text-[15px] focus:outline-none"
       />
 
       {micSupported && (
@@ -56,16 +56,9 @@ export default function Composer({
           onClick={onToggleMic}
           aria-label={listening ? "Stop listening" : "Speak"}
           aria-pressed={listening}
-          className={[
-            "relative grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors",
-            listening
-              ? "bg-steel/20 text-steel"
-              : "text-ash hover:bg-white/5 hover:text-bone",
-          ].join(" ")}
+          className={`composer-mic relative grid h-9 w-9 shrink-0 place-items-center rounded-full${listening ? " on" : ""}`}
         >
-          {listening && (
-            <span className="absolute inset-0 animate-ping rounded-full bg-steel/20" />
-          )}
+          {listening && <span className="composer-mic-ping absolute inset-0 animate-ping rounded-full" />}
           <MicIcon active={listening} />
         </button>
       )}

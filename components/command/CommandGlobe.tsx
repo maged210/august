@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import IntelPanel from "@/components/command/IntelPanel";
 
 const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const EMPTY = { type: "FeatureCollection" as const, features: [] };
@@ -16,7 +17,7 @@ export type GlobeTarget = {
 };
 
 type Props = {
-  active: boolean; // is the Command surface the current screen? (only poll flights when so)
+  active: boolean; // is the World surface the current screen? (only poll flights when so)
   flyTo: GlobeTarget | null;
 };
 
@@ -82,6 +83,7 @@ export default function CommandGlobe({ active, flyTo }: Props) {
 
   const [aircraft, setAircraft] = useState<number | null>(null);
   const [quakes, setQuakes] = useState<number | null>(null);
+  const [wires, setWires] = useState<number | null>(null);
   const [zulu, setZulu] = useState("");
   const [layers, setLayers] = useState({ flights: true, quakes: true, night: true });
 
@@ -347,6 +349,8 @@ export default function CommandGlobe({ active, flyTo }: Props) {
         <span className="hud">{aircraft != null ? aircraft.toLocaleString() : "—"} aircraft</span>
         <span className="command-hud-sep">·</span>
         <span className="hud">{quakes != null ? quakes : "—"} quakes / 24h</span>
+        <span className="command-hud-sep">·</span>
+        <span className="hud">{wires != null ? wires : "—"} wires</span>
       </div>
 
       {/* reset view — back to the home framing (drag-rotate / scroll-zoom are native) */}
@@ -389,6 +393,9 @@ export default function CommandGlobe({ active, flyTo }: Props) {
           </button>
         ))}
       </div>
+
+      {/* world news wires + AUGUST's synthesis, docked right (collapsible) */}
+      <IntelPanel onCount={setWires} />
     </div>
   );
 }

@@ -80,11 +80,32 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
     const el = scrollRef.current;
     if (!el) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    // Cinematic depth: the leaving surface eases back (scale + dim) while the
+    // entering one comes forward. Pure transform + opacity — GPU-composited, no
+    // layout, no blur — so it stays buttery even over the WebGL surfaces.
+    const surfaces = Array.from(el.children) as HTMLElement[];
+    const applyDepth = () => {
+      const w = el.clientWidth || 1;
+      const sl = el.scrollLeft;
+      for (let i = 0; i < surfaces.length; i++) {
+        const off = Math.min(1, Math.abs(i - sl / w));
+        if (off < 0.001) {
+          surfaces[i].style.transform = "";
+          surfaces[i].style.opacity = "";
+        } else {
+          surfaces[i].style.transform = `scale(${(1 - 0.06 * off).toFixed(4)})`;
+          surfaces[i].style.opacity = `${(1 - 0.5 * off).toFixed(3)}`;
+        }
+      }
+    };
+
     let raf = 0;
     let lastLeft = el.scrollLeft;
     let drift = 0;
     let settled = 0;
     const tick = () => {
+      applyDepth();
       const left = el.scrollLeft;
       const vel = left - lastLeft;
       lastLeft = left;
@@ -94,6 +115,8 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       document.documentElement.style.setProperty("--chrome-drift", `${drift.toFixed(2)}px`);
       if (settled > 30) {
         document.documentElement.style.setProperty("--chrome-drift", "0px");
+        applyDepth();
+        surfaces.forEach((s) => (s.style.willChange = ""));
         raf = 0;
         return;
       }
@@ -103,14 +126,21 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       if (!raf) {
         lastLeft = el.scrollLeft;
         settled = 0;
+        surfaces.forEach((s) => (s.style.willChange = "transform, opacity"));
         raf = requestAnimationFrame(tick);
       }
     };
+    applyDepth();
     el.addEventListener("scroll", wake, { passive: true });
     return () => {
       el.removeEventListener("scroll", wake);
       if (raf) cancelAnimationFrame(raf);
       document.documentElement.style.removeProperty("--chrome-drift");
+      surfaces.forEach((s) => {
+        s.style.transform = "";
+        s.style.opacity = "";
+        s.style.willChange = "";
+      });
     };
   }, []);
 

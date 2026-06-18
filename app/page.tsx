@@ -4,13 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
-import Brief from "@/components/Brief";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
+import PresenceTelemetry from "@/components/PresenceTelemetry";
 import MarketsSurface from "@/components/surfaces/MarketsSurface";
-import IntelSurface from "@/components/surfaces/IntelSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
-import type { AugustState } from "@/components/Presence3D";
+import type { AugustState, Theme } from "@/components/Presence3D";
 import type { GlobeTarget } from "@/components/command/CommandGlobe";
 import {
   createRecognizer,
@@ -116,11 +115,14 @@ export default function Home() {
   const [dockClosing, setDockClosing] = useState(false);
   const [muted, setMuted] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  // Morning Brief — the once-a-day spoken read, surfaced on Presence.
+  // Morning Brief — the once-a-day spoken read, now a summonable Presence panel.
   const [brief, setBrief] = useState<MorningBriefData | null>(null);
   const [briefStatus, setBriefStatus] = useState<BriefStatus>("checking");
   const [briefPlaying, setBriefPlaying] = useState(false);
   const [briefDismissed, setBriefDismissed] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
+  // White / black theme — persisted; the toggle flips the whole token system.
+  const [theme, setTheme] = useState<Theme>("dark");
 
   const amplitudeRef = useRef(0);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -136,6 +138,7 @@ export default function Home() {
   const mutedRef = useRef(false);
   const soundOnRef = useRef(true);
   const closeTimerRef = useRef(0);
+  const themingTimerRef = useRef(0);
   // Generation counter + abort: a new send (or the stop control) supersedes any
   // in-flight stream, so a stale closure can never write over the new turn's UI.
   const genRef = useRef(0);
@@ -333,7 +336,38 @@ export default function Home() {
     }
   }
 
-  // On boot, ask whether today's brief is already waiting (cheap GET, never compiles).
+  // Theme: load the persisted choice once, then keep <html data-theme> + storage
+  // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("aug-theme");
+      if (saved === "light" || saved === "dark") setTheme(saved);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      window.localStorage.setItem("aug-theme", theme);
+    } catch {
+      /* private mode */
+    }
+  }, [theme]);
+
+  // Flip the theme with a transient app-wide colour cross-fade — the brief
+  // [data-theming] window applies a one-off transition to everything, then clears
+  // (so there's no permanent transition cost). No hard flash.
+  function toggleTheme() {
+    const root = document.documentElement;
+    root.setAttribute("data-theming", "");
+    window.clearTimeout(themingTimerRef.current);
+    themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
+    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  }
+
+  // On boot, ask whether today's brief is already waiting (cheap GET, never
+  // compiles). If one's ready and not dismissed today, auto-deliver it (on-open).
   useEffect(() => {
     if (!booted) return;
     let cancelled = false;
@@ -342,8 +376,12 @@ export default function Home() {
       .then((j: { ready?: boolean; brief?: MorningBriefData | null }) => {
         if (cancelled) return;
         if (j.ready && j.brief) {
-          if (isBriefDismissed(j.brief.date)) setBriefDismissed(true);
-          else setBrief(j.brief);
+          setBrief(j.brief); // always store so the summon trigger has it later
+          if (isBriefDismissed(j.brief.date)) {
+            setBriefDismissed(true);
+          } else {
+            setBriefOpen(true); // on-open delivery
+          }
           setBriefStatus("ready");
         } else {
           setBriefStatus("none");
@@ -356,6 +394,13 @@ export default function Home() {
       cancelled = true;
     };
   }, [booted]);
+
+  // Summon the brief panel on demand; compile if none exists yet.
+  function summonBrief() {
+    setBriefDismissed(false);
+    setBriefOpen(true);
+    if (briefStatus === "none" || briefStatus === "error") compileBriefNow();
+  }
 
   // Speak the brief — reuses the chat speech path so AUGUST's orb pulses to his
   // real voice. Gated behind this click so the browser autoplay policy is satisfied.
@@ -412,6 +457,7 @@ export default function Home() {
           }
           setBrief(j.brief);
           setBriefDismissed(false);
+          setBriefOpen(true);
           setBriefStatus("ready");
         } else {
           setBriefStatus("error");
@@ -430,6 +476,7 @@ export default function Home() {
     }
     if (briefPlaying) stopSpeaking();
     setBriefDismissed(true);
+    setBriefOpen(false);
   }
 
   // Flag the next surface change as AUGUST-driven so it doesn't dismiss his reply.
@@ -452,7 +499,7 @@ export default function Home() {
         globeNonceRef.current += 1;
         setCommandTarget({ lat, lon, label, zoom, key: globeNonceRef.current });
         markAugNav();
-        deckRef.current?.goTo(screenIndex("command"));
+        deckRef.current?.goTo(screenIndex("world"));
       } else if (t.tool === "close_map") {
         markAugNav();
         deckRef.current?.goTo(screenIndex("presence"));
@@ -679,8 +726,9 @@ export default function Home() {
     state === "thinking" ? "THINKING" : state === "listening" ? "LISTENING" : null;
 
   return (
-    <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden bg-charcoal">
+    <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
       <BootHud />
+      <FrameTicks />
 
       <Deck
         ref={deckRef}
@@ -688,9 +736,19 @@ export default function Home() {
         onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
-            <Presence3D state={state} amplitudeRef={amplitudeRef} />
-            <Brief visible={booted} />
-            {booted && !briefDismissed ? (
+            <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} />
+            <PresenceTelemetry
+              state={state}
+              sessionCount={messages.length}
+              visible={booted && !briefOpen}
+              onNavigate={(key) => deckRef.current?.goTo(screenIndex(key))}
+            />
+            {booted && !briefOpen ? (
+              <button type="button" className="brief-summon" onClick={summonBrief}>
+                <span className="brief-summon-dot" /> today&rsquo;s brief
+              </button>
+            ) : null}
+            {booted && briefOpen ? (
               <MorningBrief
                 brief={brief}
                 status={briefStatus}
@@ -703,13 +761,12 @@ export default function Home() {
             ) : null}
           </div>,
           <MarketsSurface key="markets" />,
-          <IntelSurface key="intel" />,
-          <CommsSurface key="comms" />,
           <CommandGlobe
-            key="command"
-            active={activeScreen === screenIndex("command")}
+            key="world"
+            active={activeScreen === screenIndex("world")}
             flyTo={commandTarget}
           />,
+          <CommsSurface key="comms" />,
         ]}
       />
 
@@ -843,6 +900,15 @@ export default function Home() {
             >
               <ToneIcon off={!soundOn} />
             </button>
+            <button
+              type="button"
+              className="ctl-round ctl-theme"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+            </button>
           </div>
         </div>
       </div>
@@ -895,6 +961,43 @@ function ToneIcon({ off }: { off?: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Corner frame ticks — thin L-marks in the four corners. The instrument frame:
+// precise detail at the periphery while the centre stays calm. Purely decorative.
+// ---------------------------------------------------------------------------
+
+function FrameTicks() {
+  return (
+    <div className="frame-ticks" aria-hidden>
+      <span className="frame-tick tl" />
+      <span className="frame-tick tr" />
+      <span className="frame-tick bl" />
+      <span className="frame-tick br" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle icons — the control lives in the composer's control cluster.
+// ---------------------------------------------------------------------------
+
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Boot HUD — typed sequence in the corner, then a live ZULU clock.
 // ---------------------------------------------------------------------------
 
@@ -927,11 +1030,11 @@ function BootHud() {
   return (
     <div className="boot-hud hud fixed left-5 top-5 z-30 select-none">
       {LINES.map((_, i) => (
-        <div key={i} className="opacity-70">
+        <div key={i} className={i === 1 ? "boot-brand" : "opacity-70"}>
           {shown[i] ?? ""}
         </div>
       ))}
-      {done ? <div className="fade-in opacity-90">{zulu}</div> : null}
+      {done ? <div className="fade-in boot-zulu">{zulu}</div> : null}
     </div>
   );
 }
