@@ -394,6 +394,10 @@ export type RecognizerCallbacks = {
   onStart?: () => void;
   onEnd?: () => void;
   onError?: (err: string) => void;
+  /** 0..1 live mic level for the "listening" orb. Only engines that own the audio
+   *  graph (Deepgram) emit this; the Web Speech recognizer leaves it unset and the
+   *  caller drives the orb via startMicLevel() instead. */
+  onLevel?: (level: number) => void;
 };
 
 export type Recognizer = {

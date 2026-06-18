@@ -19,9 +19,16 @@ import {
   primeVoices,
   speak,
   type Recognizer,
+  type RecognizerCallbacks,
   type SpeakHandle,
   type SpeechQueue,
 } from "@/lib/speech";
+import {
+  closeDeepgramAudio,
+  createDeepgramRecognizer,
+  isDeepgramRecognizerSupported,
+  probeDeepgram,
+} from "@/lib/deepgram";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
 // WebGL components load only in the browser.
@@ -119,6 +126,10 @@ export default function Home() {
   const [replyText, setReplyText] = useState("");
   const [interim, setInterim] = useState("");
   const [micSupported, setMicSupported] = useState(false);
+  // Deepgram streaming STT availability (server key present + browser can run the
+  // pipeline). Preferred over Web Speech everywhere — it's the reliable, phone-first
+  // engine. Web Speech remains the fallback when Deepgram isn't configured.
+  const [deepgramAvailable, setDeepgramAvailable] = useState(false);
   const [booted, setBooted] = useState(false);
   const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState(0);
@@ -145,6 +156,9 @@ export default function Home() {
   const amplitudeRef = useRef(0);
   // Voice-mode loop refs (read inside recognizer/speech callbacks that outlive a render).
   const voiceModeRef = useRef(false);
+  // Mirror of deepgramAvailable for the recognizer selection inside beginListening
+  // (called from timers/callbacks that close over a stale render).
+  const deepgramAvailableRef = useRef(false);
   const speechQueueRef = useRef<SpeechQueue | null>(null);
   const reArmTimerRef = useRef(0);
   const voiceErrorsRef = useRef(0);
@@ -259,6 +273,22 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, []);
 
+  // Probe Deepgram STT once on mount (server key present + browser can run the
+  // pipeline). When available it becomes the STT engine for both voice mode and
+  // tap-to-talk; otherwise the loop falls back to Web Speech, then text.
+  useEffect(() => {
+    let cancelled = false;
+    probeDeepgram().then((configured) => {
+      if (cancelled) return;
+      const usable = configured && isDeepgramRecognizerSupported();
+      deepgramAvailableRef.current = usable;
+      setDeepgramAvailable(usable);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Cleanup on unmount.
   useEffect(() => {
     return () => {
@@ -271,6 +301,7 @@ export default function Home() {
       recognizerRef.current?.stop();
       speakHandleRef.current?.cancel();
       speechQueueRef.current?.cancel();
+      closeDeepgramAudio();
       window.clearTimeout(reArmTimerRef.current);
     };
   }, []);
@@ -407,16 +438,37 @@ export default function Home() {
     // session's listeningActiveRef or scheduling a spurious re-arm.
     const mySession = ++recSessionRef.current;
 
-    startMicLevel(amplitudeRef)
-      .then((cleanup) => {
-        if (listeningActiveRef.current) micCleanupRef.current = cleanup;
-        else cleanup();
-      })
-      .catch(() => {
-        /* analyser is optional — recognition still works without the orb meter */
-      });
+    // Deepgram owns its own audio graph and reports the mic level via onLevel;
+    // Web Speech can't, so only in that fallback do we run a separate analyser
+    // to drive the listening orb.
+    const useDeepgram = deepgramAvailableRef.current;
+    if (!useDeepgram) {
+      startMicLevel(amplitudeRef)
+        .then((cleanup) => {
+          if (recSessionRef.current === mySession && listeningActiveRef.current) {
+            micCleanupRef.current = cleanup;
+          } else {
+            cleanup();
+          }
+        })
+        .catch(() => {
+          /* analyser is optional — recognition still works without the orb meter */
+        });
+    }
 
-    const rec = createRecognizer({
+    const callbacks: RecognizerCallbacks = {
+      onLevel: (v) => {
+        if (recSessionRef.current === mySession && listeningActiveRef.current) {
+          amplitudeRef.current = v;
+        }
+      },
+      onStart: () => {
+        // A real capture start (Deepgram fires this on socket open) is strong
+        // evidence the transient trouble cleared — reset the streak so the "5
+        // consecutive failures" semantics stay actually consecutive.
+        if (recSessionRef.current !== mySession) return;
+        voiceErrorsRef.current = 0;
+      },
       onPartial: (t) => {
         if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
         setInterim(t);
@@ -460,6 +512,13 @@ export default function Home() {
           return;
         }
 
+        // Voice setup couldn't load (AudioWorklet module fetch/parse failed) — the
+        // mic is fine, so don't blame permission; fall back to text gracefully.
+        if (err === "worklet-unsupported") {
+          if (wasActive) voiceTrouble("Voice setup couldn't load in this browser — text still works.");
+          return;
+        }
+
         // Fatal: mic permission denied or hardware unavailable.
         if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
           if (wasActive) micBlocked();
@@ -489,15 +548,18 @@ export default function Home() {
           setState((s) => (s === "listening" ? "idle" : s));
         }
       },
-    });
+    };
+    const rec = useDeepgram
+      ? createDeepgramRecognizer(callbacks)
+      : createRecognizer(callbacks);
     recognizerRef.current = rec;
     rec.start();
   }
 
   function enterVoiceMode() {
-    if (!micSupported) {
+    if (!deepgramAvailable && !micSupported) {
       setReplyText(
-        "Hands-free voice needs Chrome's speech recognition, which isn't available here. Text and tap-to-talk still work.",
+        "Hands-free voice isn't available in this browser. Text and tap-to-talk still work.",
       );
       openPanel();
       return;
@@ -518,6 +580,7 @@ export default function Home() {
     abortRef.current?.abort(); // drop any in-flight reply
     stopListening();
     stopSpeaking();
+    closeDeepgramAudio(); // release the shared capture context (no-op if Web Speech)
     setInterim("");
     setState((s) => (s === "boot" ? s : "idle"));
     setVoiceAnnounce("Voice mode off.");
@@ -535,6 +598,7 @@ export default function Home() {
     setVoiceMode(false);
     window.clearTimeout(reArmTimerRef.current);
     listeningActiveRef.current = false;
+    closeDeepgramAudio();
     setState((s) => (s === "listening" ? "idle" : s));
     setReplyText(
       "I can't reach your microphone — check this site's mic permission in the browser. You can still talk to me by typing.",
@@ -543,14 +607,19 @@ export default function Home() {
     openPanel();
   }
 
-  // Repeated recognizer failures (e.g. flaky network STT): back out gracefully.
-  function voiceTrouble() {
+  // Repeated recognizer failures (e.g. flaky network STT), or a one-shot setup
+  // failure: back out gracefully, keeping text. Optional message overrides the
+  // default "kept dropping" copy (e.g. a worklet that couldn't load).
+  function voiceTrouble(message?: string) {
     voiceModeRef.current = false;
     setVoiceMode(false);
     window.clearTimeout(reArmTimerRef.current);
     listeningActiveRef.current = false;
+    closeDeepgramAudio();
     setState((s) => (s === "listening" ? "idle" : s));
-    setReplyText("Speech recognition kept dropping — I've turned voice mode off. Text still works.");
+    setReplyText(
+      message ?? "Speech recognition kept dropping — I've turned voice mode off. Text still works.",
+    );
     setVoiceAnnounce("Voice mode off — speech recognition was unavailable.");
     openPanel();
   }
@@ -1008,6 +1077,10 @@ export default function Home() {
   const statusLabel =
     state === "thinking" ? "THINKING" : state === "listening" ? "LISTENING" : null;
 
+  // Either STT engine enables voice + tap-to-talk. Deepgram is preferred and works
+  // on phones where Web Speech (micSupported) doesn't.
+  const voiceCapable = micSupported || deepgramAvailable;
+
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
       <BootHud />
@@ -1167,7 +1240,7 @@ export default function Home() {
             onToggleMic={toggleMic}
             listening={state === "listening"}
             busy={state === "thinking"}
-            micSupported={micSupported}
+            micSupported={voiceCapable}
             autoFocus={booted}
           />
           <div className="composer-ctls">
@@ -1175,10 +1248,10 @@ export default function Home() {
               type="button"
               className={`ctl-round ctl-voice${voiceMode ? " on" : ""}`}
               onClick={toggleVoiceMode}
-              disabled={!micSupported || !booted}
+              disabled={!voiceCapable || !booted}
               title={
-                !micSupported
-                  ? "Hands-free voice needs Chrome"
+                !voiceCapable
+                  ? "Hands-free voice isn't available in this browser"
                   : voiceMode
                     ? "Exit voice mode (Esc)"
                     : "Hands-free voice mode"

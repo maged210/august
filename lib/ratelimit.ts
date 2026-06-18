@@ -24,7 +24,7 @@ function getRedis(): Redis {
   return _redis;
 }
 
-type RouteKey = "chat" | "speak" | "intel" | "memory" | "inbox" | "brief";
+type RouteKey = "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -34,6 +34,7 @@ const LIMITS: Record<RouteKey, number> = {
   memory: 20, // Upstash writes + occasional Anthropic summarisation
   inbox: 20,  // Gmail API quota — read-only, server-cached
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
+  token: 30,  // Deepgram STT grant-token mint — cheap, one per voice session/~2min, generous
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();
