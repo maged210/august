@@ -162,6 +162,8 @@ export default function Home() {
   const speechQueueRef = useRef<SpeechQueue | null>(null);
   const reArmTimerRef = useRef(0);
   const voiceErrorsRef = useRef(0);
+  // Last STT diagnostic (e.g. a Deepgram close code) — shown if voice falls back.
+  const voiceDiagRef = useRef("");
   const messagesRef = useRef<ChatMessage[]>([]);
   const speakHandleRef = useRef<SpeakHandle | null>(null);
   const recognizerRef = useRef<Recognizer | null>(null);
@@ -468,6 +470,7 @@ export default function Home() {
         // consecutive failures" semantics stay actually consecutive.
         if (recSessionRef.current !== mySession) return;
         voiceErrorsRef.current = 0;
+        voiceDiagRef.current = "";
       },
       onPartial: (t) => {
         if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
@@ -481,6 +484,7 @@ export default function Home() {
         amplitudeRef.current = 0;
         setInterim("");
         voiceErrorsRef.current = 0; // a clean capture clears the error streak
+        voiceDiagRef.current = "";
         if (voiceModeRef.current) handleTranscript(t);
         else handleSend(t);
       },
@@ -497,8 +501,9 @@ export default function Home() {
           else setState((s) => (s === "listening" ? "idle" : s));
         }
       },
-      onError: (err) => {
+      onError: (err, detail) => {
         if (recSessionRef.current !== mySession) return; // stale — ignore completely
+        if (detail) voiceDiagRef.current = detail; // e.g. a Deepgram close code
         micCleanupRef.current?.();
         micCleanupRef.current = null;
         amplitudeRef.current = 0;
@@ -543,7 +548,8 @@ export default function Home() {
             voiceTrouble();
             return;
           }
-          reArmListen(600);
+          // Back off between reconnects so a hard failure isn't a tight retry storm.
+          reArmListen(Math.min(400 * voiceErrorsRef.current, 2500));
         } else if (!voiceModeRef.current && wasActive) {
           setState((s) => (s === "listening" ? "idle" : s));
         }
@@ -607,9 +613,10 @@ export default function Home() {
     openPanel();
   }
 
-  // Repeated recognizer failures (e.g. flaky network STT), or a one-shot setup
-  // failure: back out gracefully, keeping text. Optional message overrides the
-  // default "kept dropping" copy (e.g. a worklet that couldn't load).
+  // Repeated recognizer failures (e.g. a rejected STT connection), or a one-shot
+  // setup failure: back out gracefully, keeping text. Optional message overrides
+  // the default copy (e.g. a worklet that couldn't load). The default surfaces the
+  // last diagnostic (a Deepgram close code) so a real failure is visible, not generic.
   function voiceTrouble(message?: string) {
     voiceModeRef.current = false;
     setVoiceMode(false);
@@ -617,10 +624,12 @@ export default function Home() {
     listeningActiveRef.current = false;
     closeDeepgramAudio();
     setState((s) => (s === "listening" ? "idle" : s));
+    const diag = voiceDiagRef.current;
     setReplyText(
-      message ?? "Speech recognition kept dropping — I've turned voice mode off. Text still works.",
+      message ??
+        `Voice connection kept dropping${diag ? ` (${diag})` : ""} — I've switched to text. Type to me.`,
     );
-    setVoiceAnnounce("Voice mode off — speech recognition was unavailable.");
+    setVoiceAnnounce("Voice mode off — the speech connection was unavailable. Text still works.");
     openPanel();
   }
 

@@ -83,11 +83,11 @@ export default function MarketsSurface() {
       </header>
 
       <div className="markets-grid">
-        {/* sector strip */}
-        <section className="panel mk-sectors">
-          <div className="panel-head">Sectors</div>
-          {data ? (
-            data.sectors.length ? (
+        {/* sector strip — hidden when loaded-but-empty (no inert shell) */}
+        {(!data || data.sectors.length > 0) && (
+          <section className="panel mk-sectors">
+            <div className="panel-head">Sectors</div>
+            {data ? (
               <div className="sector-strip">
                 {data.sectors.map((s) => (
                   <div key={s.etf} className="sector-chip" title={s.etf}>
@@ -97,91 +97,89 @@ export default function MarketsSurface() {
                 ))}
               </div>
             ) : (
-              <WidgetState state="empty" />
-            )
-          ) : (
-            fallback(2)
-          )}
-        </section>
+              fallback(2)
+            )}
+          </section>
+        )}
 
-        {/* watchlist with sparklines (proxies + crypto) */}
-        <section className="panel mk-watch">
-          <div className="panel-head">Watchlist · click to chart</div>
-          {data ? (
-            !data.watchlist.length ? (
-              <WidgetState state="empty" />
+        {/* watchlist with sparklines — hidden when loaded-but-empty */}
+        {(!data || data.watchlist.length > 0) && (
+          <section className="panel mk-watch">
+            <div className="panel-head">Watchlist · click to chart</div>
+            {data ? (
+              <table className="term-table watch-table">
+                <tbody>
+                  {data.watchlist.map((q) => (
+                    <tr
+                      key={q.sym}
+                      className={`watch-row${selected.sym === q.chartSym ? " sel" : ""}`}
+                      onClick={() =>
+                        setSelected({ sym: q.chartSym, kind: q.kind, label: `${q.sym} · ${q.desc}` })
+                      }
+                    >
+                      <td className="t-sym">
+                        {q.sym}
+                        {q.proxy ? <span className="proxy-tag">px</span> : null}
+                      </td>
+                      <td className="t-spark">
+                        <Sparkline data={q.spark} up={q.chgPct >= 0} />
+                      </td>
+                      <td className="t-last">{last(q.last)}</td>
+                      <td className={`t-chg ${sign(q.chgPct)}`}>{pct(q.chgPct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
-            <table className="term-table watch-table">
-              <tbody>
-                {data.watchlist.map((q) => (
-                  <tr
-                    key={q.sym}
-                    className={`watch-row${selected.sym === q.chartSym ? " sel" : ""}`}
-                    onClick={() =>
-                      setSelected({ sym: q.chartSym, kind: q.kind, label: `${q.sym} · ${q.desc}` })
-                    }
-                  >
-                    <td className="t-sym">
-                      {q.sym}
-                      {q.proxy ? <span className="proxy-tag">px</span> : null}
-                    </td>
-                    <td className="t-spark">
-                      <Sparkline data={q.spark} up={q.chgPct >= 0} />
-                    </td>
-                    <td className="t-last">{last(q.last)}</td>
-                    <td className={`t-chg ${sign(q.chgPct)}`}>{pct(q.chgPct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            )
-          ) : (
-            fallback(8)
-          )}
-        </section>
+              fallback(8)
+            )}
+          </section>
+        )}
 
         {/* hero price chart */}
         <PriceChart sym={selected.sym} kind={selected.kind} label={selected.label} />
 
-        {/* NQ levels */}
-        <section className="panel mk-levels">
-          <div className="panel-head">{data?.levels?.proxy ?? "NQ"} · Levels</div>
-          {levels ? (
-            <>
-              <div className="nq-price">
-                {fmt(levels.current)}{" "}
-                <span className={levels.above ? "pos" : "neg"}>
-                  {levels.above ? "above pivot" : "below pivot"}
-                </span>
-              </div>
-              <ul className="kv-list">
-                <li className="lvl-res">
-                  <span>Resistance</span>
-                  <span>{fmt(levels.resistance)}</span>
-                </li>
-                <li className="lvl-piv">
-                  <span>Pivot</span>
-                  <span>{fmt(levels.pivot)}</span>
-                </li>
-                <li className="lvl-sup">
-                  <span>Support</span>
-                  <span>{fmt(levels.support)}</span>
-                </li>
-                <li>
-                  <span>O/N High</span>
-                  <span>{fmt(levels.onHigh)}</span>
-                </li>
-                <li>
-                  <span>O/N Low</span>
-                  <span>{fmt(levels.onLow)}</span>
-                </li>
-              </ul>
-              <div className="lvl-note">{levels.proxy} · prior session</div>
-            </>
-          ) : (
-            fallback(5)
-          )}
-        </section>
+        {/* NQ levels — hidden when loaded but no levels data */}
+        {(!data || levels) && (
+          <section className="panel mk-levels">
+            <div className="panel-head">{data?.levels?.proxy ?? "NQ"} · Levels</div>
+            {levels ? (
+              <>
+                <div className="nq-price">
+                  {fmt(levels.current)}{" "}
+                  <span className={levels.above ? "pos" : "neg"}>
+                    {levels.above ? "above pivot" : "below pivot"}
+                  </span>
+                </div>
+                <ul className="kv-list">
+                  <li className="lvl-res">
+                    <span>Resistance</span>
+                    <span>{fmt(levels.resistance)}</span>
+                  </li>
+                  <li className="lvl-piv">
+                    <span>Pivot</span>
+                    <span>{fmt(levels.pivot)}</span>
+                  </li>
+                  <li className="lvl-sup">
+                    <span>Support</span>
+                    <span>{fmt(levels.support)}</span>
+                  </li>
+                  <li>
+                    <span>O/N High</span>
+                    <span>{fmt(levels.onHigh)}</span>
+                  </li>
+                  <li>
+                    <span>O/N Low</span>
+                    <span>{fmt(levels.onLow)}</span>
+                  </li>
+                </ul>
+                <div className="lvl-note">{levels.proxy} · prior session</div>
+              </>
+            ) : (
+              fallback(5)
+            )}
+          </section>
+        )}
 
         {/* gauge cluster */}
         <section className="panel mk-gauges">
@@ -245,49 +243,48 @@ export default function MarketsSurface() {
           </div>
         </section>
 
-        {/* movers */}
-        <section className="panel mk-movers">
-          <div className="panel-head">Movers</div>
-          {data ? (
-            !data.movers.gainers.length &&
-            !data.movers.losers.length &&
-            !data.movers.actives.length ? (
-              <WidgetState state="empty" />
+        {/* movers — hidden when loaded-but-empty */}
+        {(!data ||
+          data.movers.gainers.length > 0 ||
+          data.movers.losers.length > 0 ||
+          data.movers.actives.length > 0) && (
+          <section className="panel mk-movers">
+            <div className="panel-head">Movers</div>
+            {data ? (
+              <div className="movers-cols">
+                <div>
+                  <div className="movers-h pos">Gainers</div>
+                  {data.movers.gainers.map((m) => (
+                    <div key={m.sym} className="mover">
+                      <span className="mover-sym">{m.sym}</span>
+                      <span className="pos">{pct(m.chgPct)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div className="movers-h neg">Losers</div>
+                  {data.movers.losers.map((m) => (
+                    <div key={m.sym} className="mover">
+                      <span className="mover-sym">{m.sym}</span>
+                      <span className="neg">{pct(m.chgPct)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div className="movers-h">Active</div>
+                  {data.movers.actives.map((m) => (
+                    <div key={m.sym} className="mover">
+                      <span className="mover-sym">{m.sym}</span>
+                      <span className={sign(m.chgPct)}>{pct(m.chgPct)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
-            <div className="movers-cols">
-              <div>
-                <div className="movers-h pos">Gainers</div>
-                {data.movers.gainers.map((m) => (
-                  <div key={m.sym} className="mover">
-                    <span className="mover-sym">{m.sym}</span>
-                    <span className="pos">{pct(m.chgPct)}</span>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div className="movers-h neg">Losers</div>
-                {data.movers.losers.map((m) => (
-                  <div key={m.sym} className="mover">
-                    <span className="mover-sym">{m.sym}</span>
-                    <span className="neg">{pct(m.chgPct)}</span>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div className="movers-h">Active</div>
-                {data.movers.actives.map((m) => (
-                  <div key={m.sym} className="mover">
-                    <span className="mover-sym">{m.sym}</span>
-                    <span className={sign(m.chgPct)}>{pct(m.chgPct)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            )
-          ) : (
-            fallback(5)
-          )}
-        </section>
+              fallback(5)
+            )}
+          </section>
+        )}
 
         {/* econ calendar */}
         <section className="panel mk-econ">
@@ -311,13 +308,13 @@ export default function MarketsSurface() {
           )}
         </section>
 
-        {/* flow lite */}
-        <section className="panel mk-flow">
-          <div className="panel-head">
-            Flow · Lite <span className="todo">proxy</span>
-          </div>
-          {data ? (
-            data.flow.length ? (
+        {/* flow lite — hidden when loaded-but-empty */}
+        {(!data || data.flow.length > 0) && (
+          <section className="panel mk-flow">
+            <div className="panel-head">
+              Flow · Lite <span className="todo">proxy</span>
+            </div>
+            {data ? (
               <ul className="flow-list">
                 {data.flow.map((f) => (
                   <li key={f.sym}>
@@ -328,15 +325,13 @@ export default function MarketsSurface() {
                 ))}
               </ul>
             ) : (
-              <WidgetState state="empty" />
-            )
-          ) : (
-            fallback(5)
-          )}
-          <div className="flow-note">
-            Unusual equity volume — free stand-in for options flow (real flow is paid).
-          </div>
-        </section>
+              fallback(5)
+            )}
+            <div className="flow-note">
+              Unusual equity volume — free stand-in for options flow (real flow is paid).
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

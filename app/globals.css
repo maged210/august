@@ -196,6 +196,9 @@ body::after {
    timestamp line never overlaps a surface name. */
 .boot-hud {
   line-height: 1.5;
+  /* Ambient, not a content block: a hair smaller than the 10px .hud base so the
+     corner readout recedes behind the surfaces. */
+  font-size: 9px;
 }
 .boot-hud > div {
   white-space: nowrap;
@@ -204,11 +207,11 @@ body::after {
    hair wider); the others recede; the live ZULU clock sits quietest of all. */
 .boot-brand {
   color: var(--bone);
-  opacity: 0.95;
+  opacity: 0.82;
   letter-spacing: 0.26em;
 }
 .boot-zulu {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 /* Corner frame ticks — thin L-marks framing the stage. Precise periphery, calm
@@ -1208,14 +1211,52 @@ body::after {
     grid-template-rows: none;
     overflow-y: auto;
   }
+  /* Single column that collapses cleanly when empty sections are hidden — flex
+     (not grid-areas) so a removed panel leaves no reserved row or gap. */
   .markets-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
-    grid-template-areas: "sectors" "watch" "chart" "levels" "gauges" "movers" "econ" "flow";
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
   }
   .mk-chart {
     min-height: 300px;
+  }
+  /* Comms: give the subject the whole width on a phone — a quiet metadata row
+     (time · sender · tag) above, the subject below with a 2-line clamp. The
+     WORK/NOISE tag is demoted onto the metadata row so it stops eating subject
+     space; subject is content, tag is metadata. */
+  .logline {
+    grid-template-columns: 50px 1fr auto;
+    grid-template-areas:
+      "time from tag"
+      "subj subj subj";
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: baseline;
+  }
+  .log-arrow {
+    display: none;
+  }
+  .log-t {
+    grid-area: time;
+  }
+  .log-from {
+    grid-area: from;
+  }
+  .log-tag {
+    grid-area: tag;
+    font-size: 7.5px;
+    opacity: 0.5;
+  }
+  .log-subj {
+    grid-area: subj;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.42;
   }
   .intel-feed {
     grid-row: auto;
@@ -1919,21 +1960,49 @@ body::after {
   z-index: 4;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
+  gap: 0;
+  padding: 0;
   background: rgba(8, 8, 11, 0.5);
   border: 1px solid var(--line);
   border-radius: 8px;
   backdrop-filter: blur(6px);
+  overflow: hidden;
 }
 .command-layers-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 9px 12px;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 8px;
   letter-spacing: 0.26em;
   text-transform: uppercase;
   color: var(--ash);
-  opacity: 0.7;
-  margin-bottom: 4px;
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease);
+}
+.command-layers-head:hover {
+  color: var(--bone);
+}
+.command-layers-chev {
+  margin-left: auto;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ash);
+}
+.command-layers.open .command-layers-head {
+  border-bottom: 1px solid var(--line);
+  color: var(--bone);
+}
+.command-layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
 }
 .layer-toggle {
   display: flex;

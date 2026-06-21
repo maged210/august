@@ -393,7 +393,9 @@ export type RecognizerCallbacks = {
   onResult?: (text: string) => void;
   onStart?: () => void;
   onEnd?: () => void;
-  onError?: (err: string) => void;
+  /** err is a coarse kind ("network", "not-allowed", …); detail is an optional
+   *  human/diagnostic string (e.g. a Deepgram close code) for logs + the UI. */
+  onError?: (err: string, detail?: string) => void;
   /** 0..1 live mic level for the "listening" orb. Only engines that own the audio
    *  graph (Deepgram) emit this; the Web Speech recognizer leaves it unset and the
    *  caller drives the orb via startMicLevel() instead. */

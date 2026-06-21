@@ -83,9 +83,10 @@ export default function CommandGlobe({ active, flyTo }: Props) {
 
   const [aircraft, setAircraft] = useState<number | null>(null);
   const [quakes, setQuakes] = useState<number | null>(null);
-  const [wires, setWires] = useState<number | null>(null);
   const [zulu, setZulu] = useState("");
   const [layers, setLayers] = useState({ flights: true, quakes: true, night: true });
+  // LAYERS rail starts collapsed so the globe is unobstructed by default.
+  const [layersOpen, setLayersOpen] = useState(false);
 
   useEffect(() => {
     activeRef.current = active;
@@ -333,25 +334,40 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     }
   };
 
-  const activeCount = Number(layers.flights) + Number(layers.quakes) + Number(layers.night);
+  // One compact HUD line — only data that actually has a value (never a dangling
+  // "—"). The layer count lives on the LAYERS chip and the wire count on the Intel
+  // panel, so they aren't duplicated here.
+  const hudStats: string[] = [];
+  if (zulu) hudStats.push(zulu);
+  if (aircraft != null && aircraft > 0) hudStats.push(`${aircraft.toLocaleString()} aircraft`);
+  if (quakes != null) hudStats.push(`${quakes} quakes`);
 
   return (
     <div className="command-surface">
       <div ref={containerRef} className="command-map" />
       <div className="command-vignette" aria-hidden />
 
-      {/* top HUD */}
-      <div className="command-hud">
-        <span className="hud">{zulu}</span>
-        <span className="command-hud-sep">·</span>
-        <span className="hud">{activeCount} layers</span>
-        <span className="command-hud-sep">·</span>
-        <span className="hud">{aircraft != null ? aircraft.toLocaleString() : "—"} aircraft</span>
-        <span className="command-hud-sep">·</span>
-        <span className="hud">{quakes != null ? quakes : "—"} quakes / 24h</span>
-        <span className="command-hud-sep">·</span>
-        <span className="hud">{wires != null ? wires : "—"} wires</span>
-      </div>
+      {/* top HUD — one compact line, only live data tokens */}
+      {hudStats.length > 0 ? (
+        <div className="command-hud">
+          {hudStats.flatMap((s, i) =>
+            i === 0
+              ? [
+                  <span key={`h${i}`} className="hud">
+                    {s}
+                  </span>,
+                ]
+              : [
+                  <span key={`s${i}`} className="command-hud-sep">
+                    ·
+                  </span>,
+                  <span key={`h${i}`} className="hud">
+                    {s}
+                  </span>,
+                ],
+          )}
+        </div>
+      ) : null}
 
       {/* reset view — back to the home framing (drag-rotate / scroll-zoom are native) */}
       <button
@@ -372,30 +388,45 @@ export default function CommandGlobe({ active, flyTo }: Props) {
         ⌖ RESET
       </button>
 
-      {/* left layer toggles */}
-      <div className="command-layers">
-        <div className="command-layers-head">LAYERS</div>
-        {(
-          [
-            ["flights", "Flights"],
-            ["quakes", "Quakes"],
-            ["night", "Day / Night"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={`layer-toggle${layers[key] ? " on" : ""}`}
-            onClick={() => toggle(key)}
-          >
-            <span className="layer-dot" />
-            <span className="layer-name">{label}</span>
-          </button>
-        ))}
+      {/* left layer toggles — collapsed to a small chip by default; tap to reveal */}
+      <div className={`command-layers${layersOpen ? " open" : ""}`}>
+        <button
+          type="button"
+          className="command-layers-head"
+          onClick={() => setLayersOpen((o) => !o)}
+          aria-expanded={layersOpen}
+          title={layersOpen ? "Hide layers" : "Show layers"}
+        >
+          <span>Layers</span>
+          <span className="command-layers-chev" aria-hidden>
+            {layersOpen ? "▾" : "▸"}
+          </span>
+        </button>
+        {layersOpen ? (
+          <div className="command-layers-list">
+            {(
+              [
+                ["flights", "Flights"],
+                ["quakes", "Quakes"],
+                ["night", "Day / Night"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`layer-toggle${layers[key] ? " on" : ""}`}
+                onClick={() => toggle(key)}
+              >
+                <span className="layer-dot" />
+                <span className="layer-name">{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* world news wires + AUGUST's synthesis, docked right (collapsible) */}
-      <IntelPanel onCount={setWires} />
+      <IntelPanel />
     </div>
   );
 }
