@@ -5,7 +5,11 @@ import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ELEVEN_MODEL = "eleven_turbo_v2_5"; // low-latency
+// Flash v2.5 — ElevenLabs' lowest-latency model (~75ms inference). Replaces the
+// now-deprecated eleven_turbo_v2_5 (Flash is "functionally equivalent … except the
+// latency on the Flash models is lower on average"). English quality is on par for
+// a conversational companion. Verified against elevenlabs.io/docs/overview/models.
+const ELEVEN_MODEL = "eleven_flash_v2_5";
 
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("speak", getIp(req));
@@ -29,10 +33,15 @@ export async function POST(req: Request): Promise<Response> {
   text = text.trim();
   if (!text) return new Response("No text provided.", { status: 400 });
 
+  // mp3_44100_64: half the bytes/sec of the old _128 → faster first audio, still
+  // clean progressive MP3. optimize_streaming_latency=3 = max optimization with the
+  // text normalizer ON (NOT 4, which disables it and mispronounces numbers/dates —
+  // AUGUST quotes markets, so normalization stays on). Verified vs ElevenLabs docs.
   const url =
     `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream` +
-    `?output_format=mp3_44100_128&optimize_streaming_latency=3`;
+    `?output_format=mp3_44100_64&optimize_streaming_latency=3`;
 
+  const t0 = Date.now();
   let elRes: Response;
   try {
     elRes = await fetch(url, {
@@ -60,8 +69,14 @@ export async function POST(req: Request): Promise<Response> {
 
   if (!elRes.ok || !elRes.body) {
     const detail = await elRes.text().catch(() => "");
+    console.error(`[speak] ElevenLabs error ${elRes.status} after ${Date.now() - t0}ms: ${detail}`);
     return new Response(`ElevenLabs error ${elRes.status}: ${detail}`, { status: 502 });
   }
+
+  // upstream-TTFB: time until ElevenLabs returned response headers (first audio is
+  // about to stream). The [LAT] client log measures the full picture; this isolates
+  // the TTS server leg. ~chars so we can correlate latency with utterance length.
+  console.log(`[speak] ${ELEVEN_MODEL} upstream-TTFB=${Date.now() - t0}ms chars=${text.length}`);
 
   // Pass the audio stream straight through to the client.
   return new Response(elRes.body, {
