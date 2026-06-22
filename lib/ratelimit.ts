@@ -24,17 +24,19 @@ function getRedis(): Redis {
   return _redis;
 }
 
-type RouteKey = "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token";
+type RouteKey = "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token" | "push";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
   chat: 10,   // Anthropic tokens — most expensive
-  speak: 15,  // ElevenLabs quota
+  speak: 40,  // ElevenLabs quota — raised for per-sentence voice pipelining (≈2-4 short
+              // calls per spoken turn instead of 1); still bounds runaway cost
   intel: 30,  // Anthropic synthesis but heavily cached, generous
   memory: 20, // Upstash writes + occasional Anthropic summarisation
   inbox: 20,  // Gmail API quota — read-only, server-cached
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
   token: 30,  // Deepgram STT grant-token mint — cheap, one per voice session/~2min, generous
+  push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

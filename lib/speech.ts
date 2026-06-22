@@ -8,6 +8,8 @@
 // speak()'s call shape is unchanged: speak(text, callbacks) -> { cancel }.
 // The circle is driven via the optional onLevel(0..1) callback.
 
+import { latMark } from "@/lib/latency";
+
 const isBrowser = typeof window !== "undefined";
 
 // ---------------------------------------------------------------------------
@@ -132,6 +134,7 @@ async function playElevenLabs(
   cb: SpeakCallbacks,
   signal: AbortSignal,
 ): Promise<{ stop: () => void }> {
+  latMark("t3"); // first /api/speak request sent (first-occurrence-only)
   const res = await fetch("/api/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -207,6 +210,7 @@ async function playElevenLabs(
 
   cb.onStart?.();
   source.start();
+  latMark("t4"); // first audio plays — headline t0→t4 time-to-first-audio
   // Safety net: if onended never fires (AudioContext interrupted, tab/audio-focus
   // suspended mid-playback), end the chunk after its known duration so a sequential
   // speech queue — and the voice-mode mic re-arm that hangs off onEnd — can't stall.
@@ -302,14 +306,22 @@ function playBrowser(text: string, cb: SpeakCallbacks): { stop: () => void } {
 }
 
 // ---------------------------------------------------------------------------
-// Sequential speech queue — speak text in ordered chunks, reusing speak().
+// Prefetching, gapless speech queue — speak a streamed reply in ordered chunks.
 //
-// Lets a streamed reply start talking on its first sentence while the rest is
-// still generating: push the first sentence early, push the remainder when the
-// stream ends, then end(). Each chunk is a normal /api/speak call, so it keeps
-// the Daniel voice + the amplitude envelope and inherits the browser-voice
-// fallback. onStart fires once (first audio), onEnd once (after the last chunk
-// drains). Conservative chunking keeps it to ~1-2 /api/speak calls per turn.
+// The latency win: each pushed chunk is fetched from /api/speak AND decoded EAGERLY
+// (up to PREFETCH ahead), so chunk N+1's audio is ready before chunk N finishes —
+// no dead air between sentences, and TTS generation overlaps playback. Decoded
+// AudioBuffers are scheduled back-to-back on one AudioContext timeline (sample-
+// accurate, gapless) through a shared AnalyserNode that drives onLevel for the orb.
+// Each chunk is full-buffer decoded (decodeAudioData on a COMPLETE sentence is rock-
+// solid — no mid-mp3 partial-decode fragility). If /api/speak is unavailable, a
+// chunk falls back to the browser voice. onStart fires once (first audio), onEnd
+// once (after the last chunk drains). The caller keeps chunks reasonably sized so a
+// long reply doesn't burn the /api/speak rate limit.
+//
+// Why not MediaSource/streaming-decode: raw-mp3 in MSE is Chromium-only (Firefox +
+// iPhone Safari reject audio/mpeg), and mid-stream mp3 slice-decode is gap-prone.
+// Full-buffer-per-sentence decode is reliable on every target browser incl. iPhone.
 // ---------------------------------------------------------------------------
 
 export type SpeechQueue = {
@@ -321,7 +333,244 @@ export type SpeechQueue = {
   cancel: () => void;
 };
 
+const PREFETCH = 2; // decode up to this many chunks ahead of the playhead
+
 export function createSpeechQueue(cb: SpeakCallbacks = {}): SpeechQueue {
+  const ctx = getTtsContext();
+  // No Web Audio at all (ancient browser / SSR) → the simple sequential speak() queue,
+  // which itself falls back to the browser voice. The prefetch path needs decodeAudioData.
+  if (!ctx) return legacySpeechQueue(cb);
+
+  type Slot = { text: string; buf: AudioBuffer | "fallback" | null };
+  const slots: Slot[] = [];
+  const ac = new AbortController(); // aborts in-flight /api/speak fetches on cancel
+
+  let prepCursor = 0; // next slot index to start preparing
+  let playCursor = 0; // next slot index to play
+  let inFlight = 0; // prepares running
+  let nextStart = 0; // gapless schedule playhead (ctx time); 0 until first audio
+  let activeSources = 0; // scheduled buffer sources not yet ended
+  let fallbackActive = false; // a browser-voice chunk is mid-utterance (serializes)
+  let fallbackHandle: { stop: () => void } | null = null;
+  let scheduling = false; // reentrancy guard for pumpPlay
+
+  let analyser: AnalyserNode | null = null;
+  let raf = 0;
+  let level = 0;
+  let started = false;
+  let ended = false;
+  let finished = false;
+  let cancelled = false;
+  const liveSources = new Set<AudioBufferSourceNode>();
+
+  const startLevelLoop = () => {
+    if (raf || !analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      level += (Math.min(1, rms * 3.2) - level) * 0.4;
+      cb.onLevel?.(level);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  };
+  const stopLevelLoop = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    cb.onLevel?.(0);
+  };
+
+  const ensureAnalyser = () => {
+    if (analyser || !ctx) return;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.8;
+    analyser.connect(ctx.destination);
+    startLevelLoop();
+  };
+
+  const ensureStarted = () => {
+    if (!started) {
+      started = true;
+      cb.onStart?.();
+    }
+  };
+
+  const maybeFinish = () => {
+    if (cancelled || finished) return;
+    if (
+      ended &&
+      playCursor >= slots.length &&
+      inFlight === 0 &&
+      activeSources === 0 &&
+      !fallbackActive
+    ) {
+      finished = true;
+      stopLevelLoop();
+      cb.onEnd?.();
+    }
+  };
+
+  // Fetch + full-buffer decode one chunk. "fallback" on any failure (route down,
+  // rate-limited, empty, or undecodable) → the browser voice plays that chunk.
+  const prepareChunk = async (text: string): Promise<AudioBuffer | "fallback"> => {
+    latMark("t3"); // first /api/speak request sent (first-occurrence-only)
+    let res: Response;
+    try {
+      res = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: ac.signal,
+      });
+    } catch {
+      return "fallback";
+    }
+    if (!res.ok || !res.body) return "fallback";
+    let arr: ArrayBuffer;
+    try {
+      arr = await res.arrayBuffer();
+    } catch {
+      return "fallback";
+    }
+    if (arr.byteLength === 0) return "fallback";
+    await ctx.resume().catch(() => {});
+    try {
+      return await ctx.decodeAudioData(arr);
+    } catch {
+      return "fallback";
+    }
+  };
+
+  const pumpPrepare = () => {
+    while (!cancelled && prepCursor < slots.length && inFlight < PREFETCH) {
+      const slot = slots[prepCursor++];
+      inFlight++;
+      prepareChunk(slot.text)
+        .then((b) => {
+          slot.buf = b;
+        })
+        .catch(() => {
+          slot.buf = "fallback";
+        })
+        .finally(() => {
+          inFlight--;
+          pumpPrepare();
+          pumpPlay();
+        });
+    }
+  };
+
+  const scheduleBuffer = (buf: AudioBuffer) => {
+    ensureAnalyser();
+    ensureStarted();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(analyser!);
+    const startAt = Math.max(ctx.currentTime + 0.04, nextStart);
+    if (nextStart === 0) latMark("t4"); // first audio scheduled — t0→t4 headline
+    src.start(startAt);
+    nextStart = startAt + buf.duration;
+    activeSources++;
+    liveSources.add(src);
+    src.onended = () => {
+      activeSources--;
+      liveSources.delete(src);
+      maybeFinish();
+    };
+  };
+
+  const playFallback = (text: string) => {
+    fallbackActive = true;
+    ensureStarted();
+    fallbackHandle = playBrowser(text, {
+      onStart: () => latMark("t4"),
+      onLevel: cb.onLevel, // browser voice drives its own synthetic envelope
+      onError: (e) => cb.onError?.(e),
+      onEnd: () => {
+        fallbackActive = false;
+        fallbackHandle = null;
+        cb.onLevel?.(0);
+        pumpPlay();
+        maybeFinish();
+      },
+    });
+  };
+
+  const pumpPlay = () => {
+    if (cancelled || scheduling) return;
+    scheduling = true;
+    while (playCursor < slots.length) {
+      if (fallbackActive) break; // a browser chunk is mid-utterance
+      const slot = slots[playCursor];
+      if (slot.buf === null) break; // not decoded yet — wait for prepare
+      if (slot.buf === "fallback") {
+        // Serialize the browser voice AFTER scheduled ElevenLabs audio drains so it
+        // doesn't talk over still-playing buffers; resume the pump on its onEnd.
+        if (activeSources > 0) break;
+        playCursor++;
+        playFallback(slot.text);
+        break;
+      }
+      scheduleBuffer(slot.buf);
+      playCursor++;
+    }
+    scheduling = false;
+    maybeFinish();
+  };
+
+  return {
+    push: (text) => {
+      if (cancelled || ended) return;
+      const t = text.trim();
+      if (!t) return;
+      slots.push({ text: t, buf: null });
+      pumpPrepare();
+    },
+    end: () => {
+      if (cancelled) return;
+      ended = true;
+      maybeFinish(); // covers the empty / already-drained case
+    },
+    cancel: () => {
+      if (cancelled) return;
+      cancelled = true;
+      ac.abort();
+      for (const s of liveSources) {
+        try {
+          s.onended = null;
+          s.stop();
+          s.disconnect();
+        } catch {
+          /* already stopped */
+        }
+      }
+      liveSources.clear();
+      fallbackHandle?.stop();
+      fallbackHandle = null;
+      if (analyser) {
+        try {
+          analyser.disconnect();
+        } catch {
+          /* noop */
+        }
+        analyser = null;
+      }
+      stopLevelLoop();
+    },
+  };
+}
+
+// Sequential speak()-based queue — the pre-prefetch behavior, kept as the fallback
+// for environments without a usable AudioContext (the prefetch path needs decodeAudioData).
+function legacySpeechQueue(cb: SpeakCallbacks = {}): SpeechQueue {
   const pending: string[] = [];
   let active: SpeakHandle | null = null;
   let playing = false;
@@ -349,8 +598,6 @@ export function createSpeechQueue(cb: SpeakCallbacks = {}): SpeechQueue {
         }
       },
       onLevel: cb.onLevel,
-      // speak() always lands on onEnd (even when it fell back / errored), so
-      // onEnd is the single "advance" signal; onError is informational only.
       onError: (e) => cb.onError?.(e),
       onEnd: () => {
         playing = false;

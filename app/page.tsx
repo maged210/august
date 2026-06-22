@@ -29,6 +29,13 @@ import {
   isDeepgramRecognizerSupported,
   probeDeepgram,
 } from "@/lib/deepgram";
+import { latMark, latReset } from "@/lib/latency";
+import {
+  enablePush,
+  getPushState,
+  registerServiceWorker,
+  type PushState,
+} from "@/lib/push-client";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
 // WebGL components load only in the browser.
@@ -67,15 +74,21 @@ function splitToolStream(raw: string): { text: string; tools: ToolEvent[] } {
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
-// Index just past the first sentence terminator (for streaming TTS): lets the
-// queue start speaking sentence one while the rest of the reply still generates.
-// Returns -1 if no usable boundary yet. The min length avoids splitting on a
-// stray early "1." / "Mr." into a tiny fragment.
-function firstSentenceEnd(s: string): number {
-  const m = s.match(/[.!?…]["')\]]?(?:\s|$)/);
-  if (!m || m.index === undefined) return -1;
-  const end = m.index + m[0].length;
-  return end >= 18 ? end : -1;
+// Index just past the first sentence terminator at/after `from` whose chunk is at
+// least `minLen` chars (for streaming TTS): lets the queue speak each sentence as it
+// completes while the rest of the reply still generates. Returns -1 if no usable
+// boundary yet. minLen avoids splitting on a stray early "1." / "Mr." and lets us
+// keep the FIRST chunk small (fast first audio) but coalesce later ones (fewer
+// /api/speak calls — the route is rate-limited).
+function sentenceChunkEnd(s: string, from: number, minLen: number): number {
+  const re = /[.!?…]["')\]]?(?:\s|$)/g;
+  re.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const end = m.index + m[0].length;
+    if (end - from >= minLen) return end;
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +162,9 @@ export default function Home() {
   const [theme, setTheme] = useState<Theme>("dark");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
+  // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
+  // Starts "unsupported" so SSR + first client render match; the mount effect resolves it.
+  const [pushState, setPushState] = useState<PushState>("unsupported");
   // One-shot screen-reader announcements for the privacy-critical transitions
   // (mic goes live / off) — a persistent live region the visual bar can't cover.
   const [voiceAnnounce, setVoiceAnnounce] = useState("");
@@ -291,6 +307,21 @@ export default function Home() {
     };
   }, []);
 
+  // PWA: register the (minimal) service worker and resolve the push-control state.
+  // Re-check on focus/visibility so installing to the home screen then reopening
+  // (the iOS path) flips the bell from "install" to "enable" without a hard reload.
+  useEffect(() => {
+    registerServiceWorker();
+    setPushState(getPushState());
+    const refresh = () => setPushState(getPushState());
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
   // Cleanup on unmount.
   useEffect(() => {
     return () => {
@@ -350,6 +381,51 @@ export default function Home() {
     } else if (soundOnRef.current) {
       playTone("toggle"); // only audible feedback on UNmute — never while muted
     }
+  }
+
+  // The bell control. Deliberate, never auto-prompted. On a fresh browser it requests
+  // permission + subscribes; otherwise it explains the current state (iOS needs the
+  // app installed first; a blocked permission must be re-enabled in site settings).
+  // Feedback rides the existing reply panel — no new UI surface.
+  async function handleNotify() {
+    const s = getPushState();
+    if (s === "granted") {
+      setReplyText("Notifications are on — I can reach you even when AUGUST is closed.");
+      openPanel();
+      return;
+    }
+    if (s === "ios-install") {
+      setReplyText(
+        "To get notifications on iPhone, install AUGUST first: tap the Share button, then “Add to Home Screen.” Open AUGUST from the home screen and tap the bell again.",
+      );
+      openPanel();
+      return;
+    }
+    if (s === "denied") {
+      setReplyText(
+        "Notifications are blocked for this site. Re-enable them in your browser’s settings for this page, then tap the bell again.",
+      );
+      openPanel();
+      return;
+    }
+    // "default" — request permission + subscribe (this call is the user gesture).
+    const r = await enablePush();
+    setPushState(getPushState());
+    if (r.ok) {
+      uiTone("ready");
+      setReplyText("Notifications enabled. I’ll be able to reach you off-screen.");
+    } else if (r.reason === "ios-install") {
+      setReplyText(
+        "On iPhone, install AUGUST to the home screen first (Share → Add to Home Screen), then enable notifications from the installed app.",
+      );
+    } else if (r.reason === "denied") {
+      setReplyText("Notification permission was declined. You can enable it anytime from the bell.");
+    } else if (r.reason === "config" || r.reason === "unsupported") {
+      setReplyText("Notifications aren’t available in this browser.");
+    } else {
+      setReplyText("Couldn’t enable notifications just now — try again in a moment.");
+    }
+    openPanel();
   }
 
   function toggleSound() {
@@ -920,6 +996,7 @@ export default function Home() {
       return;
     }
 
+    latReset(); // t0 — turn start (≈ transcript committed for the voice path)
     primeAudio();
     stopSpeaking(); // a new message always cuts current speech
     stopListening();
@@ -939,10 +1016,12 @@ export default function Home() {
 
     let full = "";
     try {
+      latMark("t1"); // chat request sent
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        // voice turns ask for Haiku 4.5 server-side (lowest TTFT for the spoken loop).
+        body: JSON.stringify({ messages: next, voice: voiceModeRef.current }),
         signal: controller.signal,
       });
       if (gen !== genRef.current) return; // superseded while connecting
@@ -990,7 +1069,11 @@ export default function Home() {
       for (;;) {
         const { value, done } = await reader.read();
         if (gen !== genRef.current) return; // superseded mid-stream — the new turn owns the UI
-        if (done) break;
+        if (done) {
+          latMark("t2b"); // LLM full response done
+          break;
+        }
+        latMark("t2"); // LLM first token (first-occurrence-only)
         full += decoder.decode(value, { stream: true });
         const parsed = splitToolStream(full);
         setReplyText(parsed.text);
@@ -1000,18 +1083,26 @@ export default function Home() {
           applyToolEvents(parsed.tools.slice(appliedTools));
           appliedTools = parsed.tools.length;
         }
-        // Eager first-sentence speech for a fast spoken start — voice mode only,
-        // where hands-free latency matters most. Typed replies stay a single
-        // smooth /api/speak call (no mid-reply gap, no extra rate-limit pressure).
-        if (voiceModeRef.current && !mutedRef.current && spokenLen === 0) {
-          const b = firstSentenceEnd(parsed.text);
-          if (b > 0) {
-            if (!queue) {
-              queue = makeQueue();
-              speechQueueRef.current = queue;
+        // Per-sentence pipelining — voice mode only, where hands-free latency matters
+        // most. Push each sentence to the prefetching queue the moment it completes so
+        // playback starts on sentence one and later sentences are fetched/decoded while
+        // earlier ones play (no dead air, TTS overlaps the LLM). The FIRST chunk is kept
+        // short (minLen 18) for the fastest possible first audio; later chunks coalesce
+        // to ~80 chars so a long reply doesn't burn the /api/speak rate limit. Typed
+        // replies stay a single smooth /api/speak call.
+        if (voiceModeRef.current && !mutedRef.current) {
+          for (;;) {
+            const end = sentenceChunkEnd(parsed.text, spokenLen, spokenLen === 0 ? 18 : 80);
+            if (end <= 0) break;
+            const chunk = parsed.text.slice(spokenLen, end).trim();
+            if (chunk) {
+              if (!queue) {
+                queue = makeQueue();
+                speechQueueRef.current = queue;
+              }
+              queue.push(chunk);
             }
-            queue.push(parsed.text.slice(0, b));
-            spokenLen = b;
+            spokenLen = end;
           }
         }
       }
@@ -1311,6 +1402,26 @@ export default function Home() {
             >
               <ToneIcon off={!soundOn} />
             </button>
+            {pushState !== "unsupported" && (
+              <button
+                type="button"
+                className={`ctl-round${pushState === "granted" ? " on" : ""}`}
+                onClick={handleNotify}
+                title={
+                  pushState === "granted"
+                    ? "Notifications on"
+                    : pushState === "ios-install"
+                      ? "Install AUGUST to enable notifications"
+                      : pushState === "denied"
+                        ? "Notifications blocked — tap for help"
+                        : "Enable notifications"
+                }
+                aria-pressed={pushState === "granted"}
+                aria-label={pushState === "granted" ? "Notifications enabled" : "Enable notifications"}
+              >
+                {pushState === "denied" ? <BellOffIcon /> : <BellIcon on={pushState === "granted"} />}
+              </button>
+            )}
             <button
               type="button"
               className="ctl-round ctl-theme"
@@ -1335,6 +1446,49 @@ function StopIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
       <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+// Notification bell — outline by default, with a small "on" dot once enabled.
+function BellIcon({ on = false }: { on?: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M8 2a3.5 3.5 0 0 0-3.5 3.5c0 3-1.3 4-1.3 4h9.6s-1.3-1-1.3-4A3.5 3.5 0 0 0 8 2Z" />
+      <path d="M6.6 12a1.5 1.5 0 0 0 2.8 0" />
+      {on && <circle cx="12.2" cy="3.8" r="2" fill="currentColor" stroke="none" />}
+    </svg>
+  );
+}
+
+// Bell with a slash — notifications blocked.
+function BellOffIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4.6 5.2A3.5 3.5 0 0 1 11.5 6c0 2.4.9 3.5 1.2 3.8" />
+      <path d="M11.4 11.5H3.2s1.3-1 1.3-4v-.3" />
+      <path d="M6.6 12a1.5 1.5 0 0 0 2.8 0" />
+      <line x1="2.5" y1="2.5" x2="13.5" y2="13.5" />
     </svg>
   );
 }

@@ -20,6 +20,15 @@ export const dynamic = "force-dynamic";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
+// Per-path model. The VOICE loop wants minimum time-to-first-token (speed beats max
+// IQ for a spoken companion), so it uses Haiku 4.5 — "Fastest" tier, ~3x cheaper,
+// near-frontier quality (verified: claude-haiku-4-5, platform.claude.com models
+// overview). The typed path keeps Sonnet 4.6 for the extra headroom. Both share the
+// same system/tools, so this is a one-field swap. Note: Haiku's min cacheable prefix
+// is 4096 tokens — the [chat] log prints cache_read to confirm the cache is hitting.
+const VOICE_MODEL = "claude-haiku-4-5";
+const TEXT_MODEL = "claude-sonnet-4-6";
+
 // One client for the process — reusing it keeps the HTTPS connection pool warm,
 // shaving the per-request TLS handshake off time-to-first-token.
 let _client: Anthropic | null = null;
@@ -43,12 +52,15 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   let messages: ChatMessage[] = [];
+  let isVoice = false;
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
+    isVoice = body?.voice === true; // the hands-free loop sets this → Haiku for snap
   } catch {
     return new Response("Invalid request body.", { status: 400 });
   }
+  const model = isVoice ? VOICE_MODEL : TEXT_MODEL;
 
   // Keep only well-formed turns before sending them on.
   const cleaned = messages
@@ -107,6 +119,11 @@ export async function POST(req: Request): Promise<Response> {
     if (ttftMs === -1) ttftMs = Date.now() - t0;
   };
 
+  // Cache telemetry — Haiku 4.5 needs a ≥4096-token prefix to cache; if this stays 0
+  // the cache silently isn't hitting and every voice turn pays full input price + TTFT.
+  let cacheRead = -1;
+  let cacheWrite = -1;
+
   // Client aborts (the stop control, or a superseding send) cancel this stream —
   // that's routine, not an error. Track it so we neither log fake "[chat] stream
   // error"s nor throw on enqueue/close after cancellation.
@@ -128,7 +145,7 @@ export async function POST(req: Request): Promise<Response> {
       try {
         // Turn 1 — give AUGUST his tools. Stream any text live (as before).
         const stream1 = await client.messages.create({
-          model: "claude-sonnet-4-6",
+          model,
           max_tokens: 700,
           system,
           messages: cleaned,
@@ -141,7 +158,11 @@ export async function POST(req: Request): Promise<Response> {
 
         for await (const event of stream1) {
           if (aborted) break;
-          if (event.type === "content_block_start") {
+          if (event.type === "message_start") {
+            const u = event.message.usage;
+            cacheRead = u.cache_read_input_tokens ?? 0;
+            cacheWrite = u.cache_creation_input_tokens ?? 0;
+          } else if (event.type === "content_block_start") {
             const block = event.content_block;
             if (block.type === "tool_use") {
               toolBlocks.set(event.index, { id: block.id, name: block.name, json: "" });
@@ -201,7 +222,7 @@ export async function POST(req: Request): Promise<Response> {
         assistantContent.push(...toolUseContent);
 
         const stream2 = await client.messages.create({
-          model: "claude-sonnet-4-6",
+          model,
           max_tokens: 400,
           system,
           messages: [
@@ -233,8 +254,10 @@ export async function POST(req: Request): Promise<Response> {
       } finally {
         const mem =
           memMs < 0 ? "miss(>300ms)" : memMs > 300 ? `${memMs}ms(missed window)` : `${memMs}ms`;
+        const cache =
+          cacheRead > 0 ? `cache=read:${cacheRead}` : cacheWrite > 0 ? `cache=write:${cacheWrite}` : "cache=miss";
         console.log(
-          `[chat] memory=${mem} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms${aborted ? " (client aborted)" : ""}`,
+          `[chat] model=${model}${isVoice ? "(voice)" : ""} memory=${mem} prep=${prepMs}ms ${cache} ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms${aborted ? " (client aborted)" : ""}`,
         );
         try {
           controller.close();
