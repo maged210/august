@@ -12,13 +12,20 @@ import type {
   DailyBrief,
   IntelCatalyst,
   IntelLevel,
+  IntelSettings,
   IntelVideo,
+  OptionBriefIdea,
+  OptionIdea,
+  OptionsProviderStatus,
   RankFactor,
   TradeIdea,
   VideoAnalysis,
 } from "./types";
-import { getAnalysis, listVideos, saveBrief } from "./store";
+import { getAnalysis, getSettings, listVideos, saveBrief } from "./store";
 import { etDateKey, marketSession } from "./session";
+import { rankOption } from "./options-rank";
+import { generateCandidates, type CandidateThesis } from "./candidates";
+import { getOptionChain } from "./options";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -123,6 +130,91 @@ async function narrate(brief: Omit<DailyBrief, "posture" | "whatChanged" | "what
   return { posture: "", read60: "", grounded: false };
 }
 
+// --- options brief section (additive) -------------------------------------
+type FlatOption = { idea: OptionIdea; channelTitle: string; videoTitle: string };
+
+function promote(f: FlatOption, sourcesForSymbol: number, newest: number, publishedAt: number): OptionBriefIdea {
+  const r = rankOption(f.idea, { sourcesForSymbol, newest, publishedAt });
+  return { ...f.idea, channelTitle: f.channelTitle, videoTitle: f.videoTitle, rankScore: r.score, rankFactors: r.factors };
+}
+
+async function buildOptions(
+  analyses: VideoAnalysis[],
+  vById: Map<string, IntelVideo>,
+  settings: IntelSettings,
+  newest: number,
+): Promise<DailyBrief["options"] | undefined> {
+  const flat: FlatOption[] = [];
+  for (const a of analyses) {
+    const v = vById.get(a.videoId);
+    for (const idea of a.optionIdeas ?? []) flat.push({ idea, channelTitle: v?.channelTitle ?? "unknown", videoTitle: v?.title ?? "" });
+  }
+  if (!flat.length) return undefined;
+
+  const sourcesPerSym = new Map<string, Set<string>>();
+  for (const f of flat) {
+    const set = sourcesPerSym.get(f.idea.underlyingSymbol) ?? new Set();
+    set.add(f.channelTitle);
+    sourcesPerSym.set(f.idea.underlyingSymbol, set);
+  }
+  const pubOf = (videoId?: string) => (videoId ? vById.get(videoId)?.publishedAt ?? 0 : 0);
+  const rankAll = (items: FlatOption[]) =>
+    items
+      .map((f) => promote(f, sourcesPerSym.get(f.idea.underlyingSymbol)?.size ?? 1, newest, pubOf(f.idea.videoId)))
+      .sort((a, b) => b.rankScore - a.rankScore);
+
+  const bestCreatorPlays = rankAll(flat.filter((f) => f.idea.origin === "creator_explicit"));
+  const directionalOnly = rankAll(flat.filter((f) => f.idea.origin === "directional_only"));
+
+  // Probe the provider once (keyless Yahoo is reachable but DELAYED → honest status).
+  let providerStatus: OptionsProviderStatus = "missing_configuration";
+  const probeSym = flat[0]?.idea.underlyingSymbol ?? "SPY";
+  try {
+    providerStatus = (await getOptionChain(probeSym)).status;
+  } catch {
+    providerStatus = "provider_error";
+  }
+
+  // AUGUST candidates: only when the provider returns usable data. Bounded to a few
+  // top directional theses so the brief (and cron) stay responsive.
+  const augustCandidates: OptionBriefIdea[] = [];
+  if (providerStatus === "delayed" || providerStatus === "connected") {
+    const thesisSources = [...directionalOnly, ...bestCreatorPlays.filter((p) => !p.creatorSpecifiedContract)]
+      .filter((p) => p.direction === "bullish" || p.direction === "bearish")
+      .slice(0, 4);
+    for (const p of thesisSources) {
+      const t: CandidateThesis = {
+        underlyingSymbol: p.underlyingSymbol,
+        direction: p.direction,
+        timeHorizon: p.timeHorizon,
+        catalysts: p.catalysts,
+        underlyingTrigger: p.underlyingTrigger,
+        underlyingInvalidation: p.underlyingInvalidation,
+        underlyingTargets: p.underlyingTargets,
+        sourceChapterId: p.sourceChapterId,
+        sourceSegmentIds: p.sourceSegmentIds,
+        sourceStartSeconds: p.sourceStartSeconds,
+        sourceEndSeconds: p.sourceEndSeconds,
+        videoId: p.videoId,
+      };
+      try {
+        const res = await generateCandidates(t, settings.options);
+        for (const c of res.candidates) {
+          const r = rankOption(c, { sourcesForSymbol: sourcesPerSym.get(c.underlyingSymbol)?.size ?? 1, newest, publishedAt: pubOf(c.videoId) });
+          augustCandidates.push({ ...c, channelTitle: p.channelTitle, videoTitle: p.videoTitle, rankScore: r.score, rankFactors: r.factors });
+        }
+      } catch {
+        /* candidate generation is best-effort */
+      }
+    }
+    augustCandidates.sort((a, b) => b.rankScore - a.rankScore);
+  }
+
+  const optionsRisk = [...new Set(flat.flatMap((f) => f.idea.risks))].slice(0, 12);
+
+  return { bestCreatorPlays, augustCandidates, directionalOnly, optionsRisk, providerStatus };
+}
+
 /** Generate (and store) the dated brief from all analyses for that market date. */
 export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
   const videos = (await listVideos()).filter((v) => v.status === "analyzed" || v.status === "preliminary");
@@ -164,6 +256,9 @@ export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
   const consensus = buildConsensus(flatIdeas);
   const creatorFavorites = ranked.filter((i) => i.creatorDesignation.isFavoriteSetup);
 
+  const settings = await getSettings();
+  const options = await buildOptions(analyses, vById, settings, newest).catch(() => undefined);
+
   const partial = {
     date,
     generatedAt: Date.now(),
@@ -175,6 +270,7 @@ export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
     catalysts,
     risks: [...new Set(risks)].slice(0, 12),
     sourceVideoIds: pool.map((v) => v.videoId),
+    ...(options ? { options } : {}),
   };
   const narrative = await narrate(partial as Parameters<typeof narrate>[0]);
 
@@ -211,6 +307,24 @@ export function briefToMarkdown(b: DailyBrief): string {
   }
   L.push("## Top Ideas");
   for (const i of b.topIdeas) L.push(`- **${i.ticker}** ${i.direction} [${i.timeHorizon}] (${i.channelTitle}, score ${i.rankScore}) — ${i.thesis}`);
+  if (b.options && (b.options.bestCreatorPlays.length || b.options.augustCandidates.length || b.options.directionalOnly.length)) {
+    const o = b.options;
+    const legStr = (i: { legs: { action: string; optionType: string; strike: number | null; expiration: string | null }[] }) =>
+      i.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType[0].toUpperCase()}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ") || "no contract specified";
+    L.push("", "## Tonight's Options Brief", `_Options provider: ${o.providerStatus} (delayed, no Greeks). Scores reflect fit + data quality, not expected profit._`);
+    if (o.bestCreatorPlays.length) {
+      L.push("", "### Creator Options Plays");
+      for (const i of o.bestCreatorPlays) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (${i.channelTitle}, score ${i.rankScore}) — ${legStr(i)}${i.quotedPremium !== null ? ` | creator premium ${i.quotedPremium}` : ""}`);
+    }
+    if (o.augustCandidates.length) {
+      L.push("", "### AUGUST Options Candidates _(AUGUST-generated — not creator recommendations, not advice)_");
+      for (const i of o.augustCandidates) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (score ${i.rankScore}) — ${legStr(i)}${i.maxLoss !== null ? ` | max loss ~$${i.maxLoss}` : ""}`);
+    }
+    if (o.directionalOnly.length) {
+      L.push("", "### Directional Setups Without a Contract");
+      for (const i of o.directionalOnly) L.push(`- **${i.underlyingSymbol}** ${i.direction} (${i.channelTitle}) — directional thesis; exact options contract not specified.`);
+    }
+  }
   L.push("", "## Levels");
   for (const l of b.levels) L.push(`- ${l.instrument}: ${l.level ?? l.levelText} (${l.type})`);
   L.push("", "## Catalysts");

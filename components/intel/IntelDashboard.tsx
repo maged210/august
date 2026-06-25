@@ -10,9 +10,12 @@ import type {
   IntelLevel,
   IntelSource,
   IntelVideo,
+  OptionIdea,
   TradeIdea,
   VideoAnalysis,
 } from "@/lib/intel/types";
+import { SymbolProvider } from "./symbolContext";
+import OptionsWorkspace from "./OptionsWorkspace";
 
 // Market Intel dashboard. One overview fetch + targeted actions. Honest states
 // throughout — nothing fabricated; "Not specified" where the creator didn't say.
@@ -113,8 +116,15 @@ export default function IntelDashboard() {
   }
 
   const { config, clock, sources, videos, brief } = data;
+  // Initial shared symbol: first option underlying, else first top idea ticker, else SPY.
+  const initialSymbol =
+    brief?.options?.bestCreatorPlays[0]?.underlyingSymbol ||
+    brief?.options?.directionalOnly[0]?.underlyingSymbol ||
+    brief?.topIdeas[0]?.ticker ||
+    "SPY";
 
   return (
+    <SymbolProvider initial={initialSymbol}>
     <div className="intel-wrap">
       {/* A — COMMAND HEADER */}
       <header className="intel-head">
@@ -140,6 +150,9 @@ export default function IntelDashboard() {
       {!config.youtube && <div className="inote" style={{ marginTop: 8 }}>YOUTUBE_API_KEY not set: add videos by URL and paste transcripts to process them now. Channel auto-discovery and live status need the key.</div>}
       {msg && <div className="istate" style={{ color: "var(--steel)" }}>{msg}</div>}
 
+      {/* OPTIONS INTEL — chart-centered options workspace (additive, full width) */}
+      <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
+
       <div className="intel-grid">
         <div>
           {/* B — TONIGHT'S BRIEF */}
@@ -160,6 +173,7 @@ export default function IntelDashboard() {
 
       {openVideo && <VideoDrawer videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />}
     </div>
+    </SymbolProvider>
   );
 }
 
@@ -308,6 +322,27 @@ function CatalystRow({ c }: { c: IntelCatalyst }) {
     </div>
   );
 }
+function DrawerOptionRow({ o }: { o: OptionIdea }) {
+  const origin = o.origin === "creator_explicit" ? <span className="badge b-explicit">Creator play</span> : o.origin === "august_candidate" ? <span className="badge b-inferred">AUGUST candidate</span> : <span className="badge b-watch">Directional only</span>;
+  const contract = o.legs.length ? o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ") : "no contract specified";
+  return (
+    <div className="optidea">
+      <div className="optidea-top">
+        <span className="idea-tkr">{o.underlyingSymbol}</span>
+        <span className={`badge ${o.direction === "bullish" ? "b-bull" : o.direction === "bearish" ? "b-bear" : "b-neutral"}`}>{o.direction}</span>
+        <span className="badge b-neutral">{o.strategyType.replace(/_/g, " ")}</span>
+        {origin}
+      </div>
+      <div className="optidea-contract">{contract}</div>
+      <div className="idea-grid">
+        <div className="idea-f"><span>Expiration</span>{o.expirationText?.resolved ? <b>{o.expirationText.resolved}</b> : o.expirationText?.text ? <span className="notspec">{o.expirationText.text}</span> : <span className="notspec">Not specified</span>}</div>
+        <div className="idea-f"><span>Creator premium</span>{o.quotedPremium !== null ? <b>${o.quotedPremium}</b> : <span className="notspec">Not specified</span>}</div>
+        <div className="idea-f"><span>Breakeven</span>{o.breakevens.length ? <b>{o.breakevens.join(", ")}</b> : <span className="notspec">Not computable</span>}</div>
+      </div>
+      {o.videoId && <a className="idea-cite" href={watchUrl(o.videoId, o.sourceStartSeconds)} target="_blank" rel="noreferrer">▸ source @ {mmss(o.sourceStartSeconds)}</a>}
+    </div>
+  );
+}
 function ConsensusRow({ c }: { c: ConsensusItem }) {
   const cls = c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral";
   return (
@@ -381,7 +416,7 @@ function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: s
               <span>{v.channelTitle ?? ""}</span>
               {statusBadge(v)}
               {v.stale && <span className="badge b-stale">Stale</span>}
-              {typeof v.ideaCount === "number" && <span>{v.ideaCount} ideas · {v.levelCount ?? 0} levels</span>}
+              {typeof v.ideaCount === "number" && <span>{v.ideaCount} ideas{v.optionCount ? ` · ${v.optionCount} options` : ""} · {v.levelCount ?? 0} levels</span>}
             </div>
           </div>
           <div className="irow-actions"><span className="ibtn ibtn-sm ibtn-ghost">Open</span></div>
@@ -465,6 +500,7 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
               <>
                 {a.overallSummary && <div className="icard"><div className="icard-h">Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}</div><p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p></div>}
                 {a.tradeIdeas.length > 0 && <div className="icard"><div className="icard-h">Trade Ideas · {a.tradeIdeas.length}</div>{a.tradeIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
+                {a.optionIdeas?.length > 0 && <div className="icard"><div className="icard-h">Option Ideas · {a.optionIdeas.length}</div>{a.optionIdeas.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
                 {a.levels.length > 0 && <div className="icard"><div className="icard-h">Levels · {a.levels.length}</div>{a.levels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
                 {a.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
                 <button className="ibtn ibtn-sm ibtn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>

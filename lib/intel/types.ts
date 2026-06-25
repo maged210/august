@@ -71,6 +71,7 @@ export type IntelVideo = {
   marketDate?: string; // YYYY-MM-DD (ET) the analysis pertains to
   tickers?: string[]; // normalized symbols mentioned
   ideaCount?: number;
+  optionCount?: number; // pass-3: count of extracted option ideas (additive)
   levelCount?: number;
   summary?: string;
   stale?: boolean;
@@ -242,6 +243,7 @@ export type VideoAnalysis = {
   marketRegime: MarketRegime;
   claims: Claim[];
   tradeIdeas: TradeIdea[];
+  optionIdeas: OptionIdea[]; // pass-3: options-first extraction (additive)
   levels: IntelLevel[];
   catalysts: IntelCatalyst[];
   risks: string[];
@@ -290,6 +292,23 @@ export type DailyBrief = {
   risks: string[];
   sourceVideoIds: string[];
   grounded: boolean; // synthesized by the model from real analyses
+  // pass-3: options-first brief sections (optional / additive). Present once any
+  // video carries option ideas; creator-stated plays stay separate from candidates.
+  options?: {
+    bestCreatorPlays: OptionBriefIdea[];
+    augustCandidates: OptionBriefIdea[];
+    directionalOnly: OptionBriefIdea[];
+    optionsRisk: string[];
+    providerStatus: OptionsProviderStatus;
+  };
+};
+
+// An OptionIdea promoted to the brief with its source + transparent ranking.
+export type OptionBriefIdea = OptionIdea & {
+  channelTitle: string;
+  videoTitle: string;
+  rankScore: number;
+  rankFactors: RankFactor[];
 };
 
 export type MarketSession = "premarket" | "regular" | "afterhours" | "closed";
@@ -335,6 +354,42 @@ export type IntelSettings = {
   notifyConsensus: boolean;
   notifyBriefReady: boolean;
   retentionDays: number;
+  // pass-3: AUGUST-contract-candidate generation controls (additive).
+  options: OptionCandidateSettings;
+};
+
+export type OptionCandidateSettings = {
+  maxBidAskSpreadPct: number; // reject contracts with a wider relative spread
+  minOpenInterest: number;
+  minVolume: number;
+  preferredDteMin: number;
+  preferredDteMax: number;
+  preferredDeltaMin: number; // abs delta
+  preferredDeltaMax: number;
+  maxPremium: number | null; // per contract, null = no cap
+  allowSingleLeg: boolean;
+  allowDefinedRisk: boolean;
+  allow0DTE: boolean; // default OFF unless creator discussed 0DTE
+  allowEarnings: boolean;
+  maxLossCap: number | null;
+  maxCandidatesPerThesis: number;
+};
+
+export const DEFAULT_OPTION_CANDIDATE_SETTINGS: OptionCandidateSettings = {
+  maxBidAskSpreadPct: 0.15,
+  minOpenInterest: 100,
+  minVolume: 0,
+  preferredDteMin: 7,
+  preferredDteMax: 45,
+  preferredDeltaMin: 0.3,
+  preferredDeltaMax: 0.7,
+  maxPremium: null,
+  allowSingleLeg: true,
+  allowDefinedRisk: true,
+  allow0DTE: false,
+  allowEarnings: true,
+  maxLossCap: null,
+  maxCandidatesPerThesis: 3,
 };
 
 export const DEFAULT_SETTINGS: IntelSettings = {
@@ -350,6 +405,117 @@ export const DEFAULT_SETTINGS: IntelSettings = {
   notifyConsensus: true,
   notifyBriefReady: true,
   retentionDays: 30,
+  options: DEFAULT_OPTION_CANDIDATE_SETTINGS,
 };
 
 export const ANALYSIS_VERSION = "1";
+
+// ===========================================================================
+// PASS 3 — OPTIONS-FIRST TYPES (additive)
+// ===========================================================================
+
+export type OptionDirection = "bullish" | "bearish" | "neutral" | "volatility" | "watch";
+export type OptionStrategyType =
+  | "long_call" | "long_put"
+  | "call_debit_spread" | "put_debit_spread"
+  | "call_credit_spread" | "put_credit_spread"
+  | "straddle" | "strangle" | "calendar" | "iron_condor"
+  | "covered_call" | "cash_secured_put" | "custom" | "unspecified";
+
+// origin keeps creator-stated plays distinct from AUGUST-generated candidates.
+export type OptionOrigin = "creator_explicit" | "august_candidate" | "directional_only";
+
+export type OptionLeg = {
+  action: "buy" | "sell";
+  optionType: "call" | "put";
+  quantity: number;
+  strike: number | null; // null = not specified by creator (never invented)
+  expiration: string | null; // YYYY-MM-DD resolved, or null
+  contractSymbol: string | null;
+};
+
+// Relative dates ("next Friday") preserve the original wording + resolution metadata.
+export type ResolvedDate = {
+  text: string; // original wording
+  resolved: string | null; // YYYY-MM-DD, or null when unsafe to resolve
+  confidence: "high" | "medium" | "low" | "none";
+};
+
+export type OptionEntryCondition = {
+  type: "premium" | "underlying_price" | "breakout" | "breakdown" | "reclaim" | "rejection" | "time" | "other" | "unspecified";
+  value: number | null;
+  text: string;
+};
+
+export type OptionStatus =
+  | "watching" | "waiting_for_trigger" | "approaching_trigger" | "triggered"
+  | "premium_moved" | "target_reached" | "invalidated" | "too_extended"
+  | "expired" | "stale" | "unavailable";
+
+// Live (delayed) contract data — kept SEPARATE from creator-quoted values.
+export type OptionContractQuote = {
+  contractSymbol: string | null;
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  last: number | null;
+  openInterest: number | null;
+  volume: number | null;
+  impliedVolatility: number | null;
+  // Greeks: Yahoo (the reused source) does NOT supply them → null, shown as
+  // "Greeks unavailable from this provider". NEVER fabricated.
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  quoteTimestamp: number | null;
+  delayed: boolean;
+};
+
+export type OptionIdea = {
+  id: string;
+  underlyingSymbol: string;
+  direction: OptionDirection;
+  strategyType: OptionStrategyType;
+  origin: OptionOrigin;
+  creatorSpecifiedContract: boolean;
+  timeHorizon: "intraday" | "next_session" | "swing" | "event" | "longer_term" | "unspecified";
+  legs: OptionLeg[];
+  entryCondition: OptionEntryCondition;
+  underlyingTrigger: number | null;
+  underlyingInvalidation: number | null;
+  underlyingTargets: number[];
+  expirationText: ResolvedDate | null; // creator's relative/explicit expiration wording
+  quotedPremium: number | null; // what the CREATOR said (never overwritten)
+  contractQuote: OptionContractQuote | null; // current (delayed) market data, separate
+  // computed only when inputs are sufficient (else null with a reason in `risks`)
+  breakevens: number[];
+  maxProfit: number | null;
+  maxLoss: number | null;
+  riskRewardRatio: number | null;
+  catalysts: string[];
+  risks: string[];
+  optionsRisk: {
+    liquidity: string | null;
+    thetaDecay: string | null;
+    volatility: string | null;
+    earnings: string | null;
+    assignment: string | null;
+    staleness: string | null;
+  };
+  conviction: "lotto" | "speculative" | "standard" | "high" | "unspecified";
+  confidence: Confidence;
+  explicitness: Explicitness;
+  status: OptionStatus;
+  // evidence (same discipline as TradeIdea)
+  videoId?: string;
+  sourceChapterId: string | null;
+  sourceSegmentIds: string[];
+  sourceStartSeconds: number;
+  sourceEndSeconds: number;
+  chapter?: Evidence["chapter"];
+};
+
+export type OptionsProviderStatus =
+  | "connected" | "delayed" | "missing_configuration" | "unauthorized"
+  | "rate_limited" | "unsupported_symbol" | "provider_error" | "stale";

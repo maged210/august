@@ -2,9 +2,11 @@
 // add a source, process a transcript (fast pass → full pass), enrich with live quotes,
 // and sync channels for new uploads. Idempotent on videoId (no duplicate processing).
 
-import type { IntelSource, IntelVideo, VideoAnalysis } from "./types";
+import type { IntelSource, IntelVideo, OptionIdea, VideoAnalysis } from "./types";
 import { ANALYSIS_VERSION } from "./types";
 import { getQuote } from "@/lib/markets";
+import { computeOptionMetrics, findContract, getOptionChain, quoteFromContract, spreadPct, type ChainResult } from "./options";
+import { dte } from "./dates";
 import {
   getAnalysis,
   getSource,
@@ -146,7 +148,124 @@ async function enrich(a: VideoAnalysis): Promise<VideoAnalysis> {
     if (!q || l.level === null) continue;
     l.crossed = ["resistance", "breakout", "target"].includes(l.type) ? q.price >= l.level : ["support", "breakdown", "invalidation"].includes(l.type) ? q.price <= l.level : null;
   }
+  // Options enrichment is best-effort and isolated — if the (keyless, delayed)
+  // provider is down or a symbol is unsupported, the creator-quoted idea is left
+  // intact and only current/contract data is omitted.
+  try {
+    await enrichOptions(a, quotes);
+  } catch {
+    /* enrichment is additive; never let it fail the analysis */
+  }
   return a;
+}
+
+const isoFromEpochSec = (sec: number): string => {
+  const d = new Date(sec * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+};
+
+// Pick the provider expiration that matches the creator's resolved date, else the
+// nearest one (so a contract from a delayed chain can still be located).
+function bestExpirationEpoch(expirations: number[], targetISO: string | null): number | null {
+  if (!expirations.length) return null;
+  if (!targetISO) return expirations[0];
+  const exact = expirations.find((e) => isoFromEpochSec(e) === targetISO);
+  if (exact) return exact;
+  const tMs = Date.parse(`${targetISO}T12:00:00Z`);
+  return expirations.reduce((best, e) => (Math.abs(e * 1000 - tMs) < Math.abs(best * 1000 - tMs) ? e : best), expirations[0]);
+}
+
+// Enrich each OptionIdea with delayed contract data + honest options-risk notes,
+// kept SEPARATE from anything the creator said (quotedPremium is never overwritten).
+async function enrichOptions(a: VideoAnalysis, underQuotes: Map<string, { price: number; chgPct: number } | null>): Promise<void> {
+  if (!a.optionIdeas.length) return;
+  const now = Date.now();
+  // group ideas by symbol so we fetch each chain at most once per expiration
+  const chainCache = new Map<string, ChainResult>();
+  const getChain = async (sym: string, epoch?: number): Promise<ChainResult> => {
+    const key = `${sym}:${epoch ?? "near"}`;
+    const hit = chainCache.get(key);
+    if (hit) return hit;
+    const c = await getOptionChain(sym, epoch).catch(() => null);
+    const res = c ?? { status: "provider_error" as const, delayed: true, quoteTimestamp: null, expirations: [], expiration: null, underlyingPrice: null, calls: [], puts: [] };
+    chainCache.set(key, res);
+    return res;
+  };
+
+  for (const o of a.optionIdeas) {
+    const sym = o.underlyingSymbol;
+    const under = underQuotes.get(sym) ?? (await getQuote(sym).then((q) => (q ? { price: q.price, chgPct: q.chgPct } : null)).catch(() => null));
+
+    // status from the underlying move (we never have intraday option triggers)
+    if (under) {
+      if (o.underlyingInvalidation !== null) {
+        const inval = o.direction === "bearish" ? under.price > o.underlyingInvalidation : under.price < o.underlyingInvalidation;
+        if (inval) o.status = "invalidated";
+      }
+      if (o.status !== "invalidated" && o.underlyingTrigger !== null) {
+        const hit = o.direction === "bearish" ? under.price <= o.underlyingTrigger : under.price >= o.underlyingTrigger;
+        o.status = hit ? "triggered" : "waiting_for_trigger";
+      }
+    }
+
+    // locate a contract only when the creator named a strike + we can resolve expiration
+    const primary = o.legs[0];
+    const legExp = o.legs.find((l) => l.expiration)?.expiration ?? null;
+    const d = dte(legExp, now);
+    let liquidityNote: string | null = null;
+    let volNote: string | null = null;
+
+    if (primary && primary.strike !== null) {
+      const near = await getChain(sym);
+      const epoch = bestExpirationEpoch(near.expirations, legExp);
+      const chain = epoch && epoch !== near.expiration ? await getChain(sym, epoch) : near;
+      if (chain.status === "delayed" || chain.status === "connected") {
+        const side = primary.optionType === "put" ? chain.puts : chain.calls;
+        const match = side.reduce<typeof side[number] | null>((best, c) => {
+          if (primary.strike === null) return best;
+          const dCur = best ? Math.abs(best.strike - primary.strike) : Infinity;
+          return Math.abs(c.strike - primary.strike) < dCur ? c : best;
+        }, null);
+        if (match && Math.abs(match.strike - primary.strike) <= Math.max(1, primary.strike * 0.02)) {
+          o.contractQuote = quoteFromContract(match, chain.delayed, chain.quoteTimestamp);
+          // stamp the located contract symbol back onto the leg (we did not invent it)
+          if (primary.contractSymbol === null) primary.contractSymbol = match.contractSymbol || null;
+          const sp = spreadPct(match);
+          const oi = match.openInterest ?? 0;
+          liquidityNote =
+            oi >= 1000 && (sp ?? 1) < 0.1 ? `Liquid: OI ${oi}, spread ${sp !== null ? `${(sp * 100).toFixed(0)}%` : "n/a"}.`
+            : oi < 100 ? `Thin: OI ${oi}${sp !== null ? `, spread ${(sp * 100).toFixed(0)}%` : ""} — slippage risk.`
+            : `OI ${oi}${sp !== null ? `, spread ${(sp * 100).toFixed(0)}%` : ""}.`;
+          if (match.impliedVolatility !== null) volNote = `IV ~${(match.impliedVolatility * 100).toFixed(0)}% (delayed).`;
+
+          // Recompute metrics from the live mid ONLY when the creator gave no premium —
+          // keep it transparent that this uses current delayed pricing, not creator's.
+          if (o.quotedPremium === null && match.mid !== null && o.breakevens.length === 0 && o.maxLoss === null) {
+            const priced = o.legs.map((l) => ({ ...l, premium: l === primary ? match.mid : null }));
+            const m = computeOptionMetrics(o.strategyType, priced);
+            if (m.breakevens.length || m.maxLoss !== null) {
+              o.breakevens = m.breakevens;
+              o.maxProfit = m.maxProfit;
+              o.maxLoss = m.maxLoss;
+              o.riskRewardRatio = m.riskRewardRatio;
+              o.risks = [...o.risks, "Breakeven/max-loss computed from current delayed market premium (creator did not state one)."];
+            }
+          }
+        }
+      }
+    }
+
+    // honest options-risk notes (only what we can actually support)
+    o.optionsRisk = {
+      liquidity: liquidityNote,
+      thetaDecay: d !== null ? (d <= 2 ? `~${d}DTE — severe time decay; small underlying moves dominate.` : d <= 10 ? `~${d}DTE — meaningful theta into expiration.` : `~${d}DTE.`) : null,
+      volatility: volNote,
+      earnings: null, // not checked against an earnings calendar here — left null rather than guessed
+      assignment: o.legs.some((l) => l.action === "sell") ? "Short leg carries early-assignment risk near/at the money or before ex-dividend." : null,
+      staleness: o.contractQuote?.delayed ? "Contract quote is delayed (not live)." : null,
+    };
+  }
 }
 
 // --- process a video using a supplied (manual) transcript -----------------
@@ -198,6 +317,7 @@ export async function processManualTranscript(videoId: string, rawTranscript: st
       video.status = "preliminary";
       video.summary = preliminary.overallSummary;
       video.ideaCount = preliminary.tradeIdeas.length;
+      video.optionCount = preliminary.optionIdeas.length;
       video.levelCount = preliminary.levels.length;
       video.tickers = [...new Set(preliminary.tradeIdeas.map((t) => t.ticker))];
       video.analysisVersion = ANALYSIS_VERSION;
@@ -218,6 +338,7 @@ export async function processManualTranscript(videoId: string, rawTranscript: st
       video.status = "analyzed";
       video.summary = enriched.overallSummary || video.summary;
       video.ideaCount = enriched.tradeIdeas.length;
+      video.optionCount = enriched.optionIdeas.length;
       video.levelCount = enriched.levels.length;
       video.tickers = [...new Set(enriched.tradeIdeas.map((t) => t.ticker))];
       video.analysisVersion = ANALYSIS_VERSION;
