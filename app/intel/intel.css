@@ -229,6 +229,21 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
    PASS 3 — OPTIONS INTEL WORKSPACE (additive). Premium trading-terminal treatment
    built only from existing tokens; no new color system.
    ========================================================================== */
+/* secondary, collapsible Options Intel section (the YouTube core is primary) */
+.optx-section { margin-top: 22px; border-top: 1px solid rgb(var(--steel-rgb) / 0.14); padding-top: 8px; }
+.optx-toggle {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  background: none; border: none; cursor: pointer; padding: 10px 2px; text-align: left;
+}
+.optx-toggle:hover .optx-toggle-title { color: var(--bone); }
+.optx-toggle-caret { font-size: 11px; color: var(--steel); }
+.optx-toggle-title {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px; letter-spacing: 0.26em; text-indent: 0.26em; color: var(--ash);
+}
+.optx-toggle-note { font-size: 10.5px; color: var(--ash); opacity: 0.7; }
+.optx-section .optx { margin-top: 6px; }
+
 .optx {
   margin-top: 18px;
   border: 1px solid rgb(var(--steel-rgb) / 0.18);

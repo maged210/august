@@ -41,6 +41,7 @@ export default function IntelDashboard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [openVideo, setOpenVideo] = useState<string | null>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false); // Options Intel is a secondary, opt-in panel
 
   const load = useCallback(async () => {
     try {
@@ -150,9 +151,6 @@ export default function IntelDashboard() {
       {!config.youtube && <div className="inote" style={{ marginTop: 8 }}>YOUTUBE_API_KEY not set: add videos by URL and paste transcripts to process them now. Channel auto-discovery and live status need the key.</div>}
       {msg && <div className="istate" style={{ color: "var(--steel)" }}>{msg}</div>}
 
-      {/* OPTIONS INTEL — chart-centered options workspace (additive, full width) */}
-      <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
-
       <div className="intel-grid">
         <div>
           {/* B — TONIGHT'S BRIEF */}
@@ -168,6 +166,18 @@ export default function IntelDashboard() {
           <AskAugust ai={config.ai} />
         </div>
       </div>
+
+      {/* OPTIONS INTEL — SECONDARY, opt-in. The YouTube-ingestion core above is the
+          feature; this options/chart workspace sits below it and is collapsed by default
+          (it also defers loading the TradingView widget + chain fetches until opened). */}
+      <section className="optx-section">
+        <button type="button" className="optx-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((o) => !o)}>
+          <span className="optx-toggle-caret">{optionsOpen ? "▾" : "▸"}</span>
+          <span className="optx-toggle-title">OPTIONS INTEL</span>
+          <span className="optx-toggle-note">chart · creator option plays · AUGUST candidates — secondary</span>
+        </button>
+        {optionsOpen && <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />}
+      </section>
 
       <div className="idisc">AUGUST Market Intel is decision-support / research over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.</div>
 
