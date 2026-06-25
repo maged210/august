@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import { getOrCompileBrief } from "@/lib/morningbrief";
+import { getOrCompileBrief, type MorningBrief } from "@/lib/morningbrief";
+import { sendToAll } from "@/lib/push";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
 // Morning Brief — Vercel Cron endpoint. Hit once daily (~6 AM ET, see vercel.json)
@@ -23,6 +24,19 @@ function tokensMatch(provided: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+// A short spoken-brief teaser for the push body: headline + (when calendar is
+// connected) the day's shape. DECOUPLED from the calendar — `brief.day` is absent
+// when calendar isn't authorized, and the teaser falls back cleanly.
+function buildTeaser(brief: MorningBrief): string {
+  const n = brief.day?.count;
+  if (typeof n === "number" && n > 0) {
+    const first = brief.day?.nextUp;
+    return `Your morning brief is ready — ${n} on today's calendar${first ? `, first ${first}` : ""}.`;
+  }
+  if (n === 0) return "Your morning brief is ready — calendar's clear today. Tap to hear it.";
+  return "Your morning brief is ready — tap to hear it.";
+}
+
 export async function GET(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
 
@@ -43,8 +57,25 @@ export async function GET(req: Request): Promise<Response> {
 
   try {
     const brief = await getOrCompileBrief({ force: true });
+
+    // Capstone: fire a push so AUGUST reaches Maged off-screen the moment the brief
+    // is fresh. Fully DECOUPLED — wrapped so a push failure (or absent VAPID/subs)
+    // never fails the compile; url opens the app and surfaces the brief with its
+    // one-tap play control (iOS blocks autoplay, so playback stays user-initiated).
+    let pushed: Awaited<ReturnType<typeof sendToAll>> | null = null;
+    try {
+      pushed = await sendToAll({
+        title: "AUGUST",
+        body: buildTeaser(brief),
+        url: "/?brief=1",
+        tag: "morning-brief", // collapse yesterday's if still pending
+      });
+    } catch (e) {
+      console.error("[cron/brief] push failed:", e instanceof Error ? e.message : e);
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, date: brief.date, sources: brief.sources, grounded: brief.grounded }),
+      JSON.stringify({ ok: true, date: brief.date, sources: brief.sources, grounded: brief.grounded, pushed }),
       { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
     );
   } catch (err) {

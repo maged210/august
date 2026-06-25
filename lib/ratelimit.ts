@@ -24,7 +24,19 @@ function getRedis(): Redis {
   return _redis;
 }
 
-type RouteKey = "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token" | "push";
+type RouteKey =
+  | "chat"
+  | "speak"
+  | "intel"
+  | "memory"
+  | "inbox"
+  | "brief"
+  | "token"
+  | "push"
+  | "day"
+  | "draft"
+  | "commsSend"
+  | "watchers";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -37,6 +49,10 @@ const LIMITS: Record<RouteKey, number> = {
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
   token: 30,  // Deepgram STT grant-token mint — cheap, one per voice session/~2min, generous
   push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
+  day: 30,    // Google Calendar today-view — server-cached, Presence polls it
+  draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft
+  commsSend: 10, // Gmail send — tight: each send dispatches real mail
+  watchers: 10, // Watchers cron — an external ~15min pinger is far under this
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

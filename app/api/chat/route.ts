@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
-import { TOOLS, TOOL_GUIDANCE, SEP } from "@/lib/tools";
+import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES } from "@/lib/tools";
+import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
@@ -198,8 +199,15 @@ export async function POST(req: Request): Promise<Response> {
               input = {};
             }
           }
-          mark();
-          send(encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP));
+          // Watcher tools are SERVER-side data ops (Upstash) — they need no client
+          // action, so they are NOT framed to the client; they're executed here and
+          // the REAL result is fed back so AUGUST confirms what actually happened.
+          // Nav tools (globe/deck) ARE framed so the client reacts immediately.
+          const isWatcher = WATCHER_TOOL_NAMES.has(tb.name);
+          if (!isWatcher) {
+            mark();
+            send(encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP));
+          }
           toolUseContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
           const label = typeof input.label === "string" ? input.label : "the location";
           const screen = typeof input.screen === "string" ? input.screen : "presence";
@@ -210,6 +218,13 @@ export async function POST(req: Request): Promise<Response> {
             resultText = "The globe has closed; you're back to the orb.";
           } else if (tb.name === "go_to_screen") {
             resultText = `The deck is now on the ${screen} surface.`;
+          } else if (isWatcher) {
+            try {
+              resultText = await runWatcherTool(tb.name, input);
+            } catch (e) {
+              console.error("[chat] watcher tool failed:", e instanceof Error ? e.message : e);
+              resultText = "That watcher action hit an error on the server.";
+            }
           } else {
             resultText = "Done.";
           }

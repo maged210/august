@@ -1113,6 +1113,191 @@ body::after {
   opacity: 0.5;
 }
 
+/* ── Reply ("Hands"): draft → review → send. Restrained, lives in the log's world —
+   nothing of a Gmail compose window; a draft surfacing in AUGUST's terminal. ── */
+.logrow {
+  list-style: none;
+}
+.logline.replyable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+.logline.replyable:hover {
+  background: rgb(var(--steel-rgb) / 0.07);
+}
+.logline.replyable:focus-visible {
+  outline: 1px solid rgb(var(--steel-rgb) / 0.5);
+  outline-offset: 1px;
+}
+.logline.active {
+  background: rgb(var(--steel-rgb) / 0.1);
+}
+.logline.sent {
+  opacity: 0.5;
+}
+
+.comms-reply-prompt {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--ash);
+  margin: 2px 0 12px;
+}
+.comms-reply-prompt-quiet {
+  opacity: 0.5;
+}
+.comms-reply-prompt a {
+  color: var(--bone);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.comms-reply {
+  margin: 6px 0 14px;
+  padding: 12px;
+  border: 1px solid rgb(var(--steel-rgb) / 0.16);
+  border-radius: 8px;
+  background: rgb(var(--steel-rgb) / 0.05);
+  animation: log-in var(--dur-med) var(--ease) backwards;
+}
+.comms-reply-status {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ash);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.comms-sent {
+  color: #7fb88a;
+}
+.comms-err {
+  color: #d98b8b;
+}
+
+.comms-reply-meta {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ash);
+  margin-bottom: 8px;
+}
+.comms-reply-to {
+  color: var(--bone);
+}
+.comms-reply-subj {
+  color: var(--steel);
+}
+
+.comms-reply-field {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+  background: rgb(var(--steel-rgb) / 0.08);
+  border: 1px solid rgb(var(--steel-rgb) / 0.22);
+  border-radius: 6px;
+  color: var(--bone);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  outline: none;
+}
+.comms-reply-field:focus {
+  border-color: rgb(var(--steel-rgb) / 0.5);
+}
+
+.comms-reply-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.comms-btn {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  padding: 7px 13px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    color var(--dur-fast) var(--ease-snappy);
+}
+.comms-btn-go {
+  background: rgb(var(--steel-rgb) / 0.16);
+  color: var(--bone);
+  border-color: rgb(var(--steel-rgb) / 0.3);
+}
+.comms-btn-go:hover {
+  background: rgb(var(--steel-rgb) / 0.26);
+}
+.comms-btn-go:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Send is visually distinct (the only control that dispatches mail) — a quiet green. */
+.comms-btn-send {
+  background: rgb(127 184 138 / 0.18);
+  color: #aed8b5;
+  border-color: rgb(127 184 138 / 0.4);
+}
+.comms-btn-send:hover {
+  background: rgb(127 184 138 / 0.3);
+}
+.comms-btn-ghost {
+  background: transparent;
+  color: var(--ash);
+  border-color: rgb(var(--steel-rgb) / 0.18);
+}
+.comms-btn-ghost:hover {
+  color: var(--bone);
+  border-color: rgb(var(--steel-rgb) / 0.35);
+}
+
+.comms-confirm-head {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--bone);
+  margin-bottom: 10px;
+}
+.comms-confirm-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.comms-confirm-fields > div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.comms-confirm-fields dt {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.7;
+  padding-top: 2px;
+}
+.comms-confirm-fields dd {
+  margin: 0;
+  color: var(--bone);
+  font-size: 13px;
+  line-height: 1.5;
+  min-width: 0;
+  word-break: break-word;
+}
+.comms-confirm-body {
+  white-space: pre-wrap;
+  color: var(--ash);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 /* comms — live Gmail */
 /* Real subjects/senders are far longer than the placeholder — clamp them so the
    grid never blows out horizontally. */
@@ -2631,6 +2816,21 @@ body {
   letter-spacing: 0.34em;
   text-indent: 0.34em;
   color: rgba(233, 239, 246, 0.5);
+}
+
+/* Day awareness — one restrained line under the state readout. A hair warmer than
+   the state line so it reads as "what's on Maged's day" without competing with the
+   orb. Single line, never wraps; ellipsises a long title. */
+.presence-center-day {
+  margin-top: 9px;
+  font-size: 8.5px;
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
+  color: rgba(110, 140, 168, 0.82); /* steel accent — an awareness, not chrome */
+  white-space: nowrap;
+  max-width: 62vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Summon chip — re-opens the Morning Brief. Tucked into the top-right corner (out
