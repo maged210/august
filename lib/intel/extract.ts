@@ -14,20 +14,17 @@ import { SYSTEM_PROMPT } from "@/lib/persona";
 import type {
   Chapter,
   Claim,
-  Explicitness,
   IntelCatalyst,
   IntelLevel,
   MarketRegime,
   OptionIdea,
-  OptionLeg,
   TradeIdea,
   TranscriptSegment,
   VideoAnalysis,
 } from "./types";
 import { ANALYSIS_VERSION } from "./types";
 import { filterValidTickers, normalizeTicker } from "./tickers";
-import { resolveExpiration } from "./dates";
-import { computeOptionMetrics } from "./options";
+import { numberSupported, normalizeOptionIdea, type RawOptionIdea } from "./normalize";
 
 const MODEL = "claude-sonnet-4-6";
 const CHUNK_CHARS = 9000;
@@ -255,28 +252,6 @@ type RawExtraction = {
   openQuestions?: string[];
 };
 
-type RawOptionIdea = {
-  underlyingSymbol: string;
-  direction: OptionIdea["direction"];
-  strategyType: OptionIdea["strategyType"];
-  origin: "creator_explicit" | "directional_only";
-  creatorSpecifiedContract?: boolean;
-  timeHorizon: OptionIdea["timeHorizon"];
-  legs: { action: "buy" | "sell"; optionType: "call" | "put"; strike?: number | null; expirationText?: string | null }[];
-  expirationText?: string | null;
-  entryConditionText?: string;
-  underlyingTrigger?: number | null;
-  underlyingInvalidation?: number | null;
-  underlyingTargets?: number[];
-  quotedPremium?: number | null;
-  catalysts?: string[];
-  risks?: string[];
-  conviction?: OptionIdea["conviction"];
-  confidence: number;
-  explicitness: Explicitness;
-  sourceSegmentIds: string[];
-};
-
 async function extractChunk(input: ChunkInput): Promise<RawExtraction | null> {
   const c = client();
   if (!c) return null;
@@ -303,21 +278,7 @@ async function extractChunk(input: ChunkInput): Promise<RawExtraction | null> {
 }
 
 // --- validation (the anti-hallucination gate) -----------------------------
-const numbersIn = (text: string): Set<string> => {
-  const set = new Set<string>();
-  for (const m of text.matchAll(/\d[\d,]*(?:\.\d+)?/g)) set.add(m[0].replace(/,/g, ""));
-  return set;
-};
-function numberSupported(value: number | null, citedText: string): boolean {
-  if (value === null) return true;
-  const nums = numbersIn(citedText);
-  // accept exact, or within 0.1% (rounding in speech-to-text)
-  for (const n of nums) {
-    const x = Number(n);
-    if (Number.isFinite(x) && (x === value || Math.abs(x - value) / Math.max(1, Math.abs(value)) < 0.001)) return true;
-  }
-  return false;
-}
+// numbersIn / numberSupported / normalizeOptionIdea live in ./normalize (pure + tested).
 
 let _idSeq = 0;
 const nextId = (p: string) => `${p}${Date.now().toString(36)}${(_idSeq++).toString(36)}`;
@@ -447,42 +408,32 @@ async function validateExtraction(
       continue;
     }
     const txt = citedText(o.sourceSegmentIds, byId);
-    const numGuard = (v: number | null | undefined): number | null =>
-      typeof v === "number" && numberSupported(v, txt) ? v : typeof v === "number" ? (warnings.push(`${sym}: dropped unsupported number ${v}.`), null) : null;
-
-    const legs: OptionLeg[] = (o.legs ?? []).map((l) => {
-      const strike = numGuard(l.strike); // unsupported strike → null (never invented)
-      const rdText = l.expirationText ?? o.expirationText ?? null;
-      const rd = rdText ? resolveExpiration(rdText, baseMs) : null;
-      return { action: l.action, optionType: l.optionType, quantity: 1, strike, expiration: rd?.resolved ?? null, contractSymbol: null };
-    });
-    const expRD = o.expirationText ? resolveExpiration(o.expirationText, baseMs) : o.legs?.find((l) => l.expirationText)?.expirationText ? resolveExpiration(o.legs.find((l) => l.expirationText)!.expirationText!, baseMs) : null;
-    const quotedPremium = numGuard(o.quotedPremium);
-    // Metrics only when a single-leg premium + strike are known; spreads need both legs priced
-    // (no chain at extraction time → spreads stay null until enrichment).
-    const pricedLegs = legs.map((l) => ({ ...l, premium: legs.length === 1 ? quotedPremium : null }));
-    const metrics = computeOptionMetrics(o.strategyType, pricedLegs);
+    // Anti-hallucination guards (pure, tested in ./normalize): null out any number not
+    // in the cited text, resolve expirations safely, keep creator/directional separate.
+    const n = normalizeOptionIdea(o, sym, txt, baseMs);
+    warnings.push(...n.warnings);
     const ev = evidenceFrom(o.sourceSegmentIds, byId, chapter);
     optionIdeas.push({
       id: nextId("oi_"),
       underlyingSymbol: sym,
       direction: o.direction,
-      strategyType: o.strategyType ?? "unspecified",
-      origin: o.origin === "creator_explicit" ? "creator_explicit" : "directional_only",
-      creatorSpecifiedContract: !!o.creatorSpecifiedContract && legs.some((l) => l.strike !== null || l.expiration !== null),
+      strategyType: n.strategyType,
+      origin: n.origin,
+      creatorSpecifiedContract: n.creatorSpecifiedContract,
       timeHorizon: o.timeHorizon ?? "unspecified",
-      legs,
-      entryCondition: { type: "unspecified", value: numGuard(o.underlyingTrigger), text: o.entryConditionText || "Not specified by creator" },
-      underlyingTrigger: numGuard(o.underlyingTrigger),
-      underlyingInvalidation: numGuard(o.underlyingInvalidation),
-      underlyingTargets: (o.underlyingTargets ?? []).filter((t) => numberSupported(t, txt)),
-      expirationText: expRD,
-      quotedPremium,
+      legs: n.legs,
+      // reuse the single guarded trigger (no duplicate "dropped" warning)
+      entryCondition: { type: "unspecified", value: n.underlyingTrigger, text: o.entryConditionText || "Not specified by creator" },
+      underlyingTrigger: n.underlyingTrigger,
+      underlyingInvalidation: n.underlyingInvalidation,
+      underlyingTargets: n.underlyingTargets,
+      expirationText: n.expirationText,
+      quotedPremium: n.quotedPremium,
       contractQuote: null, // enriched later from the (delayed) chain when available
-      breakevens: metrics.breakevens,
-      maxProfit: metrics.maxProfit,
-      maxLoss: metrics.maxLoss,
-      riskRewardRatio: metrics.riskRewardRatio,
+      breakevens: n.metrics.breakevens,
+      maxProfit: n.metrics.maxProfit,
+      maxLoss: n.metrics.maxLoss,
+      riskRewardRatio: n.metrics.riskRewardRatio,
       catalysts: o.catalysts ?? [],
       risks: o.risks ?? [],
       optionsRisk: { liquidity: null, thetaDecay: null, volatility: null, earnings: null, assignment: null, staleness: null },
@@ -589,7 +540,10 @@ function dedupeOptionIdeas(ideas: OptionIdea[]): OptionIdea[] {
   const seen = new Map<string, OptionIdea>();
   for (const o of ideas) {
     const strikes = o.legs.map((l) => l.strike ?? "x").join("/");
-    const key = `${o.underlyingSymbol}|${o.direction}|${o.strategyType}|${strikes}`;
+    // Include expiration: two ideas merge only when contract structure AND expiry match,
+    // so "calls this week" vs "calls next month" (both null-strike) stay distinct.
+    const exps = o.legs.map((l) => l.expiration ?? "x").join("/");
+    const key = `${o.underlyingSymbol}|${o.direction}|${o.strategyType}|${strikes}|${exps}`;
     const prev = seen.get(key);
     if (!prev || o.confidence > prev.confidence) seen.set(key, o);
   }

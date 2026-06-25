@@ -14,6 +14,8 @@ export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const symbol = (url.searchParams.get("symbol") ?? "").trim().toUpperCase();
   if (!symbol) return Response.json({ error: "symbol_required" }, { status: 400 });
+  // Tight ticker format — keeps junk out of the Yahoo URL and the in-process chain cache.
+  if (!/^[A-Z][A-Z0-9.\-^=]{0,15}$/.test(symbol)) return Response.json({ error: "invalid_symbol" }, { status: 400 });
   const expParam = url.searchParams.get("expiration");
   const expiration = expParam && /^\d+$/.test(expParam) ? Number(expParam) : undefined;
 

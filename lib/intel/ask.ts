@@ -37,6 +37,18 @@ export async function askIntel(question: string): Promise<AskResult> {
     channel: byId.get(a.videoId)?.channelTitle,
     summary: a.overallSummary,
     ideas: a.tradeIdeas.map((t) => ({ ticker: t.ticker, direction: t.direction, thesis: t.thesis, at: t.sourceStartSeconds, explicit: t.explicitness })),
+    options: (a.optionIdeas ?? []).map((o) => ({
+      symbol: o.underlyingSymbol,
+      direction: o.direction,
+      strategy: o.strategyType,
+      // origin keeps creator plays distinct from AUGUST candidates; never blur them
+      origin: o.origin,
+      contract: o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ") || "no contract specified",
+      expiration: o.expirationText?.resolved ?? null,
+      creatorPremium: o.quotedPremium,
+      at: o.sourceStartSeconds,
+      explicit: o.explicitness,
+    })),
     levels: a.levels.map((l) => ({ instrument: l.instrument, level: l.level ?? l.levelText, type: l.type, at: l.sourceStartSeconds })),
     catalysts: a.catalysts.map((c) => ({ name: c.name, when: c.eventTime })),
   }));
@@ -65,7 +77,7 @@ export async function askIntel(question: string): Promise<AskResult> {
     const res = await c.messages.create({
       model: MODEL,
       max_tokens: 1200,
-      system: SYSTEM_PROMPT + "\n\nAnswer ONLY from the processed-video context provided. If the context doesn't cover it, say so. Cite videoId + the timestamp where it was said. Where sources disagree, say so; never merge contradictory calls. Decision-support, not financial advice.",
+      system: SYSTEM_PROMPT + "\n\nAnswer ONLY from the processed-video context provided. The context includes stock ideas AND options ideas (each option has origin: creator_explicit = the creator named it, vs directional_only = a direction with no specific contract). Keep creator-stated options plays distinct from a bare directional view — never imply a creator named a strike/expiration/premium they didn't. If the context doesn't cover it, say so. Cite videoId + the timestamp where it was said. Where sources disagree, say so; never merge contradictory calls. Decision-support, not financial advice.",
       messages: [{ role: "user", content: `Question: ${question}\n\nCONTEXT (processed videos):\n${JSON.stringify(context, null, 2)}\n\nCall answer.` }],
       tools: [tool],
       tool_choice: { type: "tool", name: "answer" },

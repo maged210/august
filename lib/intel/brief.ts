@@ -212,7 +212,32 @@ async function buildOptions(
 
   const optionsRisk = [...new Set(flat.flatMap((f) => f.idea.risks))].slice(0, 12);
 
-  return { bestCreatorPlays, augustCandidates, directionalOnly, optionsRisk, providerStatus };
+  // Cross-channel consensus on option underlyings (parallel to the trade-idea consensus):
+  // do multiple channels agree on a direction for the same symbol, or conflict?
+  const toDir = (d: OptionIdea["direction"]): ConsensusItem["direction"] =>
+    d === "bullish" || d === "bearish" || d === "neutral" || d === "watch" ? d : "neutral";
+  const bySym = new Map<string, FlatOption[]>();
+  for (const f of flat) {
+    const arr = bySym.get(f.idea.underlyingSymbol) ?? [];
+    arr.push(f);
+    bySym.set(f.idea.underlyingSymbol, arr);
+  }
+  const consensus: ConsensusItem[] = [];
+  for (const [symbol, items] of bySym) {
+    const channels = new Set(items.map((i) => i.channelTitle));
+    const dirs = new Set(items.map((i) => i.idea.direction).filter((d) => d === "bullish" || d === "bearish"));
+    const agreement: ConsensusItem["agreement"] = channels.size < 2 ? "single" : dirs.size > 1 ? "conflict" : "agree";
+    consensus.push({
+      ticker: symbol,
+      direction: toDir(items[0].idea.direction),
+      sources: items.map((i) => ({ channelTitle: i.channelTitle, videoId: i.idea.videoId ?? "", startSeconds: i.idea.sourceStartSeconds, explicitness: i.idea.explicitness })),
+      agreement,
+      note: agreement === "conflict" ? "Sources disagree on options direction — not combined." : agreement === "agree" ? "Multiple sources align on this underlying." : "Single source.",
+    });
+  }
+  consensus.sort((a, b) => b.sources.length - a.sources.length || (a.agreement === "conflict" ? -1 : 1));
+
+  return { bestCreatorPlays, augustCandidates, directionalOnly, optionsRisk, providerStatus, consensus };
 }
 
 /** Generate (and store) the dated brief from all analyses for that market date. */

@@ -24,6 +24,14 @@ const dow = (t: number): number => new Date(t).getUTCDay(); // 0 Sun … 6 Sat
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
+// Build YYYY-MM-DD only if the day actually exists in that month — rejects e.g. "2/30"
+// instead of emitting a fabricated, invalid ISO string. Round-trips through Date.UTC.
+const isoIfValid = (yr: number, mo: number, da: number): string | null => {
+  if (mo < 1 || mo > 12 || da < 1 || da > 31) return null;
+  const d = new Date(Date.UTC(yr, mo - 1, da, 12));
+  return d.getUTCFullYear() === yr && d.getUTCMonth() === mo - 1 && d.getUTCDate() === da ? `${yr}-${pad(mo)}-${pad(da)}` : null;
+};
+
 // Next occurrence of `weekday` strictly after `t` if `inclusive` is false, else >= t.
 function nextWeekday(t: number, weekday: number, inclusive = true): number {
   const cur = dow(t);
@@ -53,7 +61,8 @@ export function resolveExpiration(text: string, baseMs: number): ResolvedDate {
     let yr = m[3] ? Number(m[3].length === 2 ? `20${m[3]}` : m[3]) : new Date(base).getUTCFullYear();
     // if the month already passed this year, assume next year
     if (!m[3] && Date.UTC(yr, mo - 1, da, 12) < base) yr += 1;
-    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return r(raw, `${yr}-${pad(mo)}-${pad(da)}`, "high");
+    const iso = isoIfValid(yr, mo, da);
+    if (iso) return r(raw, iso, "high"); // invalid day (e.g. 2/30) → fall through to none
   }
 
   // Month name + day ("july 3", "jul 3rd").
@@ -63,7 +72,8 @@ export function resolveExpiration(text: string, baseMs: number): ResolvedDate {
     const da = Number(m[2]);
     let yr = new Date(base).getUTCFullYear();
     if (Date.UTC(yr, mo - 1, da, 12) < base) yr += 1;
-    return r(raw, `${yr}-${pad(mo)}-${pad(da)}`, "high");
+    const iso = isoIfValid(yr, mo, da);
+    if (iso) return r(raw, iso, "high");
   }
 
   // 0DTE / same-day.
@@ -102,7 +112,8 @@ export function resolveExpiration(text: string, baseMs: number): ResolvedDate {
   return r(raw, null, "none");
 }
 
-/** Days-to-expiration from an ISO date relative to now (ET calendar). */
+/** CALENDAR days-to-expiration from an ISO date relative to now (ET calendar; not
+ *  weekend/holiday-aware — a Wed→next-Mon delta is 5, not 3 trading days). */
 export function dte(expiration: string | null, nowMs = Date.now()): number | null {
   if (!expiration) return null;
   const exp = fromKey(expiration);

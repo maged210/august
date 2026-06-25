@@ -81,3 +81,28 @@ All ten planned changes landed additively. Nothing from passes 1–2 was removed
 - Runtime smoke (dev): `/api/intel/overview` 200 (honest config); `/api/intel/options/chain?symbol=SPY` → real delayed chain (status `delayed`, Greeks off); `/api/intel/options/candidates` NVDA-bullish → call debit spread (BE 202.2 / maxLoss $220 / maxProfit $280) + long calls, SPY-bearish → long put (BE 721.5) + put debit spread; 0DTE excluded, capped at 3, liquidity basis disclosed.
 
 Constraints honored: not merged to main, not deployed, additive migrations only, no second `/intel` / pipeline / symbol store, and no faked integrations or market data (the provider degrades to honest states).
+
+---
+
+## Post-review hardening (adversarial review → fixes)
+
+A multi-dimensional adversarial review (8 dimensions, perspective-diverse verification) confirmed the honesty spine holds in code and surfaced 25 bounded issues; all were fixed:
+
+- **Provider robustness** (`options.ts`): the in-process cache now stores the in-flight promise (single-flight — concurrent cold callers collapse onto one fetch) and **retains only successful results** (a transient `provider_error`/`429`/`401` is never cached, so the next call retries immediately); the cookie+crumb handshake is single-flighted too; `429` surfaces Yahoo's `Retry-After`; the cache is size-bounded + swept. `providerStatusForHttp` factored out (tested).
+- **Anti-hallucination gate** extracted to a pure, dependency-light `normalize.ts` (`numbersIn`/`numberSupported`/`normalizeOptionIdea`) and **directly unit-tested**: a strike/premium/trigger not in the cited transcript → null; "calls" → `long_call` strike null + `creatorSpecifiedContract=false`; bullish never forces calls; a transcript can never mint an `august_candidate`; the duplicate-trigger warning is gone (guarded once).
+- **dedupeOptionIdeas** now keys on expiration too — "calls this week" vs "next month" stay distinct.
+- **dates.ts** rejects impossible days (e.g. `2/30` → `resolved=null`) instead of emitting an invalid ISO string.
+- **candidates.ts**: `priceOf` carries a `mid|last` basis and a `last`-priced number is disclosed as "may be a prior-session print"; the decision helpers (`pickExpiration`/`passesLiquidity`/`effLiquidity`/`priceOf`/`convictionFor`) are exported and **unit-tested** (0DTE-off, OI→volume fallback, spread-gate-only-when-two-sided, caps).
+- **Settings**: `mergeOptionSettings` moved to a testable lib module; rejects `null` on non-nullable numerics, rejects negatives/non-finite, clamps to sane bounds, and swaps inverted `min/max` bands. Both options routes now validate the symbol format (`/^[A-Z][A-Z0-9.\-^=]{0,15}$/`); the candidates route whitelists `timeHorizon` and caps `targets`.
+- **types/back-compat**: `getAnalysis` backfills `optionIdeas ??= []` so the required-array type stays honest for pass-1/2 blobs; the `as never` cast on `spreadPct` is gone (its parameter was widened).
+- **UI**: the TradingView widget container stays mounted always with the fallback overlaid + a **Retry** button (a transient/slow load is now recoverable); the candidate-generator warning derives from the **live** response, not the stale brief snapshot; the contract drawer is a proper `role="dialog"` with Escape-to-close + focus management.
+- **Ask-AUGUST** now grounds on `optionIdeas` (origin-aware) — options questions are answered from real option data.
+- **Idea-status + consensus**: richer point-in-time `OptionStatus` derivation (`approaching_trigger`/`too_extended`/`target_reached`/`expired`) and a cross-channel **options consensus** (agree/conflict per underlying) in the brief + UI.
+
+Verification after fixes: `tsc` clean · production build green · **54/54** `npm test` · runtime smoke re-confirmed.
+
+## Deferred (explicitly out of scope this pass)
+
+- **Cross-day options revision history** — idea status is a *point-in-time* read against the creator's stated levels; there is no multi-session supersede/revision timeline. (Trade-idea side has none either.)
+- **`allowEarnings` and the preferred-delta band are documented PROXIES, not hard filters** — this provider supplies no Greeks and no per-symbol earnings calendar, so candidates are selected by **moneyness** (not delta) and earnings is not screened. The code is honest about this in each candidate's risk notes rather than faking it; wiring a Greeks/earnings provider would make these controls exact.
+- **General Options Mentions (class D)** beyond creator-plays/directional are not separately surfaced; they fold into the directional/creator classes.

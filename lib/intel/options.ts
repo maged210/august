@@ -21,10 +21,9 @@ const BASE = "https://query1.finance.yahoo.com/v7/finance/options";
 // an unauthenticated call (which 401s) and surface an honest provider_error.
 type YahooAuth = { cookie: string; crumb: string };
 let _auth: { v: YahooAuth; exp: number } | null = null;
+let _authInFlight: Promise<YahooAuth | null> | null = null;
 
-async function getYahooAuth(force = false): Promise<YahooAuth | null> {
-  const now = Date.now();
-  if (!force && _auth && _auth.exp > now) return _auth.v;
+async function doHandshake(): Promise<YahooAuth | null> {
   try {
     // 1) prime a session cookie (fc.yahoo.com 404s but sets A1/A3 cookies)
     const ck = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, cache: "no-store" });
@@ -39,23 +38,43 @@ async function getYahooAuth(force = false): Promise<YahooAuth | null> {
     });
     const crumb = (await cr.text()).trim();
     if (!crumb || crumb.length > 64 || /[<>]/.test(crumb)) return null; // guard against an HTML error page
-    _auth = { v: { cookie, crumb }, exp: now + 25 * 60_000 };
+    _auth = { v: { cookie, crumb }, exp: Date.now() + 25 * 60_000 };
     return _auth.v;
   } catch {
     return null;
   }
 }
 
-// tiny in-process TTL cache to dedupe chain requests (chains move slowly when delayed)
-type Entry = { exp: number; data: unknown };
-const cache = new Map<string, Entry>();
-async function cached<T>(key: string, ttlMs: number, f: () => Promise<T>): Promise<T> {
+// Single-flight: concurrent cold/forced callers share one handshake instead of each
+// running the two-request cookie+crumb exchange and stampeding Yahoo's getcrumb.
+async function getYahooAuth(force = false): Promise<YahooAuth | null> {
+  if (!force && _auth && _auth.exp > Date.now()) return _auth.v;
+  if (_authInFlight) return _authInFlight;
+  _authInFlight = doHandshake();
+  try {
+    return await _authInFlight;
+  } finally {
+    _authInFlight = null;
+  }
+}
+
+// In-process chain cache. Stores the in-flight PROMISE (single-flight: concurrent cold
+// callers for the same key collapse onto one fetch) and only RETAINS successful results
+// — a transient failure is never cached, so the next request retries immediately. Bounded
+// in size + swept of expired entries so an unvalidated symbol key can't grow it unboundedly.
+type ChainEntry = { exp: number; p: Promise<ChainResult> };
+const chainCache = new Map<string, ChainEntry>();
+const CHAIN_TTL_MS = 60_000;
+const CHAIN_CACHE_MAX = 200;
+const isSuccess = (s: OptionsProviderStatus): boolean => s === "delayed" || s === "connected";
+
+function sweepChainCache(): void {
   const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && hit.exp > now) return hit.data as T;
-  const data = await f();
-  cache.set(key, { exp: now + ttlMs, data });
-  return data;
+  for (const [k, v] of chainCache) if (v.exp <= now) chainCache.delete(k);
+  if (chainCache.size > CHAIN_CACHE_MAX) {
+    const oldest = [...chainCache.entries()].sort((a, b) => a[1].exp - b[1].exp).slice(0, chainCache.size - CHAIN_CACHE_MAX);
+    for (const [k] of oldest) chainCache.delete(k);
+  }
 }
 
 export type NormalizedContract = {
@@ -123,6 +142,15 @@ const empty = (status: OptionsProviderStatus, note?: string): ChainResult => ({
   note,
 });
 
+/** Map an HTTP status from the provider to an honest OptionsProviderStatus. Pure → tested. */
+export function providerStatusForHttp(httpStatus: number): OptionsProviderStatus {
+  if (httpStatus === 401 || httpStatus === 403) return "unauthorized";
+  if (httpStatus === 429) return "rate_limited";
+  if (httpStatus === 404) return "unsupported_symbol";
+  if (httpStatus >= 200 && httpStatus < 300) return "delayed";
+  return "provider_error";
+}
+
 const chainUrl = (sym: string, crumb: string | undefined, epoch?: number): string => {
   const p = new URLSearchParams();
   if (epoch) p.set("date", String(epoch));
@@ -139,43 +167,53 @@ async function fetchChainRaw(sym: string, auth: YahooAuth | null, epoch?: number
   });
 }
 
+// One full fetch attempt (auth + 401-refresh-once + parse). No caching here.
+async function fetchChain(sym: string, expirationEpoch?: number): Promise<ChainResult> {
+  let auth = await getYahooAuth();
+  let res = await fetchChainRaw(sym, auth, expirationEpoch);
+  if ((res.status === 401 || res.status === 403) && auth) {
+    // stale crumb/cookie → refresh once and retry
+    auth = await getYahooAuth(true);
+    res = await fetchChainRaw(sym, auth, expirationEpoch);
+  }
+  if (res.status === 429) {
+    const ra = res.headers.get("retry-after");
+    return empty("rate_limited", ra ? `rate limited — retry after ${ra}s` : "rate limited");
+  }
+  if (!res.ok) return empty(providerStatusForHttp(res.status), `status ${res.status}`);
+  const j = (await res.json()) as {
+    optionChain?: { result?: { expirationDates?: number[]; quote?: { regularMarketPrice?: number; regularMarketTime?: number }; options?: { calls?: YContract[]; puts?: YContract[] }[] }[] };
+  };
+  const r = j.optionChain?.result?.[0];
+  if (!r) return empty("unsupported_symbol", "No option chain for symbol.");
+  const o = r.options?.[0];
+  return {
+    status: "delayed",
+    delayed: true,
+    quoteTimestamp: r.quote?.regularMarketTime ? r.quote.regularMarketTime * 1000 : Date.now(),
+    expirations: r.expirationDates ?? [],
+    expiration: expirationEpoch ?? r.expirationDates?.[0] ?? null,
+    underlyingPrice: r.quote?.regularMarketPrice ?? null,
+    calls: (o?.calls ?? []).map((c) => norm(c, "call")),
+    puts: (o?.puts ?? []).map((c) => norm(c, "put")),
+  } as ChainResult;
+}
+
 /** Fetch the option chain for `symbol` (nearest expiration, or a specific epoch). */
 export async function getOptionChain(symbol: string, expirationEpoch?: number): Promise<ChainResult> {
   const sym = (symbol || "").trim().toUpperCase();
   if (!sym) return empty("unsupported_symbol");
-  try {
-    return await cached(`opt:${sym}:${expirationEpoch ?? "near"}`, 60_000, async () => {
-      let auth = await getYahooAuth();
-      let res = await fetchChainRaw(sym, auth, expirationEpoch);
-      if ((res.status === 401 || res.status === 403) && auth) {
-        // stale crumb/cookie → refresh once and retry
-        auth = await getYahooAuth(true);
-        res = await fetchChainRaw(sym, auth, expirationEpoch);
-      }
-      if (res.status === 401 || res.status === 403) return empty("unauthorized", `status ${res.status}`);
-      if (res.status === 429) return empty("rate_limited");
-      if (res.status === 404) return empty("unsupported_symbol");
-      if (!res.ok) return empty("provider_error", `status ${res.status}`);
-      const j = (await res.json()) as {
-        optionChain?: { result?: { expirationDates?: number[]; quote?: { regularMarketPrice?: number; regularMarketTime?: number }; options?: { calls?: YContract[]; puts?: YContract[] }[] }[] };
-      };
-      const r = j.optionChain?.result?.[0];
-      if (!r) return empty("unsupported_symbol", "No option chain for symbol.");
-      const o = r.options?.[0];
-      return {
-        status: "delayed",
-        delayed: true,
-        quoteTimestamp: r.quote?.regularMarketTime ? r.quote.regularMarketTime * 1000 : Date.now(),
-        expirations: r.expirationDates ?? [],
-        expiration: expirationEpoch ?? r.expirationDates?.[0] ?? null,
-        underlyingPrice: r.quote?.regularMarketPrice ?? null,
-        calls: (o?.calls ?? []).map((c) => norm(c, "call")),
-        puts: (o?.puts ?? []).map((c) => norm(c, "put")),
-      } as ChainResult;
-    });
-  } catch (e) {
-    return empty("provider_error", e instanceof Error ? e.message : "fetch failed");
-  }
+  const key = `opt:${sym}:${expirationEpoch ?? "near"}`;
+  const now = Date.now();
+  const hit = chainCache.get(key);
+  if (hit && hit.exp > now) return hit.p; // share the in-flight / fresh successful result
+  const p = fetchChain(sym, expirationEpoch).catch((e): ChainResult => empty("provider_error", e instanceof Error ? e.message : "fetch failed"));
+  chainCache.set(key, { exp: now + CHAIN_TTL_MS, p });
+  const r = await p;
+  // Only RETAIN successes; drop a transient failure so the next call retries immediately.
+  if (!isSuccess(r.status)) chainCache.delete(key);
+  else sweepChainCache();
+  return r;
 }
 
 export async function getExpirations(symbol: string): Promise<{ status: OptionsProviderStatus; expirations: number[] }> {
@@ -269,8 +307,9 @@ function round(n: number, d = 2): number {
   return Math.round(n * f) / f;
 }
 
-/** Relative bid/ask spread (0..1) for a contract, or null. */
-export function spreadPct(c: NormalizedContract | null): number | null {
+/** Relative bid/ask spread (0..1) for a contract, or null. Takes only the fields it reads
+ *  so any object with bid/ask/mid (e.g. an OptionContractQuote) type-checks honestly. */
+export function spreadPct(c: Pick<NormalizedContract, "bid" | "ask" | "mid"> | null): number | null {
   if (!c || c.bid === null || c.ask === null || c.mid === null || c.mid <= 0) return null;
   return round((c.ask - c.bid) / c.mid, 3);
 }

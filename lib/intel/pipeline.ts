@@ -197,15 +197,27 @@ async function enrichOptions(a: VideoAnalysis, underQuotes: Map<string, { price:
     const sym = o.underlyingSymbol;
     const under = underQuotes.get(sym) ?? (await getQuote(sym).then((q) => (q ? { price: q.price, chgPct: q.chgPct } : null)).catch(() => null));
 
-    // status from the underlying move (we never have intraday option triggers)
+    // status from the underlying move (we never have intraday option triggers). This is a
+    // point-in-time lifecycle read against the creator's stated trigger/target/invalidation
+    // — no fabricated levels, and only as granular as the creator's own numbers allow.
     if (under) {
-      if (o.underlyingInvalidation !== null) {
-        const inval = o.direction === "bearish" ? under.price > o.underlyingInvalidation : under.price < o.underlyingInvalidation;
-        if (inval) o.status = "invalidated";
-      }
-      if (o.status !== "invalidated" && o.underlyingTrigger !== null) {
-        const hit = o.direction === "bearish" ? under.price <= o.underlyingTrigger : under.price >= o.underlyingTrigger;
-        o.status = hit ? "triggered" : "waiting_for_trigger";
+      const dir = o.direction;
+      const px = under.price;
+      const tgt = o.underlyingTargets[0] ?? null;
+      if (o.underlyingInvalidation !== null && (dir === "bearish" ? px > o.underlyingInvalidation : px < o.underlyingInvalidation)) {
+        o.status = "invalidated";
+      } else if (tgt !== null && (dir === "bearish" ? px <= tgt : px >= tgt)) {
+        o.status = "target_reached";
+      } else if (o.underlyingTrigger !== null) {
+        const trig = o.underlyingTrigger;
+        const hit = dir === "bearish" ? px <= trig : px >= trig;
+        if (hit) {
+          // ran well past the trigger (>2%) with no target left → too extended to enter fresh
+          const past = dir === "bearish" ? (trig - px) / Math.max(1, trig) : (px - trig) / Math.max(1, trig);
+          o.status = tgt === null && past > 0.02 ? "too_extended" : "triggered";
+        } else {
+          o.status = Math.abs(px - trig) / Math.max(1, trig) <= 0.01 ? "approaching_trigger" : "waiting_for_trigger";
+        }
       }
     }
 
@@ -213,6 +225,8 @@ async function enrichOptions(a: VideoAnalysis, underQuotes: Map<string, { price:
     const primary = o.legs[0];
     const legExp = o.legs.find((l) => l.expiration)?.expiration ?? null;
     const d = dte(legExp, now);
+    // a contract whose resolved expiration is already past is expired (terminal truth)
+    if (d !== null && d < 0) o.status = "expired";
     let liquidityNote: string | null = null;
     let volNote: string | null = null;
 

@@ -274,7 +274,10 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .tvchart-int { font-size: 10.5px; color: var(--ash); background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 7px; cursor: pointer; font-family: var(--font-mono), monospace; }
 .tvchart-int:hover { color: var(--bone); }
 .tvchart-int.on { color: var(--bone); border-color: rgb(var(--steel-rgb)/0.3); background: rgb(var(--steel-rgb)/0.08); }
+.tvchart-body { position: relative; }
 .tvchart-skel, .tvchart-fallback { display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; height: 100%; min-height: 320px; color: var(--ash); font-size: 12px; padding: 20px; text-align: center; }
+/* overlaid on the still-mounted widget container so a transient failure can recover */
+.tvchart-overlay { position: absolute; inset: 0; background: rgb(10 11 13 / 0.92); z-index: 2; }
 .tvchart-attr { font-size: 9.5px; color: var(--ash); padding: 4px 10px; border-top: 1px solid rgb(var(--steel-rgb)/0.1); }
 .tvchart-attr a { color: var(--steel); text-decoration: none; }
 .tvchart-attr a:hover { color: var(--bone); }

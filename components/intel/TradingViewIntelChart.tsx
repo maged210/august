@@ -27,6 +27,7 @@ export default function TradingViewIntelChart({ height = 460 }: { height?: numbe
   const [interval, setInterval] = useState("D");
   const [inView, setInView] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0); // bump to force a rebuild (Retry)
   const holderRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<HTMLDivElement | null>(null);
 
@@ -81,7 +82,8 @@ export default function TradingViewIntelChart({ height = 460 }: { height?: numbe
     script.onerror = () => setFailed(true);
     mount.appendChild(script);
     return () => clearTimeout(fail);
-  }, [symbol, interval, inView, height]);
+    // reloadKey lets the Retry button force a rebuild even when symbol/interval are unchanged.
+  }, [symbol, interval, inView, height, reloadKey]);
 
   return (
     <div className="tvchart" ref={holderRef} style={{ height }}>
@@ -100,18 +102,25 @@ export default function TradingViewIntelChart({ height = 460 }: { height?: numbe
           ))}
         </div>
       </div>
-      {failed ? (
-        <div className="tvchart-fallback">
-          <div>Chart unavailable (the TradingView widget didn&apos;t load).</div>
-          <a className="idea-cite" href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`} target="_blank" rel="noreferrer">
-            ▸ open {symbol} on TradingView
-          </a>
-        </div>
-      ) : (
+      {/* The widget container stays mounted ALWAYS so a symbol/interval change (or Retry)
+          can rebuild it; the fallback is overlaid on top rather than replacing it — that
+          way a transient load failure is recoverable instead of permanently stuck. */}
+      <div className="tvchart-body" style={{ height: height - 32 }}>
         <div className="tradingview-widget-container" ref={widgetRef} style={{ height: height - 32 }}>
           {!inView && <div className="tvchart-skel">Loading chart…</div>}
         </div>
-      )}
+        {failed && (
+          <div className="tvchart-fallback tvchart-overlay">
+            <div>Chart unavailable (the TradingView widget didn&apos;t load).</div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <button type="button" className="ibtn ibtn-sm" onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+              <a className="idea-cite" href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`} target="_blank" rel="noreferrer">
+                ▸ open {symbol} on TradingView
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
       <div className="tvchart-attr">
         <a href={`https://www.tradingview.com/symbols/${encodeURIComponent(symbol)}/`} target="_blank" rel="noreferrer">
           {symbol} chart

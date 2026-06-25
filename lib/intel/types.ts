@@ -300,6 +300,8 @@ export type DailyBrief = {
     directionalOnly: OptionBriefIdea[];
     optionsRisk: string[];
     providerStatus: OptionsProviderStatus;
+    // cross-channel agreement/conflict on option underlyings (parallel to `consensus`)
+    consensus: ConsensusItem[];
   };
 };
 

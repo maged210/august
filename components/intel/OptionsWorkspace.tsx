@@ -12,7 +12,7 @@
 // Honesty: delayed data, NO Greeks; creator-quoted premium is shown separately from any
 // current (delayed) quote; nothing here trades or connects to a broker.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DailyBrief, IntelLevel, OptionBriefIdea, OptionIdea, OptionsProviderStatus, RankFactor } from "@/lib/intel/types";
 import { useSymbol } from "./symbolContext";
 import TradingViewIntelChart from "./TradingViewIntelChart";
@@ -69,7 +69,7 @@ export default function OptionsWorkspace({ brief, levels }: { brief: DailyBrief 
       </div>
 
       {/* AUGUST candidate generator for the current symbol (provider-gated, on demand) */}
-      <CandidateGenerator providerStatus={options?.providerStatus} onSelect={setSelected} />
+      <CandidateGenerator onSelect={setSelected} />
 
       {!options ? (
         <div className="istate">No option ideas extracted yet. Process a transcript that discusses options, then generate the brief — creator plays, directional setups, and (when the provider has data) AUGUST candidates appear here.</div>
@@ -86,6 +86,19 @@ export default function OptionsWorkspace({ brief, levels }: { brief: DailyBrief 
           <OptionGroup title="Creator Options Plays" note="Exactly what the creator stated — never embellished." items={options.bestCreatorPlays} empty="No creator named a specific options contract." onChart={setSymbol} onSelect={setSelected} />
           <OptionGroup title="AUGUST Options Candidates" note="AUGUST-GENERATED — not a creator recommendation, not advice." items={options.augustCandidates} empty="No candidates (connect/await an options-chain provider, or no thesis qualified)." onChart={setSymbol} onSelect={setSelected} candidate />
           <OptionGroup title="Directional Setups Without a Contract" note="Directional thesis — exact options contract not specified." items={options.directionalOnly} empty="None." onChart={setSymbol} onSelect={setSelected} />
+
+          {options.consensus.length > 1 && (
+            <div className="icard">
+              <div className="icard-h">Options Consensus &amp; Conflicts <span className="optx-note">do channels agree on the underlying?</span></div>
+              {options.consensus.slice(0, 16).map((c) => (
+                <div key={c.ticker} className="consensus-row">
+                  <span className="intel-mono" style={{ color: "var(--bone)" }}>{c.ticker}</span>
+                  <span style={{ fontSize: 11, color: "var(--ash)" }}>{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
+                  <span className={`badge ${c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral"}`}>{c.agreement}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {options.optionsRisk.length > 0 && (
             <div className="icard">
@@ -206,7 +219,7 @@ function OptionIdeaCard({ idea, onChart, onSelect }: { idea: RankedOption; onCha
 }
 
 // --- on-demand AUGUST candidate generator for the current symbol -----------
-function CandidateGenerator({ providerStatus, onSelect }: { providerStatus?: OptionsProviderStatus; onSelect: (i: RankedOption) => void }) {
+function CandidateGenerator({ onSelect }: { onSelect: (i: RankedOption) => void }) {
   const { symbol } = useSymbol();
   const [dir, setDir] = useState<"bullish" | "bearish">("bullish");
   const [busy, setBusy] = useState(false);
@@ -240,12 +253,13 @@ function CandidateGenerator({ providerStatus, onSelect }: { providerStatus?: Opt
       </div>
       {res && (
         <div className="optx-genres">
+          {/* warning derived from the LIVE response, not a stale brief snapshot */}
+          {res.status !== "delayed" && res.status !== "connected" && (
+            <div className="inote iwarn">Provider: {res.status}. Candidates need a working options-chain provider.</div>
+          )}
           <div className="inote">{res.note || res.status}</div>
           {res.candidates.map((c) => <OptionIdeaCard key={c.id} idea={c} onChart={() => {}} onSelect={onSelect} />)}
         </div>
-      )}
-      {providerStatus && providerStatus !== "delayed" && providerStatus !== "connected" && (
-        <div className="inote iwarn">Provider status: {PROVIDER_LABEL[providerStatus]}. Candidates need a working options-chain provider.</div>
       )}
     </div>
   );
@@ -255,11 +269,20 @@ function CandidateGenerator({ providerStatus, onSelect }: { providerStatus?: Opt
 function ContractPanel({ idea, onClose, onChart }: { idea: RankedOption; onClose: () => void; onChart: (s: string) => void }) {
   const q = idea.contractQuote;
   const risk = idea.optionsRisk;
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Escape-to-close + focus management (move focus into the dialog; restore on close).
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); prev?.focus?.(); };
+  }, [onClose]);
   return (
     <>
       <div className="idrawer-scrim" onClick={onClose} />
-      <div className="idrawer">
-        <button className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
+      <div className="idrawer" role="dialog" aria-modal="true" aria-label={`${idea.underlyingSymbol} option contract`}>
+        <button ref={closeRef} className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
         <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>OPTION CONTRACT</div>
         <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>
           <button type="button" className="idea-tkr" onClick={() => onChart(idea.underlyingSymbol)}>{idea.underlyingSymbol}</button>{" "}

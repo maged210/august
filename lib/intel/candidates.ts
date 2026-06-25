@@ -54,8 +54,9 @@ const isoFromEpochSec = (sec: number): string => {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 };
 
-/** Choose a provider expiration whose DTE sits inside the configured band. */
-function pickExpiration(expirations: number[], s: OptionCandidateSettings, nowMs: number): { epoch: number; iso: string; dte: number } | null {
+/** Choose a provider expiration whose DTE sits inside the configured band. Exported for
+ *  unit tests — encodes "0DTE off by default" + the in-band-nearest-midpoint selection. */
+export function pickExpiration(expirations: number[], s: OptionCandidateSettings, nowMs: number): { epoch: number; iso: string; dte: number } | null {
   const scored = expirations
     .map((e) => ({ epoch: e, iso: isoFromEpochSec(e), dte: dte(isoFromEpochSec(e), nowMs) ?? -1 }))
     .filter((x) => x.dte >= 0)
@@ -69,24 +70,27 @@ function pickExpiration(expirations: number[], s: OptionCandidateSettings, nowMs
 }
 
 // Per-share price to evaluate a contract with: live mid during RTH, else the last trade
-// (a real, delayed price) after hours when bid/ask are 0/absent. Never fabricated.
-function priceOf(c: NormalizedContract): number | null {
-  if (c.mid !== null && c.mid > 0) return c.mid;
-  if (c.last !== null && c.last > 0) return c.last;
-  return null;
+// (a real, delayed price) after hours when bid/ask are 0/absent. Never fabricated. The
+// `basis` is surfaced so a `last`-based number can be disclosed as possibly prior-session.
+// Exported for unit tests.
+export function priceOf(c: NormalizedContract): { value: number | null; basis: "mid" | "last" | null } {
+  if (c.mid !== null && c.mid > 0) return { value: c.mid, basis: "mid" };
+  if (c.last !== null && c.last > 0) return { value: c.last, basis: "last" };
+  return { value: null, basis: null };
 }
 
 // Effective liquidity: open interest when present, else today's volume. OI is an
 // end-of-day figure (republished next morning) and reads 0 overnight — exactly when the
 // evening brief runs — so we fall back to real traded volume rather than rejecting
-// everything. Both are real, never fabricated.
-function effLiquidity(c: NormalizedContract): { value: number; basis: "oi" | "volume" } {
+// everything. Both are real, never fabricated. Exported for unit tests.
+export function effLiquidity(c: NormalizedContract): { value: number; basis: "oi" | "volume" } {
   const oi = c.openInterest ?? 0;
   if (oi > 0) return { value: oi, basis: "oi" };
   return { value: c.volume ?? 0, basis: "volume" };
 }
 
-function passesLiquidity(c: NormalizedContract, s: OptionCandidateSettings): boolean {
+// Exported for unit tests — encodes "controls must actually be honored".
+export function passesLiquidity(c: NormalizedContract, s: OptionCandidateSettings): boolean {
   if (effLiquidity(c).value < s.minOpenInterest) return false;
   if ((c.volume ?? 0) < s.minVolume) return false;
   // Spread gate only when a real two-sided market exists (after hours bid/ask are 0).
@@ -94,11 +98,11 @@ function passesLiquidity(c: NormalizedContract, s: OptionCandidateSettings): boo
     const sp = spreadPct(c);
     if (sp !== null && sp > s.maxBidAskSpreadPct) return false;
   }
-  if (priceOf(c) === null) return false; // need a real price to evaluate honestly
+  if (priceOf(c).value === null) return false; // need a real price to evaluate honestly
   return true;
 }
 
-function convictionFor(premiumPerContract: number | null, d: number): OptionIdea["conviction"] {
+export function convictionFor(premiumPerContract: number | null, d: number): OptionIdea["conviction"] {
   if (d <= 2) return "lotto";
   if (premiumPerContract !== null && premiumPerContract < 75) return "speculative";
   return "standard";
@@ -180,7 +184,8 @@ export async function generateCandidates(t: CandidateThesis, settings: OptionCan
     const otm = liquid.find((c) => (optType === "call" ? c.strike > under : c.strike < under) && c !== atm);
     if (otm) picks.push(otm);
     for (const c of picks) {
-      const premium = priceOf(c); // per share (mid in RTH, else last)
+      const px = priceOf(c); // per share (mid in RTH, else last)
+      const premium = px.value;
       const perContract = premium !== null ? premium * 100 : null;
       if (settings.maxPremium !== null && perContract !== null && perContract > settings.maxPremium) continue;
       const strategy: OptionStrategyType = optType === "call" ? "long_call" : "long_put";
@@ -194,7 +199,7 @@ export async function generateCandidates(t: CandidateThesis, settings: OptionCan
       if (settings.maxLossCap !== null && idea.maxLoss !== null && idea.maxLoss > settings.maxLossCap) continue;
       idea.contractQuote = quoteFor(c, chain.delayed, chain.quoteTimestamp);
       idea.conviction = convictionFor(perContract, exp.dte);
-      idea.optionsRisk = riskNotes(c, exp.dte, false);
+      idea.optionsRisk = riskNotes(c, exp.dte, false, px.basis);
       out.push(idea);
     }
   }
@@ -207,16 +212,16 @@ export async function generateCandidates(t: CandidateThesis, settings: OptionCan
       .filter((c) => (optType === "call" ? c.strike > longLeg.strike : c.strike < longLeg.strike))
       .sort((a, b) => Math.abs(a.strike - longLeg.strike) - Math.abs(b.strike - longLeg.strike))[0];
     const longPx = priceOf(longLeg);
-    const shortPx = shortLeg ? priceOf(shortLeg) : null;
-    if (shortLeg && longPx !== null && shortPx !== null) {
+    const shortPx = shortLeg ? priceOf(shortLeg) : { value: null, basis: null as "mid" | "last" | null };
+    if (shortLeg && longPx.value !== null && shortPx.value !== null) {
       const strategy: OptionStrategyType = optType === "call" ? "call_debit_spread" : "put_debit_spread";
       const legs: OptionLeg[] = [
         { action: "buy", optionType: optType, quantity: 1, strike: longLeg.strike, expiration: exp.iso, contractSymbol: longLeg.contractSymbol || null },
         { action: "sell", optionType: optType, quantity: 1, strike: shortLeg.strike, expiration: exp.iso, contractSymbol: shortLeg.contractSymbol || null },
       ];
       const m = computeOptionMetrics(strategy, [
-        { ...legs[0], premium: longPx },
-        { ...legs[1], premium: shortPx },
+        { ...legs[0], premium: longPx.value },
+        { ...legs[1], premium: shortPx.value },
       ]);
       if (m.maxLoss !== null && (settings.maxLossCap === null || m.maxLoss <= settings.maxLossCap) && (settings.maxPremium === null || m.maxLoss <= settings.maxPremium)) {
         const idea = baseIdea(t, strategy, legs);
@@ -226,7 +231,9 @@ export async function generateCandidates(t: CandidateThesis, settings: OptionCan
         idea.riskRewardRatio = m.riskRewardRatio;
         idea.contractQuote = quoteFor(longLeg, chain.delayed, chain.quoteTimestamp);
         idea.conviction = "standard";
-        idea.optionsRisk = { ...riskNotes(longLeg, exp.dte, true), assignment: "Short leg can be assigned early near/at the money or before ex-dividend." };
+        // a debit spread is "priced from last" if EITHER leg used the last-trade fallback
+        const spreadBasis = longPx.basis === "last" || shortPx.basis === "last" ? "last" : "mid";
+        idea.optionsRisk = { ...riskNotes(longLeg, exp.dte, true, spreadBasis), assignment: "Short leg can be assigned early near/at the money or before ex-dividend." };
         out.push(idea);
       }
     }
@@ -251,16 +258,24 @@ function quoteFor(c: NormalizedContract, delayed: boolean, ts: number | null): O
   };
 }
 
-function riskNotes(c: NormalizedContract, d: number, defined: boolean): OptionIdea["optionsRisk"] {
+function riskNotes(c: NormalizedContract, d: number, defined: boolean, priceBasis: "mid" | "last" | null): OptionIdea["optionsRisk"] {
   const sp = spreadPct(c);
   const liq = effLiquidity(c);
+  // A `last`-priced number can be a prior-session print — disclose that distinctly rather
+  // than a flat "delayed", so the staleness of the dollar figures isn't understated.
+  const staleness =
+    priceBasis === "last"
+      ? "Priced from last trade (no current bid/ask; may be a prior-session print)."
+      : defined
+        ? "Both legs priced from delayed quotes."
+        : "Delayed contract pricing.";
   return {
     liquidity: `${liq.basis === "oi" ? `OI ${liq.value}` : `Vol ${liq.value} (OI unpublished overnight)`}${sp !== null ? `, spread ${(sp * 100).toFixed(0)}%` : ""}${liq.value < 100 ? " — thin" : ""}.`,
     thetaDecay: d <= 2 ? `~${d}DTE — severe time decay.` : d <= 10 ? `~${d}DTE — meaningful theta.` : `~${d}DTE.`,
     volatility: c.impliedVolatility !== null ? `IV ~${(c.impliedVolatility * 100).toFixed(0)}% (delayed).` : null,
     earnings: null,
     assignment: null,
-    staleness: defined ? "Both legs priced from delayed quotes." : "Delayed contract pricing.",
+    staleness,
   };
 }
 

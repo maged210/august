@@ -199,7 +199,12 @@ export async function getAnalysis(videoId: string): Promise<VideoAnalysis | null
   if (!redis) return null;
   try {
     const raw = await redis.get<string>(K.analysis(videoId));
-    return raw ? (typeof raw === "string" ? JSON.parse(raw) : (raw as unknown as VideoAnalysis)) : null;
+    if (!raw) return null;
+    const a = (typeof raw === "string" ? JSON.parse(raw) : raw) as VideoAnalysis;
+    // Back-compat: analyses stored before pass 3 have no optionIdeas. Backfill so the
+    // required-array type stays honest and every consumer can iterate safely.
+    a.optionIdeas ??= [];
+    return a;
   } catch {
     return null;
   }

@@ -53,7 +53,7 @@ export function rankOption(
   }
   // spreadQuality (15)
   {
-    const sp = idea.contractQuote ? spreadPct({ bid: idea.contractQuote.bid, ask: idea.contractQuote.ask, mid: idea.contractQuote.mid } as never) : null;
+    const sp = idea.contractQuote ? spreadPct({ bid: idea.contractQuote.bid, ask: idea.contractQuote.ask, mid: idea.contractQuote.mid }) : null;
     let p: number;
     let note: string;
     if (sp === null) {
