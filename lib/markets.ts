@@ -114,6 +114,41 @@ type Chart = {
 async function yahooChart(symbol: string): Promise<Chart> {
   return cached(`ychart:${symbol}`, 60_000, () => fetchYahooChart(symbol));
 }
+
+// Map common shorthands to Yahoo symbols. Crypto needs the -USD pair; everything
+// else passes through upper-cased (NVDA, AAPL, SPY, ^VIX, …).
+function normalizeSymbol(raw: string): string {
+  const s = (raw || "").trim().toUpperCase();
+  if (!s) return "";
+  const crypto: Record<string, string> = {
+    BTC: "BTC-USD",
+    BITCOIN: "BTC-USD",
+    ETH: "ETH-USD",
+    ETHEREUM: "ETH-USD",
+    SOL: "SOL-USD",
+    DOGE: "DOGE-USD",
+    XRP: "XRP-USD",
+  };
+  return crypto[s] ?? s;
+}
+
+// A single live quote for an arbitrary symbol — reuses the existing Yahoo chart fetch
+// (+ its 60s cache); adds NO new data source. Used by the Watchers engine to evaluate
+// market alerts on any ticker (stocks, ETFs, indices, BTC-USD/ETH-USD). null if the
+// symbol doesn't resolve to a real price.
+export async function getQuote(
+  symbol: string,
+): Promise<{ symbol: string; price: number; prevClose: number; chgPct: number } | null> {
+  const sym = normalizeSymbol(symbol);
+  if (!sym) return null;
+  try {
+    const c = await yahooChart(sym);
+    if (!Number.isFinite(c.price) || c.price <= 0) return null;
+    return { symbol: sym, price: c.price, prevClose: c.prevClose, chgPct: c.chgPct };
+  } catch {
+    return null;
+  }
+}
 async function fetchYahooChart(symbol: string): Promise<Chart> {
   const j = await getJson(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,

@@ -115,7 +115,7 @@ export default function PresenceTelemetry({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [feeds, setFeeds] = useState<{ markets?: any; command?: any; intel?: any; comms?: any }>({});
+  const [feeds, setFeeds] = useState<{ markets?: any; command?: any; intel?: any; comms?: any; day?: any }>({});
   const [hovered, setHovered] = useState<string | null>(null);
 
   // Measure the surface. Belt-and-suspenders so it can't stick at a mount-time 0×0.
@@ -152,6 +152,7 @@ export default function PresenceTelemetry({
       pull("command", "/api/command");
       pull("intel", "/api/intel");
       pull("comms", "/api/inbox");
+      pull("day", "/api/day"); // AUGUST's awareness of today's calendar (restrained center line)
     };
     load();
     const id = window.setInterval(load, REFRESH_MS);
@@ -280,6 +281,12 @@ export default function PresenceTelemetry({
           <div className="presence-center">
             <div className="presence-center-t1">AUGUST</div>
             <div className="presence-center-t2">{fmtPresence(state)}</div>
+            {/* Day awareness — a single restrained line (server-formatted "NEXT 9:00 AM
+                · STANDUP" / "N TODAY"), shown only when the calendar's connected and
+                has something today. Not a grid, not a list — just AUGUST knowing. */}
+            {feeds.day?.connected && feeds.day.count > 0 && feeds.day.line ? (
+              <div className="presence-center-day">{feeds.day.line}</div>
+            ) : null}
           </div>
         </>
       ) : null}

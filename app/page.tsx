@@ -810,13 +810,36 @@ export default function Home() {
   useEffect(() => {
     if (!booted) return;
     let cancelled = false;
+    // Arrived from the morning-brief push (notificationclick → "/?brief=1")? Force the
+    // card open with its one-tap play control regardless of today's dismissal, then
+    // strip the param so a later reload doesn't re-trigger it.
+    let fromPush = false;
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("brief")) {
+        fromPush = true;
+        u.searchParams.delete("brief");
+        window.history.replaceState({}, "", u.toString());
+      }
+    } catch {
+      /* no-op */
+    }
     fetch("/api/brief", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
       .then((j: { ready?: boolean; brief?: MorningBriefData | null }) => {
         if (cancelled) return;
         if (j.ready && j.brief) {
           setBrief(j.brief); // always store so the summon trigger has it later
-          if (isBriefDismissed(j.brief.date)) {
+          if (fromPush) {
+            // Came from the push: always surface it (clear any same-day dismissal).
+            try {
+              window.localStorage.removeItem(briefDismissKey);
+            } catch {
+              /* private mode */
+            }
+            setBriefDismissed(false);
+            setBriefOpen(true);
+          } else if (isBriefDismissed(j.brief.date)) {
             setBriefDismissed(true);
           } else {
             setBriefOpen(true); // on-open delivery
@@ -832,6 +855,31 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+  }, [booted]);
+
+  // Deep-link: a Watcher push opens "/?screen=markets|world" — slide the deck to that
+  // surface so the tap lands where the alert points, then strip the param.
+  useEffect(() => {
+    if (!booted) return;
+    let screen: string | null = null;
+    try {
+      const u = new URL(window.location.href);
+      screen = u.searchParams.get("screen");
+      if (screen) {
+        u.searchParams.delete("screen");
+        window.history.replaceState({}, "", u.toString());
+      }
+    } catch {
+      /* no-op */
+    }
+    if (!screen) return;
+    const idx = screenIndex(screen);
+    if (idx >= 0) {
+      markAugNav();
+      // Defer one tick so the deck is mounted + measured before it scrolls.
+      const t = window.setTimeout(() => deckRef.current?.goTo(idx), 80);
+      return () => window.clearTimeout(t);
+    }
   }, [booted]);
 
   // Summon the brief panel on demand; compile if none exists yet.
