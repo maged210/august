@@ -26,19 +26,8 @@ function getRedis(): Redis {
 
 type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
-  | "intelMutate" | "intelProcess" | "intelAsk";
-  | "chat"
-  | "speak"
-  | "intel"
-  | "memory"
-  | "inbox"
-  | "brief"
-  | "token"
-  | "push"
-  | "day"
-  | "draft"
-  | "commsSend"
-  | "watchers";
+  | "intelMutate" | "intelProcess" | "intelAsk"
+  | "push" | "day" | "draft" | "commsSend" | "watchers";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
