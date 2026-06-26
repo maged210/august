@@ -2,6 +2,15 @@
    --charcoal, mono/sans fonts) for a dense market-terminal feel. Dark-first; the page
    scrolls (unlike the fixed orb). No new color system. */
 
+/* SCROLL FIX: globals.css sets body{overflow:hidden} for the fixed-screen orb surfaces.
+   /intel is the one exception — it holds unbounded, growing content and must scroll.
+   :has() is supported in all evergreen browsers; it lets us opt this route back in
+   without touching any other surface. */
+body:has(.intel-root) {
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+}
+
 .intel-root {
   min-height: 100dvh;
   background:
@@ -213,6 +222,54 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .lvl-row { display: grid; grid-template-columns: 56px auto 1fr auto; gap: 10px; padding: 6px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); font-size: 12px; align-items: center; }
 .cat-row { padding: 7px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); font-size: 12px; }
 .ask-ans { font-size: 13.5px; line-height: 1.6; color: var(--bone); margin: 10px 0; white-space: pre-wrap; }
+
+/* --- daily history picker ------------------------------------------------ */
+.ihistory { margin: 14px 0 10px; }
+.ihistory-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ash); opacity: 0.7; margin-bottom: 7px;
+}
+.ihistory-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.idate-pill {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px; letter-spacing: 0.03em;
+  padding: 4px 10px; border-radius: 6px;
+  border: 1px solid rgb(var(--steel-rgb) / 0.22);
+  background: transparent; color: var(--ash); cursor: pointer; transition: all 0.12s;
+}
+.idate-pill:hover { color: var(--bone); border-color: rgb(var(--steel-rgb) / 0.4); }
+.idate-pill.on {
+  color: var(--bone);
+  background: rgb(var(--steel-rgb) / 0.14);
+  border-color: rgb(var(--steel-rgb) / 0.4);
+}
+
+/* --- multi-add results --------------------------------------------------- */
+.iadd-ta { min-height: 68px !important; resize: none !important; }
+.iadd-results { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.iadd-result {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px; padding: 4px 9px; border-radius: 5px;
+  background: rgb(var(--steel-rgb) / 0.06);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.iadd-ok   { color: #7fb88a; }
+.iadd-exist { color: var(--ash); }
+.iadd-err  { color: #d98b8b; }
+
+/* --- chapter filter ------------------------------------------------------- */
+.chap.active { background: rgb(var(--steel-rgb) / 0.1); border-radius: 5px; }
+.chap-cat {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ash); opacity: 0.65; margin-left: auto; white-space: nowrap;
+}
+.chap-filter-bar {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px; color: var(--ash); margin-bottom: 8px;
+}
 
 /* a tiny entry link dropped onto the main orb page */
 .intel-entry {

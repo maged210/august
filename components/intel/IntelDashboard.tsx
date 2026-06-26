@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   BriefIdea,
   Chapter,
+  ChapterCategory,
   ConsensusItem,
   DailyBrief,
   IntelCatalyst,
@@ -31,9 +32,21 @@ type Overview = {
   brief: DailyBrief | null;
 };
 
-const watchUrl = (v: string, t?: number) => `https://www.youtube.com/watch?v=${v}${t ? `&t=${Math.floor(t)}s` : ""}`;
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const ago = (ms: number) => (ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never");
+const watchUrl = (v: string, t?: number) =>
+  `https://www.youtube.com/watch?v=${v}${t ? `&t=${Math.floor(t)}s` : ""}`;
+const mmss = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const ago = (ms: number) =>
+  ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never";
+
+const CAT_LABEL: Partial<Record<ChapterCategory, string>> = {
+  market_outlook: "Outlook", market_recap: "Recap", overnight_news: "Overnight",
+  macro_news: "Macro", economic_calendar: "Econ", earnings: "Earnings",
+  technical_analysis: "Technical", favorite_setups: "Setups", predictions: "Predictions",
+  watchlist: "Watchlist", options_flow: "Options Flow", trade_management: "Trade Mgmt",
+  risk_management: "Risk", closing_comments: "Closing", advertisement: "Ad",
+  unrelated: "Unrelated",
+};
 
 export default function IntelDashboard() {
   const [data, setData] = useState<Overview | null>(null);
@@ -41,7 +54,12 @@ export default function IntelDashboard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [openVideo, setOpenVideo] = useState<string | null>(null);
-  const [optionsOpen, setOptionsOpen] = useState(false); // Options Intel is a secondary, opt-in panel
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  // history
+  const [historyDates, setHistoryDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -56,22 +74,23 @@ export default function IntelDashboard() {
 
   useEffect(() => {
     load();
+    fetch("/api/intel/briefs", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
+      .catch(() => {});
   }, [load]);
 
-  const addSource = useCallback(async (url: string) => {
-    if (!url.trim()) return;
-    setBusy("add");
-    setMsg(null);
+  const loadDate = useCallback(async (date: string) => {
+    if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
+    setSelectedDate(date);
+    setHistoryLoading(true);
     try {
-      const r = await fetch("/api/intel/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
       const j = await r.json();
-      if (!j.ok) setMsg(`Couldn't add: ${j.error ?? "error"}`);
-      else setMsg(`Added: ${j.source?.title ?? url}`);
-      await load();
-    } finally {
-      setBusy(null);
-    }
-  }, [load]);
+      setHistoryBrief(j.brief ?? null);
+    } catch { setHistoryBrief(null); }
+    finally { setHistoryLoading(false); }
+  }, [selectedDate]);
 
   const removeSource = useCallback(async (id: string) => {
     await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -86,9 +105,7 @@ export default function IntelDashboard() {
       const j = await r.json();
       setMsg(j.ok ? `Sync: ${j.discovered} new video(s).` : j.message ?? "Sync needs YOUTUBE_API_KEY.");
       await load();
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }, [load]);
 
   const generateBrief = useCallback(async () => {
@@ -99,9 +116,7 @@ export default function IntelDashboard() {
       const j = await r.json();
       if (!j.ok) setMsg(`Brief: ${j.error ?? "failed"}`);
       await load();
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }, [load]);
 
   if (status === "loading") {
@@ -113,11 +128,18 @@ export default function IntelDashboard() {
     );
   }
   if (!data) {
-    return <div className="intel-wrap"><div className="istate istate-err">Couldn&apos;t load Market Intel. <button className="ibtn ibtn-sm" onClick={load}>Retry</button></div></div>;
+    return (
+      <div className="intel-wrap">
+        <div className="istate istate-err">
+          Couldn&apos;t load Market Intel.{" "}
+          <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
+        </div>
+      </div>
+    );
   }
 
   const { config, clock, sources, videos, brief } = data;
-  // Initial shared symbol: first option underlying, else first top idea ticker, else SPY.
+  const displayBrief = selectedDate ? historyBrief : brief;
   const initialSymbol =
     brief?.options?.bestCreatorPlays[0]?.underlyingSymbol ||
     brief?.options?.directionalOnly[0]?.underlyingSymbol ||
@@ -139,8 +161,12 @@ export default function IntelDashboard() {
           </div>
         </div>
         <div className="intel-actions">
-          <button className="ibtn" disabled={busy === "sync"} onClick={sync}>{busy === "sync" ? "Syncing…" : "Sync Sources"}</button>
-          <button className="ibtn ibtn-primary" disabled={busy === "brief" || !config.ai} onClick={generateBrief}>{busy === "brief" ? "Generating…" : "Generate Brief"}</button>
+          <button className="ibtn" disabled={busy === "sync"} onClick={sync}>
+            {busy === "sync" ? "Syncing…" : "Sync Sources"}
+          </button>
+          <button className="ibtn ibtn-primary" disabled={busy === "brief" || !config.ai} onClick={generateBrief}>
+            {busy === "brief" ? "Generating…" : "Generate Brief"}
+          </button>
           <a className="ibtn ibtn-ghost" href="/api/intel/export/today">Export</a>
           <a className="intel-home" href="/">← AUGUST</a>
         </div>
@@ -151,14 +177,37 @@ export default function IntelDashboard() {
       {!config.youtube && <div className="inote" style={{ marginTop: 8 }}>YOUTUBE_API_KEY not set: add videos by URL and paste transcripts to process them now. Channel auto-discovery and live status need the key.</div>}
       {msg && <div className="istate" style={{ color: "var(--steel)" }}>{msg}</div>}
 
+      {/* HISTORY PICKER */}
+      {historyDates.length > 0 && (
+        <div className="ihistory">
+          <div className="ihistory-label">Daily History</div>
+          <div className="ihistory-pills">
+            {selectedDate && (
+              <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>
+                ← Today
+              </button>
+            )}
+            {historyDates.map((d) => (
+              <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="intel-grid">
         <div>
-          {/* B — TONIGHT'S BRIEF */}
-          <BriefCard brief={brief} ai={config.ai} onOpenVideo={setOpenVideo} />
+          {/* B — BRIEF / HISTORY */}
+          {historyLoading ? (
+            <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
+          ) : (
+            <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />
+          )}
         </div>
         <div>
           {/* G — SOURCE MONITOR */}
-          <AddSource onAdd={addSource} busy={busy === "add"} />
+          <AddSource onReload={load} />
           <SourceMonitor sources={sources} onRemove={removeSource} />
           {/* H — VIDEO LIBRARY */}
           <VideoLibrary videos={videos} onOpen={setOpenVideo} />
@@ -167,9 +216,7 @@ export default function IntelDashboard() {
         </div>
       </div>
 
-      {/* OPTIONS INTEL — SECONDARY, opt-in. The YouTube-ingestion core above is the
-          feature; this options/chart workspace sits below it and is collapsed by default
-          (it also defers loading the TradingView widget + chain fetches until opened). */}
+      {/* OPTIONS INTEL — SECONDARY, opt-in */}
       <section className="optx-section">
         <button type="button" className="optx-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((o) => !o)}>
           <span className="optx-toggle-caret">{optionsOpen ? "▾" : "▸"}</span>
@@ -181,7 +228,15 @@ export default function IntelDashboard() {
 
       <div className="idisc">AUGUST Market Intel is decision-support / research over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.</div>
 
-      {openVideo && <VideoDrawer videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />}
+      {openVideo && (
+        <VideoDrawer
+          key={openVideo}
+          videoId={openVideo}
+          onClose={() => setOpenVideo(null)}
+          onProcessed={load}
+          aiOn={config.ai}
+        />
+      )}
     </div>
     </SymbolProvider>
   );
@@ -193,30 +248,49 @@ function DirBadge({ d }: { d: TradeIdea["direction"] }) {
   return <span className={`badge ${cls}`}>{d}</span>;
 }
 function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
-  return <span className={`badge ${e === "explicit" ? "b-explicit" : "b-inferred"}`}>{e === "explicit" ? "Source claim" : "AUGUST inference"}</span>;
+  return (
+    <span className={`badge ${e === "explicit" ? "b-explicit" : "b-inferred"}`}>
+      {e === "explicit" ? "Source claim" : "AUGUST inference"}
+    </span>
+  );
 }
 function val(v: { value: number | null; text: string }) {
-  if (v.value === null && (!v.text || /not specified/i.test(v.text))) return <span className="notspec">Not specified</span>;
+  if (v.value === null && (!v.text || /not specified/i.test(v.text)))
+    return <span className="notspec">Not specified</span>;
   return <b>{v.text || (v.value !== null ? String(v.value) : "—")}</b>;
 }
 
 // --- B: brief -------------------------------------------------------------
-function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: boolean; onOpenVideo: (id: string) => void }) {
+function BriefCard({
+  brief, ai, onOpenVideo, historical,
+}: {
+  brief: DailyBrief | null;
+  ai: boolean;
+  onOpenVideo: (id: string) => void;
+  historical?: boolean;
+}) {
   const [read60, setRead60] = useState(false);
   if (!brief) {
     return (
       <div className="icard">
-        <div className="icard-h">Tonight&apos;s Brief</div>
-        <div className="istate">No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</div>
+        <div className="icard-h">{historical ? "No brief for this date" : "Tonight’s Brief"}</div>
+        <div className="istate">
+          {historical
+            ? "No brief was stored for this date."
+            : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}
+        </div>
       </div>
     );
   }
+  const label = historical ? `Brief · ${brief.date}` : `Tonight’s Brief · ${brief.date}`;
   return (
     <>
       <div className="icard">
         <div className="icard-h">
-          Tonight&apos;s Brief · {brief.date}
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
+          {label}
+          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>
+            {read60 ? "Full" : "Read in 60s"}
+          </button>
         </div>
         {brief.read60 && <p className="brief-read60">{brief.read60}</p>}
         {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
@@ -237,7 +311,6 @@ function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: b
         )}
       </div>
 
-      {/* D-ish: Creator Favorites */}
       {brief.creatorFavorites.length > 0 && (
         <div className="icard">
           <div className="icard-h">Creator Favorites</div>
@@ -245,13 +318,13 @@ function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: b
         </div>
       )}
 
-      {/* C: Top Trade Ideas */}
       <div className="icard">
         <div className="icard-h">Top Trade Ideas</div>
-        {brief.topIdeas.length === 0 ? <div className="istate">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}
+        {brief.topIdeas.length === 0
+          ? <div className="istate">No ideas extracted yet.</div>
+          : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}
       </div>
 
-      {/* E: Levels */}
       {brief.levels.length > 0 && (
         <div className="icard">
           <div className="icard-h">Levels &amp; Triggers</div>
@@ -259,7 +332,6 @@ function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: b
         </div>
       )}
 
-      {/* F: Catalysts */}
       {brief.catalysts.length > 0 && (
         <div className="icard">
           <div className="icard-h">Catalyst Map</div>
@@ -267,7 +339,6 @@ function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: b
         </div>
       )}
 
-      {/* Consensus & Conflicts */}
       {brief.consensus.length > 0 && (
         <div className="icard">
           <div className="icard-h">Consensus &amp; Conflicts</div>
@@ -278,7 +349,13 @@ function BriefCard({ brief, ai, onOpenVideo }: { brief: DailyBrief | null; ai: b
   );
 }
 
-function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea; favorite?: boolean; onOpenVideo?: (id: string) => void }) {
+function IdeaCard({
+  idea, favorite, onOpenVideo,
+}: {
+  idea: BriefIdea | TradeIdea;
+  favorite?: boolean;
+  onOpenVideo?: (id: string) => void;
+}) {
   const b = idea as BriefIdea;
   return (
     <div className="idea">
@@ -304,7 +381,8 @@ function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea
       </div>
       {idea.videoId && (
         <a className="idea-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
-          ▸ {b.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}{b.rankScore !== undefined ? ` · rank ${b.rankScore}` : ""}
+          ▸ {b.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}
+          {b.rankScore !== undefined ? ` · rank ${b.rankScore}` : ""}
         </a>
       )}
     </div>
@@ -316,11 +394,17 @@ function LevelRow({ l }: { l: IntelLevel }) {
     <div className="lvl-row">
       <span className="intel-mono" style={{ color: "var(--bone)" }}>{l.instrument}</span>
       <span className="badge b-neutral">{l.type}</span>
-      <span style={{ color: "var(--ash)", fontSize: 11 }}>{l.level !== null ? l.level : <span className="notspec">{l.levelText || "Not specified"}</span>} {l.crossed ? <span className="badge b-triggered">crossed</span> : null}</span>
-      {l.videoId ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a> : <span className="idea-cite">@{mmss(l.sourceStartSeconds)}</span>}
+      <span style={{ color: "var(--ash)", fontSize: 11 }}>
+        {l.level !== null ? l.level : <span className="notspec">{l.levelText || "Not specified"}</span>}
+        {l.crossed ? <span className="badge b-triggered">crossed</span> : null}
+      </span>
+      {l.videoId
+        ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
+        : <span className="idea-cite">@{mmss(l.sourceStartSeconds)}</span>}
     </div>
   );
 }
+
 function CatalystRow({ c }: { c: IntelCatalyst }) {
   return (
     <div className="cat-row">
@@ -332,9 +416,15 @@ function CatalystRow({ c }: { c: IntelCatalyst }) {
     </div>
   );
 }
+
 function DrawerOptionRow({ o }: { o: OptionIdea }) {
-  const origin = o.origin === "creator_explicit" ? <span className="badge b-explicit">Creator play</span> : o.origin === "august_candidate" ? <span className="badge b-inferred">AUGUST candidate</span> : <span className="badge b-watch">Directional only</span>;
-  const contract = o.legs.length ? o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ") : "no contract specified";
+  const origin =
+    o.origin === "creator_explicit" ? <span className="badge b-explicit">Creator play</span>
+    : o.origin === "august_candidate" ? <span className="badge b-inferred">AUGUST candidate</span>
+    : <span className="badge b-watch">Directional only</span>;
+  const contract = o.legs.length
+    ? o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ")
+    : "no contract specified";
   return (
     <div className="optidea">
       <div className="optidea-top">
@@ -353,6 +443,7 @@ function DrawerOptionRow({ o }: { o: OptionIdea }) {
     </div>
   );
 }
+
 function ConsensusRow({ c }: { c: ConsensusItem }) {
   const cls = c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral";
   return (
@@ -365,19 +456,68 @@ function ConsensusRow({ c }: { c: ConsensusItem }) {
 }
 
 // --- G: source monitor + add ----------------------------------------------
-function AddSource({ onAdd, busy }: { onAdd: (url: string) => void; busy: boolean }) {
-  const [url, setUrl] = useState("");
+type AddResult = { url: string; status: "ok" | "exists" | "err"; label: string };
+
+function AddSource({ onReload }: { onReload: () => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<AddResult[]>([]);
+
+  const submit = async () => {
+    const urls = text.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
+    if (!urls.length) return;
+    setBusy(true);
+    setResults([]);
+    const out: AddResult[] = [];
+    for (const url of urls) {
+      try {
+        const r = await fetch("/api/intel/sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const j = await r.json();
+        if (j.ok) out.push({ url, status: "ok", label: j.source?.title ?? url });
+        else if (j.error === "already_exists") out.push({ url, status: "exists", label: j.source?.title ?? url });
+        else out.push({ url, status: "err", label: j.error ?? "error" });
+      } catch { out.push({ url, status: "err", label: "network error" }); }
+    }
+    setResults(out);
+    setBusy(false);
+    setText("");
+    await onReload();
+  };
+
   return (
     <div className="icard">
-      <div className="icard-h">Add a source</div>
-      <div className="iinrow">
-        <input className="iinput" placeholder="Channel URL, @handle, channel id, or video URL" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { onAdd(url); setUrl(""); } }} />
-        <button className="ibtn ibtn-primary" disabled={busy || !url.trim()} onClick={() => { onAdd(url); setUrl(""); }}>{busy ? "…" : "Add"}</button>
+      <div className="icard-h">Add sources</div>
+      <textarea
+        className="iinput iadd-ta"
+        placeholder={"Paste one or more URLs (newline- or comma-separated):\nchannel URL · @handle · video URL"}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
+      />
+      <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
+        <button className="ibtn ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
+          {busy ? "Adding…" : "Add"}
+        </button>
+        <span className="inote">Ctrl+Enter to submit</span>
       </div>
+      {results.length > 0 && (
+        <div className="iadd-results">
+          {results.map((r, i) => (
+            <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`}>
+              {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="inote">Seeds: paste a Stock Market Live or StockedUp video URL to start, or a channel to monitor.</div>
     </div>
   );
 }
+
 function SourceMonitor({ sources, onRemove }: { sources: IntelSource[]; onRemove: (id: string) => void }) {
   return (
     <div className="icard">
@@ -410,9 +550,11 @@ function statusBadge(v: IntelVideo) {
   if (v.status === "analyzing") return <span className="badge b-proc">Processing</span>;
   if (v.status === "preliminary") return <span className="badge b-proc">Preliminary</span>;
   if (v.status === "analyzed") return <span className="badge b-verified">Analyzed</span>;
-  if (v.transcriptStatus === "pending" || v.transcriptStatus === "unavailable") return <span className="badge b-pending">Transcript {v.transcriptStatus}</span>;
+  if (v.transcriptStatus === "pending" || v.transcriptStatus === "unavailable")
+    return <span className="badge b-pending">Transcript {v.transcriptStatus}</span>;
   return <span className="badge b-pending">{v.status}</span>;
 }
+
 function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: string) => void }) {
   return (
     <div className="icard">
@@ -437,11 +579,19 @@ function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: s
 }
 
 // --- I: video drawer ------------------------------------------------------
-function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string; onClose: () => void; onProcessed: () => void; aiOn: boolean }) {
+function VideoDrawer({
+  videoId, onClose, onProcessed, aiOn,
+}: {
+  videoId: string;
+  onClose: () => void;
+  onProcessed: () => void;
+  aiOn: boolean;
+}) {
   const [bundle, setBundle] = useState<{ video: IntelVideo; analysis: VideoAnalysis | null; chapters: Chapter[] } | null>(null);
   const [transcript, setTranscript] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedChapterSec, setSelectedChapterSec] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}`, { cache: "no-store" });
@@ -453,17 +603,41 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
     setBusy(true);
     setErr(null);
     try {
-      const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/transcript`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript }) });
+      const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/transcript`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
       const j = await r.json();
       if (!j.ok) setErr(`Processing failed: ${j.error ?? "error"}`);
       else { setTranscript(""); await load(); onProcessed(); }
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }, [transcript, videoId, load, onProcessed]);
 
   const v = bundle?.video;
   const a = bundle?.analysis;
+  const chapters = bundle?.chapters ?? [];
+
+  const selectedChapter = selectedChapterSec !== null
+    ? chapters.find((ch) => ch.startSeconds === selectedChapterSec) ?? null
+    : null;
+
+  const visibleIdeas = a?.tradeIdeas
+    ? selectedChapter
+      ? a.tradeIdeas.filter((i) => i.sourceStartSeconds >= selectedChapter.startSeconds && i.sourceStartSeconds < selectedChapter.endSeconds)
+      : a.tradeIdeas
+    : [];
+  const visibleOptions = a?.optionIdeas
+    ? selectedChapter
+      ? a.optionIdeas.filter((o) => o.sourceStartSeconds >= selectedChapter.startSeconds && o.sourceStartSeconds < selectedChapter.endSeconds)
+      : a.optionIdeas
+    : [];
+  const visibleLevels = a?.levels
+    ? selectedChapter
+      ? a.levels.filter((l) => l.sourceStartSeconds >= selectedChapter.startSeconds && l.sourceStartSeconds < selectedChapter.endSeconds)
+      : a.levels
+    : [];
+
   return (
     <>
       <div className="idrawer-scrim" onClick={onClose} />
@@ -474,46 +648,133 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
             <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>VIDEO</div>
             <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>{v?.title}</h3>
             <div className="irow-meta" style={{ marginBottom: 12 }}>
-              <span>{v?.channelTitle}</span>{v && statusBadge(v)}{v?.stale && <span className="badge b-stale">Stale</span>}
+              <span>{v?.channelTitle}</span>
+              {v && statusBadge(v)}
+              {v?.stale && <span className="badge b-stale">Stale</span>}
               <a className="idea-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
 
             {a?.warnings?.length ? <div className="inote iwarn">{a.warnings.join(" · ")}</div> : null}
 
-            {/* transcript paste — works today */}
             {v?.status !== "analyzed" && (
               <div className="icard" style={{ marginTop: 12 }}>
-                <div className="icard-h">Process transcript {a?.pass === "preliminary" ? "(preliminary done — paste full for the rest)" : ""}</div>
-                <textarea className="iinput" placeholder={"Paste the YouTube transcript here (Show transcript → copy). Timestamps preserved when present."} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
+                <div className="icard-h">
+                  Process transcript {a?.pass === "preliminary" ? "(preliminary done — paste full for the rest)" : ""}
+                </div>
+                <textarea
+                  className="iinput"
+                  placeholder={"Paste the YouTube transcript here (Show transcript → copy). Timestamps preserved when present."}
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                />
                 <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                  <button className="ibtn ibtn-primary" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>{busy ? "Analyzing…" : "Analyze transcript"}</button>
+                  <button className="ibtn ibtn-primary" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>
+                    {busy ? "Analyzing…" : "Analyze transcript"}
+                  </button>
                   {!aiOn && <span className="inote iwarn">Needs ANTHROPIC_API_KEY.</span>}
                   {err && <span className="inote istate-err">{err}</span>}
                 </div>
               </div>
             )}
 
-            {/* chapter timeline */}
-            {bundle.chapters.length > 0 && (
+            {/* chapter timeline — click to filter ideas/levels */}
+            {chapters.length > 0 && (
               <div className="icard">
-                <div className="icard-h">Chapters</div>
-                {bundle.chapters.map((ch, i) => (
-                  <a key={i} className="chap" href={watchUrl(videoId, ch.startSeconds)} target="_blank" rel="noreferrer">
-                    <span className="chap-t">{mmss(ch.startSeconds)}</span>
-                    <span className={ch.priority === "high" ? "chap-hi" : ""}>{ch.title} {ch.creatorDefined ? "" : "· AUGUST-detected"}</span>
-                  </a>
+                <div className="icard-h">
+                  Chapters
+                  {selectedChapter && (
+                    <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>
+                      Clear filter
+                    </button>
+                  )}
+                </div>
+                {chapters.map((ch) => (
+                  <div
+                    key={ch.startSeconds}
+                    className={`chap${selectedChapterSec === ch.startSeconds ? " active" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds);
+                    }}
+                  >
+                    <a
+                      className="chap-t"
+                      href={watchUrl(videoId, ch.startSeconds)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {mmss(ch.startSeconds)}
+                    </a>
+                    <span className={ch.priority === "high" ? "chap-hi" : ""}>{ch.title}</span>
+                    {!ch.creatorDefined && (
+                      <span className="badge b-inferred" style={{ fontSize: 8.5 }}>AUGUST</span>
+                    )}
+                    <span className="chap-cat">{CAT_LABEL[ch.normalizedCategory] ?? ch.normalizedCategory}</span>
+                  </div>
                 ))}
               </div>
             )}
 
             {a && (
               <>
-                {a.overallSummary && <div className="icard"><div className="icard-h">Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}</div><p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p></div>}
-                {a.tradeIdeas.length > 0 && <div className="icard"><div className="icard-h">Trade Ideas · {a.tradeIdeas.length}</div>{a.tradeIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
-                {a.optionIdeas?.length > 0 && <div className="icard"><div className="icard-h">Option Ideas · {a.optionIdeas.length}</div>{a.optionIdeas.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
-                {a.levels.length > 0 && <div className="icard"><div className="icard-h">Levels · {a.levels.length}</div>{a.levels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
-                {a.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-                <button className="ibtn ibtn-sm ibtn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
+                {a.overallSummary && (
+                  <div className="icard">
+                    <div className="icard-h">
+                      Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}
+                    </div>
+                    <p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p>
+                  </div>
+                )}
+
+                {selectedChapter && (
+                  <div className="chap-filter-bar">
+                    <span>Filtering:</span>
+                    <b style={{ color: "var(--bone)" }}>{selectedChapter.title}</b>
+                    <span className="chap-cat">{CAT_LABEL[selectedChapter.normalizedCategory] ?? selectedChapter.normalizedCategory}</span>
+                    <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button>
+                  </div>
+                )}
+
+                {visibleIdeas.length > 0 && (
+                  <div className="icard">
+                    <div className="icard-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>
+                    {visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}
+                  </div>
+                )}
+                {visibleOptions.length > 0 && (
+                  <div className="icard">
+                    <div className="icard-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>
+                    {visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}
+                  </div>
+                )}
+                {visibleLevels.length > 0 && (
+                  <div className="icard">
+                    <div className="icard-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>
+                    {visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}
+                  </div>
+                )}
+                {a.catalysts.length > 0 && (
+                  <div className="icard">
+                    <div className="icard-h">Catalysts</div>
+                    {a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}
+                  </div>
+                )}
+                <button
+                  className="ibtn ibtn-sm ibtn-ghost"
+                  onClick={async () => {
+                    setBusy(true);
+                    await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" });
+                    await load();
+                    onProcessed();
+                    setBusy(false);
+                  }}
+                >
+                  Reprocess
+                </button>
               </>
             )}
           </>
@@ -526,23 +787,34 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
 // --- J: ask AUGUST --------------------------------------------------------
 function AskAugust({ ai }: { ai: boolean }) {
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<{ answer: string; citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[] } | null>(null);
+  const [res, setRes] = useState<{
+    answer: string;
+    citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const ask = async () => {
     if (q.trim().length < 3) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/intel/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+      const r = await fetch("/api/intel/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
       setRes(await r.json());
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
   return (
     <div className="icard">
       <div className="icard-h">Ask AUGUST</div>
       <div className="iinrow">
-        <input className="iinput" placeholder="What did both channels say about QQQ?" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") ask(); }} />
+        <input
+          className="iinput"
+          placeholder="What did both channels say about QQQ?"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+        />
         <button className="ibtn ibtn-primary" disabled={busy || !ai} onClick={ask}>{busy ? "…" : "Ask"}</button>
       </div>
       {!ai && <div className="inote iwarn">Needs ANTHROPIC_API_KEY.</div>}
@@ -550,7 +822,9 @@ function AskAugust({ ai }: { ai: boolean }) {
         <div>
           <div className="ask-ans">{res.answer}</div>
           {res.citations.map((c, i) => (
-            <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}</a>
+            <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
+              ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
+            </a>
           ))}
         </div>
       )}
