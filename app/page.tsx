@@ -1231,6 +1231,28 @@ export default function Home() {
 
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
+      {/* Market Intel — a top-level destination. Inline-styled so it needs no shared
+          CSS and can't disturb the orb page. */}
+      <a
+        href="/intel"
+        style={{
+          position: "fixed",
+          top: 14,
+          right: 16,
+          zIndex: 30,
+          fontFamily: "var(--font-mono), ui-monospace, monospace",
+          fontSize: 10,
+          letterSpacing: "0.16em",
+          color: "rgba(233,239,246,0.55)",
+          textDecoration: "none",
+          border: "1px solid rgba(233,239,246,0.16)",
+          borderRadius: 6,
+          padding: "5px 9px",
+          background: "rgba(0,0,0,0.25)",
+        }}
+      >
+        INTEL →
+      </a>
       <BootHud />
       <FrameTicks />
       {/* Always-present live region for the privacy-critical voice transitions —

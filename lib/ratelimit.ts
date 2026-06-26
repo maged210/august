@@ -25,18 +25,9 @@ function getRedis(): Redis {
 }
 
 type RouteKey =
-  | "chat"
-  | "speak"
-  | "intel"
-  | "memory"
-  | "inbox"
-  | "brief"
-  | "token"
-  | "push"
-  | "day"
-  | "draft"
-  | "commsSend"
-  | "watchers";
+  | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
+  | "intelMutate" | "intelProcess" | "intelAsk"
+  | "push" | "day" | "draft" | "commsSend" | "watchers";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -48,6 +39,9 @@ const LIMITS: Record<RouteKey, number> = {
   inbox: 20,  // Gmail API quota — read-only, server-cached
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
   token: 30,  // Deepgram STT grant-token mint — cheap, one per voice session/~2min, generous
+  intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
+  intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
+  intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
   push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
   day: 30,    // Google Calendar today-view — server-cached, Presence polls it
   draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft

@@ -115,9 +115,9 @@ async function yahooChart(symbol: string): Promise<Chart> {
   return cached(`ychart:${symbol}`, 60_000, () => fetchYahooChart(symbol));
 }
 
-// Map common shorthands to Yahoo symbols. Crypto needs the -USD pair; everything
-// else passes through upper-cased (NVDA, AAPL, SPY, ^VIX, …).
-function normalizeSymbol(raw: string): string {
+// Crypto shorthands → Yahoo pairs; everything else passes through upper-cased
+// (NVDA, AAPL, SPY, ^VIX, BTC-USD/ETH-USD, …).
+function normalizeYahooSymbol(raw: string): string {
   const s = (raw || "").trim().toUpperCase();
   if (!s) return "";
   const crypto: Record<string, string> = {
@@ -133,13 +133,13 @@ function normalizeSymbol(raw: string): string {
 }
 
 // A single live quote for an arbitrary symbol — reuses the existing Yahoo chart fetch
-// (+ its 60s cache); adds NO new data source. Used by the Watchers engine to evaluate
-// market alerts on any ticker (stocks, ETFs, indices, BTC-USD/ETH-USD). null if the
-// symbol doesn't resolve to a real price.
+// (+ its 60s cache); adds NO new data source. Used by Market Intel (lib/intel) to
+// enrich and validate tickers, and by the Watchers engine to evaluate market alerts
+// on any ticker (stocks, ETFs, indices, crypto). null if the symbol doesn't resolve.
 export async function getQuote(
   symbol: string,
 ): Promise<{ symbol: string; price: number; prevClose: number; chgPct: number } | null> {
-  const sym = normalizeSymbol(symbol);
+  const sym = normalizeYahooSymbol(symbol);
   if (!sym) return null;
   try {
     const c = await yahooChart(sym);
