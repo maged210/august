@@ -1,16 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import WidgetState from "@/components/WidgetState";
 
-// Live Comms surface — the owner's real Gmail, READ-ONLY, rendered as a terminal
-// log. OAuth happens via a full-page redirect to /api/auth/google; tokens live
-// server-side only. This component only ever sees normalized metadata.
+// Live Comms surface — the owner's real Gmail. READ is read-only metadata. REPLY is a
+// deliberate draft → review → send flow (the "Hands" layer): AUGUST drafts, you edit,
+// and NOTHING sends without an explicit tap on the exact final text. Sending is a
+// dedicated server route (/api/comms/send) fired only from the confirm tap — never an
+// LLM tool. Tokens live server-side only; this component sees normalized data.
 
 const REFRESH_MS = 3 * 60_000;
 
 type Category = "personal" | "work" | "noise";
 type InboxItem = {
+  id: string;
   ts: number;
   sender: string;
   subject: string;
@@ -27,7 +30,12 @@ type InboxState = {
   unread: number;
   briefLine: string;
   stale?: boolean;
+  canSend?: boolean;
 };
+
+// drafting → ready (editable) → confirm (review exact text) → sending → sent / error
+type ReplyPhase = "drafting" | "ready" | "confirm" | "sending" | "sent" | "error";
+type DraftMeta = { to: string; fromName: string; subject: string };
 
 const DAY = 86_400_000;
 function fmtTime(ts: number): string {
@@ -42,7 +50,6 @@ function fmtTime(ts: number): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// Human-readable note for the ?comms=… status the callback redirects back with.
 function statusNote(code: string | null): string | null {
   if (!code || code === "connected") return null;
   if (code === "denied") return "Connection cancelled.";
@@ -54,10 +61,29 @@ function statusNote(code: string | null): string | null {
   return null;
 }
 
+function sendErrorMessage(code: string): string {
+  if (code.includes("needs_send_consent") || code.includes("insufficient_scope")) {
+    return "Reconnect Gmail to grant send access, then try again.";
+  }
+  if (code.includes("not_connected")) return "Gmail isn't connected.";
+  if (code.includes("message_not_found")) return "Couldn't find that message anymore.";
+  if (code.includes("empty")) return "Nothing to send.";
+  return "Send failed — nothing was sent. Try again.";
+}
+
 export default function CommsSurface() {
   const [data, setData] = useState<InboxState | null>(null);
   const [status, setStatus] = useState<"loading" | "live" | "error">("loading");
   const [note, setNote] = useState<string | null>(null);
+
+  // Reply state — only one draft open at a time.
+  const [replyMsg, setReplyMsg] = useState<InboxItem | null>(null);
+  const [phase, setPhase] = useState<ReplyPhase>("drafting");
+  const [meta, setMeta] = useState<DraftMeta | null>(null);
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const draftAbort = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,8 +97,79 @@ export default function CommsSurface() {
     }
   }, []);
 
-  // Surface the OAuth outcome from the callback redirect (?comms=…), then strip
-  // it from the URL so a refresh doesn't repeat the note.
+  const closeReply = useCallback(() => {
+    draftAbort.current?.abort();
+    draftAbort.current = null;
+    setReplyMsg(null);
+    setMeta(null);
+    setText("");
+    setErr(null);
+  }, []);
+
+  // Start a draft for a message: read the thread server-side + have AUGUST draft. The
+  // draft endpoint has NO send capability — this only ever produces editable text.
+  const openDraft = useCallback(async (m: InboxItem) => {
+    if (sentIds.has(m.id)) return;
+    draftAbort.current?.abort();
+    const ac = new AbortController();
+    draftAbort.current = ac;
+    setReplyMsg(m);
+    setMeta(null);
+    setText("");
+    setErr(null);
+    setPhase("drafting");
+    try {
+      const res = await fetch("/api/comms/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: m.id }),
+        signal: ac.signal,
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const j = (await res.json()) as DraftMeta & { draft: string };
+      if (ac.signal.aborted) return;
+      setMeta({ to: j.to, fromName: j.fromName, subject: j.subject });
+      setText(j.draft || "");
+      setPhase("ready");
+    } catch (e) {
+      if ((e as { name?: string })?.name === "AbortError") return;
+      setErr("AUGUST couldn't draft a reply just now.");
+      setPhase("error");
+    }
+  }, [sentIds]);
+
+  // The ONLY send trigger. Fires on the explicit confirm tap, sending the CURRENT
+  // edited text verbatim. No retry loop — a failure returns to the confirm step.
+  const confirmSend = useCallback(async () => {
+    if (!replyMsg) return;
+    const bodyText = text.trim();
+    if (!bodyText) {
+      setErr("Nothing to send.");
+      setPhase("error");
+      return;
+    }
+    setPhase("sending");
+    setErr(null);
+    try {
+      const res = await fetch("/api/comms/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: replyMsg.id, body: bodyText }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error || String(res.status));
+      setSentIds((prev) => new Set(prev).add(replyMsg.id));
+      setPhase("sent");
+      window.setTimeout(() => {
+        closeReply();
+        load();
+      }, 1500);
+    } catch (e) {
+      setErr(sendErrorMessage(String((e as Error)?.message ?? "")));
+      setPhase("error");
+    }
+  }, [replyMsg, text, closeReply, load]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("comms");
@@ -95,6 +192,7 @@ export default function CommsSurface() {
   }, [load]);
 
   const connected = !!data?.connected;
+  const canSend = !!data?.canSend;
   const liveBadge = connected ? (
     <span className="comms-live">
       LIVE · GMAIL{data?.email ? ` · ${data.email}` : ""}
@@ -131,10 +229,10 @@ export default function CommsSurface() {
           <div className="comms-connect">
             <p className="comms-connect-lead">Let me read your inbox.</p>
             <p className="comms-connect-sub">
-              Read-only — I can see who wrote and the subject lines, nothing more. No sending, no
-              changes. You can revoke any time from your Google account.
+              Read-only to start — I can see who wrote and the subject lines. If you let me, I can
+              also <em>draft</em> replies for you to review and send; nothing ever sends without
+              your tap. You can revoke any time from your Google account.
             </p>
-            {/* Full-page navigation to the server-side consent flow. */}
             <a className="comms-connect-btn" href="/api/auth/google">
               Connect Gmail
             </a>
@@ -143,16 +241,67 @@ export default function CommsSurface() {
           <WidgetState state="empty" />
         ) : data && connected ? (
           <>
+            {/* Connected to read, but the send scope isn't granted yet — offer the
+                one-time reconnect that adds it (incremental consent). */}
+            {!canSend ? (
+              <div className="comms-reply-prompt">
+                I can read your inbox.{" "}
+                <a href="/api/auth/google">Reconnect</a> to let me draft replies you can edit and send.
+              </div>
+            ) : (
+              <div className="comms-reply-prompt comms-reply-prompt-quiet">
+                Tap a message and I&rsquo;ll draft a reply — you edit, you send.
+              </div>
+            )}
+
             <ul className="loglines">
-              {data.messages.map((m, i) => (
-                <li key={i} className={`logline ${m.category}${m.unread ? " unread" : ""}`}>
-                  <span className="log-t">{fmtTime(m.ts)}</span>
-                  <span className="log-arrow">{m.unread ? "●" : "›"}</span>
-                  <span className="log-from">{m.sender}</span>
-                  <span className="log-subj">{m.subject}</span>
-                  <span className="log-tag">{m.category}</span>
-                </li>
-              ))}
+              {data.messages.map((m) => {
+                const isActive = replyMsg?.id === m.id;
+                const isSent = sentIds.has(m.id);
+                const replyable = canSend && !isSent;
+                return (
+                  <li key={m.id} className="logrow">
+                    <div
+                      className={`logline ${m.category}${m.unread ? " unread" : ""}${replyable ? " replyable" : ""}${isActive ? " active" : ""}${isSent ? " sent" : ""}`}
+                      onClick={replyable && !isActive ? () => openDraft(m) : undefined}
+                      role={replyable ? "button" : undefined}
+                      tabIndex={replyable ? 0 : undefined}
+                      onKeyDown={
+                        replyable
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openDraft(m);
+                              }
+                            }
+                          : undefined
+                      }
+                      aria-label={replyable ? `Draft a reply to ${m.sender}` : undefined}
+                    >
+                      <span className="log-t">{fmtTime(m.ts)}</span>
+                      <span className="log-arrow">{isSent ? "↩" : m.unread ? "●" : "›"}</span>
+                      <span className="log-from">{m.sender}</span>
+                      <span className="log-subj">{m.subject}</span>
+                      <span className="log-tag">{isSent ? "replied" : m.category}</span>
+                    </div>
+
+                    {isActive ? (
+                      <ReplyComposer
+                        phase={phase}
+                        meta={meta}
+                        text={text}
+                        err={err}
+                        onText={setText}
+                        onReview={() => setPhase("confirm")}
+                        onBack={() => setPhase("ready")}
+                        onConfirm={confirmSend}
+                        onRetry={() => (meta ? setPhase("confirm") : openDraft(m))}
+                        onClose={closeReply}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
             <div className="comms-foot">
               $ augustctl mailbox --tail · {data.messages.length} shown ·{" "}
@@ -163,6 +312,113 @@ export default function CommsSurface() {
           <WidgetState state="loading" rows={6} />
         )}
       </section>
+    </div>
+  );
+}
+
+// The inline draft/confirm/send panel. Presentational — all sending is driven by the
+// parent's confirmSend (the single tap-gated trigger).
+function ReplyComposer({
+  phase,
+  meta,
+  text,
+  err,
+  onText,
+  onReview,
+  onBack,
+  onConfirm,
+  onRetry,
+  onClose,
+}: {
+  phase: ReplyPhase;
+  meta: DraftMeta | null;
+  text: string;
+  err: string | null;
+  onText: (v: string) => void;
+  onReview: () => void;
+  onBack: () => void;
+  onConfirm: () => void;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="comms-reply" role="region" aria-label="Draft reply">
+      {phase === "drafting" ? (
+        <div className="comms-reply-status mb-pulse">AUGUST is drafting a reply…</div>
+      ) : null}
+
+      {phase === "ready" ? (
+        <>
+          <div className="comms-reply-meta">
+            to <span className="comms-reply-to">{meta?.fromName || meta?.to}</span> ·{" "}
+            <span className="comms-reply-subj">{meta?.subject}</span>
+          </div>
+          <textarea
+            className="comms-reply-field"
+            value={text}
+            onChange={(e) => onText(e.target.value)}
+            rows={5}
+            aria-label="Reply draft — edit freely before sending"
+            spellCheck
+          />
+          <div className="comms-reply-actions">
+            <button type="button" className="comms-btn comms-btn-go" onClick={onReview} disabled={!text.trim()}>
+              Review &amp; send →
+            </button>
+            <button type="button" className="comms-btn comms-btn-ghost" onClick={onClose}>
+              Discard
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {phase === "confirm" ? (
+        <div className="comms-confirm">
+          <div className="comms-confirm-head">Send this reply? This is exactly what goes out.</div>
+          <dl className="comms-confirm-fields">
+            <div>
+              <dt>To</dt>
+              <dd>{meta?.to}</dd>
+            </div>
+            <div>
+              <dt>Subject</dt>
+              <dd>{meta?.subject}</dd>
+            </div>
+            <div>
+              <dt>Body</dt>
+              <dd className="comms-confirm-body">{text.trim()}</dd>
+            </div>
+          </dl>
+          <div className="comms-reply-actions">
+            <button type="button" className="comms-btn comms-btn-send" onClick={onConfirm}>
+              ✓ Confirm &amp; send
+            </button>
+            <button type="button" className="comms-btn comms-btn-ghost" onClick={onBack}>
+              ← Back to edit
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {phase === "sending" ? <div className="comms-reply-status mb-pulse">Sending…</div> : null}
+
+      {phase === "sent" ? (
+        <div className="comms-reply-status comms-sent">✓ Sent — threaded into the conversation.</div>
+      ) : null}
+
+      {phase === "error" ? (
+        <div className="comms-reply-status comms-err">
+          <span>{err}</span>
+          <div className="comms-reply-actions">
+            <button type="button" className="comms-btn comms-btn-go" onClick={onRetry}>
+              Try again
+            </button>
+            <button type="button" className="comms-btn comms-btn-ghost" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

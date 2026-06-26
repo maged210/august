@@ -27,11 +27,24 @@ function getRedis(): Redis {
 type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
   | "intelMutate" | "intelProcess" | "intelAsk";
+  | "chat"
+  | "speak"
+  | "intel"
+  | "memory"
+  | "inbox"
+  | "brief"
+  | "token"
+  | "push"
+  | "day"
+  | "draft"
+  | "commsSend"
+  | "watchers";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
   chat: 10,   // Anthropic tokens — most expensive
-  speak: 15,  // ElevenLabs quota
+  speak: 40,  // ElevenLabs quota — raised for per-sentence voice pipelining (≈2-4 short
+              // calls per spoken turn instead of 1); still bounds runaway cost
   intel: 30,  // Anthropic synthesis but heavily cached, generous
   memory: 20, // Upstash writes + occasional Anthropic summarisation
   inbox: 20,  // Gmail API quota — read-only, server-cached
@@ -40,6 +53,11 @@ const LIMITS: Record<RouteKey, number> = {
   intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
   intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
   intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
+  push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
+  day: 30,    // Google Calendar today-view — server-cached, Presence polls it
+  draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft
+  commsSend: 10, // Gmail send — tight: each send dispatches real mail
+  watchers: 10, // Watchers cron — an external ~15min pinger is far under this
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

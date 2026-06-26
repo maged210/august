@@ -21,8 +21,24 @@ const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
-// Read-only. This is the ONLY scope we ever request.
+// Read-only scopes. Gmail (inbox metadata) + Calendar events (today's agenda).
+// Both are least-privilege readonly; the same single OAuth client + token store
+// covers both via incremental authorization (include_granted_scopes). Adding the
+// calendar scope requires the user to re-consent once (the Google connect re-grant).
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+// Send is its own least-privilege scope (send-only — cannot read or draft) and is
+// ADDITIVE: it never weakens the readonly read path. It only gates the explicit
+// user-tap send (lib/calendar.ts is unaffected). gmail.send is "sensitive", not
+// "restricted", so it carries the lighter OAuth-verification path.
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const GOOGLE_SCOPES = [GMAIL_SCOPE, CALENDAR_SCOPE, GMAIL_SEND_SCOPE];
+
+/** Membership test against the space-delimited granted-scope string Google returns
+ *  (order isn't guaranteed and it may include extra scopes — never equality-check). */
+export function scopeGranted(scopes: string | undefined, scope: string): boolean {
+  return !!scopes && scopes.split(/\s+/).includes(scope);
+}
 
 const TOKENS_KEY = "august:gmail:tokens";
 const EXPIRY_SKEW_MS = 60_000; // refresh a minute before actual expiry
@@ -35,6 +51,7 @@ type Tokens = {
   refresh_token: string;
   expiry: number; // ms epoch when the access_token expires
   email?: string; // the connected account, for display only
+  scopes?: string; // space-delimited granted scopes (so we know if calendar is in)
 };
 
 let _redis: Redis | null | undefined;
@@ -154,10 +171,10 @@ export function buildConsentUrl(origin: string, state: string): string {
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
     redirect_uri: redirectUri(origin),
     response_type: "code",
-    scope: GMAIL_SCOPE,
+    scope: GOOGLE_SCOPES.join(" "), // gmail.readonly + calendar.events.readonly
     access_type: "offline", // get a refresh token
     prompt: "consent", // force refresh-token issuance even on re-consent
-    include_granted_scopes: "false",
+    include_granted_scopes: "true", // incremental: merge with any already-granted scopes
     state,
   });
   return `${AUTH_ENDPOINT}?${params.toString()}`;
@@ -204,7 +221,9 @@ export async function exchangeCode(
     return { ok: false, error: "no_refresh_token" };
   }
 
-  // Defense in depth: reject anything but exactly the read-only scope.
+  // Defense in depth: Gmail readonly must be present. (We intentionally tolerate the
+  // ADDITIONAL calendar scope; Google returns the full merged set in arbitrary order,
+  // so this is a membership check, never equality.)
   if (data.scope && !data.scope.split(/\s+/).includes(GMAIL_SCOPE)) {
     return { ok: false, error: "unexpected_scope" };
   }
@@ -213,6 +232,7 @@ export async function exchangeCode(
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expiry: Date.now() + (data.expires_in ?? 3600) * 1000,
+    scopes: data.scope, // remember what was granted (gmail, and maybe calendar)
   };
 
   // Fetch the connected address (covered by gmail.readonly) for display.
@@ -264,22 +284,26 @@ async function refreshAccessToken(refreshToken: string): Promise<Tokens | null> 
   };
 }
 
-// Returns a usable access token (refreshing if needed), or null if not
-// connected / refresh failed.
-async function getValidAccessToken(): Promise<{ token: string; email?: string } | null> {
+// Returns a usable access token (refreshing if needed) + the granted scopes, or
+// null if not connected / refresh failed. Exported so the calendar layer reuses the
+// SAME single token store + refresh path (the token covers both scopes after
+// re-consent). The refresh response omits `scope`, so we carry it from storage.
+export async function getGoogleAccessToken(): Promise<
+  { token: string; email?: string; scopes?: string } | null
+> {
   const stored = await loadTokens();
   if (!stored) return null;
 
   if (stored.expiry - Date.now() > EXPIRY_SKEW_MS) {
-    return { token: stored.access_token, email: stored.email };
+    return { token: stored.access_token, email: stored.email, scopes: stored.scopes };
   }
 
   const refreshed = await refreshAccessToken(stored.refresh_token);
   if (!refreshed) return null;
 
-  const updated: Tokens = { ...refreshed, email: stored.email };
+  const updated: Tokens = { ...refreshed, email: stored.email, scopes: stored.scopes };
   await saveTokens(updated);
-  return { token: updated.access_token, email: updated.email };
+  return { token: updated.access_token, email: updated.email, scopes: updated.scopes };
 }
 
 // ---- Gmail API: profile email --------------------------------------------
@@ -300,6 +324,7 @@ async function fetchEmail(accessToken: string): Promise<string | undefined> {
 // ---- Gmail API: inbox ----------------------------------------------------
 export type Category = "personal" | "work" | "noise";
 export type InboxItem = {
+  id: string; // Gmail message id — the client references it to draft/send a reply
   ts: number; // ms epoch
   sender: string;
   subject: string;
@@ -317,6 +342,7 @@ export type InboxState = {
   unread: number;
   briefLine: string;
   stale?: boolean; // true when served from cache after a failed refresh
+  canSend?: boolean; // send scope granted — gates the reply UI (else: reconnect to enable)
 };
 
 // Gmail category labels → our three house tags.
@@ -388,6 +414,7 @@ async function fetchInboxMessages(
       const labelIds = m.labelIds ?? [];
       const headers = m.payload?.headers ?? [];
       const item: InboxItem = {
+        id,
         ts: Number(m.internalDate) || 0,
         sender: parseSender(header(headers, "From")),
         subject: header(headers, "Subject") || "(no subject)",
@@ -438,7 +465,7 @@ export async function getInboxState(): Promise<InboxState> {
     storageConfigured: storageConfigured(),
   };
 
-  const auth = await getValidAccessToken();
+  const auth = await getGoogleAccessToken();
   if (!auth) {
     return {
       ...base,
@@ -448,6 +475,9 @@ export async function getInboxState(): Promise<InboxState> {
       briefLine: buildBriefLine(false, [], 0),
     };
   }
+  // Send scope drives the reply UI: connected-for-read but no send scope → "reconnect
+  // to let me draft replies". Derived from the live granted-scope set, every call.
+  const canSend = scopeGranted(auth.scopes, GMAIL_SEND_SCOPE);
 
   // serve cache if warm
   const now = Date.now();
@@ -455,6 +485,7 @@ export async function getInboxState(): Promise<InboxState> {
     return {
       ...base,
       connected: true,
+      canSend,
       email: _inboxCache.email,
       messages: _inboxCache.messages,
       unread: _inboxCache.unread,
@@ -468,6 +499,7 @@ export async function getInboxState(): Promise<InboxState> {
     return {
       ...base,
       connected: true,
+      canSend,
       stale: false,
       email: auth.email,
       messages,
@@ -482,6 +514,7 @@ export async function getInboxState(): Promise<InboxState> {
       return {
         ...base,
         connected: true,
+        canSend,
         stale: true,
         email: _inboxCache.email,
         messages: _inboxCache.messages,
@@ -491,4 +524,214 @@ export async function getInboxState(): Promise<InboxState> {
     }
     throw new Error("inbox_fetch_failed");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Reply DRAFTING + SENDING — the "Hands" layer.
+//
+// SAFETY MODEL (the whole point): these are TWO separate, explicit layers.
+//   - getMessageForReply() is a READ op (gmail.readonly) used to draft. It returns
+//     the thread context the model needs. It cannot send.
+//   - sendReply() is the ONLY thing that sends. It re-derives the recipient + thread
+//     headers SERVER-SIDE from the original message (so neither the client nor an
+//     injected draft can redirect the reply to a new address), and sends EXACTLY the
+//     body text passed in — no model, no rewrite, no retry. It is called only from
+//     the user's explicit tap (/api/comms/send), never from an LLM tool.
+// The model NEVER has a send tool (see lib/tools.ts). Drafting and sending are
+// different layers on purpose.
+// ---------------------------------------------------------------------------
+
+export type ReplyContext = {
+  threadId: string;
+  to: string; // who we reply to — Reply-To if present, else From (server-derived)
+  fromName: string; // display name, for the UI
+  subject: string; // the ORIGINAL subject (the reply prefixes "Re:")
+  rfcMessageId: string; // the RFC822 Message-ID header value (<...>), for threading
+  references: string; // the original References chain (may be empty)
+  bodyText: string; // best-effort plain-text body, for the model to draft from
+};
+
+const lc = (s: string) => s.toLowerCase();
+
+// Depth-first search for the first text/plain part; decode its base64url data.
+function extractPlainText(payload: unknown): string {
+  const p = payload as {
+    mimeType?: string;
+    body?: { data?: string };
+    parts?: unknown[];
+  } | null;
+  if (!p) return "";
+  if (p.mimeType === "text/plain" && p.body?.data) {
+    try {
+      return Buffer.from(p.body.data, "base64url").toString("utf-8");
+    } catch {
+      return "";
+    }
+  }
+  if (Array.isArray(p.parts)) {
+    for (const part of p.parts) {
+      const t = extractPlainText(part);
+      if (t) return t;
+    }
+  }
+  return "";
+}
+
+// Read a single message in full and pull out everything needed to draft + send a
+// threaded reply. Read-only (gmail.readonly); NEVER sends.
+export async function getMessageForReply(messageId: string): Promise<ReplyContext | null> {
+  const auth = await getGoogleAccessToken();
+  if (!auth) return null;
+
+  let res: Response;
+  try {
+    res = await fetch(`${GMAIL_BASE}/messages/${encodeURIComponent(messageId)}?format=full`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      cache: "no-store",
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  const m = (await res.json().catch(() => null)) as {
+    threadId?: string;
+    snippet?: string;
+    payload?: { headers?: { name: string; value: string }[] };
+  } | null;
+  if (!m?.threadId) return null;
+
+  const headers = m.payload?.headers ?? [];
+  const h = (name: string) => headers.find((x) => lc(x.name) === lc(name))?.value ?? "";
+  const fromRaw = h("Reply-To") || h("From");
+  const body = extractPlainText(m.payload) || (m.snippet ?? "");
+
+  return {
+    threadId: m.threadId,
+    to: fromRaw,
+    fromName: parseSender(h("From")),
+    subject: h("Subject"),
+    rfcMessageId: h("Message-ID") || h("Message-Id"),
+    references: h("References"),
+    bodyText: body.replace(/\r\n/g, "\n").slice(0, 6000), // cap the model context
+  };
+}
+
+// Fresh, authoritative reply headers used at SEND time (metadata only — light, and
+// re-read so the recipient/threading come from the live original, not stale state).
+async function getReplyHeaders(
+  messageId: string,
+  token: string,
+): Promise<Omit<ReplyContext, "bodyText" | "fromName"> | null> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${GMAIL_BASE}/messages/${encodeURIComponent(messageId)}?format=metadata` +
+        `&metadataHeaders=Message-ID&metadataHeaders=From&metadataHeaders=Subject` +
+        `&metadataHeaders=References&metadataHeaders=Reply-To`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+    );
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const m = (await res.json().catch(() => null)) as {
+    threadId?: string;
+    payload?: { headers?: { name: string; value: string }[] };
+  } | null;
+  if (!m?.threadId) return null;
+  const headers = m.payload?.headers ?? [];
+  const h = (name: string) => headers.find((x) => lc(x.name) === lc(name))?.value ?? "";
+  return {
+    threadId: m.threadId,
+    to: h("Reply-To") || h("From"),
+    subject: h("Subject"),
+    rfcMessageId: h("Message-ID") || h("Message-Id"),
+    references: h("References"),
+  };
+}
+
+// RFC 2047 encoded-word for a non-ASCII header (e.g. a "Re: …" subject with accents).
+function encodeHeader(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return /[^\x00-\x7F]/.test(s) ? `=?UTF-8?B?${Buffer.from(s, "utf-8").toString("base64")}?=` : s;
+}
+
+// Build the minimal RFC 2822 plain-text reply. Body is base64 transfer-encoded so any
+// UTF-8 rides cleanly. From/Message-ID/Date are intentionally omitted — Gmail sets
+// them. In-Reply-To/References (the original RFC822 Message-ID) + a matching Re:
+// subject + the threadId on the request are ALL required for Gmail to thread it.
+function buildReplyMime(o: {
+  to: string;
+  subject: string;
+  rfcMessageId: string;
+  references: string;
+  body: string;
+}): string {
+  const bodyB64 = Buffer.from(o.body, "utf-8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+  const lines = [`To: ${o.to}`, `Subject: ${encodeHeader(o.subject)}`];
+  if (o.rfcMessageId) {
+    lines.push(`In-Reply-To: ${o.rfcMessageId}`);
+    lines.push(`References: ${o.references ? o.references.trim() + " " : ""}${o.rfcMessageId}`);
+  }
+  lines.push("MIME-Version: 1.0");
+  lines.push('Content-Type: text/plain; charset="UTF-8"');
+  lines.push("Content-Transfer-Encoding: base64");
+  return lines.join("\r\n") + "\r\n\r\n" + bodyB64 + "\r\n";
+}
+
+export type SendResult =
+  | { ok: true; to: string; subject: string }
+  | { ok: false; error: string };
+
+/** Send a plain-text reply in-thread. The ONLY function that sends mail. Recipient +
+ *  threading are re-derived server-side from `messageId`; `body` is sent verbatim. */
+export async function sendReply(messageId: string, body: string): Promise<SendResult> {
+  const auth = await getGoogleAccessToken();
+  if (!auth) return { ok: false, error: "not_connected" };
+  // Hard gate: without the send scope we never even build a message.
+  if (!scopeGranted(auth.scopes, GMAIL_SEND_SCOPE)) return { ok: false, error: "needs_send_consent" };
+
+  const ctx = await getReplyHeaders(messageId, auth.token);
+  if (!ctx) return { ok: false, error: "message_not_found" };
+
+  const subject = /^\s*re:/i.test(ctx.subject) ? ctx.subject : `Re: ${ctx.subject || "(no subject)"}`;
+  const mime = buildReplyMime({
+    to: ctx.to,
+    subject,
+    rfcMessageId: ctx.rfcMessageId,
+    references: ctx.references,
+    body,
+  });
+  const raw = Buffer.from(mime, "utf-8").toString("base64url");
+
+  let res: Response;
+  try {
+    res = await fetch(`${GMAIL_BASE}/messages/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${auth.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ raw, threadId: ctx.threadId }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, error: "network" };
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error(`[gmail.send] ${res.status}: ${detail.slice(0, 300)}`);
+    if (res.status === 401) return { ok: false, error: "auth_expired" };
+    if (res.status === 403) return { ok: false, error: "insufficient_scope" };
+    return { ok: false, error: `send_failed_${res.status}` };
+  }
+
+  _inboxCache = null; // the thread just changed — let the next inbox read refresh
+  return { ok: true, to: ctx.to, subject };
+}
+
+/** Whether the stored Google connection has the send scope (drives the re-consent
+ *  prompt in the Comms UI). */
+export async function hasSendScope(): Promise<boolean> {
+  const auth = await getGoogleAccessToken();
+  return !!auth && scopeGranted(auth.scopes, GMAIL_SEND_SCOPE);
 }
