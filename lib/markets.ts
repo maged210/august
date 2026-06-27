@@ -149,6 +149,22 @@ export async function getQuote(
     return null;
   }
 }
+
+// Like getQuote but also returns the closes array for sparkline rendering.
+// Reuses the same 60s-cached yahooChart fetch — no extra network calls.
+export async function getQuoteWithSpark(
+  symbol: string,
+): Promise<{ symbol: string; price: number; prevClose: number; chgPct: number; closes: number[] } | null> {
+  const sym = normalizeYahooSymbol(symbol);
+  if (!sym) return null;
+  try {
+    const c = await yahooChart(sym);
+    if (!Number.isFinite(c.price) || c.price <= 0) return null;
+    return { symbol: sym, price: c.price, prevClose: c.prevClose, chgPct: c.chgPct, closes: c.closes };
+  } catch {
+    return null;
+  }
+}
 async function fetchYahooChart(symbol: string): Promise<Chart> {
   const j = await getJson(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,

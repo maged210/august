@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BriefIdea,
   Chapter,
@@ -18,8 +18,7 @@ import type {
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
 
-// Market Intel dashboard. One overview fetch + targeted actions. Honest states
-// throughout — nothing fabricated; "Not specified" where the creator didn't say.
+// ── types ────────────────────────────────────────────────────────────────────
 
 type Overview = {
   config: { storage: boolean; ai: boolean; youtube: boolean };
@@ -32,12 +31,27 @@ type Overview = {
   brief: DailyBrief | null;
 };
 
-const watchUrl = (v: string, t?: number) =>
-  `https://www.youtube.com/watch?v=${v}${t ? `&t=${Math.floor(t)}s` : ""}`;
-const mmss = (s: number) =>
-  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const ago = (ms: number) =>
-  ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never";
+type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: number; closes: number[] }>;
+type TapeQuote = { sym: string; price: number; chgPct: number; up: boolean };
+type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
+type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
+type IdeaStatus = "WATCH" | "TRIG" | "INVLD";
+
+// ── constants ────────────────────────────────────────────────────────────────
+
+const TAPE_SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "^VIX", "BTC-USD", "ETH-USD", "SOL-USD"];
+
+const TF_LABEL: Record<string, string> = {
+  intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
+};
+
+const TF_GROUP: Record<string, string> = {
+  intraday: "Today · Top Ideas",
+  next_session: "Short-term · Swing",
+  swing: "Short-term · Swing",
+  long_term: "Long-term",
+  unspecified: "Long-term",
+};
 
 const CAT_LABEL: Partial<Record<ChapterCategory, string>> = {
   market_outlook: "Outlook", market_recap: "Recap", overnight_news: "Overnight",
@@ -48,205 +62,67 @@ const CAT_LABEL: Partial<Record<ChapterCategory, string>> = {
   unrelated: "Unrelated",
 };
 
-export default function IntelDashboard() {
-  const [data, setData] = useState<Overview | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [openVideo, setOpenVideo] = useState<string | null>(null);
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  // history
-  const [historyDates, setHistoryDates] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
+// ── helpers ──────────────────────────────────────────────────────────────────
 
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/intel/overview", { cache: "no-store" });
-      if (!r.ok) throw new Error();
-      setData(await r.json());
-      setStatus("ready");
-    } catch {
-      setStatus((s) => (s === "ready" ? "ready" : "error"));
-    }
-  }, []);
+const watchUrl = (v: string, t?: number) =>
+  `https://www.youtube.com/watch?v=${v}${t ? `&t=${Math.floor(t)}s` : ""}`;
+const mmss = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const ago = (ms: number) =>
+  ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never";
+const etClock = () =>
+  new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
+const fmtPx = (n: number) =>
+  n >= 1000 ? n.toFixed(2) : n >= 10 ? n.toFixed(2) : n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+const fmtPct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 
-  useEffect(() => {
-    load();
-    fetch("/api/intel/briefs", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
-      .catch(() => {});
-  }, [load]);
-
-  const loadDate = useCallback(async (date: string) => {
-    if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
-    setSelectedDate(date);
-    setHistoryLoading(true);
-    try {
-      const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
-      const j = await r.json();
-      setHistoryBrief(j.brief ?? null);
-    } catch { setHistoryBrief(null); }
-    finally { setHistoryLoading(false); }
-  }, [selectedDate]);
-
-  const removeSource = useCallback(async (id: string) => {
-    await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
-    await load();
-  }, [load]);
-
-  const sync = useCallback(async () => {
-    setBusy("sync");
-    setMsg(null);
-    try {
-      const r = await fetch("/api/intel/sync", { method: "POST" });
-      const j = await r.json();
-      setMsg(j.ok ? `Sync: ${j.discovered} new video(s).` : j.message ?? "Sync needs YOUTUBE_API_KEY.");
-      await load();
-    } finally { setBusy(null); }
-  }, [load]);
-
-  const generateBrief = useCallback(async () => {
-    setBusy("brief");
-    setMsg(null);
-    try {
-      const r = await fetch("/api/intel/briefs/today", { method: "POST" });
-      const j = await r.json();
-      if (!j.ok) setMsg(`Brief: ${j.error ?? "failed"}`);
-      await load();
-    } finally { setBusy(null); }
-  }, [load]);
-
-  if (status === "loading") {
-    return (
-      <div className="intel-wrap">
-        <div className="iskel" style={{ width: "40%" }} />
-        <div className="iskel" /><div className="iskel" /><div className="iskel" style={{ width: "70%" }} />
-      </div>
-    );
+function deriveStatus(idea: BlotterIdea): IdeaStatus {
+  const q = idea.quote;
+  if (!q) return "WATCH";
+  const { price } = q;
+  const ent = idea.entry?.value;
+  const inv = idea.invalidation?.value;
+  if (inv != null && inv > 0) {
+    if (idea.direction === "bullish" && price < inv) return "INVLD";
+    if (idea.direction === "bearish" && price > inv) return "INVLD";
   }
-  if (!data) {
-    return (
-      <div className="intel-wrap">
-        <div className="istate istate-err">
-          Couldn&apos;t load Market Intel.{" "}
-          <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
-        </div>
-      </div>
-    );
+  if (ent != null && ent > 0) {
+    if (idea.direction === "bullish" && price >= ent) return "TRIG";
+    if (idea.direction === "bearish" && price <= ent) return "TRIG";
   }
-
-  const { config, clock, sources, videos, brief } = data;
-  const displayBrief = selectedDate ? historyBrief : brief;
-  const initialSymbol =
-    brief?.options?.bestCreatorPlays[0]?.underlyingSymbol ||
-    brief?.options?.directionalOnly[0]?.underlyingSymbol ||
-    brief?.topIdeas[0]?.ticker ||
-    "SPY";
-
-  return (
-    <SymbolProvider initial={initialSymbol}>
-    <div className="intel-wrap">
-      {/* A — COMMAND HEADER */}
-      <header className="intel-head">
-        <div>
-          <div className="intel-title">MARKET INTEL</div>
-          <div className="intel-sub">
-            <span>{clock.nice} · <b>{clock.time} ET</b></span>
-            <span>· <b>{clock.sessionLabel}</b></span>
-            <span>· sync <b>{ago(data.lastSync)}</b></span>
-            <span>· brief <b>{data.lastBriefAt ? ago(data.lastBriefAt) : "none"}</b></span>
-          </div>
-        </div>
-        <div className="intel-actions">
-          <button className="ibtn" disabled={busy === "sync"} onClick={sync}>
-            {busy === "sync" ? "Syncing…" : "Sync Sources"}
-          </button>
-          <button className="ibtn ibtn-primary" disabled={busy === "brief" || !config.ai} onClick={generateBrief}>
-            {busy === "brief" ? "Generating…" : "Generate Brief"}
-          </button>
-          <a className="ibtn ibtn-ghost" href="/api/intel/export/today">Export</a>
-          <a className="intel-home" href="/">← AUGUST</a>
-        </div>
-      </header>
-
-      {!config.storage && <div className="istate iwarn">Upstash isn&apos;t configured — Market Intel needs UPSTASH_REDIS_REST_URL/TOKEN to store sources and analysis.</div>}
-      {!config.ai && <div className="istate iwarn">ANTHROPIC_API_KEY not set — extraction and briefs are disabled.</div>}
-      {!config.youtube && <div className="inote" style={{ marginTop: 8 }}>YOUTUBE_API_KEY not set: add videos by URL and paste transcripts to process them now. Channel auto-discovery and live status need the key.</div>}
-      {msg && <div className="istate" style={{ color: "var(--steel)" }}>{msg}</div>}
-
-      {/* HISTORY PICKER */}
-      {historyDates.length > 0 && (
-        <div className="ihistory">
-          <div className="ihistory-label">Daily History</div>
-          <div className="ihistory-pills">
-            {selectedDate && (
-              <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>
-                ← Today
-              </button>
-            )}
-            {historyDates.map((d) => (
-              <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>
-                {d}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="intel-grid">
-        <div>
-          {/* B — BRIEF / HISTORY */}
-          {historyLoading ? (
-            <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
-          ) : (
-            <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />
-          )}
-        </div>
-        <div>
-          {/* G — SOURCE MONITOR */}
-          <AddSource onReload={load} />
-          <SourceMonitor sources={sources} onRemove={removeSource} />
-          {/* H — VIDEO LIBRARY */}
-          <VideoLibrary videos={videos} onOpen={setOpenVideo} />
-          {/* J — ASK AUGUST */}
-          <AskAugust ai={config.ai} />
-        </div>
-      </div>
-
-      {/* OPTIONS INTEL — SECONDARY, opt-in */}
-      <section className="optx-section">
-        <button type="button" className="optx-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((o) => !o)}>
-          <span className="optx-toggle-caret">{optionsOpen ? "▾" : "▸"}</span>
-          <span className="optx-toggle-title">OPTIONS INTEL</span>
-          <span className="optx-toggle-note">chart · creator option plays · AUGUST candidates — secondary</span>
-        </button>
-        {optionsOpen && <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />}
-      </section>
-
-      <div className="idisc">AUGUST Market Intel is decision-support / research over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.</div>
-
-      {openVideo && (
-        <VideoDrawer
-          key={openVideo}
-          videoId={openVideo}
-          onClose={() => setOpenVideo(null)}
-          onProcessed={load}
-          aiOn={config.ai}
-        />
-      )}
-    </div>
-    </SymbolProvider>
-  );
+  return "WATCH";
 }
 
-// --- badges ---------------------------------------------------------------
+function deltaTrig(idea: BlotterIdea): string {
+  const q = idea.quote;
+  const ent = idea.entry?.value;
+  if (!q || ent == null || ent <= 0) return "—";
+  const pct = ((q.price - ent) / ent) * 100;
+  return (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+}
+
+function buildBlotter(brief: DailyBrief | null, quotes: QuoteMap): BlotterIdea[] {
+  if (!brief) return [];
+  const seen = new Set<string>();
+  const favIds = new Set(brief.creatorFavorites.map((f) => f.id));
+  return [...brief.creatorFavorites, ...brief.topIdeas]
+    .filter((idea) => { if (seen.has(idea.id)) return false; seen.add(idea.id); return true; })
+    .map((idea) => ({ ...idea, __fav: favIds.has(idea.id), quote: quotes[idea.ticker.toUpperCase()] ?? null }));
+}
+
+function val(v: { value: number | null; text: string }) {
+  if (v.value === null && (!v.text || /not specified/i.test(v.text)))
+    return <span className="notspec">⌀ n/s</span>;
+  return <b>{v.text || (v.value !== null ? String(v.value) : "—")}</b>;
+}
+
+// ── micro-components ─────────────────────────────────────────────────────────
+
 function DirBadge({ d }: { d: TradeIdea["direction"] }) {
   const cls = d === "bullish" ? "b-bull" : d === "bearish" ? "b-bear" : d === "watch" ? "b-watch" : "b-neutral";
   return <span className={`badge ${cls}`}>{d}</span>;
 }
+
 function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
   return (
     <span className={`badge ${e === "explicit" ? "b-explicit" : "b-inferred"}`}>
@@ -254,100 +130,590 @@ function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
     </span>
   );
 }
-function val(v: { value: number | null; text: string }) {
-  if (v.value === null && (!v.text || /not specified/i.test(v.text)))
-    return <span className="notspec">Not specified</span>;
-  return <b>{v.text || (v.value !== null ? String(v.value) : "—")}</b>;
+
+function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
+  if (!closes || closes.length < 2) return <span className="bl-spark-empty">—</span>;
+  const pts = closes.slice(-20);
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const W = 52, H = 18;
+  const range = max - min || 1;
+  const points = pts.map((v, i) => {
+    const x = (i / (pts.length - 1)) * W;
+    const y = H - ((v - min) / range) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="bl-spark">
+      <polyline points={points} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.2" />
+    </svg>
+  );
 }
 
-// --- B: brief -------------------------------------------------------------
-function BriefCard({
-  brief, ai, onOpenVideo, historical,
+function InspChart({
+  closes, entry, price, up,
 }: {
-  brief: DailyBrief | null;
-  ai: boolean;
-  onOpenVideo: (id: string) => void;
-  historical?: boolean;
+  closes: number[];
+  entry: number | null;
+  price: number | null;
+  up: boolean;
 }) {
-  const [read60, setRead60] = useState(false);
-  if (!brief) {
-    return (
-      <div className="icard">
-        <div className="icard-h">{historical ? "No brief for this date" : "Tonight’s Brief"}</div>
-        <div className="istate">
-          {historical
-            ? "No brief was stored for this date."
-            : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}
+  if (!closes || closes.length < 2) return null;
+  const W = 240, H = 72;
+  const allPts = [...closes];
+  if (price != null) allPts.push(price);
+  const min = Math.min(...allPts);
+  const max = Math.max(...allPts);
+  const range = max - min || 1;
+  const toY = (v: number) => H - ((v - min) / range) * (H - 6) - 3;
+  const toX = (i: number, total: number) => (i / (total - 1)) * W;
+  const pts = closes.map((v, i) => `${toX(i, closes.length).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
+  const lastX = toX(closes.length - 1, closes.length);
+  const lastY = toY(closes[closes.length - 1]);
+  const entY = entry != null ? toY(entry) : null;
+
+  return (
+    <div className="bl-insp-chart">
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {entY != null && (
+          <line x1={0} y1={entY} x2={W} y2={entY} stroke="#cbb274" strokeWidth="0.75" strokeDasharray="3 3" opacity="0.7" />
+        )}
+        <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.5" />
+        <circle cx={lastX} cy={lastY} r={3} fill={up ? "#7fb88a" : "#d98b8b"} />
+      </svg>
+      <div className="bl-insp-chart-labels">
+        <span>{fmtPx(min)}</span>
+        {entY != null && <span style={{ color: "#cbb274" }}>entry {fmtPx(entry!)}</span>}
+        <span>{fmtPx(max)}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ s }: { s: IdeaStatus }) {
+  const cls = s === "TRIG" ? "bl-st-trig" : s === "INVLD" ? "bl-st-invld" : "bl-st-watch";
+  return <span className={`bl-st ${cls}`}>{s}</span>;
+}
+
+// ── StatusBar ────────────────────────────────────────────────────────────────
+
+function StatusBar({
+  data, clock,
+}: {
+  data: Overview;
+  clock: string;
+}) {
+  const { config, lastSync, lastBriefAt } = data;
+  return (
+    <div className="bl-statusbar">
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">Session</span>
+        <span className="bl-sb-val">{data.clock.sessionLabel}</span>
+      </div>
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">AI</span>
+        <span className={config.ai ? "bl-sb-ok bl-sb-val" : "bl-sb-err bl-sb-val"}>
+          {config.ai ? "ON" : "OFF"}
+        </span>
+      </div>
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">Storage</span>
+        <span className={config.storage ? "bl-sb-ok bl-sb-val" : "bl-sb-err bl-sb-val"}>
+          {config.storage ? "OK" : "MISSING"}
+        </span>
+      </div>
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">YT Key</span>
+        <span className={config.youtube ? "bl-sb-ok bl-sb-val" : "bl-sb-warn bl-sb-val"}>
+          {config.youtube ? "ON" : "—"}
+        </span>
+      </div>
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">Sync</span>
+        <span className="bl-sb-val">{ago(lastSync)}</span>
+      </div>
+      <div className="bl-sb-item">
+        <span className="bl-sb-label">Brief</span>
+        <span className="bl-sb-val">{lastBriefAt ? ago(lastBriefAt) : "—"}</span>
+      </div>
+      <div className="bl-sb-item bl-sb-clock">
+        <span className="bl-sb-label">ET</span>
+        <span className="bl-sb-val">{clock}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── LiveTape ─────────────────────────────────────────────────────────────────
+
+function LiveTape({ tape }: { tape: TapeQuote[] }) {
+  return (
+    <div className="bl-tape">
+      {tape.map((t) => (
+        <div key={t.sym} className="bl-tape-item">
+          <span className="bl-tape-sym">{t.sym}</span>
+          <span className="bl-tape-px">{fmtPx(t.price)}</span>
+          <span className={`bl-tape-chg ${t.up ? "bl-tape-up" : "bl-tape-dn"}`}>{fmtPct(t.chgPct)}</span>
         </div>
+      ))}
+    </div>
+  );
+}
+
+// ── TabNav ───────────────────────────────────────────────────────────────────
+
+function TabNav({
+  tab, onTab, ideaCount, sourceCount,
+}: {
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  ideaCount: number;
+  sourceCount: number;
+}) {
+  const tabs: { key: Tab; label: string; fkey: string; count?: number }[] = [
+    { key: "BOARD", label: "BOARD", fkey: "F1", count: ideaCount },
+    { key: "BRIEF", label: "BRIEF", fkey: "F2" },
+    { key: "SOURCES", label: "SOURCES", fkey: "F3", count: sourceCount },
+    { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
+    { key: "ASK", label: "ASK", fkey: "F5" },
+  ];
+  return (
+    <div className="bl-tabs">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          className={`bl-tab${tab === t.key ? " on" : ""}`}
+          onClick={() => onTab(t.key)}
+        >
+          <span className="bl-tab-fkey">{t.fkey}</span>
+          {t.label}
+          {t.count != null && t.count > 0 && (
+            <span style={{ opacity: 0.45, fontSize: 8, marginLeft: 5 }}>{t.count}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── BlotterRow ───────────────────────────────────────────────────────────────
+
+function BlotterRow({
+  idea, selected, onSelect,
+}: {
+  idea: BlotterIdea;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const status = deriveStatus(idea);
+  const dt = deltaTrig(idea);
+  const up = idea.direction === "bullish";
+  const closes = idea.quote?.closes ?? [];
+
+  const entText = idea.entry?.value != null ? fmtPx(idea.entry.value) : "⌀ n/s";
+  const invText = idea.invalidation?.value != null ? fmtPx(idea.invalidation.value) : "⌀ n/s";
+  const tgtText = idea.targets[0]?.value != null ? fmtPx(idea.targets[0].value) : "⌀ n/s";
+  const liveText = idea.quote?.price != null ? fmtPx(idea.quote.price) : "⌀ n/s";
+
+  const dtCls = dt === "—" ? "" : dt.startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg";
+
+  return (
+    <tr className={`bl-row${selected ? " selected" : ""}`} onClick={onSelect}>
+      <td className="bl-c-status"><StatusBadge s={status} /></td>
+      <td className="bl-c-ticker">{idea.ticker}</td>
+      <td className="bl-c-dir">
+        {idea.direction === "bullish"
+          ? <span className="bl-bull-glyph">▲</span>
+          : idea.direction === "bearish"
+          ? <span className="bl-bear-glyph">▼</span>
+          : <span className="bl-neut-glyph">—</span>}
+      </td>
+      <td className="bl-c-tf">{TF_LABEL[idea.timeHorizon] ?? "—"}</td>
+      <td className="bl-c-setup" title={idea.thesis}>{idea.thesis.slice(0, 40)}</td>
+      <td className="bl-c-num">{entText}</td>
+      <td className="bl-c-num">{invText}</td>
+      <td className="bl-c-num">{tgtText}</td>
+      <td className="bl-c-live">{liveText}</td>
+      <td className={`bl-c-delta ${dtCls}`}>{dt}</td>
+      <td className="bl-c-spark">
+        <MiniSpark closes={closes} up={up} />
+      </td>
+      <td className="bl-c-conf">{(idea.confidence * 100).toFixed(0)}%</td>
+      <td className="bl-c-evid">
+        <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
+          {idea.explicitness === "explicit" ? "SRC" : "INF"}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+// ── BlotterTable ─────────────────────────────────────────────────────────────
+
+function BlotterTable({
+  ideas, selectedId, onSelect,
+}: {
+  ideas: BlotterIdea[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  if (ideas.length === 0) {
+    return (
+      <div className="bl-empty">
+        <div className="bl-empty-title">NO IDEAS</div>
+        <div>Generate a brief to populate the blotter.</div>
       </div>
     );
   }
-  const label = historical ? `Brief · ${brief.date}` : `Tonight’s Brief · ${brief.date}`;
+
+  const groups: Record<string, BlotterIdea[]> = {};
+  const order = ["Today · Top Ideas", "Short-term · Swing", "Long-term"];
+  for (const idea of ideas) {
+    const g = TF_GROUP[idea.timeHorizon] ?? "Long-term";
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(idea);
+  }
+
   return (
-    <>
-      <div className="icard">
-        <div className="icard-h">
-          {label}
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>
-            {read60 ? "Full" : "Read in 60s"}
-          </button>
+    <div className="bl-blotter-wrap">
+      <table className="bl-table">
+        <thead className="bl-thead">
+          <tr>
+            <th>STATUS</th>
+            <th>TICKER</th>
+            <th>DIR</th>
+            <th>TF</th>
+            <th>SETUP</th>
+            <th>TRIGGER</th>
+            <th>INVALID</th>
+            <th>TARGET</th>
+            <th>LIVE</th>
+            <th>Δ-TRIG</th>
+            <th>SPARK</th>
+            <th>CONF</th>
+            <th>EVID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {order.map((g) => {
+            const rows = groups[g];
+            if (!rows?.length) return null;
+            return (
+              <>
+                <tr key={`hd-${g}`}>
+                  <td colSpan={13} className="bl-section-head">{g}</td>
+                </tr>
+                {rows.map((idea) => (
+                  <BlotterRow
+                    key={idea.id}
+                    idea={idea}
+                    selected={selectedId === idea.id}
+                    onSelect={() => onSelect(idea.id)}
+                  />
+                ))}
+              </>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Inspector ────────────────────────────────────────────────────────────────
+
+function Inspector({ idea }: { idea: BlotterIdea | null }) {
+  if (!idea) {
+    return (
+      <div className="bl-insp-empty">
+        <div>SELECT A ROW</div>
+        <div style={{ fontSize: 9.5 }}>to inspect the trade setup</div>
+      </div>
+    );
+  }
+
+  const status = deriveStatus(idea);
+  const up = idea.direction === "bullish";
+  const entVal = idea.entry?.value ?? null;
+  const invVal = idea.invalidation?.value ?? null;
+  const tgt = idea.targets[0];
+
+  return (
+    <div>
+      <div className="bl-insp-ticker">{idea.ticker}</div>
+      {idea.assetName && (
+        <div style={{ fontSize: 11, color: "var(--ash)", marginBottom: 4, fontFamily: "var(--font-mono), monospace" }}>
+          {idea.assetName}
         </div>
-        {brief.read60 && <p className="brief-read60">{brief.read60}</p>}
-        {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
-        {!read60 && (
-          <dl style={{ margin: 0 }}>
-            {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
-            {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
-            {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
-            {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
-            {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
-          </dl>
-        )}
-        {!read60 && (brief.bullCase || brief.bearCase) && (
-          <div className="bullbear">
-            <div className="bull"><h4>BULL CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bullCase || "—"}</div></div>
-            <div className="bear"><h4>BEAR CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bearCase || "—"}</div></div>
+      )}
+      <div className="bl-insp-badges">
+        <StatusBadge s={status} />
+        <DirBadge d={idea.direction} />
+        <span className="badge b-neutral">{idea.timeHorizon.replace("_", " ")}</span>
+        {idea.__fav && <span className="badge b-fav">Favorite</span>}
+        <ExpBadge e={idea.explicitness} />
+      </div>
+
+      <p className="bl-insp-thesis">{idea.thesis}</p>
+
+      {idea.quote && (
+        <InspChart
+          closes={idea.quote.closes}
+          entry={entVal}
+          price={idea.quote.price}
+          up={up}
+        />
+      )}
+
+      <div className="bl-insp-grid">
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Live</div>
+          <div className="bl-insp-field-val">
+            {idea.quote ? `$${fmtPx(idea.quote.price)}` : <span className="bl-ns">⌀ n/s</span>}
+          </div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Chg</div>
+          <div className={`bl-insp-field-val ${idea.quote ? (idea.quote.chgPct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg") : ""}`}>
+            {idea.quote ? fmtPct(idea.quote.chgPct) : <span className="bl-ns">—</span>}
+          </div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Entry</div>
+          <div className="bl-insp-field-val">{val(idea.entry)}</div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Δ-Trigger</div>
+          <div className={`bl-insp-field-val ${
+            deltaTrig(idea) === "—" ? "" : deltaTrig(idea).startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg"
+          }`}>{deltaTrig(idea)}</div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Invalidation</div>
+          <div className="bl-insp-field-val">{val(idea.invalidation)}</div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Target</div>
+          <div className="bl-insp-field-val">{tgt ? val(tgt) : <span className="bl-ns">⌀ n/s</span>}</div>
+        </div>
+        <div className="bl-insp-field">
+          <div className="bl-insp-field-label">Confidence</div>
+          <div className="bl-insp-field-val">{(idea.confidence * 100).toFixed(0)}%</div>
+        </div>
+        {idea.catalysts[0] && (
+          <div className="bl-insp-field">
+            <div className="bl-insp-field-label">Catalyst</div>
+            <div className="bl-insp-field-val">{idea.catalysts[0]}</div>
           </div>
         )}
       </div>
 
-      {brief.creatorFavorites.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Creator Favorites</div>
-          {brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}
-        </div>
-      )}
-
-      <div className="icard">
-        <div className="icard-h">Top Trade Ideas</div>
-        {brief.topIdeas.length === 0
-          ? <div className="istate">No ideas extracted yet.</div>
-          : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}
+      <hr className="bl-insp-sep" />
+      <div className="bl-insp-evid-head">Evidence</div>
+      <div className="bl-insp-evid">
+        <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
+          {idea.explicitness === "explicit" ? "SRC" : "INF"}
+        </span>
+        <span style={{ fontSize: 11, color: "var(--ash)" }}>
+          {idea.explicitness === "explicit" ? "Creator stated directly" : "AUGUST inference"}
+        </span>
       </div>
-
-      {brief.levels.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Levels &amp; Triggers</div>
-          {brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}
-        </div>
+      {idea.channelTitle && (
+        <div style={{ fontSize: 10.5, color: "var(--ash)", marginTop: 6 }}>{idea.channelTitle}</div>
       )}
-
-      {brief.catalysts.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Catalyst Map</div>
-          {brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}
-        </div>
+      {idea.videoId && (
+        <a
+          className="bl-insp-cite"
+          href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          ▸ {idea.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}
+          {idea.rankScore !== undefined ? ` · rank ${idea.rankScore}` : ""}
+        </a>
       )}
-
-      {brief.consensus.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Consensus &amp; Conflicts</div>
-          {brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}
-        </div>
-      )}
-    </>
+    </div>
   );
 }
+
+// ── LeftPanel ────────────────────────────────────────────────────────────────
+
+function LeftPanel({
+  brief, sources, videos, onOpenVideo, config, onReload, removeSource, busy, onSync, onGenerateBrief,
+}: {
+  brief: DailyBrief | null;
+  sources: IntelSource[];
+  videos: IntelVideo[];
+  onOpenVideo: (id: string) => void;
+  config: Overview["config"];
+  onReload: () => Promise<void>;
+  removeSource: (id: string) => Promise<void>;
+  busy: string | null;
+  onSync: () => void;
+  onGenerateBrief: () => void;
+}) {
+  return (
+    <div className="bl-left">
+      {/* actions */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        <button className="ibtn ibtn-sm" disabled={busy === "sync"} onClick={onSync}>
+          {busy === "sync" ? "Syncing…" : "Sync"}
+        </button>
+        <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !config.ai} onClick={onGenerateBrief}>
+          {busy === "brief" ? "…" : "Brief"}
+        </button>
+        <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">Export</a>
+        <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
+      </div>
+
+      {/* condensed brief summary */}
+      {brief && (
+        <>
+          <div className="bl-ph">Summary</div>
+          {brief.posture && <p className="bl-brief-posture">{brief.posture}</p>}
+          <dl style={{ margin: 0 }}>
+            {brief.watchAtOpen && (
+              <div className="bl-brief-field">
+                <dt>At open</dt><dd>{brief.watchAtOpen}</dd>
+              </div>
+            )}
+            {brief.whatMattersTomorrow && (
+              <div className="bl-brief-field">
+                <dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd>
+              </div>
+            )}
+            {brief.invalidation && (
+              <div className="bl-brief-field">
+                <dt>Invalidation</dt><dd>{brief.invalidation}</dd>
+              </div>
+            )}
+          </dl>
+          {(brief.bullCase || brief.bearCase) && (
+            <div className="bl-bullbear" style={{ marginTop: 10 }}>
+              <div className="bl-bull">
+                <div className="bl-bull-h">BULL</div>
+                <p>{brief.bullCase || "—"}</p>
+              </div>
+              <div className="bl-bear">
+                <div className="bl-bear-h">BEAR</div>
+                <p>{brief.bearCase || "—"}</p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* AT THE OPEN levels */}
+      {brief && brief.levels.length > 0 && (
+        <>
+          <div className="bl-ph">AT THE OPEN</div>
+          {brief.levels.slice(0, 12).map((l) => (
+            <div key={l.id} className="bl-atopen-row">
+              <span className="bl-atopen-inst">{l.instrument}</span>
+              <span className={`badge b-neutral`} style={{ fontSize: 8.5 }}>{l.type}</span>
+              <span className={`bl-atopen-px ${l.type === "support" ? "bl-lvl-r" : l.type === "resistance" ? "bl-lvl-s" : "bl-lvl-ref"}`}>
+                {l.level !== null ? l.level : <span className="bl-ns">{l.levelText || "⌀ n/s"}</span>}
+              </span>
+              {l.videoId
+                ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
+                : <span />}
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* source monitor mini */}
+      <div className="bl-ph">Sources · {sources.length}</div>
+      {sources.length === 0
+        ? <div className="istate" style={{ fontSize: 11 }}>No sources yet.</div>
+        : sources.map((s) => (
+          <div key={s.id} className="irow" style={{ padding: "5px 0" }}>
+            {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
+            <div className="irow-main">
+              <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
+              <div className="irow-meta">
+                <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
+              </div>
+            </div>
+            <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9.5 }} onClick={() => removeSource(s.id)}>✕</button>
+          </div>
+        ))}
+
+      {/* video library mini */}
+      <div className="bl-ph">Videos · {videos.length}</div>
+      {videos.length === 0
+        ? <div className="istate" style={{ fontSize: 11 }}>No videos yet.</div>
+        : videos.slice(0, 10).map((v) => (
+          <div key={v.videoId} className="irow clickable" style={{ padding: "5px 0" }} onClick={() => onOpenVideo(v.videoId)}>
+            {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
+            <div className="irow-main">
+              <div className="irow-title" style={{ fontSize: 11 }}>{v.title}</div>
+              <div className="irow-meta">
+                {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7.5 }}>Analyzed</span>}
+                {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7.5 }}>Processing</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+
+      <div className="bl-ph">Add Source</div>
+      <AddSource onReload={onReload} compact />
+    </div>
+  );
+}
+
+// ── AskBar ───────────────────────────────────────────────────────────────────
+
+function AskBar({ ai }: { ai: boolean }) {
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState<{
+    answer: string;
+    citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const ask = async () => {
+    if (q.trim().length < 3) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/intel/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
+      setRes(await r.json());
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bl-askbar">
+      {res && (
+        <div className="bl-askbar-ans">
+          <div style={{ marginBottom: 8 }}>{res.answer}</div>
+          {res.citations.map((c, i) => (
+            <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
+              ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
+            </a>
+          ))}
+          <button className="ibtn ibtn-sm ibtn-ghost" style={{ marginTop: 8 }} onClick={() => setRes(null)}>Dismiss</button>
+        </div>
+      )}
+      <input
+        className="bl-askbar-input"
+        placeholder={ai ? "Ask AUGUST about your sources… (Enter to send)" : "Ask AUGUST (needs ANTHROPIC_API_KEY)"}
+        value={q}
+        disabled={!ai}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+      />
+      <button className="ibtn ibtn-primary" disabled={busy || !ai || q.trim().length < 3} onClick={ask}>
+        {busy ? "…" : "ASK"}
+      </button>
+    </div>
+  );
+}
+
+// ── sub-components preserved for tab views ───────────────────────────────────
 
 function IdeaCard({
   idea, favorite, onOpenVideo,
@@ -374,7 +740,7 @@ function IdeaCard({
       <div className="idea-grid">
         <div className="idea-f"><span>Entry</span>{val(idea.entry)}</div>
         <div className="idea-f"><span>Invalidation</span>{val(idea.invalidation)}</div>
-        <div className="idea-f"><span>Target</span>{idea.targets[0] ? val(idea.targets[0]) : <span className="notspec">Not specified</span>}</div>
+        <div className="idea-f"><span>Target</span>{idea.targets[0] ? val(idea.targets[0]) : <span className="notspec">⌀ n/s</span>}</div>
         <div className="idea-f"><span>Catalyst</span><b>{idea.catalysts[0] ?? "—"}</b></div>
         {idea.enriched?.price != null && <div className="idea-f"><span>Live price</span><b>${idea.enriched.price.toFixed(2)}</b></div>}
         <div className="idea-f"><span>Confidence</span><b>{(idea.confidence * 100).toFixed(0)}%</b></div>
@@ -395,7 +761,7 @@ function LevelRow({ l }: { l: IntelLevel }) {
       <span className="intel-mono" style={{ color: "var(--bone)" }}>{l.instrument}</span>
       <span className="badge b-neutral">{l.type}</span>
       <span style={{ color: "var(--ash)", fontSize: 11 }}>
-        {l.level !== null ? l.level : <span className="notspec">{l.levelText || "Not specified"}</span>}
+        {l.level !== null ? l.level : <span className="notspec">{l.levelText || "⌀ n/s"}</span>}
         {l.crossed ? <span className="badge b-triggered">crossed</span> : null}
       </span>
       {l.videoId
@@ -435,8 +801,8 @@ function DrawerOptionRow({ o }: { o: OptionIdea }) {
       </div>
       <div className="optidea-contract">{contract}</div>
       <div className="idea-grid">
-        <div className="idea-f"><span>Expiration</span>{o.expirationText?.resolved ? <b>{o.expirationText.resolved}</b> : o.expirationText?.text ? <span className="notspec">{o.expirationText.text}</span> : <span className="notspec">Not specified</span>}</div>
-        <div className="idea-f"><span>Creator premium</span>{o.quotedPremium !== null ? <b>${o.quotedPremium}</b> : <span className="notspec">Not specified</span>}</div>
+        <div className="idea-f"><span>Expiration</span>{o.expirationText?.resolved ? <b>{o.expirationText.resolved}</b> : o.expirationText?.text ? <span className="notspec">{o.expirationText.text}</span> : <span className="notspec">⌀ n/s</span>}</div>
+        <div className="idea-f"><span>Creator premium</span>{o.quotedPremium !== null ? <b>${o.quotedPremium}</b> : <span className="notspec">⌀ n/s</span>}</div>
         <div className="idea-f"><span>Breakeven</span>{o.breakevens.length ? <b>{o.breakevens.join(", ")}</b> : <span className="notspec">Not computable</span>}</div>
       </div>
       {o.videoId && <a className="idea-cite" href={watchUrl(o.videoId, o.sourceStartSeconds)} target="_blank" rel="noreferrer">▸ source @ {mmss(o.sourceStartSeconds)}</a>}
@@ -455,10 +821,11 @@ function ConsensusRow({ c }: { c: ConsensusItem }) {
   );
 }
 
-// --- G: source monitor + add ----------------------------------------------
+// ── AddSource ─────────────────────────────────────────────────────────────────
+
 type AddResult = { url: string; status: "ok" | "exists" | "err"; label: string };
 
-function AddSource({ onReload }: { onReload: () => Promise<void> }) {
+function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compact?: boolean }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<AddResult[]>([]);
@@ -487,6 +854,36 @@ function AddSource({ onReload }: { onReload: () => Promise<void> }) {
     setText("");
     await onReload();
   };
+
+  if (compact) {
+    return (
+      <div>
+        <textarea
+          className="iinput iadd-ta"
+          style={{ fontSize: 11, minHeight: 52 }}
+          placeholder="URL(s), newline- or comma-separated"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
+        />
+        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
+            {busy ? "Adding…" : "Add"}
+          </button>
+          <span className="inote" style={{ fontSize: 9.5 }}>Ctrl+Enter</span>
+        </div>
+        {results.length > 0 && (
+          <div className="iadd-results">
+            {results.map((r, i) => (
+              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 10 }}>
+                {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="icard">
@@ -544,7 +941,6 @@ function SourceMonitor({ sources, onRemove }: { sources: IntelSource[]; onRemove
   );
 }
 
-// --- H: video library -----------------------------------------------------
 function statusBadge(v: IntelVideo) {
   if (v.liveState === "live") return <span className="badge b-live">Live</span>;
   if (v.status === "analyzing") return <span className="badge b-proc">Processing</span>;
@@ -578,7 +974,8 @@ function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: s
   );
 }
 
-// --- I: video drawer ------------------------------------------------------
+// ── VideoDrawer ───────────────────────────────────────────────────────────────
+
 function VideoDrawer({
   videoId, onClose, onProcessed, aiOn,
 }: {
@@ -617,11 +1014,9 @@ function VideoDrawer({
   const v = bundle?.video;
   const a = bundle?.analysis;
   const chapters = bundle?.chapters ?? [];
-
   const selectedChapter = selectedChapterSec !== null
     ? chapters.find((ch) => ch.startSeconds === selectedChapterSec) ?? null
     : null;
-
   const visibleIdeas = a?.tradeIdeas
     ? selectedChapter
       ? a.tradeIdeas.filter((i) => i.sourceStartSeconds >= selectedChapter.startSeconds && i.sourceStartSeconds < selectedChapter.endSeconds)
@@ -653,9 +1048,7 @@ function VideoDrawer({
               {v?.stale && <span className="badge b-stale">Stale</span>}
               <a className="idea-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
-
             {a?.warnings?.length ? <div className="inote iwarn">{a.warnings.join(" · ")}</div> : null}
-
             {v?.status !== "analyzed" && (
               <div className="icard" style={{ marginTop: 12 }}>
                 <div className="icard-h">
@@ -676,8 +1069,6 @@ function VideoDrawer({
                 </div>
               </div>
             )}
-
-            {/* chapter timeline — click to filter ideas/levels */}
             {chapters.length > 0 && (
               <div className="icard">
                 <div className="icard-h">
@@ -718,7 +1109,6 @@ function VideoDrawer({
                 ))}
               </div>
             )}
-
             {a && (
               <>
                 {a.overallSummary && (
@@ -729,7 +1119,6 @@ function VideoDrawer({
                     <p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p>
                   </div>
                 )}
-
                 {selectedChapter && (
                   <div className="chap-filter-bar">
                     <span>Filtering:</span>
@@ -738,7 +1127,6 @@ function VideoDrawer({
                     <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button>
                   </div>
                 )}
-
                 {visibleIdeas.length > 0 && (
                   <div className="icard">
                     <div className="icard-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>
@@ -784,50 +1172,347 @@ function VideoDrawer({
   );
 }
 
-// --- J: ask AUGUST --------------------------------------------------------
-function AskAugust({ ai }: { ai: boolean }) {
-  const [q, setQ] = useState("");
-  const [res, setRes] = useState<{
-    answer: string;
-    citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
-  } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const ask = async () => {
-    if (q.trim().length < 3) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/intel/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
-      });
-      setRes(await r.json());
-    } finally { setBusy(false); }
-  };
-  return (
-    <div className="icard">
-      <div className="icard-h">Ask AUGUST</div>
-      <div className="iinrow">
-        <input
-          className="iinput"
-          placeholder="What did both channels say about QQQ?"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-        />
-        <button className="ibtn ibtn-primary" disabled={busy || !ai} onClick={ask}>{busy ? "…" : "Ask"}</button>
+// ── BriefCard (for BRIEF tab) ─────────────────────────────────────────────────
+
+function BriefCard({
+  brief, ai, onOpenVideo, historical,
+}: {
+  brief: DailyBrief | null;
+  ai: boolean;
+  onOpenVideo: (id: string) => void;
+  historical?: boolean;
+}) {
+  const [read60, setRead60] = useState(false);
+  if (!brief) {
+    return (
+      <div className="icard">
+        <div className="icard-h">{historical ? "No brief for this date" : "Tonight's Brief"}</div>
+        <div className="istate">
+          {historical
+            ? "No brief was stored for this date."
+            : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}
+        </div>
       </div>
-      {!ai && <div className="inote iwarn">Needs ANTHROPIC_API_KEY.</div>}
-      {res && (
-        <div>
-          <div className="ask-ans">{res.answer}</div>
-          {res.citations.map((c, i) => (
-            <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
-              ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
-            </a>
-          ))}
+    );
+  }
+  const label = historical ? `Brief · ${brief.date}` : `Tonight's Brief · ${brief.date}`;
+  return (
+    <>
+      <div className="icard">
+        <div className="icard-h">
+          {label}
+          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>
+            {read60 ? "Full" : "Read in 60s"}
+          </button>
+        </div>
+        {brief.read60 && read60 && <p className="brief-read60">{brief.read60}</p>}
+        {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
+        {!read60 && (
+          <dl style={{ margin: 0 }}>
+            {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
+            {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
+            {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
+            {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
+            {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
+          </dl>
+        )}
+        {!read60 && (brief.bullCase || brief.bearCase) && (
+          <div className="bullbear">
+            <div className="bull"><h4>BULL CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bullCase || "—"}</div></div>
+            <div className="bear"><h4>BEAR CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bearCase || "—"}</div></div>
+          </div>
+        )}
+      </div>
+      {brief.creatorFavorites.length > 0 && (
+        <div className="icard">
+          <div className="icard-h">Creator Favorites</div>
+          {brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}
         </div>
       )}
-    </div>
+      <div className="icard">
+        <div className="icard-h">Top Trade Ideas</div>
+        {brief.topIdeas.length === 0
+          ? <div className="istate">No ideas extracted yet.</div>
+          : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}
+      </div>
+      {brief.levels.length > 0 && (
+        <div className="icard">
+          <div className="icard-h">Levels &amp; Triggers</div>
+          {brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}
+        </div>
+      )}
+      {brief.catalysts.length > 0 && (
+        <div className="icard">
+          <div className="icard-h">Catalyst Map</div>
+          {brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}
+        </div>
+      )}
+      {brief.consensus.length > 0 && (
+        <div className="icard">
+          <div className="icard-h">Consensus &amp; Conflicts</div>
+          {brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── IntelDashboard (main) ────────────────────────────────────────────────────
+
+export default function IntelDashboard() {
+  const [data, setData] = useState<Overview | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [openVideo, setOpenVideo] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("BOARD");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [historyDates, setHistoryDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [quotes, setQuotes] = useState<QuoteMap>({});
+  const [tape, setTape] = useState<TapeQuote[]>([]);
+  const [clock, setClock] = useState(etClock());
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/intel/overview", { cache: "no-store" });
+      if (!r.ok) throw new Error();
+      setData(await r.json());
+      setStatus("ready");
+    } catch {
+      setStatus((s) => (s === "ready" ? "ready" : "error"));
+    }
+  }, []);
+
+  // initial parallel fetch: overview + tape + history dates
+  useEffect(() => {
+    load();
+    fetch(`/api/intel/quotes?symbols=${TAPE_SYMBOLS.join(",")}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const q: QuoteMap = j.quotes ?? {};
+        const t: TapeQuote[] = TAPE_SYMBOLS
+          .filter((s) => q[s])
+          .map((s) => ({ sym: s, price: q[s].price, chgPct: q[s].chgPct, up: q[s].chgPct >= 0 }));
+        setTape(t);
+      })
+      .catch(() => {});
+    fetch("/api/intel/briefs", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
+      .catch(() => {});
+  }, [load]);
+
+  // ET clock tick
+  useEffect(() => {
+    const t = setInterval(() => setClock(etClock()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  // fetch blotter quotes when brief changes
+  useEffect(() => {
+    if (!data?.brief) return;
+    const ideas = [...(data.brief.creatorFavorites ?? []), ...(data.brief.topIdeas ?? [])];
+    const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
+    if (!syms.length) return;
+    fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => setQuotes(j.quotes ?? {}))
+      .catch(() => {});
+  }, [data?.brief]);
+
+  const loadDate = useCallback(async (date: string) => {
+    if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
+    setSelectedDate(date);
+    setHistoryLoading(true);
+    try {
+      const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
+      const j = await r.json();
+      setHistoryBrief(j.brief ?? null);
+    } catch { setHistoryBrief(null); }
+    finally { setHistoryLoading(false); }
+  }, [selectedDate]);
+
+  const removeSource = useCallback(async (id: string) => {
+    await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await load();
+  }, [load]);
+
+  const sync = useCallback(async () => {
+    setBusy("sync"); setMsg(null);
+    try {
+      const r = await fetch("/api/intel/sync", { method: "POST" });
+      const j = await r.json();
+      setMsg(j.ok ? `Sync: ${j.discovered} new video(s).` : j.message ?? "Sync needs YOUTUBE_API_KEY.");
+      await load();
+    } finally { setBusy(null); }
+  }, [load]);
+
+  const generateBrief = useCallback(async () => {
+    setBusy("brief"); setMsg(null);
+    try {
+      const r = await fetch("/api/intel/briefs/today", { method: "POST" });
+      const j = await r.json();
+      if (!j.ok) setMsg(`Brief: ${j.error ?? "failed"}`);
+      await load();
+    } finally { setBusy(null); }
+  }, [load]);
+
+  if (status === "loading") {
+    return (
+      <div style={{ padding: 24 }}>
+        {[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div style={{ padding: 24 }}>
+        <div className="istate istate-err">
+          Couldn&apos;t load Market Intel.{" "}
+          <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
+  const { config, sources, videos, brief } = data;
+  const displayBrief = selectedDate ? historyBrief : brief;
+  const blotter = buildBlotter(brief, quotes);
+  const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
+
+  const initialSymbol =
+    brief?.options?.bestCreatorPlays[0]?.underlyingSymbol ||
+    brief?.options?.directionalOnly[0]?.underlyingSymbol ||
+    brief?.topIdeas[0]?.ticker ||
+    "SPY";
+
+  return (
+    <SymbolProvider initial={initialSymbol}>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+
+        <StatusBar data={data} clock={clock} />
+        <LiveTape tape={tape} />
+        <TabNav tab={tab} onTab={setTab} ideaCount={blotter.length} sourceCount={sources.length} />
+
+        {msg && (
+          <div className="istate" style={{ margin: "8px 18px", color: "var(--steel)" }}>
+            {msg} <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setMsg(null)}>✕</button>
+          </div>
+        )}
+        {!config.storage && (
+          <div className="istate iwarn" style={{ margin: "4px 18px" }}>
+            Upstash not configured — UPSTASH_REDIS_REST_URL/TOKEN needed.
+          </div>
+        )}
+
+        {/* ── BOARD ── */}
+        {tab === "BOARD" && (
+          <div className="bl-layout" style={{ flex: 1 }}>
+            <LeftPanel
+              brief={brief}
+              sources={sources}
+              videos={videos}
+              onOpenVideo={setOpenVideo}
+              config={config}
+              onReload={load}
+              removeSource={removeSource}
+              busy={busy}
+              onSync={sync}
+              onGenerateBrief={generateBrief}
+            />
+            <div className="bl-center">
+              {blotter.length === 0 && !brief ? (
+                <div className="bl-empty" style={{ margin: 32 }}>
+                  <div className="bl-empty-title">BLOTTER EMPTY</div>
+                  <div>Add sources → process a transcript → generate a brief.</div>
+                </div>
+              ) : (
+                <BlotterTable
+                  ideas={blotter}
+                  selectedId={selectedId}
+                  onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+                />
+              )}
+            </div>
+            <div className="bl-right">
+              <Inspector idea={selectedIdea} />
+            </div>
+          </div>
+        )}
+
+        {/* ── BRIEF ── */}
+        {tab === "BRIEF" && (
+          <div className="bl-tabview">
+            {historyDates.length > 0 && (
+              <div className="ihistory" style={{ marginBottom: 16 }}>
+                <div className="ihistory-label">Daily History</div>
+                <div className="ihistory-pills">
+                  {selectedDate && (
+                    <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>
+                      ← Today
+                    </button>
+                  )}
+                  {historyDates.map((d) => (
+                    <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {historyLoading
+              ? <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
+              : <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />}
+          </div>
+        )}
+
+        {/* ── SOURCES ── */}
+        {tab === "SOURCES" && (
+          <div className="bl-tabview">
+            <AddSource onReload={load} />
+            <SourceMonitor sources={sources} onRemove={removeSource} />
+            <VideoLibrary videos={videos} onOpen={setOpenVideo} />
+          </div>
+        )}
+
+        {/* ── OPTIONS ── */}
+        {tab === "OPTIONS" && (
+          <div className="bl-tabview">
+            <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
+          </div>
+        )}
+
+        {/* ── ASK ── */}
+        {tab === "ASK" && (
+          <div className="bl-tabview" style={{ paddingBottom: 120 }}>
+            <div className="icard">
+              <div className="icard-h">Ask AUGUST</div>
+              <p className="inote">Use the bar below — AUGUST answers from your processed sources.</p>
+              {!config.ai && <div className="istate iwarn">Needs ANTHROPIC_API_KEY.</div>}
+            </div>
+          </div>
+        )}
+
+        <div className="idisc" style={{ paddingBottom: 60 }}>
+          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices. Not financial advice.
+        </div>
+
+        <AskBar ai={config.ai} />
+
+        {openVideo && (
+          <VideoDrawer
+            key={openVideo}
+            videoId={openVideo}
+            onClose={() => setOpenVideo(null)}
+            onProcessed={load}
+            aiOn={config.ai}
+          />
+        )}
+      </div>
+    </SymbolProvider>
   );
 }
