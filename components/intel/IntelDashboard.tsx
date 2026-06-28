@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   BriefIdea,
   Chapter,
@@ -11,6 +11,7 @@ import type {
   IntelLevel,
   IntelSource,
   IntelVideo,
+  OptionBriefIdea,
   OptionIdea,
   TradeIdea,
   VideoAnalysis,
@@ -32,25 +33,27 @@ type Overview = {
 };
 
 type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: number; closes: number[] }>;
-type TapeQuote = { sym: string; price: number; chgPct: number; up: boolean };
 type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
+type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
-type IdeaStatus = "WATCH" | "TRIG" | "INVLD";
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-const TAPE_SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "^VIX", "BTC-USD", "ETH-USD", "SOL-USD"];
+const TAPE_MACRO = ["SPY", "QQQ", "IWM", "^VIX", "GC=F", "CL=F", "BTC-USD", "ETH-USD"];
 
 const TF_LABEL: Record<string, string> = {
   intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
 };
+const TF_FULL: Record<string, string> = {
+  intraday: "INTRADAY", next_session: "NEXT SESSION", swing: "SWING", long_term: "LONG TERM", unspecified: "—",
+};
 
 const TF_GROUP: Record<string, string> = {
-  intraday: "Today · Top Ideas",
-  next_session: "Short-term · Swing",
-  swing: "Short-term · Swing",
-  long_term: "Long-term",
-  unspecified: "Long-term",
+  intraday: "TODAY · TOP IDEAS",
+  next_session: "SHORT-TERM · SWING",
+  swing: "SHORT-TERM · SWING",
+  long_term: "LONG-TERM",
+  unspecified: "LONG-TERM",
 };
 
 const CAT_LABEL: Partial<Record<ChapterCategory, string>> = {
@@ -82,15 +85,21 @@ function deriveStatus(idea: BlotterIdea): IdeaStatus {
   const { price } = q;
   const ent = idea.entry?.value;
   const inv = idea.invalidation?.value;
+  // Invalidated
   if (inv != null && inv > 0) {
     if (idea.direction === "bullish" && price < inv) return "INVLD";
     if (idea.direction === "bearish" && price > inv) return "INVLD";
   }
+  // Triggered
   if (ent != null && ent > 0) {
     if (idea.direction === "bullish" && price >= ent) return "TRIG";
     if (idea.direction === "bearish" && price <= ent) return "TRIG";
   }
-  return "WATCH";
+  // Armed: creator favorite OR within 5% of entry
+  if (idea.__fav) return "ARMED";
+  if (ent != null && ent > 0 && Math.abs((price - ent) / ent) <= 0.05) return "ARMED";
+  // Active: has live price
+  return "ACTIVE";
 }
 
 function deltaTrig(idea: BlotterIdea): string {
@@ -110,13 +119,27 @@ function buildBlotter(brief: DailyBrief | null, quotes: QuoteMap): BlotterIdea[]
     .map((idea) => ({ ...idea, __fav: favIds.has(idea.id), quote: quotes[idea.ticker.toUpperCase()] ?? null }));
 }
 
+function atOpenState(l: IntelLevel, quotes: QuoteMap): { label: string; cls: string } {
+  const q = quotes[l.instrument.toUpperCase()];
+  if (!q || l.level == null) return { label: "—", cls: "" };
+  const { price } = q;
+  const pct = ((price - l.level) / l.level) * 100;
+  if (l.type === "resistance" || l.type === "breakout") {
+    if (price > l.level) return { label: "CLEARED", cls: "bl-cleared" };
+  }
+  if (l.type === "support" || l.type === "breakdown") {
+    if (price < l.level) return { label: "BROKEN", cls: "bl-broken" };
+  }
+  return { label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%", cls: pct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg" };
+}
+
 function val(v: { value: number | null; text: string }) {
   if (v.value === null && (!v.text || /not specified/i.test(v.text)))
     return <span className="notspec">⌀ n/s</span>;
   return <b>{v.text || (v.value !== null ? String(v.value) : "—")}</b>;
 }
 
-// ── micro-components ─────────────────────────────────────────────────────────
+// ── micro components ─────────────────────────────────────────────────────────
 
 function DirBadge({ d }: { d: TradeIdea["direction"] }) {
   const cls = d === "bullish" ? "b-bull" : d === "bearish" ? "b-bear" : d === "watch" ? "b-watch" : "b-neutral";
@@ -126,23 +149,27 @@ function DirBadge({ d }: { d: TradeIdea["direction"] }) {
 function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
   return (
     <span className={`badge ${e === "explicit" ? "b-explicit" : "b-inferred"}`}>
-      {e === "explicit" ? "Source claim" : "AUGUST inference"}
+      {e === "explicit" ? "Direct source" : "Inference"}
     </span>
   );
+}
+
+function StatusBadge({ s }: { s: IdeaStatus }) {
+  const cls: Record<IdeaStatus, string> = {
+    TRIG: "bl-st-trig", ARMED: "bl-st-arm", ACTIVE: "bl-st-active",
+    WATCH: "bl-st-watch", INVLD: "bl-st-invld",
+  };
+  return <span className={`bl-st ${cls[s]}`}>{s}</span>;
 }
 
 function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
   if (!closes || closes.length < 2) return <span className="bl-spark-empty">—</span>;
   const pts = closes.slice(-20);
-  const min = Math.min(...pts);
-  const max = Math.max(...pts);
-  const W = 52, H = 18;
+  const min = Math.min(...pts), max = Math.max(...pts), W = 52, H = 18;
   const range = max - min || 1;
-  const points = pts.map((v, i) => {
-    const x = (i / (pts.length - 1)) * W;
-    const y = H - ((v - min) / range) * H;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
+  const points = pts.map((v, i) =>
+    `${((i / (pts.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * H).toFixed(1)}`
+  ).join(" ");
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="bl-spark">
       <polyline points={points} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.2" />
@@ -150,92 +177,135 @@ function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
   );
 }
 
-function InspChart({
-  closes, entry, price, up,
-}: {
-  closes: number[];
-  entry: number | null;
-  price: number | null;
-  up: boolean;
-}) {
+function InspChart({ closes, entry, up }: { closes: number[]; entry: number | null; up: boolean }) {
   if (!closes || closes.length < 2) return null;
-  const W = 240, H = 72;
-  const allPts = [...closes];
-  if (price != null) allPts.push(price);
-  const min = Math.min(...allPts);
-  const max = Math.max(...allPts);
-  const range = max - min || 1;
-  const toY = (v: number) => H - ((v - min) / range) * (H - 6) - 3;
-  const toX = (i: number, total: number) => (i / (total - 1)) * W;
-  const pts = closes.map((v, i) => `${toX(i, closes.length).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
-  const lastX = toX(closes.length - 1, closes.length);
-  const lastY = toY(closes[closes.length - 1]);
+  const W = 240, H = 64;
+  const all = entry != null ? [...closes, entry] : closes;
+  const min = Math.min(...all), max = Math.max(...all), range = max - min || 1;
+  const toY = (v: number) => H - ((v - min) / range) * (H - 4) - 2;
+  const pts = closes.map((v, i) =>
+    `${((i / (closes.length - 1)) * W).toFixed(1)},${toY(v).toFixed(1)}`
+  ).join(" ");
+  const lastX = W, lastY = toY(closes[closes.length - 1]);
   const entY = entry != null ? toY(entry) : null;
-
   return (
     <div className="bl-insp-chart">
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {entY != null && (
-          <line x1={0} y1={entY} x2={W} y2={entY} stroke="#cbb274" strokeWidth="0.75" strokeDasharray="3 3" opacity="0.7" />
+          <line x1={0} y1={entY} x2={W} y2={entY} stroke="#cbb274" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
         )}
         <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.5" />
-        <circle cx={lastX} cy={lastY} r={3} fill={up ? "#7fb88a" : "#d98b8b"} />
+        <circle cx={lastX} cy={lastY} r={2.5} fill={up ? "#7fb88a" : "#d98b8b"} />
       </svg>
       <div className="bl-insp-chart-labels">
         <span>{fmtPx(min)}</span>
-        {entY != null && <span style={{ color: "#cbb274" }}>entry {fmtPx(entry!)}</span>}
+        {entry != null && <span style={{ color: "#cbb274" }}>entry {fmtPx(entry)}</span>}
         <span>{fmtPx(max)}</span>
       </div>
     </div>
   );
 }
 
-function StatusBadge({ s }: { s: IdeaStatus }) {
-  const cls = s === "TRIG" ? "bl-st-trig" : s === "INVLD" ? "bl-st-invld" : "bl-st-watch";
-  return <span className={`bl-st ${cls}`}>{s}</span>;
+// ── PageHeader ───────────────────────────────────────────────────────────────
+
+function PageHeader({
+  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief,
+}: {
+  data: Overview;
+  clock: string;
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  blotter: BlotterIdea[];
+  busy: string | null;
+  onSync: () => void;
+  onGenerateBrief: () => void;
+}) {
+  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
+  for (const idea of blotter) {
+    const s = deriveStatus(idea);
+    if (s === "TRIG") counts.TRIG++;
+    else if (s === "ARMED") counts.ARMED++;
+    else if (s === "ACTIVE") counts.ACTIVE++;
+  }
+
+  const tabs: { key: Tab; label: string; fkey: string }[] = [
+    { key: "BOARD", label: "BOARD", fkey: "F1" },
+    { key: "BRIEF", label: "BRIEF", fkey: "F2" },
+    { key: "SOURCES", label: "SOURCES", fkey: "F3" },
+    { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
+    { key: "ASK", label: "ASK", fkey: "F5" },
+  ];
+
+  const briefAge = data.lastBriefAt
+    ? `${Math.round((Date.now() - data.lastBriefAt) / 60000)}m`
+    : null;
+
+  return (
+    <div className="bl-head">
+      <div className="bl-head-row1">
+        <span className="bl-head-title">MARKET INTEL</span>
+        <span className="bl-head-live" />
+        <span className="bl-head-livebadge">LIVE</span>
+        <span className="bl-head-date">{data.clock.nice.toUpperCase()}</span>
+        <span className="bl-head-session">
+          DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
+        </span>
+        <div className="bl-head-tabs">
+          {tabs.map((t) => (
+            <button key={t.key} className={`bl-head-tab${tab === t.key ? " on" : ""}`} onClick={() => onTab(t.key)}>
+              <span className="bl-tab-fkey">{t.fkey}</span>{t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="bl-head-row2">
+        {counts.TRIG > 0 && (
+          <div className="bl-sp bl-sp-trig">
+            <span className="bl-sp-dot" />
+            {counts.TRIG} TRIGGERED
+          </div>
+        )}
+        {counts.ARMED > 0 && <div className="bl-sp bl-sp-arm">{counts.ARMED} ARMED</div>}
+        {counts.ACTIVE > 0 && <div className="bl-sp bl-sp-active">{counts.ACTIVE} ACTIVE</div>}
+        {briefAge && (
+          <span className="bl-brief-age-pill">{briefAge}</span>
+        )}
+        <div className="bl-head-row2-right">
+          <button className="ibtn ibtn-sm" disabled={busy === "sync"} onClick={onSync}>
+            {busy === "sync" ? "Syncing…" : "SYNC"}
+          </button>
+          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} onClick={onGenerateBrief}>
+            {busy === "brief" ? "…" : "BRIEF"}
+          </button>
+          <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">EXPORT</a>
+          <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({
-  data, clock,
-}: {
-  data: Overview;
-  clock: string;
-}) {
+function StatusBar({ data, clock }: { data: Overview; clock: string }) {
   const { config, lastSync, lastBriefAt } = data;
+  const items = [
+    { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), cls: "" },
+    { label: "DATA", val: "LIVE", cls: "bl-sb-ok" },
+    { label: "FEED", val: "WS-CONNECTED", cls: "bl-sb-ok" },
+    { label: "LATENCY", val: "—ms", cls: "" },
+    { label: "KEY", val: config.youtube ? "YT_API SET" : "YT_API UNSET", cls: config.youtube ? "bl-sb-ok" : "bl-sb-warn" },
+    { label: "LAST SYNC", val: lastSync ? `${Math.round((Date.now() - lastSync) / 60000)}m` : "—", cls: "" },
+    { label: "BRIEF", val: lastBriefAt ? `${Math.round((Date.now() - lastBriefAt) / 60000)}m` : "—", cls: "" },
+  ];
   return (
     <div className="bl-statusbar">
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">Session</span>
-        <span className="bl-sb-val">{data.clock.sessionLabel}</span>
-      </div>
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">AI</span>
-        <span className={config.ai ? "bl-sb-ok bl-sb-val" : "bl-sb-err bl-sb-val"}>
-          {config.ai ? "ON" : "OFF"}
-        </span>
-      </div>
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">Storage</span>
-        <span className={config.storage ? "bl-sb-ok bl-sb-val" : "bl-sb-err bl-sb-val"}>
-          {config.storage ? "OK" : "MISSING"}
-        </span>
-      </div>
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">YT Key</span>
-        <span className={config.youtube ? "bl-sb-ok bl-sb-val" : "bl-sb-warn bl-sb-val"}>
-          {config.youtube ? "ON" : "—"}
-        </span>
-      </div>
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">Sync</span>
-        <span className="bl-sb-val">{ago(lastSync)}</span>
-      </div>
-      <div className="bl-sb-item">
-        <span className="bl-sb-label">Brief</span>
-        <span className="bl-sb-val">{lastBriefAt ? ago(lastBriefAt) : "—"}</span>
-      </div>
+      {items.map((it) => (
+        <div key={it.label} className="bl-sb-item">
+          <span className="bl-sb-label">{it.label}</span>
+          <span className={`bl-sb-val ${it.cls}`}>{it.val}</span>
+        </div>
+      ))}
       <div className="bl-sb-item bl-sb-clock">
         <span className="bl-sb-label">ET</span>
         <span className="bl-sb-val">{clock}</span>
@@ -246,52 +316,37 @@ function StatusBar({
 
 // ── LiveTape ─────────────────────────────────────────────────────────────────
 
-function LiveTape({ tape }: { tape: TapeQuote[] }) {
+type TapeItem =
+  | { kind: "macro"; sym: string; price: number; chgPct: number }
+  | { kind: "watch"; sym: string; price: number; chgPct: number; status: IdeaStatus };
+
+function LiveTape({ tape }: { tape: TapeItem[] }) {
+  const macro = tape.filter((t) => t.kind === "macro") as Extract<TapeItem, { kind: "macro" }>[];
+  const watch = tape.filter((t) => t.kind === "watch") as Extract<TapeItem, { kind: "watch" }>[];
+  const stCls: Record<IdeaStatus, string> = {
+    TRIG: "bl-st-trig", ARMED: "bl-st-arm", ACTIVE: "bl-st-active", WATCH: "bl-st-watch", INVLD: "bl-st-invld",
+  };
   return (
     <div className="bl-tape">
-      {tape.map((t) => (
+      {macro.map((t) => (
         <div key={t.sym} className="bl-tape-item">
-          <span className="bl-tape-sym">{t.sym}</span>
+          <span className="bl-tape-sym">{t.sym.replace(/^\^/, "")}</span>
           <span className="bl-tape-px">{fmtPx(t.price)}</span>
-          <span className={`bl-tape-chg ${t.up ? "bl-tape-up" : "bl-tape-dn"}`}>{fmtPct(t.chgPct)}</span>
+          <span className={`bl-tape-chg ${t.chgPct >= 0 ? "bl-tape-up" : "bl-tape-dn"}`}>{fmtPct(t.chgPct)}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── TabNav ───────────────────────────────────────────────────────────────────
-
-function TabNav({
-  tab, onTab, ideaCount, sourceCount,
-}: {
-  tab: Tab;
-  onTab: (t: Tab) => void;
-  ideaCount: number;
-  sourceCount: number;
-}) {
-  const tabs: { key: Tab; label: string; fkey: string; count?: number }[] = [
-    { key: "BOARD", label: "BOARD", fkey: "F1", count: ideaCount },
-    { key: "BRIEF", label: "BRIEF", fkey: "F2" },
-    { key: "SOURCES", label: "SOURCES", fkey: "F3", count: sourceCount },
-    { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
-    { key: "ASK", label: "ASK", fkey: "F5" },
-  ];
-  return (
-    <div className="bl-tabs">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          className={`bl-tab${tab === t.key ? " on" : ""}`}
-          onClick={() => onTab(t.key)}
-        >
-          <span className="bl-tab-fkey">{t.fkey}</span>
-          {t.label}
-          {t.count != null && t.count > 0 && (
-            <span style={{ opacity: 0.45, fontSize: 8, marginLeft: 5 }}>{t.count}</span>
-          )}
-        </button>
-      ))}
+      {watch.length > 0 && (
+        <>
+          <div className="bl-tape-sep">WATCHLIST</div>
+          {watch.map((t) => (
+            <div key={t.sym} className="bl-tape-item">
+              <span className="bl-tape-sym">{t.sym}</span>
+              <span className="bl-tape-px">${fmtPx(t.price)}</span>
+              <span className={`bl-st ${stCls[t.status]}`} style={{ fontSize: 7.5, padding: "1px 4px" }}>{t.status}</span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -309,12 +364,12 @@ function BlotterRow({
   const dt = deltaTrig(idea);
   const up = idea.direction === "bullish";
   const closes = idea.quote?.closes ?? [];
+  const ns = <span className="bl-ns">⌀ n/s</span>;
 
-  const entText = idea.entry?.value != null ? fmtPx(idea.entry.value) : "⌀ n/s";
-  const invText = idea.invalidation?.value != null ? fmtPx(idea.invalidation.value) : "⌀ n/s";
-  const tgtText = idea.targets[0]?.value != null ? fmtPx(idea.targets[0].value) : "⌀ n/s";
-  const liveText = idea.quote?.price != null ? fmtPx(idea.quote.price) : "⌀ n/s";
-
+  const entText = idea.entry?.value != null ? `$${fmtPx(idea.entry.value)}` : ns;
+  const invText = idea.invalidation?.value != null ? `$${fmtPx(idea.invalidation.value)}` : ns;
+  const tgtText = idea.targets[0]?.value != null ? `$${fmtPx(idea.targets[0].value)}` : ns;
+  const liveText = idea.quote?.price != null ? `$${fmtPx(idea.quote.price)}` : ns;
   const dtCls = dt === "—" ? "" : dt.startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg";
 
   return (
@@ -322,22 +377,18 @@ function BlotterRow({
       <td className="bl-c-status"><StatusBadge s={status} /></td>
       <td className="bl-c-ticker">{idea.ticker}</td>
       <td className="bl-c-dir">
-        {idea.direction === "bullish"
-          ? <span className="bl-bull-glyph">▲</span>
-          : idea.direction === "bearish"
-          ? <span className="bl-bear-glyph">▼</span>
+        {idea.direction === "bullish" ? <span className="bl-bull-glyph">▲</span>
+          : idea.direction === "bearish" ? <span className="bl-bear-glyph">▼</span>
           : <span className="bl-neut-glyph">—</span>}
       </td>
       <td className="bl-c-tf">{TF_LABEL[idea.timeHorizon] ?? "—"}</td>
-      <td className="bl-c-setup" title={idea.thesis}>{idea.thesis.slice(0, 40)}</td>
+      <td className="bl-c-setup" title={idea.thesis}>{idea.thesis.slice(0, 38)}</td>
       <td className="bl-c-num">{entText}</td>
       <td className="bl-c-num">{invText}</td>
       <td className="bl-c-num">{tgtText}</td>
       <td className="bl-c-live">{liveText}</td>
       <td className={`bl-c-delta ${dtCls}`}>{dt}</td>
-      <td className="bl-c-spark">
-        <MiniSpark closes={closes} up={up} />
-      </td>
+      <td className="bl-c-spark"><MiniSpark closes={closes} up={up} /></td>
       <td className="bl-c-conf">{(idea.confidence * 100).toFixed(0)}%</td>
       <td className="bl-c-evid">
         <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
@@ -360,16 +411,16 @@ function BlotterTable({
   if (ideas.length === 0) {
     return (
       <div className="bl-empty">
-        <div className="bl-empty-title">NO IDEAS</div>
-        <div>Generate a brief to populate the blotter.</div>
+        <div className="bl-empty-title">BLOTTER EMPTY</div>
+        <div>Add sources → process transcripts → generate brief.</div>
       </div>
     );
   }
 
+  const GROUP_ORDER = ["TODAY · TOP IDEAS", "SHORT-TERM · SWING", "LONG-TERM"];
   const groups: Record<string, BlotterIdea[]> = {};
-  const order = ["Today · Top Ideas", "Short-term · Swing", "Long-term"];
   for (const idea of ideas) {
-    const g = TF_GROUP[idea.timeHorizon] ?? "Long-term";
+    const g = TF_GROUP[idea.timeHorizon] ?? "LONG-TERM";
     if (!groups[g]) groups[g] = [];
     groups[g].push(idea);
   }
@@ -379,29 +430,19 @@ function BlotterTable({
       <table className="bl-table">
         <thead className="bl-thead">
           <tr>
-            <th>STATUS</th>
-            <th>TICKER</th>
-            <th>DIR</th>
-            <th>TF</th>
-            <th>SETUP</th>
-            <th>TRIGGER</th>
-            <th>INVALID</th>
-            <th>TARGET</th>
-            <th>LIVE</th>
-            <th>Δ-TRIG</th>
-            <th>SPARK</th>
-            <th>CONF</th>
-            <th>EVID</th>
+            <th>STATUS</th><th>TICKER</th><th>DIR</th><th>TF</th><th>SETUP</th>
+            <th>TRIGGER</th><th>INVALID</th><th>TARGET</th><th>LIVE</th>
+            <th>Δ-TRIG</th><th>SPARK</th><th>CONF</th><th>EVID</th>
           </tr>
         </thead>
         <tbody>
-          {order.map((g) => {
+          {GROUP_ORDER.map((g) => {
             const rows = groups[g];
             if (!rows?.length) return null;
             return (
               <>
                 <tr key={`hd-${g}`}>
-                  <td colSpan={13} className="bl-section-head">{g}</td>
+                  <td colSpan={13} className="bl-section-head">{g.toLowerCase()}</td>
                 </tr>
                 {rows.map((idea) => (
                   <BlotterRow
@@ -416,6 +457,110 @@ function BlotterTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── OptionsIntelPanel ────────────────────────────────────────────────────────
+
+function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
+  const [open, setOpen] = useState(false);
+  if (!brief?.options) return null;
+  const { bestCreatorPlays, augustCandidates } = brief.options;
+  const playCount = bestCreatorPlays.length;
+  const candCount = augustCandidates.length;
+  if (!playCount && !candCount) return null;
+
+  const optDir = (o: OptionBriefIdea) =>
+    o.direction === "bullish" ? <span className="bl-bull-glyph" style={{ fontSize: 9 }}>▲ BULL</span>
+    : o.direction === "bearish" ? <span className="bl-bear-glyph" style={{ fontSize: 9 }}>▼ BEAR</span>
+    : <span className="bl-neut-glyph" style={{ fontSize: 9 }}>— NEUT</span>;
+
+  const optContract = (o: OptionBriefIdea) => {
+    if (!o.legs.length) return "—";
+    return o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}`).join(" / ");
+  };
+
+  return (
+    <div className="bl-optx">
+      <button className="bl-optx-toggle" onClick={() => setOpen((o) => !o)}>
+        <span style={{ marginRight: 4, opacity: 0.5 }}>{open ? "▾" : "▸"}</span>
+        <span className="bl-optx-title">OPTIONS INTEL</span>
+        <span style={{ opacity: 0.45 }}>creator option plays · AUGUST candidates · secondary</span>
+        <div className="bl-optx-counts">
+          {playCount > 0 && <span className="bl-optx-cp">{playCount} PLAY{playCount !== 1 ? "S" : ""}</span>}
+          {candCount > 0 && <span className="bl-optx-cp">{candCount} CANDIDATE{candCount !== 1 ? "S" : ""}</span>}
+        </div>
+      </button>
+      {open && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="bl-optx-table">
+            <thead>
+              <tr>
+                <th className="bl-optx-th">TICKER</th>
+                <th className="bl-optx-th">STRUCTURE</th>
+                <th className="bl-optx-th">DIR</th>
+                <th className="bl-optx-th">REF LEVEL</th>
+                <th className="bl-optx-th">SIZING / EXPIRY</th>
+                <th className="bl-optx-th">EVIDENCE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bestCreatorPlays.length > 0 && (
+                <>
+                  <tr className="bl-optx-section-row"><td colSpan={6}>CREATOR PLAYS</td></tr>
+                  {bestCreatorPlays.map((o, i) => (
+                    <tr key={i}>
+                      <td className="bl-optx-td bl-optx-tkr">{o.underlyingSymbol}</td>
+                      <td className="bl-optx-td">{o.strategyType.replace(/_/g, " ")}</td>
+                      <td className="bl-optx-td">{optDir(o)}</td>
+                      <td className="bl-optx-td" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
+                        {optContract(o)}
+                      </td>
+                      <td className="bl-optx-td" style={{ fontSize: 10, opacity: 0.7 }}>
+                        {o.quotedPremium != null ? `$${o.quotedPremium}` : <span className="bl-ns">∅ not sized</span>}
+                        {o.expirationText?.resolved ? ` → ${o.expirationText.resolved}` : o.expirationText?.text ? ` → ${o.expirationText.text}` : ""}
+                      </td>
+                      <td className="bl-optx-td">
+                        <span className={`bl-ev ${o.origin === "creator_explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
+                          {o.origin === "creator_explicit" ? "DIRECT" : "INFERRED"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              )}
+              {augustCandidates.length > 0 && (
+                <>
+                  <tr className="bl-optx-section-row">
+                    <td colSpan={3}>AUGUST CANDIDATES</td>
+                    <td colSpan={3} style={{ opacity: 0.35, fontSize: 7, fontFamily: "var(--font-mono), monospace", textTransform: "uppercase" }}>
+                      AUGUST-generated · not creator-stated
+                    </td>
+                  </tr>
+                  {augustCandidates.map((o, i) => (
+                    <tr key={i}>
+                      <td className="bl-optx-td bl-optx-tkr">{o.underlyingSymbol}</td>
+                      <td className="bl-optx-td">{o.strategyType.replace(/_/g, " ")}</td>
+                      <td className="bl-optx-td">{optDir(o)}</td>
+                      <td className="bl-optx-td" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
+                        {o.legs[0]?.strike != null ? <span style={{ color: "var(--bone)" }}>${o.legs[0].strike}</span> : <span className="bl-ns">∅ not sized</span>}
+                      </td>
+                      <td className="bl-optx-td"><span className="bl-ns">∅ not sized</span></td>
+                      <td className="bl-optx-td">
+                        <span className="bl-ev bl-ev-inferred">INFERRED</span>
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
+          <div className="bl-optx-foot">
+            ∿ AUGUST suggests the structure and references the quoted equity trigger — never the strike or size. ∅ not sized until you set it.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -437,99 +582,161 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
   const entVal = idea.entry?.value ?? null;
   const invVal = idea.invalidation?.value ?? null;
   const tgt = idea.targets[0];
+  const conf = (idea.confidence * 100).toFixed(0);
+
+  const hasEntry = entVal != null && entVal > 0;
+  const priceActionNote = !hasEntry
+    ? "← NO PRICE TRIGGER · THESIS-DRIVEN — read catalyst + invalidation"
+    : status === "TRIG" ? `← TRIGGERED at $${fmtPx(entVal!)}`
+    : status === "ARMED" ? `← APPROACHING ENTRY $${fmtPx(entVal!)} (${deltaTrig(idea)})`
+    : `← ENTRY $${fmtPx(entVal!)} · ${deltaTrig(idea)} from trigger`;
 
   return (
     <div>
-      <div className="bl-insp-ticker">{idea.ticker}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <div className="bl-insp-ticker">{idea.ticker}</div>
+        <StatusBadge s={status} />
+        {idea.__fav && <span className="badge b-fav" style={{ fontSize: 8 }}>FAV</span>}
+      </div>
       {idea.assetName && (
-        <div style={{ fontSize: 11, color: "var(--ash)", marginBottom: 4, fontFamily: "var(--font-mono), monospace" }}>
+        <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--ash)", opacity: 0.6, marginBottom: 6 }}>
           {idea.assetName}
         </div>
       )}
-      <div className="bl-insp-badges">
-        <StatusBadge s={status} />
-        <DirBadge d={idea.direction} />
-        <span className="badge b-neutral">{idea.timeHorizon.replace("_", " ")}</span>
-        {idea.__fav && <span className="badge b-fav">Favorite</span>}
-        <ExpBadge e={idea.explicitness} />
-      </div>
 
-      <p className="bl-insp-thesis">{idea.thesis}</p>
-
+      {/* Live price block */}
       {idea.quote && (
-        <InspChart
-          closes={idea.quote.closes}
-          entry={entVal}
-          price={idea.quote.price}
-          up={up}
-        />
+        <div className="bl-insp-price-block">
+          <div className="bl-insp-price-live">LIVE · REAL-TIME</div>
+          <span className="bl-insp-price">${fmtPx(idea.quote.price)}</span>
+          <span className={`bl-insp-price-chg ${idea.quote.chgPct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg"}`}>
+            {fmtPct(idea.quote.chgPct)}
+          </span>
+        </div>
       )}
 
-      <div className="bl-insp-grid">
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Live</div>
-          <div className="bl-insp-field-val">
-            {idea.quote ? `$${fmtPx(idea.quote.price)}` : <span className="bl-ns">⌀ n/s</span>}
+      {/* Meta grid: DIR / TF / CONF / RANK */}
+      <div className="bl-insp-meta-grid">
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">DIR</div>
+          <div className={`bl-insp-meta-val ${up ? "bl-dlt-pos" : idea.direction === "bearish" ? "bl-dlt-neg" : ""}`}>
+            {up ? "BULL" : idea.direction === "bearish" ? "BEAR" : "NEUT"}
           </div>
         </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Chg</div>
-          <div className={`bl-insp-field-val ${idea.quote ? (idea.quote.chgPct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg") : ""}`}>
-            {idea.quote ? fmtPct(idea.quote.chgPct) : <span className="bl-ns">—</span>}
-          </div>
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">TIMEFRAME</div>
+          <div className="bl-insp-meta-val">{TF_FULL[idea.timeHorizon] ?? idea.timeHorizon}</div>
         </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Entry</div>
-          <div className="bl-insp-field-val">{val(idea.entry)}</div>
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">CONF</div>
+          <div className="bl-insp-meta-val">{conf}%</div>
         </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Δ-Trigger</div>
-          <div className={`bl-insp-field-val ${
-            deltaTrig(idea) === "—" ? "" : deltaTrig(idea).startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg"
-          }`}>{deltaTrig(idea)}</div>
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">RANK</div>
+          <div className="bl-insp-meta-val">{idea.rankScore.toFixed(2)}</div>
         </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Invalidation</div>
-          <div className="bl-insp-field-val">{val(idea.invalidation)}</div>
-        </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Target</div>
-          <div className="bl-insp-field-val">{tgt ? val(tgt) : <span className="bl-ns">⌀ n/s</span>}</div>
-        </div>
-        <div className="bl-insp-field">
-          <div className="bl-insp-field-label">Confidence</div>
-          <div className="bl-insp-field-val">{(idea.confidence * 100).toFixed(0)}%</div>
-        </div>
-        {idea.catalysts[0] && (
-          <div className="bl-insp-field">
-            <div className="bl-insp-field-label">Catalyst</div>
-            <div className="bl-insp-field-val">{idea.catalysts[0]}</div>
-          </div>
-        )}
+      </div>
+
+      {/* Direction + evidence badges */}
+      <div className="bl-insp-badges">
+        <DirBadge d={idea.direction} />
+        <ExpBadge e={idea.explicitness} />
+        {idea.creatorDesignation.isPrediction && <span className="badge b-pred">Prediction</span>}
+      </div>
+
+      {/* Thesis */}
+      <p className="bl-insp-thesis">{idea.thesis}</p>
+
+      {/* Sparkline chart */}
+      {idea.quote && (
+        <InspChart closes={idea.quote.closes} entry={entVal} up={up} />
+      )}
+
+      {/* Price action note */}
+      <div className="bl-pa-section">
+        <div className="bl-pa-label">PRICE ACTION</div>
+        <div className="bl-pa-note">{priceActionNote}</div>
       </div>
 
       <hr className="bl-insp-sep" />
-      <div className="bl-insp-evid-head">Evidence</div>
-      <div className="bl-insp-evid">
-        <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
-          {idea.explicitness === "explicit" ? "SRC" : "INF"}
-        </span>
-        <span style={{ fontSize: 11, color: "var(--ash)" }}>
-          {idea.explicitness === "explicit" ? "Creator stated directly" : "AUGUST inference"}
-        </span>
+
+      {/* Levels */}
+      <div className="bl-lev-section">
+        <div className="bl-lev-section-head">LEVELS · EACH TAGGED BY EVIDENCE</div>
+        <div className="bl-lev-grid2">
+          <div className="bl-lev-cell">
+            <div className="bl-lev-cell-label">ENTRY</div>
+            <div className="bl-lev-cell-val">
+              {entVal != null ? <b>${fmtPx(entVal)}</b> : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
+            </div>
+          </div>
+          <div className="bl-lev-cell">
+            <div className="bl-lev-cell-label">TRIGGER</div>
+            <div className="bl-lev-cell-val">
+              {idea.entry?.text && !/not specified/i.test(idea.entry.text)
+                ? <b>{idea.entry.text}</b>
+                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
+            </div>
+          </div>
+          <div className="bl-lev-cell">
+            <div className="bl-lev-cell-label">
+              INVALIDATION
+              {invVal != null && <span className="bl-ev bl-ev-direct" style={{ marginLeft: 5 }}>DIRECT</span>}
+            </div>
+            <div className="bl-lev-cell-val">
+              {invVal != null
+                ? <b>${fmtPx(invVal)}</b>
+                : idea.invalidation?.text && !/not specified/i.test(idea.invalidation.text)
+                ? <span style={{ color: "var(--bone)", fontSize: 11 }}>{idea.invalidation.text}</span>
+                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
+            </div>
+          </div>
+          <div className="bl-lev-cell">
+            <div className="bl-lev-cell-label">TARGET</div>
+            <div className="bl-lev-cell-val">
+              {tgt?.value != null
+                ? <b>${fmtPx(tgt.value)}</b>
+                : tgt?.text && !/not specified/i.test(tgt.text)
+                ? <span style={{ color: "var(--bone)", fontSize: 11 }}>{tgt.text}</span>
+                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
+            </div>
+          </div>
+        </div>
       </div>
-      {idea.channelTitle && (
-        <div style={{ fontSize: 10.5, color: "var(--ash)", marginTop: 6 }}>{idea.channelTitle}</div>
+
+      {/* Catalyst */}
+      {idea.catalysts.length > 0 && (
+        <>
+          <hr className="bl-insp-sep" />
+          <div className="bl-lev-cell-label" style={{ marginBottom: 4 }}>
+            CATALYST
+            <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`} style={{ marginLeft: 6 }}>
+              {idea.explicitness === "explicit" ? "DIRECT" : "INFERRED"}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--bone)", lineHeight: 1.4 }}>{idea.catalysts[0]}</div>
+        </>
+      )}
+
+      {/* Confidence bar */}
+      <div className="bl-conf-row">
+        <span className="bl-conf-pct">CONF</span>
+        <div className="bl-conf-bar-wrap">
+          <div className="bl-conf-bar-fill" style={{ width: `${conf}%` }} />
+        </div>
+        <span className="bl-conf-pct">{conf}%</span>
+      </div>
+
+      {/* Cite */}
+      {idea.videoId && (
+        <div className="bl-insp-cite2">
+          · {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
+          {idea.rankScore !== undefined ? ` · rank ${idea.rankScore.toFixed(2)}` : ""}
+        </div>
       )}
       {idea.videoId && (
-        <a
-          className="bl-insp-cite"
-          href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          ▸ {idea.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}
-          {idea.rankScore !== undefined ? ` · rank ${idea.rankScore}` : ""}
+        <a className="bl-insp-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
+          ▸ open source
         </a>
       )}
     </div>
@@ -539,124 +746,97 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
 // ── LeftPanel ────────────────────────────────────────────────────────────────
 
 function LeftPanel({
-  brief, sources, videos, onOpenVideo, config, onReload, removeSource, busy, onSync, onGenerateBrief,
+  brief, sources, videos, onOpenVideo, onReload, removeSource, quotes,
 }: {
   brief: DailyBrief | null;
   sources: IntelSource[];
   videos: IntelVideo[];
   onOpenVideo: (id: string) => void;
-  config: Overview["config"];
   onReload: () => Promise<void>;
   removeSource: (id: string) => Promise<void>;
-  busy: string | null;
-  onSync: () => void;
-  onGenerateBrief: () => void;
+  quotes: QuoteMap;
 }) {
   return (
     <div className="bl-left">
-      {/* actions */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        <button className="ibtn ibtn-sm" disabled={busy === "sync"} onClick={onSync}>
-          {busy === "sync" ? "Syncing…" : "Sync"}
-        </button>
-        <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !config.ai} onClick={onGenerateBrief}>
-          {busy === "brief" ? "…" : "Brief"}
-        </button>
-        <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">Export</a>
-        <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
-      </div>
-
-      {/* condensed brief summary */}
       {brief && (
         <>
-          <div className="bl-ph">Summary</div>
+          <div className="bl-ph">Tonight&apos;s Brief</div>
           {brief.posture && <p className="bl-brief-posture">{brief.posture}</p>}
           <dl style={{ margin: 0 }}>
             {brief.watchAtOpen && (
-              <div className="bl-brief-field">
-                <dt>At open</dt><dd>{brief.watchAtOpen}</dd>
-              </div>
+              <div className="bl-brief-field"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
             )}
             {brief.whatMattersTomorrow && (
-              <div className="bl-brief-field">
-                <dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd>
-              </div>
+              <div className="bl-brief-field"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>
             )}
             {brief.invalidation && (
-              <div className="bl-brief-field">
-                <dt>Invalidation</dt><dd>{brief.invalidation}</dd>
-              </div>
+              <div className="bl-brief-field"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>
             )}
           </dl>
           {(brief.bullCase || brief.bearCase) && (
-            <div className="bl-bullbear" style={{ marginTop: 10 }}>
-              <div className="bl-bull">
-                <div className="bl-bull-h">BULL</div>
-                <p>{brief.bullCase || "—"}</p>
-              </div>
-              <div className="bl-bear">
-                <div className="bl-bear-h">BEAR</div>
-                <p>{brief.bearCase || "—"}</p>
-              </div>
+            <div className="bl-bullbear" style={{ marginTop: 8 }}>
+              <div className="bl-bull"><div className="bl-bull-h">BULL</div><p>{brief.bullCase || "—"}</p></div>
+              <div className="bl-bear"><div className="bl-bear-h">BEAR</div><p>{brief.bearCase || "—"}</p></div>
             </div>
           )}
         </>
       )}
 
-      {/* AT THE OPEN levels */}
+      {/* AT THE OPEN */}
       {brief && brief.levels.length > 0 && (
         <>
           <div className="bl-ph">AT THE OPEN</div>
-          {brief.levels.slice(0, 12).map((l) => (
-            <div key={l.id} className="bl-atopen-row">
-              <span className="bl-atopen-inst">{l.instrument}</span>
-              <span className={`badge b-neutral`} style={{ fontSize: 8.5 }}>{l.type}</span>
-              <span className={`bl-atopen-px ${l.type === "support" ? "bl-lvl-r" : l.type === "resistance" ? "bl-lvl-s" : "bl-lvl-ref"}`}>
-                {l.level !== null ? l.level : <span className="bl-ns">{l.levelText || "⌀ n/s"}</span>}
-              </span>
-              {l.videoId
-                ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
-                : <span />}
-            </div>
-          ))}
+          {brief.levels.slice(0, 10).map((l) => {
+            const { label, cls } = atOpenState(l, quotes);
+            return (
+              <div key={l.id} className="bl-atopen-row">
+                <span className="bl-atopen-inst">{l.instrument}</span>
+                <span style={{ fontSize: 10, color: "var(--ash)", opacity: 0.7 }}>
+                  {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
+                  {l.level != null && <b style={{ marginLeft: 4, color: "var(--bone)", fontFamily: "var(--font-mono), monospace" }}>${l.level}</b>}
+                </span>
+                <span className={cls || "bl-ns"}>{label}</span>
+              </div>
+            );
+          })}
         </>
       )}
 
-      {/* source monitor mini */}
       <div className="bl-ph">Sources · {sources.length}</div>
       {sources.length === 0
-        ? <div className="istate" style={{ fontSize: 11 }}>No sources yet.</div>
+        ? <div className="istate" style={{ fontSize: 11 }}>No sources.</div>
         : sources.map((s) => (
-          <div key={s.id} className="irow" style={{ padding: "5px 0" }}>
+          <div key={s.id} className="irow" style={{ padding: "4px 0" }}>
             {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
             <div className="irow-main">
               <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
               <div className="irow-meta">
                 <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
+                <span style={{ fontSize: 9, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
               </div>
             </div>
-            <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9.5 }} onClick={() => removeSource(s.id)}>✕</button>
+            <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9 }} onClick={() => removeSource(s.id)}>✕</button>
           </div>
         ))}
 
-      {/* video library mini */}
       <div className="bl-ph">Videos · {videos.length}</div>
       {videos.length === 0
         ? <div className="istate" style={{ fontSize: 11 }}>No videos yet.</div>
-        : videos.slice(0, 10).map((v) => (
-          <div key={v.videoId} className="irow clickable" style={{ padding: "5px 0" }} onClick={() => onOpenVideo(v.videoId)}>
+        : videos.slice(0, 8).map((v) => (
+          <div key={v.videoId} className="irow clickable" style={{ padding: "4px 0" }} onClick={() => onOpenVideo(v.videoId)}>
             {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
             <div className="irow-main">
-              <div className="irow-title" style={{ fontSize: 11 }}>{v.title}</div>
+              <div className="irow-title" style={{ fontSize: 10.5 }}>{v.title}</div>
               <div className="irow-meta">
-                {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7.5 }}>Analyzed</span>}
-                {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7.5 }}>Processing</span>}
+                {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7 }}>Analyzed</span>}
+                {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7 }}>Processing</span>}
+                {v.liveState === "live" && <span className="badge b-live" style={{ fontSize: 7 }}>Live</span>}
               </div>
             </div>
           </div>
         ))}
 
-      <div className="bl-ph">Add Source</div>
+      <div className="bl-ph">Add Sources</div>
       <AddSource onReload={onReload} compact />
     </div>
   );
@@ -700,7 +880,7 @@ function AskBar({ ai }: { ai: boolean }) {
       )}
       <input
         className="bl-askbar-input"
-        placeholder={ai ? "Ask AUGUST about your sources… (Enter to send)" : "Ask AUGUST (needs ANTHROPIC_API_KEY)"}
+        placeholder={ai ? "> what did the source say about QQQ, and which ideas have no stated invalidation?" : "> ask AUGUST (needs ANTHROPIC_API_KEY)"}
         value={q}
         disabled={!ai}
         onChange={(e) => setQ(e.target.value)}
@@ -713,15 +893,9 @@ function AskBar({ ai }: { ai: boolean }) {
   );
 }
 
-// ── sub-components preserved for tab views ───────────────────────────────────
+// ── preserved sub-components ─────────────────────────────────────────────────
 
-function IdeaCard({
-  idea, favorite, onOpenVideo,
-}: {
-  idea: BriefIdea | TradeIdea;
-  favorite?: boolean;
-  onOpenVideo?: (id: string) => void;
-}) {
+function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea; favorite?: boolean; onOpenVideo?: (id: string) => void }) {
   const b = idea as BriefIdea;
   return (
     <div className="idea">
@@ -821,8 +995,6 @@ function ConsensusRow({ c }: { c: ConsensusItem }) {
   );
 }
 
-// ── AddSource ─────────────────────────────────────────────────────────────────
-
 type AddResult = { url: string; status: "ok" | "exists" | "err"; label: string };
 
 function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compact?: boolean }) {
@@ -839,9 +1011,7 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
     for (const url of urls) {
       try {
         const r = await fetch("/api/intel/sources", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
         });
         const j = await r.json();
         if (j.ok) out.push({ url, status: "ok", label: j.source?.title ?? url });
@@ -860,22 +1030,22 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
       <div>
         <textarea
           className="iinput iadd-ta"
-          style={{ fontSize: 11, minHeight: 52 }}
-          placeholder="URL(s), newline- or comma-separated"
+          style={{ fontSize: 10.5, minHeight: 48 }}
+          placeholder={"Paste URL · @handle · video\n(newline or comma-separated)"}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
         />
-        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+        <div style={{ marginTop: 5, display: "flex", gap: 6, alignItems: "center" }}>
           <button className="ibtn ibtn-sm ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
             {busy ? "Adding…" : "Add"}
           </button>
-          <span className="inote" style={{ fontSize: 9.5 }}>Ctrl+Enter</span>
+          <span className="inote" style={{ fontSize: 9 }}>Ctrl+Enter</span>
         </div>
         {results.length > 0 && (
           <div className="iadd-results">
             {results.map((r, i) => (
-              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 10 }}>
+              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 9.5 }}>
                 {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
               </div>
             ))}
@@ -974,16 +1144,7 @@ function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: s
   );
 }
 
-// ── VideoDrawer ───────────────────────────────────────────────────────────────
-
-function VideoDrawer({
-  videoId, onClose, onProcessed, aiOn,
-}: {
-  videoId: string;
-  onClose: () => void;
-  onProcessed: () => void;
-  aiOn: boolean;
-}) {
+function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string; onClose: () => void; onProcessed: () => void; aiOn: boolean }) {
   const [bundle, setBundle] = useState<{ video: IntelVideo; analysis: VideoAnalysis | null; chapters: Chapter[] } | null>(null);
   const [transcript, setTranscript] = useState("");
   const [busy, setBusy] = useState(false);
@@ -997,13 +1158,10 @@ function VideoDrawer({
   useEffect(() => { load(); }, [load]);
 
   const process = useCallback(async () => {
-    setBusy(true);
-    setErr(null);
+    setBusy(true); setErr(null);
     try {
       const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/transcript`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript }),
       });
       const j = await r.json();
       if (!j.ok) setErr(`Processing failed: ${j.error ?? "error"}`);
@@ -1011,27 +1169,13 @@ function VideoDrawer({
     } finally { setBusy(false); }
   }, [transcript, videoId, load, onProcessed]);
 
-  const v = bundle?.video;
-  const a = bundle?.analysis;
-  const chapters = bundle?.chapters ?? [];
-  const selectedChapter = selectedChapterSec !== null
-    ? chapters.find((ch) => ch.startSeconds === selectedChapterSec) ?? null
-    : null;
-  const visibleIdeas = a?.tradeIdeas
-    ? selectedChapter
-      ? a.tradeIdeas.filter((i) => i.sourceStartSeconds >= selectedChapter.startSeconds && i.sourceStartSeconds < selectedChapter.endSeconds)
-      : a.tradeIdeas
-    : [];
-  const visibleOptions = a?.optionIdeas
-    ? selectedChapter
-      ? a.optionIdeas.filter((o) => o.sourceStartSeconds >= selectedChapter.startSeconds && o.sourceStartSeconds < selectedChapter.endSeconds)
-      : a.optionIdeas
-    : [];
-  const visibleLevels = a?.levels
-    ? selectedChapter
-      ? a.levels.filter((l) => l.sourceStartSeconds >= selectedChapter.startSeconds && l.sourceStartSeconds < selectedChapter.endSeconds)
-      : a.levels
-    : [];
+  const v = bundle?.video, a = bundle?.analysis, chapters = bundle?.chapters ?? [];
+  const selectedChapter = selectedChapterSec !== null ? chapters.find((ch) => ch.startSeconds === selectedChapterSec) ?? null : null;
+  const filter = <T extends { sourceStartSeconds: number }>(arr: T[]) =>
+    selectedChapter ? arr.filter((i) => i.sourceStartSeconds >= selectedChapter.startSeconds && i.sourceStartSeconds < selectedChapter.endSeconds) : arr;
+  const visibleIdeas = a?.tradeIdeas ? filter(a.tradeIdeas) : [];
+  const visibleOptions = a?.optionIdeas ? filter(a.optionIdeas) : [];
+  const visibleLevels = a?.levels ? filter(a.levels) : [];
 
   return (
     <>
@@ -1051,19 +1195,10 @@ function VideoDrawer({
             {a?.warnings?.length ? <div className="inote iwarn">{a.warnings.join(" · ")}</div> : null}
             {v?.status !== "analyzed" && (
               <div className="icard" style={{ marginTop: 12 }}>
-                <div className="icard-h">
-                  Process transcript {a?.pass === "preliminary" ? "(preliminary done — paste full for the rest)" : ""}
-                </div>
-                <textarea
-                  className="iinput"
-                  placeholder={"Paste the YouTube transcript here (Show transcript → copy). Timestamps preserved when present."}
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                />
+                <div className="icard-h">Process transcript {a?.pass === "preliminary" ? "(preliminary done — paste full for the rest)" : ""}</div>
+                <textarea className="iinput" placeholder="Paste the YouTube transcript here (Show transcript → copy). Timestamps preserved when present." value={transcript} onChange={(e) => setTranscript(e.target.value)} />
                 <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                  <button className="ibtn ibtn-primary" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>
-                    {busy ? "Analyzing…" : "Analyze transcript"}
-                  </button>
+                  <button className="ibtn ibtn-primary" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>{busy ? "Analyzing…" : "Analyze transcript"}</button>
                   {!aiOn && <span className="inote iwarn">Needs ANTHROPIC_API_KEY.</span>}
                   {err && <span className="inote istate-err">{err}</span>}
                 </div>
@@ -1071,39 +1206,14 @@ function VideoDrawer({
             )}
             {chapters.length > 0 && (
               <div className="icard">
-                <div className="icard-h">
-                  Chapters
-                  {selectedChapter && (
-                    <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>
-                      Clear filter
-                    </button>
-                  )}
-                </div>
+                <div className="icard-h">Chapters {selectedChapter && <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear filter</button>}</div>
                 {chapters.map((ch) => (
-                  <div
-                    key={ch.startSeconds}
-                    className={`chap${selectedChapterSec === ch.startSeconds ? " active" : ""}`}
-                    role="button"
-                    tabIndex={0}
+                  <div key={ch.startSeconds} className={`chap${selectedChapterSec === ch.startSeconds ? " active" : ""}`} role="button" tabIndex={0}
                     onClick={() => setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ")
-                        setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds);
-                    }}
-                  >
-                    <a
-                      className="chap-t"
-                      href={watchUrl(videoId, ch.startSeconds)}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {mmss(ch.startSeconds)}
-                    </a>
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds); }}>
+                    <a className="chap-t" href={watchUrl(videoId, ch.startSeconds)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{mmss(ch.startSeconds)}</a>
                     <span className={ch.priority === "high" ? "chap-hi" : ""}>{ch.title}</span>
-                    {!ch.creatorDefined && (
-                      <span className="badge b-inferred" style={{ fontSize: 8.5 }}>AUGUST</span>
-                    )}
+                    {!ch.creatorDefined && <span className="badge b-inferred" style={{ fontSize: 8.5 }}>AUGUST</span>}
                     <span className="chap-cat">{CAT_LABEL[ch.normalizedCategory] ?? ch.normalizedCategory}</span>
                   </div>
                 ))}
@@ -1111,58 +1221,13 @@ function VideoDrawer({
             )}
             {a && (
               <>
-                {a.overallSummary && (
-                  <div className="icard">
-                    <div className="icard-h">
-                      Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}
-                    </div>
-                    <p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p>
-                  </div>
-                )}
-                {selectedChapter && (
-                  <div className="chap-filter-bar">
-                    <span>Filtering:</span>
-                    <b style={{ color: "var(--bone)" }}>{selectedChapter.title}</b>
-                    <span className="chap-cat">{CAT_LABEL[selectedChapter.normalizedCategory] ?? selectedChapter.normalizedCategory}</span>
-                    <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button>
-                  </div>
-                )}
-                {visibleIdeas.length > 0 && (
-                  <div className="icard">
-                    <div className="icard-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>
-                    {visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}
-                  </div>
-                )}
-                {visibleOptions.length > 0 && (
-                  <div className="icard">
-                    <div className="icard-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>
-                    {visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}
-                  </div>
-                )}
-                {visibleLevels.length > 0 && (
-                  <div className="icard">
-                    <div className="icard-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>
-                    {visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}
-                  </div>
-                )}
-                {a.catalysts.length > 0 && (
-                  <div className="icard">
-                    <div className="icard-h">Catalysts</div>
-                    {a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}
-                  </div>
-                )}
-                <button
-                  className="ibtn ibtn-sm ibtn-ghost"
-                  onClick={async () => {
-                    setBusy(true);
-                    await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" });
-                    await load();
-                    onProcessed();
-                    setBusy(false);
-                  }}
-                >
-                  Reprocess
-                </button>
+                {a.overallSummary && <div className="icard"><div className="icard-h">Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}</div><p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p></div>}
+                {selectedChapter && <div className="chap-filter-bar"><span>Filtering:</span><b style={{ color: "var(--bone)" }}>{selectedChapter.title}</b><button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button></div>}
+                {visibleIdeas.length > 0 && <div className="icard"><div className="icard-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
+                {visibleOptions.length > 0 && <div className="icard"><div className="icard-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
+                {visibleLevels.length > 0 && <div className="icard"><div className="icard-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
+                {a.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
+                <button className="ibtn ibtn-sm ibtn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
               </>
             )}
           </>
@@ -1172,50 +1237,32 @@ function VideoDrawer({
   );
 }
 
-// ── BriefCard (for BRIEF tab) ─────────────────────────────────────────────────
-
-function BriefCard({
-  brief, ai, onOpenVideo, historical,
-}: {
-  brief: DailyBrief | null;
-  ai: boolean;
-  onOpenVideo: (id: string) => void;
-  historical?: boolean;
-}) {
+function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief | null; ai: boolean; onOpenVideo: (id: string) => void; historical?: boolean }) {
   const [read60, setRead60] = useState(false);
   if (!brief) {
     return (
       <div className="icard">
         <div className="icard-h">{historical ? "No brief for this date" : "Tonight's Brief"}</div>
-        <div className="istate">
-          {historical
-            ? "No brief was stored for this date."
-            : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}
-        </div>
+        <div className="istate">{historical ? "No brief was stored for this date." : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}</div>
       </div>
     );
   }
-  const label = historical ? `Brief · ${brief.date}` : `Tonight's Brief · ${brief.date}`;
   return (
     <>
       <div className="icard">
         <div className="icard-h">
-          {label}
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>
-            {read60 ? "Full" : "Read in 60s"}
-          </button>
+          {historical ? `Brief · ${brief.date}` : `Tonight's Brief · ${brief.date}`}
+          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
         </div>
         {brief.read60 && read60 && <p className="brief-read60">{brief.read60}</p>}
         {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
-        {!read60 && (
-          <dl style={{ margin: 0 }}>
-            {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
-            {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
-            {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
-            {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
-            {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
-          </dl>
-        )}
+        {!read60 && <dl style={{ margin: 0 }}>
+          {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
+          {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
+          {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
+          {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
+          {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
+        </dl>}
         {!read60 && (brief.bullCase || brief.bearCase) && (
           <div className="bullbear">
             <div className="bull"><h4>BULL CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bullCase || "—"}</div></div>
@@ -1223,36 +1270,11 @@ function BriefCard({
           </div>
         )}
       </div>
-      {brief.creatorFavorites.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Creator Favorites</div>
-          {brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}
-        </div>
-      )}
-      <div className="icard">
-        <div className="icard-h">Top Trade Ideas</div>
-        {brief.topIdeas.length === 0
-          ? <div className="istate">No ideas extracted yet.</div>
-          : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}
-      </div>
-      {brief.levels.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Levels &amp; Triggers</div>
-          {brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}
-        </div>
-      )}
-      {brief.catalysts.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Catalyst Map</div>
-          {brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}
-        </div>
-      )}
-      {brief.consensus.length > 0 && (
-        <div className="icard">
-          <div className="icard-h">Consensus &amp; Conflicts</div>
-          {brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}
-        </div>
-      )}
+      {brief.creatorFavorites.length > 0 && <div className="icard"><div className="icard-h">Creator Favorites</div>{brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}</div>}
+      <div className="icard"><div className="icard-h">Top Trade Ideas</div>{brief.topIdeas.length === 0 ? <div className="istate">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}</div>
+      {brief.levels.length > 0 && <div className="icard"><div className="icard-h">Levels &amp; Triggers</div>{brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}</div>}
+      {brief.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalyst Map</div>{brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
+      {brief.consensus.length > 0 && <div className="icard"><div className="icard-h">Consensus &amp; Conflicts</div>{brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}</div>}
     </>
   );
 }
@@ -1272,7 +1294,7 @@ export default function IntelDashboard() {
   const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [quotes, setQuotes] = useState<QuoteMap>({});
-  const [tape, setTape] = useState<TapeQuote[]>([]);
+  const [tape, setTape] = useState<TapeItem[]>([]);
   const [clock, setClock] = useState(etClock());
 
   const load = useCallback(async () => {
@@ -1286,26 +1308,43 @@ export default function IntelDashboard() {
     }
   }, []);
 
-  // initial parallel fetch: overview + tape + history dates
+  const fetchMacroTape = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
+      const j = await r.json();
+      const q: QuoteMap = j.quotes ?? {};
+      setTape((prev) => {
+        const watch = prev.filter((t) => t.kind === "watch");
+        const macro: TapeItem[] = TAPE_MACRO.filter((s) => q[s]).map((s) => ({
+          kind: "macro" as const, sym: s, price: q[s].price, chgPct: q[s].chgPct,
+        }));
+        return [...macro, ...watch];
+      });
+    } catch { /* keep existing */ }
+  }, []);
+
+  const fetchBlotterQuotes = useCallback(async (brief: DailyBrief) => {
+    const ideas = [...(brief.creatorFavorites ?? []), ...(brief.topIdeas ?? [])];
+    const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
+    if (!syms.length) return;
+    try {
+      const r = await fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" });
+      const j = await r.json();
+      setQuotes(j.quotes ?? {});
+    } catch { /* keep */ }
+  }, []);
+
+  // initial parallel fetch
   useEffect(() => {
     load();
-    fetch(`/api/intel/quotes?symbols=${TAPE_SYMBOLS.join(",")}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        const q: QuoteMap = j.quotes ?? {};
-        const t: TapeQuote[] = TAPE_SYMBOLS
-          .filter((s) => q[s])
-          .map((s) => ({ sym: s, price: q[s].price, chgPct: q[s].chgPct, up: q[s].chgPct >= 0 }));
-        setTape(t);
-      })
-      .catch(() => {});
+    fetchMacroTape();
     fetch("/api/intel/briefs", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
       .catch(() => {});
-  }, [load]);
+  }, [load, fetchMacroTape]);
 
-  // ET clock tick
+  // ET clock
   useEffect(() => {
     const t = setInterval(() => setClock(etClock()), 60000);
     return () => clearInterval(t);
@@ -1313,15 +1352,19 @@ export default function IntelDashboard() {
 
   // fetch blotter quotes when brief changes
   useEffect(() => {
+    if (data?.brief) fetchBlotterQuotes(data.brief);
+  }, [data?.brief, fetchBlotterQuotes]);
+
+  // auto-refresh quotes every 30s
+  useEffect(() => {
     if (!data?.brief) return;
-    const ideas = [...(data.brief.creatorFavorites ?? []), ...(data.brief.topIdeas ?? [])];
-    const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
-    if (!syms.length) return;
-    fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => setQuotes(j.quotes ?? {}))
-      .catch(() => {});
-  }, [data?.brief]);
+    const brief = data.brief;
+    const t = setInterval(() => {
+      fetchMacroTape();
+      fetchBlotterQuotes(brief);
+    }, 30000);
+    return () => clearInterval(t);
+  }, [data?.brief, fetchMacroTape, fetchBlotterQuotes]);
 
   const loadDate = useCallback(async (date: string) => {
     if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
@@ -1361,20 +1404,12 @@ export default function IntelDashboard() {
   }, [load]);
 
   if (status === "loading") {
-    return (
-      <div style={{ padding: 24 }}>
-        {[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}
-      </div>
-    );
+    return <div style={{ padding: 24 }}>{[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}</div>;
   }
-
   if (!data) {
     return (
       <div style={{ padding: 24 }}>
-        <div className="istate istate-err">
-          Couldn&apos;t load Market Intel.{" "}
-          <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
-        </div>
+        <div className="istate istate-err">Couldn&apos;t load Market Intel. <button className="ibtn ibtn-sm" onClick={load}>Retry</button></div>
       </div>
     );
   }
@@ -1384,27 +1419,48 @@ export default function IntelDashboard() {
   const blotter = buildBlotter(brief, quotes);
   const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
 
+  // compose watchlist tape items from blotter
+  const watchTape: TapeItem[] = blotter
+    .filter((i) => i.quote)
+    .map((i) => ({
+      kind: "watch" as const, sym: i.ticker,
+      price: i.quote!.price, chgPct: i.quote!.chgPct,
+      status: deriveStatus(i),
+    }));
+  const fullTape: TapeItem[] = [
+    ...tape.filter((t) => t.kind === "macro"),
+    ...watchTape,
+  ];
+
   const initialSymbol =
     brief?.options?.bestCreatorPlays[0]?.underlyingSymbol ||
     brief?.options?.directionalOnly[0]?.underlyingSymbol ||
-    brief?.topIdeas[0]?.ticker ||
-    "SPY";
+    brief?.topIdeas[0]?.ticker || "SPY";
 
   return (
     <SymbolProvider initial={initialSymbol}>
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
 
+        <PageHeader
+          data={data}
+          clock={clock}
+          tab={tab}
+          onTab={setTab}
+          blotter={blotter}
+          busy={busy}
+          onSync={sync}
+          onGenerateBrief={generateBrief}
+        />
         <StatusBar data={data} clock={clock} />
-        <LiveTape tape={tape} />
-        <TabNav tab={tab} onTab={setTab} ideaCount={blotter.length} sourceCount={sources.length} />
+        <LiveTape tape={fullTape} />
 
         {msg && (
-          <div className="istate" style={{ margin: "8px 18px", color: "var(--steel)" }}>
+          <div className="istate" style={{ margin: "6px 16px", color: "var(--steel)", fontSize: 11.5 }}>
             {msg} <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setMsg(null)}>✕</button>
           </div>
         )}
         {!config.storage && (
-          <div className="istate iwarn" style={{ margin: "4px 18px" }}>
+          <div className="istate iwarn" style={{ margin: "4px 16px", fontSize: 11.5 }}>
             Upstash not configured — UPSTASH_REDIS_REST_URL/TOKEN needed.
           </div>
         )}
@@ -1417,26 +1473,41 @@ export default function IntelDashboard() {
               sources={sources}
               videos={videos}
               onOpenVideo={setOpenVideo}
-              config={config}
               onReload={load}
               removeSource={removeSource}
-              busy={busy}
-              onSync={sync}
-              onGenerateBrief={generateBrief}
+              quotes={quotes}
             />
             <div className="bl-center">
-              {blotter.length === 0 && !brief ? (
-                <div className="bl-empty" style={{ margin: 32 }}>
-                  <div className="bl-empty-title">BLOTTER EMPTY</div>
-                  <div>Add sources → process a transcript → generate a brief.</div>
+              {/* blotter sub-header */}
+              <div className="bl-center-head">
+                <span className="bl-ch-title">TRADE BLOTTER</span>
+                <span className="bl-ch-sep">·</span>
+                <span>{blotter.length} IDEAS</span>
+                <span className="bl-ch-sep">·</span>
+                <span>URGENCY</span>
+                <span className="bl-ch-sep">·</span>
+                <span>AUTO-REFRESH 30s</span>
+                <div className="bl-preview-states">
+                  <span className="bl-ps bl-ps-live">LIVE</span>
+                  <span className="bl-ps">LOADING</span>
+                  <span className="bl-ps">EMPTY</span>
+                  <span className="bl-ps">ERROR</span>
                 </div>
-              ) : (
-                <BlotterTable
-                  ideas={blotter}
-                  selectedId={selectedId}
-                  onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
-                />
-              )}
+              </div>
+              {/* legend */}
+              <div className="bl-legend">
+                <span className="bl-leg"><span className="bl-leg-dot" style={{ background: "#7fb88a" }} /> live market</span>
+                <span className="bl-leg"><span style={{ fontSize: 9 }}>★</span> quoted from transcript</span>
+                <span className="bl-leg"><span className="bl-leg-ring" /> not stated</span>
+                <span className="bl-leg"><span className="bl-leg-sq" /> direct</span>
+                <span className="bl-leg"><span className="bl-leg-dsq" /> inferred</span>
+              </div>
+              <BlotterTable
+                ideas={blotter}
+                selectedId={selectedId}
+                onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+              />
+              <OptionsIntelPanel brief={brief} />
             </div>
             <div className="bl-right">
               <Inspector idea={selectedIdea} />
@@ -1452,14 +1523,10 @@ export default function IntelDashboard() {
                 <div className="ihistory-label">Daily History</div>
                 <div className="ihistory-pills">
                   {selectedDate && (
-                    <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>
-                      ← Today
-                    </button>
+                    <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>← Today</button>
                   )}
                   {historyDates.map((d) => (
-                    <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>
-                      {d}
-                    </button>
+                    <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
                   ))}
                 </div>
               </div>
@@ -1491,26 +1558,20 @@ export default function IntelDashboard() {
           <div className="bl-tabview" style={{ paddingBottom: 120 }}>
             <div className="icard">
               <div className="icard-h">Ask AUGUST</div>
-              <p className="inote">Use the bar below — AUGUST answers from your processed sources.</p>
+              <p className="inote">Use the bar below — AUGUST answers from your processed video transcripts.</p>
               {!config.ai && <div className="istate iwarn">Needs ANTHROPIC_API_KEY.</div>}
             </div>
           </div>
         )}
 
-        <div className="idisc" style={{ paddingBottom: 60 }}>
-          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices. Not financial advice.
+        <div className="idisc" style={{ paddingBottom: 64 }}>
+          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>
 
         <AskBar ai={config.ai} />
 
         {openVideo && (
-          <VideoDrawer
-            key={openVideo}
-            videoId={openVideo}
-            onClose={() => setOpenVideo(null)}
-            onProcessed={load}
-            aiOn={config.ai}
-          />
+          <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />
         )}
       </div>
     </SymbolProvider>
