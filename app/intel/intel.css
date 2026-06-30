@@ -952,6 +952,9 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   /* lift the phone-reachable controls toward a ~44px touch target */
   .bl-head-row2-right .ibtn,
   .bl-tabview .ibtn,
+  .idrawer .ibtn,
   .bl-hist-pills .idate-pill,
   .bl-hist-today { min-height: 44px; }
+  /* the transcript drawer's close affordance needs a real tap area too */
+  .idrawer-x { min-width: 44px; min-height: 44px; }
 }
