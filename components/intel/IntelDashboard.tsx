@@ -277,6 +277,7 @@ function PageHeader({
           <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} onClick={onGenerateBrief}>
             {busy === "brief" ? "…" : "BRIEF"}
           </button>
+          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => onTab("BRIEF")}>HISTORY</button>
           <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">EXPORT</a>
           <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
         </div>
@@ -747,7 +748,7 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
 
 function LeftPanel({
   brief, sources, videos, onOpenVideo, onReload, removeSource, quotes,
-  onSync, onGenerateBrief, busy, lastBriefAt,
+  onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
 }: {
   brief: DailyBrief | null;
   sources: IntelSource[];
@@ -760,19 +761,20 @@ function LeftPanel({
   onGenerateBrief: () => void;
   busy: string | null;
   lastBriefAt: number;
+  aiOn: boolean;
 }) {
   return (
     <div className="bl-left">
       <div className="bl-lp-actions">
         <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} onClick={onSync}>
-          {busy === "sync" ? "Syncing…" : "↻ SYNC"}
+          {busy === "sync" ? "Syncing…" : "SYNC"}
         </button>
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} onClick={onGenerateBrief}>
-          {busy === "brief" ? "Generating…" : "⚡ BRIEF"}
+        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy || !aiOn} onClick={onGenerateBrief}>
+          {busy === "brief" ? "Generating…" : "BRIEF"}
         </button>
       </div>
       {lastBriefAt > 0 && (
-        <div className="bl-lp-age">brief {ago(lastBriefAt)}</div>
+        <div className="bl-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
       )}
       {brief && (
         <>
@@ -1226,6 +1228,7 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
                 </div>
                 <textarea
                   className="iinput bl-txcard-ta"
+                  aria-label="Paste video transcript"
                   placeholder={"Paste transcript here. Timestamps included when present.\n\n(YouTube → below video → ··· → Show transcript → copy)"}
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
@@ -1516,6 +1519,7 @@ export default function IntelDashboard() {
               onGenerateBrief={generateBrief}
               busy={busy}
               lastBriefAt={data.lastBriefAt}
+              aiOn={config.ai}
             />
             <div className="bl-center">
               {/* blotter sub-header */}
@@ -1594,10 +1598,10 @@ export default function IntelDashboard() {
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                 <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} onClick={sync}>
-                  {busy === "sync" ? "Syncing…" : "↻ SYNC CHANNELS"}
+                  {busy === "sync" ? "Syncing…" : "SYNC CHANNELS"}
                 </button>
                 <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} onClick={generateBrief}>
-                  {busy === "brief" ? "Generating…" : "⚡ GENERATE BRIEF"}
+                  {busy === "brief" ? "Generating…" : "GENERATE BRIEF"}
                 </button>
               </div>
               {data.lastBriefAt > 0 && (

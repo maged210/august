@@ -191,6 +191,7 @@ body:has(.intel-root) {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 .iinput:focus { outline: none; border-color: rgb(var(--steel-rgb) / 0.5); }
+.iinput:focus-visible { outline: 2px solid rgb(var(--steel-rgb) / 0.85); outline-offset: 1px; border-color: rgb(var(--steel-rgb) / 0.5); }
 .iinrow { display: flex; gap: 8px; margin-bottom: 8px; }
 textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
 
@@ -655,6 +656,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 .bl-askbar-input:focus { outline: none; border-color: rgb(var(--steel-rgb) / 0.4); }
+.bl-askbar-input:focus-visible { outline: 2px solid rgb(var(--steel-rgb) / 0.85); outline-offset: 1px; border-color: rgb(var(--steel-rgb) / 0.4); }
 .bl-askbar-ans {
   position: absolute; bottom: calc(100% + 4px); left: 18px; right: 18px;
   background: var(--charcoal, #08080b); border: 1px solid rgb(var(--steel-rgb) / 0.2);
@@ -883,8 +885,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* ---- TRANSCRIPT CARD (VideoDrawer) ---- */
 .bl-txcard {
-  border-color: rgb(110 140 168 / 0.35);
-  background: rgb(110 140 168 / 0.06);
+  border-color: rgb(var(--steel-rgb) / 0.35);
+  background: rgb(var(--steel-rgb) / 0.06);
 }
 .bl-txcard-step {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -930,4 +932,26 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-hist-empty {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 9.5px; color: var(--ash); opacity: 0.4;
+}
+
+/* ---- MOBILE HEADER: keep all navigation + actions on-screen ----
+   Below 700px .bl-left is display:none, so the F-tab strip and the row2
+   button cluster are the ONLY way to reach source mgmt / re-brief / history.
+   Wrap both rows, shed low-value chrome, and tile the 5 tabs full-width so
+   nothing clips off the right edge of a ~360px phone. */
+@media (max-width: 700px) {
+  .bl-head-row1 { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
+  .bl-head-session, .bl-head-date { display: none; }
+  .bl-head-tabs { margin-left: 0; order: 2; width: 100%; }
+  .bl-head-tab { flex: 1; padding: 6px 4px; text-align: center; min-height: 44px; }
+  .bl-head-tab .bl-tab-fkey { display: none; }
+
+  .bl-head-row2 { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
+  .bl-head-row2-right { margin-left: 0; width: 100%; }
+
+  /* lift the phone-reachable controls toward a ~44px touch target */
+  .bl-head-row2-right .ibtn,
+  .bl-tabview .ibtn,
+  .bl-hist-pills .idate-pill,
+  .bl-hist-today { min-height: 44px; }
 }
