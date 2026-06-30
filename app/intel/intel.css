@@ -863,3 +863,71 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   padding: 5px 8px 2px; border-top: 1px solid rgb(var(--steel-rgb)/0.07);
 }
 .bl-optx-foot { font-size: 9.5px; color: var(--ash); opacity: 0.45; padding: 5px 12px 8px; font-style: italic; }
+
+/* ---- LEFT PANEL QUICK ACTIONS ---- */
+.bl-lp-actions {
+  display: flex; gap: 7px; margin-bottom: 10px;
+}
+.bl-lp-btn {
+  flex: 1; font-size: 10.5px; padding: 7px 4px; letter-spacing: 0.04em;
+}
+.bl-lp-age {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px; color: var(--ash); opacity: 0.5;
+  margin-bottom: 10px; letter-spacing: 0.06em;
+}
+.bl-lp-hint {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px; color: var(--steel); opacity: 0.8; letter-spacing: 0.04em;
+}
+
+/* ---- TRANSCRIPT CARD (VideoDrawer) ---- */
+.bl-txcard {
+  border-color: rgb(110 140 168 / 0.35);
+  background: rgb(110 140 168 / 0.06);
+}
+.bl-txcard-step {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--steel); margin-bottom: 8px; font-weight: 600;
+}
+.bl-txcard-how {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px; color: var(--ash); opacity: 0.6;
+  margin-bottom: 10px; letter-spacing: 0.03em;
+}
+.bl-txcard-ta { min-height: 90px; }
+.bl-txcard-btn { font-size: 12px; padding: 8px 20px; }
+
+/* ---- SOURCES TAB WORKFLOW HUB ---- */
+.bl-src-hub { border-color: rgb(var(--steel-rgb) / 0.25); }
+.bl-src-steps { display: flex; flex-direction: column; gap: 9px; }
+.bl-src-step { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--bone); }
+.bl-src-stepn {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px; font-weight: 700;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid rgb(var(--steel-rgb) / 0.45);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: var(--steel);
+}
+
+/* ---- BRIEF HISTORY BAR ---- */
+.bl-hist-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid rgb(var(--steel-rgb) / 0.10);
+}
+.bl-hist-today {
+  font-size: 10.5px; padding: 6px 14px; letter-spacing: 0.06em; flex-shrink: 0;
+}
+.bl-hist-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--ash); opacity: 0.55; flex-shrink: 0;
+}
+.bl-hist-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.bl-hist-empty {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px; color: var(--ash); opacity: 0.4;
+}

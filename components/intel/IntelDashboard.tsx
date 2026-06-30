@@ -747,6 +747,7 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
 
 function LeftPanel({
   brief, sources, videos, onOpenVideo, onReload, removeSource, quotes,
+  onSync, onGenerateBrief, busy, lastBriefAt,
 }: {
   brief: DailyBrief | null;
   sources: IntelSource[];
@@ -755,9 +756,24 @@ function LeftPanel({
   onReload: () => Promise<void>;
   removeSource: (id: string) => Promise<void>;
   quotes: QuoteMap;
+  onSync: () => void;
+  onGenerateBrief: () => void;
+  busy: string | null;
+  lastBriefAt: number;
 }) {
   return (
     <div className="bl-left">
+      <div className="bl-lp-actions">
+        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} onClick={onSync}>
+          {busy === "sync" ? "Syncing…" : "↻ SYNC"}
+        </button>
+        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} onClick={onGenerateBrief}>
+          {busy === "brief" ? "Generating…" : "⚡ BRIEF"}
+        </button>
+      </div>
+      {lastBriefAt > 0 && (
+        <div className="bl-lp-age">brief {ago(lastBriefAt)}</div>
+      )}
       {brief && (
         <>
           <div className="bl-ph">Tonight&apos;s Brief</div>
@@ -831,6 +847,9 @@ function LeftPanel({
                 {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7 }}>Analyzed</span>}
                 {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7 }}>Processing</span>}
                 {v.liveState === "live" && <span className="badge b-live" style={{ fontSize: 7 }}>Live</span>}
+                {v.status !== "analyzed" && v.status !== "analyzing" && (
+                  <span className="bl-lp-hint">→ tap · paste transcript</span>
+                )}
               </div>
             </div>
           </div>
@@ -1192,18 +1211,35 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
               {v?.stale && <span className="badge b-stale">Stale</span>}
               <a className="idea-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
-            {a?.warnings?.length ? <div className="inote iwarn">{a.warnings.join(" · ")}</div> : null}
             {v?.status !== "analyzed" && (
-              <div className="icard" style={{ marginTop: 12 }}>
-                <div className="icard-h">Process transcript {a?.pass === "preliminary" ? "(preliminary done — paste full for the rest)" : ""}</div>
-                <textarea className="iinput" placeholder="Paste the YouTube transcript here (Show transcript → copy). Timestamps preserved when present." value={transcript} onChange={(e) => setTranscript(e.target.value)} />
-                <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                  <button className="ibtn ibtn-primary" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>{busy ? "Analyzing…" : "Analyze transcript"}</button>
+              <div className="icard bl-txcard" style={{ marginTop: 12 }}>
+                <div className="bl-txcard-step">
+                  {a?.pass === "preliminary" ? "STEP 1 CONT. · PASTE FULL TRANSCRIPT" : "STEP 1 · PASTE TRANSCRIPT"}
+                </div>
+                {a?.pass === "preliminary" && (
+                  <div className="inote" style={{ marginBottom: 10, fontSize: 10.5 }}>
+                    Preliminary pass done — paste the full transcript for the complete analysis.
+                  </div>
+                )}
+                <div className="bl-txcard-how">
+                  YouTube → ··· (below video) → Show transcript → copy all → paste here
+                </div>
+                <textarea
+                  className="iinput bl-txcard-ta"
+                  placeholder={"Paste transcript here. Timestamps included when present.\n\n(YouTube → below video → ··· → Show transcript → copy)"}
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                />
+                <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="ibtn ibtn-primary bl-txcard-btn" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>
+                    {busy ? "Analyzing…" : "Analyze →"}
+                  </button>
                   {!aiOn && <span className="inote iwarn">Needs ANTHROPIC_API_KEY.</span>}
                   {err && <span className="inote istate-err">{err}</span>}
                 </div>
               </div>
             )}
+            {a?.warnings?.length ? <div className="inote iwarn" style={{ marginBottom: 8 }}>{a.warnings.join(" · ")}</div> : null}
             {chapters.length > 0 && (
               <div className="icard">
                 <div className="icard-h">Chapters {selectedChapter && <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear filter</button>}</div>
@@ -1476,6 +1512,10 @@ export default function IntelDashboard() {
               onReload={load}
               removeSource={removeSource}
               quotes={quotes}
+              onSync={sync}
+              onGenerateBrief={generateBrief}
+              busy={busy}
+              lastBriefAt={data.lastBriefAt}
             />
             <div className="bl-center">
               {/* blotter sub-header */}
@@ -1518,19 +1558,24 @@ export default function IntelDashboard() {
         {/* ── BRIEF ── */}
         {tab === "BRIEF" && (
           <div className="bl-tabview">
-            {historyDates.length > 0 && (
-              <div className="ihistory" style={{ marginBottom: 16 }}>
-                <div className="ihistory-label">Daily History</div>
-                <div className="ihistory-pills">
-                  {selectedDate && (
-                    <button className="idate-pill on" onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}>← Today</button>
-                  )}
-                  {historyDates.map((d) => (
+            <div className="bl-hist-bar">
+              {selectedDate && (
+                <button
+                  className="ibtn ibtn-primary bl-hist-today"
+                  onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}
+                >
+                  ← TODAY&apos;S BRIEF
+                </button>
+              )}
+              <span className="bl-hist-label">BRIEF HISTORY</span>
+              <div className="bl-hist-pills">
+                {historyDates.length === 0
+                  ? <span className="bl-hist-empty">No prior briefs stored.</span>
+                  : historyDates.map((d) => (
                     <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
                   ))}
-                </div>
               </div>
-            )}
+            </div>
             {historyLoading
               ? <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
               : <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />}
@@ -1540,6 +1585,30 @@ export default function IntelDashboard() {
         {/* ── SOURCES ── */}
         {tab === "SOURCES" && (
           <div className="bl-tabview">
+            <div className="icard bl-src-hub">
+              <div className="icard-h">WORKFLOW</div>
+              <div className="bl-src-steps">
+                <div className="bl-src-step"><span className="bl-src-stepn">1</span><span>Add a channel or video URL in the box below</span></div>
+                <div className="bl-src-step"><span className="bl-src-stepn">2</span><span>Click any video → paste its transcript → Analyze</span></div>
+                <div className="bl-src-step"><span className="bl-src-stepn">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} onClick={sync}>
+                  {busy === "sync" ? "Syncing…" : "↻ SYNC CHANNELS"}
+                </button>
+                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} onClick={generateBrief}>
+                  {busy === "brief" ? "Generating…" : "⚡ GENERATE BRIEF"}
+                </button>
+              </div>
+              {data.lastBriefAt > 0 && (
+                <div className="bl-lp-age" style={{ marginTop: 8 }}>
+                  last brief {ago(data.lastBriefAt)}{!config.ai ? " · needs ANTHROPIC_API_KEY" : ""}
+                </div>
+              )}
+              {!config.ai && data.lastBriefAt === 0 && (
+                <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
+              )}
+            </div>
             <AddSource onReload={load} />
             <SourceMonitor sources={sources} onRemove={removeSource} />
             <VideoLibrary videos={videos} onOpen={setOpenVideo} />
