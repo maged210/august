@@ -271,10 +271,10 @@ function PageHeader({
           <span className="bl-brief-age-pill">{briefAge}</span>
         )}
         <div className="bl-head-row2-right">
-          <button className="ibtn ibtn-sm" disabled={busy === "sync"} onClick={onSync}>
+          <button className="ibtn ibtn-sm" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
             {busy === "sync" ? "Syncing…" : "SYNC"}
           </button>
-          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} onClick={onGenerateBrief}>
+          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
             {busy === "brief" ? "…" : "BRIEF"}
           </button>
           <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => onTab("BRIEF")}>HISTORY</button>
@@ -766,10 +766,10 @@ function LeftPanel({
   return (
     <div className="bl-left">
       <div className="bl-lp-actions">
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} onClick={onSync}>
+        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
           {busy === "sync" ? "Syncing…" : "SYNC"}
         </button>
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy || !aiOn} onClick={onGenerateBrief}>
+        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
           {busy === "brief" ? "Generating…" : "BRIEF"}
         </button>
       </div>
@@ -1479,6 +1479,9 @@ export default function IntelDashboard() {
   return (
     <SymbolProvider initial={initialSymbol}>
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+        <div className="sr-only" role="status" aria-live="polite">
+          {busy === "sync" ? "Syncing channels" : busy === "brief" ? "Generating brief" : ""}
+        </div>
 
         <PageHeader
           data={data}
@@ -1591,16 +1594,16 @@ export default function IntelDashboard() {
           <div className="bl-tabview">
             <div className="icard bl-src-hub">
               <div className="icard-h">WORKFLOW</div>
-              <div className="bl-src-steps">
-                <div className="bl-src-step"><span className="bl-src-stepn">1</span><span>Add a channel or video URL in the box below</span></div>
-                <div className="bl-src-step"><span className="bl-src-stepn">2</span><span>Click any video → paste its transcript → Analyze</span></div>
-                <div className="bl-src-step"><span className="bl-src-stepn">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></div>
-              </div>
+              <ol className="bl-src-steps">
+                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">1</span><span>Add a channel or video URL in the box below</span></li>
+                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">2</span><span>Click any video → paste its transcript → Analyze</span></li>
+                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></li>
+              </ol>
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} onClick={sync}>
+                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={sync}>
                   {busy === "sync" ? "Syncing…" : "SYNC CHANNELS"}
                 </button>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} onClick={generateBrief}>
+                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} aria-busy={busy === "brief"} onClick={generateBrief}>
                   {busy === "brief" ? "Generating…" : "GENERATE BRIEF"}
                 </button>
               </div>
