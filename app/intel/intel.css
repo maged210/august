@@ -782,12 +782,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-center-head::-webkit-scrollbar { display: none; }
 .bl-ch-title { color: var(--bone); font-size: 10.5px; letter-spacing: 0.1em; }
 .bl-ch-sep { opacity: 0.3; }
-.bl-preview-states { margin-left: auto; display: flex; gap: 3px; flex-shrink: 0; }
-.bl-ps {
-  font-size: 8px; padding: 2px 5px; border-radius: 3px;
-  border: 1px solid rgb(var(--steel-rgb)/0.15); color: var(--ash); letter-spacing: 0.06em;
-}
-.bl-ps-live { color: #7fb88a; border-color: #7fb88a55; background: rgb(127 184 138 / 0.07); }
+/* (the static LIVE/LOADING/EMPTY/ERROR "preview state" pills from the design
+   file were removed — chrome shows only real state) */
 
 /* ---- BLOTTER LEGEND ---- */
 .bl-legend {
@@ -893,6 +889,15 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 8px; color: var(--steel); opacity: 0.8; letter-spacing: 0.04em;
 }
+.bl-lp-addbtn { width: 100%; text-align: center; }
+.bl-lp-srcline {
+  display: block; width: 100%; margin-top: 14px; padding: 6px 0;
+  background: none; border: none; border-top: 1px solid rgb(var(--steel-rgb) / 0.10);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px; letter-spacing: 0.1em; color: var(--ash); opacity: 0.7;
+  cursor: pointer; text-align: left;
+}
+.bl-lp-srcline:hover { color: var(--bone); opacity: 1; }
 
 /* ---- TRANSCRIPT CARD (VideoDrawer) ---- */
 .bl-txcard {

@@ -750,22 +750,23 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
 // ── LeftPanel ────────────────────────────────────────────────────────────────
 
 function LeftPanel({
-  brief, sources, videos, onOpenVideo, onReload, removeSource, quotes,
+  brief, quotes, onReload,
   onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
+  sourceCount, videoCount, onGoSources,
 }: {
   brief: DailyBrief | null;
-  sources: IntelSource[];
-  videos: IntelVideo[];
-  onOpenVideo: (id: string) => void;
   onReload: () => Promise<void>;
-  removeSource: (id: string) => Promise<void>;
   quotes: QuoteMap;
   onSync: () => void;
   onGenerateBrief: () => void;
   busy: string | null;
   lastBriefAt: number;
   aiOn: boolean;
+  sourceCount: number;
+  videoCount: number;
+  onGoSources: () => void;
 }) {
+  const [addOpen, setAddOpen] = useState(false);
   return (
     <div className="bl-left">
       <div className="bl-lp-actions">
@@ -823,45 +824,22 @@ function LeftPanel({
         </>
       )}
 
-      <div className="bl-ph">Sources · {sources.length}</div>
-      {sources.length === 0
-        ? <div className="istate" style={{ fontSize: 11 }}>No sources.</div>
-        : sources.map((s) => (
-          <div key={s.id} className="irow" style={{ padding: "4px 0" }}>
-            {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
-            <div className="irow-main">
-              <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
-              <div className="irow-meta">
-                <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
-                <span style={{ fontSize: 9, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
-              </div>
-            </div>
-            <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9 }} onClick={() => removeSource(s.id)}>✕</button>
+      {/* CAPTURE — one lightweight add action; management lives in SOURCES (F3) */}
+      <div className="bl-ph">Capture</div>
+      <button className="ibtn ibtn-sm bl-lp-addbtn" onClick={() => setAddOpen((o) => !o)}>
+        {addOpen ? "− CLOSE" : "+ ADD SOURCE"}
+      </button>
+      {addOpen && (
+        <div style={{ marginTop: 8 }}>
+          <AddSource onReload={onReload} compact />
+          <div className="bl-lp-hint" style={{ display: "block", marginTop: 6 }}>
+            processing continues in SOURCES
           </div>
-        ))}
-
-      <div className="bl-ph">Videos · {videos.length}</div>
-      {videos.length === 0
-        ? <div className="istate" style={{ fontSize: 11 }}>No videos yet.</div>
-        : videos.slice(0, 8).map((v) => (
-          <div key={v.videoId} className="irow clickable" style={{ padding: "4px 0" }} onClick={() => onOpenVideo(v.videoId)}>
-            {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
-            <div className="irow-main">
-              <div className="irow-title" style={{ fontSize: 10.5 }}>{v.title}</div>
-              <div className="irow-meta">
-                {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7 }}>Analyzed</span>}
-                {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7 }}>Processing</span>}
-                {v.liveState === "live" && <span className="badge b-live" style={{ fontSize: 7 }}>Live</span>}
-                {v.status !== "analyzed" && v.status !== "analyzing" && (
-                  <span className="bl-lp-hint">→ tap · paste transcript</span>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-
-      <div className="bl-ph">Add Sources</div>
-      <AddSource onReload={onReload} compact />
+        </div>
+      )}
+      <button className="bl-lp-srcline" onClick={onGoSources}>
+        {sourceCount} SOURCE{sourceCount !== 1 ? "S" : ""} · {videoCount} VIDEO{videoCount !== 1 ? "S" : ""} → F3 SOURCES
+      </button>
     </div>
   );
 }
@@ -1529,17 +1507,16 @@ export default function IntelDashboard() {
           <div className="bl-layout" style={{ flex: 1 }}>
             <LeftPanel
               brief={brief}
-              sources={sources}
-              videos={videos}
-              onOpenVideo={setOpenVideo}
               onReload={load}
-              removeSource={removeSource}
               quotes={quotes}
               onSync={sync}
               onGenerateBrief={generateBrief}
               busy={busy}
               lastBriefAt={data.lastBriefAt}
               aiOn={config.ai}
+              sourceCount={sources.length}
+              videoCount={videos.length}
+              onGoSources={() => setTab("SOURCES")}
             />
             <div className="bl-center">
               {/* blotter sub-header */}
@@ -1551,12 +1528,6 @@ export default function IntelDashboard() {
                 <span>URGENCY</span>
                 <span className="bl-ch-sep">·</span>
                 <span>AUTO-REFRESH 30s</span>
-                <div className="bl-preview-states">
-                  <span className="bl-ps bl-ps-live">LIVE</span>
-                  <span className="bl-ps">LOADING</span>
-                  <span className="bl-ps">EMPTY</span>
-                  <span className="bl-ps">ERROR</span>
-                </div>
               </div>
               {/* legend */}
               <div className="bl-legend">
