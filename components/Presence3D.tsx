@@ -360,7 +360,9 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark" }: Prop
     ro.observe(mount);
 
     let raf = 0;
-    const clock = new THREE.Clock();
+    // THREE.Clock is deprecated (r184 warns in console); Timer is the drop-in
+    // replacement — update() once per frame, then read delta/elapsed.
+    const timer = new THREE.Timer();
     let easedGlow = 1;
     let easedAmp = 0;
     let easedScale = 1;
@@ -372,8 +374,9 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark" }: Prop
       raf = requestAnimationFrame(render);
       sizeTo(); // keep the canvas matched to the container, even while backgrounded
       if (typeof document !== "undefined" && document.hidden) return;
-      const dt = Math.min(0.05, clock.getDelta());
-      const t = clock.elapsedTime;
+      timer.update();
+      const dt = Math.min(0.05, timer.getDelta());
+      const t = timer.getElapsed();
       const st = stateRef.current;
       const L = LOOK[themeRef.current];
 

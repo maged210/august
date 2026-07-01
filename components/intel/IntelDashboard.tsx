@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type {
   BriefIdea,
   Chapter,
@@ -288,13 +288,16 @@ function PageHeader({
 
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({ data, clock }: { data: Overview; clock: string }) {
+function StatusBar({ data, clock, latencyMs }: { data: Overview; clock: string; latencyMs: number | null }) {
   const { config, lastSync, lastBriefAt } = data;
+  // Honest chrome: quotes arrive via 30s HTTP polling (no websocket exists),
+  // DATA reflects whether a quote roundtrip has actually succeeded, and
+  // LATENCY is the measured last roundtrip — never a placeholder.
   const items = [
     { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), cls: "" },
-    { label: "DATA", val: "LIVE", cls: "bl-sb-ok" },
-    { label: "FEED", val: "WS-CONNECTED", cls: "bl-sb-ok" },
-    { label: "LATENCY", val: "—ms", cls: "" },
+    { label: "DATA", val: latencyMs !== null ? "LIVE" : "WAITING", cls: latencyMs !== null ? "bl-sb-ok" : "" },
+    { label: "FEED", val: "POLL 30s", cls: latencyMs !== null ? "bl-sb-ok" : "" },
+    { label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—", cls: latencyMs !== null && latencyMs > 2000 ? "bl-sb-warn" : "" },
     { label: "KEY", val: config.youtube ? "YT_API SET" : "YT_API UNSET", cls: config.youtube ? "bl-sb-ok" : "bl-sb-warn" },
     { label: "LAST SYNC", val: lastSync ? `${Math.round((Date.now() - lastSync) / 60000)}m` : "—", cls: "" },
     { label: "BRIEF", val: lastBriefAt ? `${Math.round((Date.now() - lastBriefAt) / 60000)}m` : "—", cls: "" },
@@ -383,7 +386,7 @@ function BlotterRow({
           : <span className="bl-neut-glyph">—</span>}
       </td>
       <td className="bl-c-tf">{TF_LABEL[idea.timeHorizon] ?? "—"}</td>
-      <td className="bl-c-setup" title={idea.thesis}>{idea.thesis.slice(0, 38)}</td>
+      <td className="bl-c-setup" title={idea.thesis}><span className="bl-setup-clip">{idea.thesis}</span></td>
       <td className="bl-c-num">{entText}</td>
       <td className="bl-c-num">{invText}</td>
       <td className="bl-c-num">{tgtText}</td>
@@ -441,8 +444,8 @@ function BlotterTable({
             const rows = groups[g];
             if (!rows?.length) return null;
             return (
-              <>
-                <tr key={`hd-${g}`}>
+              <Fragment key={g}>
+                <tr>
                   <td colSpan={13} className="bl-section-head">{g.toLowerCase()}</td>
                 </tr>
                 {rows.map((idea) => (
@@ -453,7 +456,7 @@ function BlotterTable({
                     onSelect={() => onSelect(idea.id)}
                   />
                 ))}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
@@ -1335,6 +1338,9 @@ export default function IntelDashboard() {
   const [quotes, setQuotes] = useState<QuoteMap>({});
   const [tape, setTape] = useState<TapeItem[]>([]);
   const [clock, setClock] = useState(etClock());
+  // Honest latency: the last successful /api/intel/quotes roundtrip, measured
+  // client-side. null until the first fetch completes.
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -1349,8 +1355,10 @@ export default function IntelDashboard() {
 
   const fetchMacroTape = useCallback(async () => {
     try {
+      const t0 = performance.now();
       const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
       const j = await r.json();
+      setLatencyMs(Math.round(performance.now() - t0));
       const q: QuoteMap = j.quotes ?? {};
       setTape((prev) => {
         const watch = prev.filter((t) => t.kind === "watch");
@@ -1367,8 +1375,10 @@ export default function IntelDashboard() {
     const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
     if (!syms.length) return;
     try {
+      const t0 = performance.now();
       const r = await fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" });
       const j = await r.json();
+      setLatencyMs(Math.round(performance.now() - t0));
       setQuotes(j.quotes ?? {});
     } catch { /* keep */ }
   }, []);
@@ -1458,17 +1468,24 @@ export default function IntelDashboard() {
   const blotter = buildBlotter(brief, quotes);
   const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
 
-  // compose watchlist tape items from blotter
-  const watchTape: TapeItem[] = blotter
-    .filter((i) => i.quote)
-    .map((i) => ({
+  // compose watchlist tape items from blotter — one chip per symbol. Multiple
+  // ideas can share a ticker (e.g. two stated FCEL triggers); the quote is
+  // per-symbol, so show the symbol once with its most urgent derived status.
+  const URGENCY: Record<IdeaStatus, number> = { TRIG: 4, ARMED: 3, ACTIVE: 2, INVLD: 1, WATCH: 0 };
+  const watchBySym = new Map<string, Extract<TapeItem, { kind: "watch" }>>();
+  for (const i of blotter) {
+    if (!i.quote) continue;
+    const item = {
       kind: "watch" as const, sym: i.ticker,
-      price: i.quote!.price, chgPct: i.quote!.chgPct,
+      price: i.quote.price, chgPct: i.quote.chgPct,
       status: deriveStatus(i),
-    }));
+    };
+    const cur = watchBySym.get(item.sym);
+    if (!cur || URGENCY[item.status] > URGENCY[cur.status]) watchBySym.set(item.sym, item);
+  }
   const fullTape: TapeItem[] = [
     ...tape.filter((t) => t.kind === "macro"),
-    ...watchTape,
+    ...watchBySym.values(),
   ];
 
   const initialSymbol =
@@ -1493,7 +1510,7 @@ export default function IntelDashboard() {
           onSync={sync}
           onGenerateBrief={generateBrief}
         />
-        <StatusBar data={data} clock={clock} />
+        <StatusBar data={data} clock={clock} latencyMs={latencyMs} />
         <LiveTape tape={fullTape} />
 
         {msg && (
