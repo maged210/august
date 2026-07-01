@@ -584,6 +584,57 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-st-invld { color: #d98b8b; border-color: #d98b8b; }
 .bl-st-arm { color: #cbb274; border-color: #cbb274; }
 
+/* tracker-driven statuses */
+.bl-st-tgt { color: #7fb88a; border-color: #7fb88a; background: rgb(127 184 138 / 0.12); box-shadow: 0 0 6px #7fb88a44; }
+.bl-st-closed { color: var(--ash); border-color: rgb(var(--steel-rgb) / 0.15); opacity: 0.55; }
+.bl-st-conflict { color: #cbb274; margin-left: 3px; font-weight: 700; }
+
+/* tracker filter chips */
+.bl-filter-row {
+  display: flex; gap: 5px; padding: 5px 12px; flex-shrink: 0;
+  border-bottom: 1px solid rgb(var(--steel-rgb) / 0.07);
+  overflow-x: auto; scrollbar-width: none;
+}
+.bl-filter-row::-webkit-scrollbar { display: none; }
+.bl-filter-chip {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px; letter-spacing: 0.1em; padding: 3px 8px; border-radius: 3px;
+  border: 1px solid rgb(var(--steel-rgb) / 0.18); background: transparent;
+  color: var(--ash); cursor: pointer; white-space: nowrap;
+}
+.bl-filter-chip:hover { color: var(--bone); }
+.bl-filter-chip.on { color: var(--bone); border-color: rgb(var(--steel-rgb) / 0.5); background: rgb(var(--steel-rgb) / 0.12); }
+
+/* ---- LIFECYCLE panel (inspector) ---- */
+.bl-life { margin: 4px 0 10px; }
+.bl-life-stale {
+  margin-left: 8px; font-size: 7.5px; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid #c98b6a; color: #c98b6a; letter-spacing: 0.1em;
+}
+.bl-life-timeline { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.bl-life-step {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; color: var(--ash);
+}
+.bl-life-when { opacity: 0.65; }
+.bl-life-px { color: var(--bone); }
+.bl-life-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+.bl-life-note {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px; color: var(--ash); opacity: 0.6; font-style: italic; margin-bottom: 6px;
+}
+.bl-life-spark { margin: 8px 0; }
+.bl-life-spark svg { display: block; width: 100%; }
+.bl-life-sparklabel {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 7.5px; color: var(--ash); opacity: 0.45; margin-top: 2px;
+}
+.bl-life-variants { margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgb(var(--steel-rgb) / 0.2); }
+.bl-life-variant {
+  display: flex; align-items: center; gap: 8px; padding: 3px 0;
+  font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; color: var(--bone);
+}
+
 /* direction glyphs */
 .bl-bull-glyph { color: #7fb88a; font-size: 11px; }
 .bl-bear-glyph { color: #d98b8b; font-size: 11px; }

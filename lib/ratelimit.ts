@@ -27,7 +27,7 @@ function getRedis(): Redis {
 type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
   | "intelMutate" | "intelProcess" | "intelAsk"
-  | "push" | "day" | "draft" | "commsSend" | "watchers";
+  | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -47,6 +47,7 @@ const LIMITS: Record<RouteKey, number> = {
   draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft
   commsSend: 10, // Gmail send — tight: each send dispatches real mail
   watchers: 10, // Watchers cron — an external ~15min pinger is far under this
+  "intel-track": 10, // Idea Tracker cron — same external-pinger profile as watchers
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

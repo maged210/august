@@ -18,6 +18,7 @@ import type {
 } from "@/lib/intel/types";
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
+import { mfeMaeView, pnlView, type TrackedIdea, type TrackedStatus } from "@/lib/intel/tracker";
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const ago = (ms: number) =>
   ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never";
+const ageStr = (since: number) => {
+  const m = Math.max(1, Math.round((Date.now() - since) / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+};
 const etClock = () =>
   new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
 const fmtPx = (n: number) =>
@@ -160,6 +168,26 @@ function StatusBadge({ s }: { s: IdeaStatus }) {
     WATCH: "bl-st-watch", INVLD: "bl-st-invld",
   };
   return <span className={`bl-st ${cls[s]}`}>{s}</span>;
+}
+
+/** Tracker-driven badge — states come from the lifecycle engine, never derived
+ * client-side. Falls back to StatusBadge for untracked rows. */
+const TRACKED_BADGE: Record<TrackedStatus, { label: string; cls: string }> = {
+  ARMED: { label: "ARMED", cls: "bl-st-arm" },
+  TRIGGERED: { label: "TRIG", cls: "bl-st-trig" },
+  TARGET_HIT: { label: "TGT ✓", cls: "bl-st-tgt" },
+  INVALIDATED: { label: "INVLD", cls: "bl-st-invld" },
+  ACTIVE: { label: "ACTIVE", cls: "bl-st-active" },
+  CLOSED: { label: "CLOSED", cls: "bl-st-closed" },
+};
+function TrackedBadge({ t }: { t: TrackedIdea }) {
+  const b = TRACKED_BADGE[t.status];
+  return (
+    <span className={`bl-st ${b.cls}`} title={t.statusHistory.at(-1)?.reason}>
+      {b.label}
+      {t.conflictKey && <span className="bl-st-conflict" title="conflicting stated triggers from this source">!</span>}
+    </span>
+  );
 }
 
 function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
@@ -358,27 +386,47 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
 // ── BlotterRow ───────────────────────────────────────────────────────────────
 
 function BlotterRow({
-  idea, selected, onSelect,
+  idea, tracked, selected, onSelect,
 }: {
   idea: BlotterIdea;
+  tracked: TrackedIdea | null;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const status = deriveStatus(idea);
-  const dt = deltaTrig(idea);
   const up = idea.direction === "bullish";
   const closes = idea.quote?.closes ?? [];
   const ns = <span className="bl-ns">⌀ n/s</span>;
 
+  // Δ-TRIG: distance from live price to the stated trigger. Tracked ideas use
+  // the tracker's (possibly restated) trigger; untracked fall back to entry.
+  const trigVal = tracked ? tracked.statedLevels.trigger?.value ?? null : idea.entry?.value ?? null;
+  const live = idea.quote?.price ?? null;
+  const dt = trigVal != null && trigVal > 0 && live != null
+    ? `${((live - trigVal) / trigVal) * 100 >= 0 ? "+" : ""}${(((live - trigVal) / trigVal) * 100).toFixed(1)}%`
+    : "—";
+  const dtCls = dt === "—" ? "" : dt.startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg";
+
+  // P&L — engine rules: signed % since the STATED trigger only when it fired;
+  // thesis-only ideas show price-since-mention (marked with °); ARMED shows none.
+  const pnl = tracked ? pnlView(tracked) : { kind: "none" as const, reason: "untracked" };
+  const pnlText =
+    pnl.kind === "since_called" ? fmtPct(pnl.pct)
+    : pnl.kind === "since_first_mention" ? `${fmtPct(pnl.pct)}°`
+    : "—";
+  const pnlCls = pnl.kind === "none" ? "" : pnl.pct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg";
+  const pnlTitle =
+    pnl.kind === "since_called" ? `since called — vs stated trigger $${fmtPx(pnl.basis)}`
+    : pnl.kind === "since_first_mention" ? `° price since first mention (no stated trigger — not trade P&L)`
+    : pnl.kind === "none" ? pnl.reason : undefined;
+
   const entText = idea.entry?.value != null ? `$${fmtPx(idea.entry.value)}` : ns;
   const invText = idea.invalidation?.value != null ? `$${fmtPx(idea.invalidation.value)}` : ns;
   const tgtText = idea.targets[0]?.value != null ? `$${fmtPx(idea.targets[0].value)}` : ns;
-  const liveText = idea.quote?.price != null ? `$${fmtPx(idea.quote.price)}` : ns;
-  const dtCls = dt === "—" ? "" : dt.startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg";
+  const liveText = live != null ? `$${fmtPx(live)}` : ns;
 
   return (
     <tr className={`bl-row${selected ? " selected" : ""}`} onClick={onSelect}>
-      <td className="bl-c-status"><StatusBadge s={status} /></td>
+      <td className="bl-c-status">{tracked ? <TrackedBadge t={tracked} /> : <StatusBadge s={deriveStatus(idea)} />}</td>
       <td className="bl-c-ticker">{idea.ticker}</td>
       <td className="bl-c-dir">
         {idea.direction === "bullish" ? <span className="bl-bull-glyph">▲</span>
@@ -392,6 +440,10 @@ function BlotterRow({
       <td className="bl-c-num">{tgtText}</td>
       <td className="bl-c-live">{liveText}</td>
       <td className={`bl-c-delta ${dtCls}`}>{dt}</td>
+      <td className={`bl-c-delta ${pnlCls}`} title={pnlTitle}>{pnlText}</td>
+      <td className="bl-c-tf" title={tracked ? "tracked since first mention" : "not tracked"}>
+        {tracked ? ageStr(tracked.createdAt) : "—"}
+      </td>
       <td className="bl-c-spark"><MiniSpark closes={closes} up={up} /></td>
       <td className="bl-c-conf">{(idea.confidence * 100).toFixed(0)}%</td>
       <td className="bl-c-evid">
@@ -405,10 +457,21 @@ function BlotterRow({
 
 // ── BlotterTable ─────────────────────────────────────────────────────────────
 
+type BlotterFilter = "ALL" | "TRACKED" | "TRIGGERED" | "ARMED" | "ACTIVE" | "INVALIDATED";
+
+/** one vocabulary for filtering, whether the row is tracker-driven or derived */
+function effectiveStatus(idea: BlotterIdea, tracked: TrackedIdea | null): TrackedStatus {
+  if (tracked) return tracked.status;
+  const s = deriveStatus(idea);
+  return s === "TRIG" ? "TRIGGERED" : s === "INVLD" ? "INVALIDATED" : s === "WATCH" ? "ACTIVE" : s;
+}
+
 function BlotterTable({
-  ideas, selectedId, onSelect,
+  ideas, trackedByIdeaId, filter, selectedId, onSelect,
 }: {
   ideas: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  filter: BlotterFilter;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -421,9 +484,25 @@ function BlotterTable({
     );
   }
 
+  const visible = ideas.filter((idea) => {
+    const t = trackedByIdeaId.get(idea.id) ?? null;
+    if (filter === "ALL") return true;
+    if (filter === "TRACKED") return t !== null && t.statedLevels.trigger?.value != null; // level-anchored only
+    return effectiveStatus(idea, t) === filter;
+  });
+
+  if (visible.length === 0) {
+    return (
+      <div className="bl-empty">
+        <div className="bl-empty-title">NO IDEAS MATCH</div>
+        <div>No ideas in the {filter.toLowerCase()} state right now.</div>
+      </div>
+    );
+  }
+
   const GROUP_ORDER = ["TODAY · TOP IDEAS", "SHORT-TERM · SWING", "LONG-TERM"];
   const groups: Record<string, BlotterIdea[]> = {};
-  for (const idea of ideas) {
+  for (const idea of visible) {
     const g = TF_GROUP[idea.timeHorizon] ?? "LONG-TERM";
     if (!groups[g]) groups[g] = [];
     groups[g].push(idea);
@@ -436,7 +515,8 @@ function BlotterTable({
           <tr>
             <th>STATUS</th><th>TICKER</th><th>DIR</th><th>TF</th><th>SETUP</th>
             <th>TRIGGER</th><th>INVALID</th><th>TARGET</th><th>LIVE</th>
-            <th>Δ-TRIG</th><th>SPARK</th><th>CONF</th><th>EVID</th>
+            <th>Δ-TRIG</th><th title="signed vs stated trigger; ° = price since first mention">P&amp;L</th><th>AGE</th>
+            <th>SPARK</th><th>CONF</th><th>EVID</th>
           </tr>
         </thead>
         <tbody>
@@ -446,12 +526,13 @@ function BlotterTable({
             return (
               <Fragment key={g}>
                 <tr>
-                  <td colSpan={13} className="bl-section-head">{g.toLowerCase()}</td>
+                  <td colSpan={15} className="bl-section-head">{g.toLowerCase()}</td>
                 </tr>
                 {rows.map((idea) => (
                   <BlotterRow
                     key={idea.id}
                     idea={idea}
+                    tracked={trackedByIdeaId.get(idea.id) ?? null}
                     selected={selectedId === idea.id}
                     onSelect={() => onSelect(idea.id)}
                   />
@@ -571,7 +652,95 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
 
 // ── Inspector ────────────────────────────────────────────────────────────────
 
-function Inspector({ idea }: { idea: BlotterIdea | null }) {
+/** LIFECYCLE panel — everything here is read straight off the tracked record:
+ * real transition history, real snapshot ring, MFE/MAE from the engine. */
+function LifecyclePanel({ t, variants }: { t: TrackedIdea; variants: TrackedIdea[] }) {
+  const pnl = pnlView(t);
+  const mm = mfeMaeView(t);
+  const snaps = t.priceHistory;
+  const fmtT = (ms: number) =>
+    new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+
+  return (
+    <div className="bl-life">
+      <div className="bl-lev-section-head">
+        LIFECYCLE · TRACKED {ageStr(t.createdAt)}
+        {t.stale && <span className="bl-life-stale">STALE</span>}
+      </div>
+
+      {/* state timeline — times + prices, honest reasons on hover */}
+      <div className="bl-life-timeline">
+        {t.statusHistory.map((h, i) => (
+          <div key={i} className="bl-life-step" title={h.reason}>
+            <span className={`bl-st ${TRACKED_BADGE[h.state].cls}`} style={{ fontSize: 7 }}>{TRACKED_BADGE[h.state].label}</span>
+            <span className="bl-life-when">{fmtT(h.at)}</span>
+            {h.price != null && <span className="bl-life-px">${fmtPx(h.price)}</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* P&L + MFE/MAE — labeled by basis, per the law */}
+      <div className="bl-life-nums">
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">{pnl.kind === "since_first_mention" ? "SINCE 1st MENTION" : "P&L SINCE CALLED"}</div>
+          <div className={`bl-insp-meta-val ${pnl.kind !== "none" && pnl.pct >= 0 ? "bl-dlt-pos" : pnl.kind !== "none" ? "bl-dlt-neg" : ""}`}>
+            {pnl.kind === "none" ? "—" : fmtPct(pnl.pct)}
+          </div>
+        </div>
+        <div className="bl-insp-meta-cell">
+          <div className="bl-insp-meta-label">MFE / MAE</div>
+          <div className="bl-insp-meta-val">
+            {mm ? <><span className="bl-dlt-pos">{fmtPct(mm.mfePct)}</span> / <span className="bl-dlt-neg">{fmtPct(mm.maePct)}</span></> : "—"}
+          </div>
+        </div>
+      </div>
+      {pnl.kind === "since_first_mention" && (
+        <div className="bl-life-note">° no stated trigger — price move since first mention, not trade P&amp;L</div>
+      )}
+
+      {/* snapshot sparkline from the recorded ring buffer */}
+      {snaps.length >= 2 && (
+        <div className="bl-life-spark">
+          <MiniSparkWide snaps={snaps} basis={t.basisPrice} up={t.direction !== "bearish"} />
+          <div className="bl-life-sparklabel">{snaps.length} snapshots · cap {128}</div>
+        </div>
+      )}
+
+      {/* conflict variants — both stated triggers stay visible, never merged */}
+      {variants.length > 0 && (
+        <div className="bl-life-variants">
+          <div className="bl-insp-meta-label" style={{ marginBottom: 3 }}>⚠ CONFLICTING STATED TRIGGERS (SAME SOURCE)</div>
+          {variants.map((v) => (
+            <div key={v.id} className="bl-life-variant">
+              <span className={`bl-st ${TRACKED_BADGE[v.status].cls}`} style={{ fontSize: 7 }}>{TRACKED_BADGE[v.status].label}</span>
+              <span>trigger {v.statedLevels.trigger?.value != null ? `$${fmtPx(v.statedLevels.trigger.value)}` : v.statedLevels.trigger?.text ?? "⌀"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** wider sparkline over the tracker's own snapshots (not Yahoo closes) */
+function MiniSparkWide({ snaps, basis, up }: { snaps: { at: number; price: number }[]; basis: number | null; up: boolean }) {
+  const W = 240, H = 40;
+  const px = snaps.map((s) => s.price);
+  const all = basis != null ? [...px, basis] : px;
+  const min = Math.min(...all), max = Math.max(...all), range = max - min || 1;
+  const toY = (v: number) => H - ((v - min) / range) * (H - 4) - 2;
+  const pts = px.map((v, i) => `${((i / (px.length - 1)) * W).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
+  return (
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {basis != null && (
+        <line x1={0} y1={toY(basis)} x2={W} y2={toY(basis)} stroke="#cbb274" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
+      )}
+      <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+function Inspector({ idea, tracked, variants }: { idea: BlotterIdea | null; tracked: TrackedIdea | null; variants: TrackedIdea[] }) {
   if (!idea) {
     return (
       <div className="bl-insp-empty">
@@ -599,7 +768,7 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
         <div className="bl-insp-ticker">{idea.ticker}</div>
-        <StatusBadge s={status} />
+        {tracked ? <TrackedBadge t={tracked} /> : <StatusBadge s={status} />}
         {idea.__fav && <span className="badge b-fav" style={{ fontSize: 8 }}>FAV</span>}
       </div>
       {idea.assetName && (
@@ -661,6 +830,14 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
         <div className="bl-pa-label">PRICE ACTION</div>
         <div className="bl-pa-note">{priceActionNote}</div>
       </div>
+
+      {/* Tracker lifecycle — real transition history + excursions */}
+      {tracked && (
+        <>
+          <hr className="bl-insp-sep" />
+          <LifecyclePanel t={tracked} variants={variants} />
+        </>
+      )}
 
       <hr className="bl-insp-sep" />
 
@@ -1319,6 +1496,10 @@ export default function IntelDashboard() {
   // Honest latency: the last successful /api/intel/quotes roundtrip, measured
   // client-side. null until the first fetch completes.
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  // Idea Tracker: server-evaluated lifecycle records (page-load pass is
+  // server-throttled, so polling this is cheap).
+  const [trackedList, setTrackedList] = useState<TrackedIdea[]>([]);
+  const [blotterFilter, setBlotterFilter] = useState<BlotterFilter>("ALL");
 
   const load = useCallback(async () => {
     try {
@@ -1361,15 +1542,24 @@ export default function IntelDashboard() {
     } catch { /* keep */ }
   }, []);
 
+  const fetchTracker = useCallback(async () => {
+    try {
+      const r = await fetch("/api/intel/tracker", { cache: "no-store" });
+      const j = await r.json();
+      if (Array.isArray(j.tracked)) setTrackedList(j.tracked);
+    } catch { /* keep existing */ }
+  }, []);
+
   // initial parallel fetch
   useEffect(() => {
     load();
     fetchMacroTape();
+    fetchTracker();
     fetch("/api/intel/briefs", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
       .catch(() => {});
-  }, [load, fetchMacroTape]);
+  }, [load, fetchMacroTape, fetchTracker]);
 
   // ET clock
   useEffect(() => {
@@ -1382,16 +1572,18 @@ export default function IntelDashboard() {
     if (data?.brief) fetchBlotterQuotes(data.brief);
   }, [data?.brief, fetchBlotterQuotes]);
 
-  // auto-refresh quotes every 30s
+  // auto-refresh quotes every 30s (tracker piggybacks — its server pass is
+  // throttled to ~2 min, so most polls just return the stored set)
   useEffect(() => {
     if (!data?.brief) return;
     const brief = data.brief;
     const t = setInterval(() => {
       fetchMacroTape();
       fetchBlotterQuotes(brief);
+      fetchTracker();
     }, 30000);
     return () => clearInterval(t);
-  }, [data?.brief, fetchMacroTape, fetchBlotterQuotes]);
+  }, [data?.brief, fetchMacroTape, fetchBlotterQuotes, fetchTracker]);
 
   const loadDate = useCallback(async (date: string) => {
     if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
@@ -1445,6 +1637,14 @@ export default function IntelDashboard() {
   const displayBrief = selectedDate ? historyBrief : brief;
   const blotter = buildBlotter(brief, quotes);
   const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
+
+  // join blotter rows to tracker records through contributed idea ids
+  const trackedByIdeaId = new Map<string, TrackedIdea>();
+  for (const t of trackedList) for (const iid of t.ideaIds) trackedByIdeaId.set(iid, t);
+  const selectedTracked = selectedIdea ? trackedByIdeaId.get(selectedIdea.id) ?? null : null;
+  const conflictVariants = selectedTracked?.conflictKey
+    ? trackedList.filter((t) => t.conflictKey === selectedTracked.conflictKey && t.id !== selectedTracked.id)
+    : [];
 
   // compose watchlist tape items from blotter — one chip per symbol. Multiple
   // ideas can share a ticker (e.g. two stated FCEL triggers); the quote is
@@ -1536,16 +1736,32 @@ export default function IntelDashboard() {
                 <span className="bl-leg"><span className="bl-leg-ring" /> not stated</span>
                 <span className="bl-leg"><span className="bl-leg-sq" /> direct</span>
                 <span className="bl-leg"><span className="bl-leg-dsq" /> inferred</span>
+                <span className="bl-leg">° price since first mention (not trade P&amp;L)</span>
+              </div>
+              {/* tracker filter — TRACKED = level-anchored ideas only */}
+              <div className="bl-filter-row" role="group" aria-label="Filter ideas by tracker state">
+                {(["ALL", "TRACKED", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as BlotterFilter[]).map((f) => (
+                  <button
+                    key={f}
+                    className={`bl-filter-chip${blotterFilter === f ? " on" : ""}`}
+                    aria-pressed={blotterFilter === f}
+                    onClick={() => setBlotterFilter(f)}
+                  >
+                    {f}
+                  </button>
+                ))}
               </div>
               <BlotterTable
                 ideas={blotter}
+                trackedByIdeaId={trackedByIdeaId}
+                filter={blotterFilter}
                 selectedId={selectedId}
                 onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
               />
               <OptionsIntelPanel brief={brief} />
             </div>
             <div className="bl-right">
-              <Inspector idea={selectedIdea} />
+              <Inspector idea={selectedIdea} tracked={selectedTracked} variants={conflictVariants} />
             </div>
           </div>
         )}
