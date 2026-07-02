@@ -283,14 +283,14 @@ function PageHeader({
         </div>
       </div>
       <div className="bl-head-row2">
-        {counts.TRIG > 0 && (
-          <div className="bl-sp bl-sp-trig">
-            <span className="bl-sp-dot" />
-            {counts.TRIG} TRIGGERED
-          </div>
-        )}
-        {counts.ARMED > 0 && <div className="bl-sp bl-sp-arm">{counts.ARMED} ARMED</div>}
-        {counts.ACTIVE > 0 && <div className="bl-sp bl-sp-active">{counts.ACTIVE} ACTIVE</div>}
+        {/* pills always mount (zero counts dim on mobile, hide on desktop) so
+            row2's wrapped mobile geometry never shifts when counts land */}
+        <div className={`bl-sp bl-sp-trig${counts.TRIG ? "" : " bl-sp-zero"}`}>
+          <span className="bl-sp-dot" />
+          {counts.TRIG} TRIGGERED
+        </div>
+        <div className={`bl-sp bl-sp-arm${counts.ARMED ? "" : " bl-sp-zero"}`}>{counts.ARMED} ARMED</div>
+        <div className={`bl-sp bl-sp-active${counts.ACTIVE ? "" : " bl-sp-zero"}`}>{counts.ACTIVE} ACTIVE</div>
         {/* brief age lives in the status bar's BRIEF item (one row below);
             HISTORY duplicated the F2 BRIEF tab — both removed to de-crowd row2 */}
         <div className="bl-head-row2-right">
@@ -310,18 +310,29 @@ function PageHeader({
 
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({ data, clock, latencyMs }: { data: Overview; clock: string; latencyMs: number | null }) {
-  const { config, lastSync, lastBriefAt } = data;
-  // Honest chrome: quotes arrive via 30s HTTP polling (no websocket exists),
-  // DATA reflects whether a quote roundtrip has actually succeeded, and
-  // LATENCY is the measured last roundtrip — never a placeholder.
+function StatusBar({
+  data, clock, latencyMs, lastQuoteOkAt, trackerOk,
+}: {
+  data: Overview;
+  clock: string;
+  latencyMs: number | null;
+  lastQuoteOkAt: number | null;
+  trackerOk: boolean | null;
+}) {
+  const { lastSync, lastBriefAt } = data;
+  // Honest chrome: quotes arrive via 30s HTTP polling (no websocket exists);
+  // DATA degrades to STALE when two consecutive polls fail to land (75s),
+  // LATENCY is the measured last roundtrip, TRACKER reports the engine's
+  // reachability. Volatile values sit in fixed ch-slots so neighbors never
+  // shift between polls. The YT_API hint lives in the SOURCES hub.
+  const dataState =
+    lastQuoteOkAt === null ? "WAITING" : Date.now() - lastQuoteOkAt < 75_000 ? "LIVE" : "STALE";
   const items = [
     { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), cls: "" },
-    { label: "DATA", val: latencyMs !== null ? "LIVE" : "WAITING", cls: latencyMs !== null ? "bl-sb-ok" : "" },
-    { label: "FEED", val: "POLL 30s", cls: latencyMs !== null ? "bl-sb-ok" : "" },
-    { label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—", cls: latencyMs !== null && latencyMs > 2000 ? "bl-sb-warn" : "" },
-    // the YT_API key nag moved to the SOURCES workflow hub — it's optional by
-    // design and doesn't deserve permanent amber chrome on every tab
+    { label: "DATA", val: dataState, cls: `${dataState === "LIVE" ? "bl-sb-ok" : dataState === "STALE" ? "bl-sb-warn" : ""} bl-sb-slot7` },
+    { label: "FEED", val: "POLL 30s", cls: dataState === "LIVE" ? "bl-sb-ok" : "" },
+    { label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—", cls: `${latencyMs !== null && latencyMs > 2000 ? "bl-sb-warn" : ""} bl-sb-slot6` },
+    { label: "TRACKER", val: trackerOk === null ? "—" : trackerOk ? "ON" : "OFFLINE", cls: `${trackerOk === null ? "" : trackerOk ? "bl-sb-ok" : "bl-sb-warn"} bl-sb-slot7` },
     { label: "LAST SYNC", val: lastSync ? ageStr(lastSync) : "—", cls: "" },
     { label: "BRIEF", val: lastBriefAt ? ageStr(lastBriefAt) : "—", cls: "" },
   ];
@@ -355,6 +366,11 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
   };
   return (
     <div className="bl-tape">
+      {tape.length === 0 && (
+        <div className="bl-tape-item">
+          <span className="bl-tape-sym" style={{ opacity: 0.4 }}>TAPE · AWAITING FIRST QUOTE</span>
+        </div>
+      )}
       {macro.map((t) => (
         <div key={t.sym} className="bl-tape-item">
           <span className="bl-tape-sym">{t.sym.replace(/^\^/, "")}</span>
@@ -369,7 +385,7 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
             <div key={t.sym} className="bl-tape-item">
               <span className="bl-tape-sym">{t.sym}</span>
               <span className="bl-tape-px">${fmtPx(t.price)}</span>
-              <span className={`bl-st ${stCls[t.status]}`} style={{ fontSize: 7.5, padding: "1px 4px" }}>{t.status}</span>
+              <span className={`bl-st ${stCls[t.status]}`}>{t.status}</span>
             </div>
           ))}
         </>
@@ -1025,22 +1041,34 @@ function AskBar({ ai }: { ai: boolean }) {
     citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [askErr, setAskErr] = useState(false);
 
   const ask = async () => {
     if (q.trim().length < 3) return;
     setBusy(true);
+    setAskErr(false);
     try {
       const r = await fetch("/api/intel/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q }),
       });
-      setRes(await r.json());
-    } finally { setBusy(false); }
+      const j = await r.json();
+      // a 500 error payload has no answer string — never render an empty popover
+      if (r.ok && typeof j.answer === "string") { setRes(j); }
+      else { setAskErr(true); }
+    } catch { setAskErr(true); }
+    finally { setBusy(false); }
   };
 
   return (
     <div className="bl-askbar">
+      {askErr && !res && (
+        <div className="bl-askbar-ans">
+          <span className="istate istate-err">ASK failed — try again.</span>
+          <button className="ibtn ibtn-sm ibtn-ghost" style={{ marginLeft: 10 }} onClick={() => setAskErr(false)}>Dismiss</button>
+        </div>
+      )}
       {res && (
         <div className="bl-askbar-ans">
           <div style={{ marginBottom: 8 }}>{res.answer}</div>
@@ -1323,11 +1351,16 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
   const [transcript, setTranscript] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState(false);
   const [selectedChapterSec, setSelectedChapterSec] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}`, { cache: "no-store" });
-    if (r.ok) setBundle(await r.json());
+    setLoadErr(false);
+    try {
+      const r = await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}`, { cache: "no-store" });
+      if (!r.ok) throw new Error();
+      setBundle(await r.json());
+    } catch { setLoadErr(true); }
   }, [videoId]);
   useEffect(() => { load(); }, [load]);
 
@@ -1356,7 +1389,17 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
       <div className="idrawer-scrim" onClick={onClose} />
       <div className="idrawer">
         <button className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
-        {!bundle ? <div className="iskel" /> : (
+        {!bundle && loadErr ? (
+          <div className="istate istate-err" style={{ marginTop: 32 }}>
+            Couldn&apos;t load this video. <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
+          </div>
+        ) : !bundle ? (
+          <>
+            <div className="iskel" style={{ height: 22, width: "70%" }} />
+            <div className="iskel" style={{ height: 14, width: "45%" }} />
+            <div className="iskel" style={{ height: 120 }} />
+          </>
+        ) : (
           <>
             <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>VIDEO</div>
             <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>{v?.title}</h3>
@@ -1485,12 +1528,19 @@ export default function IntelDashboard() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [histErr, setHistErr] = useState(false);
   const [quotes, setQuotes] = useState<QuoteMap>({});
   const [tape, setTape] = useState<TapeItem[]>([]);
   const [clock, setClock] = useState(etClock());
   // Honest latency: the last successful /api/intel/quotes roundtrip, measured
   // client-side. null until the first fetch completes.
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  // Health facts for the status bar — when the last quote roundtrip actually
+  // landed (DATA degrades to STALE, never lies LIVE) and whether the tracker
+  // endpoint is reachable (rows silently fall back to derived statuses
+  // otherwise; the chrome must say so).
+  const [lastQuoteOkAt, setLastQuoteOkAt] = useState<number | null>(null);
+  const [trackerOk, setTrackerOk] = useState<boolean | null>(null);
   // Idea Tracker: server-evaluated lifecycle records (page-load pass is
   // server-throttled, so polling this is cheap).
   const [trackedList, setTrackedList] = useState<TrackedIdea[]>([]);
@@ -1513,6 +1563,7 @@ export default function IntelDashboard() {
       const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
+      setLastQuoteOkAt(Date.now());
       const q: QuoteMap = j.quotes ?? {};
       setTape((prev) => {
         const watch = prev.filter((t) => t.kind === "watch");
@@ -1533,6 +1584,7 @@ export default function IntelDashboard() {
       const r = await fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
+      setLastQuoteOkAt(Date.now());
       setQuotes(j.quotes ?? {});
     } catch { /* keep */ }
   }, []);
@@ -1541,8 +1593,13 @@ export default function IntelDashboard() {
     try {
       const r = await fetch("/api/intel/tracker", { cache: "no-store" });
       const j = await r.json();
-      if (Array.isArray(j.tracked)) setTrackedList(j.tracked);
-    } catch { /* keep existing */ }
+      if (r.ok && Array.isArray(j.tracked)) {
+        setTrackedList(j.tracked);
+        setTrackerOk(true);
+      } else {
+        setTrackerOk(false);
+      }
+    } catch { setTrackerOk(false); /* keep the last tracked list */ }
   }, []);
 
   // initial parallel fetch
@@ -1580,15 +1637,21 @@ export default function IntelDashboard() {
     return () => clearInterval(t);
   }, [data?.brief, fetchMacroTape, fetchBlotterQuotes, fetchTracker]);
 
-  const loadDate = useCallback(async (date: string) => {
-    if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
+  const loadDate = useCallback(async (date: string, force = false) => {
+    if (!force && date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); setHistErr(false); return; }
     setSelectedDate(date);
+    setHistErr(false);
     setHistoryLoading(true);
     try {
       const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
+      if (!r.ok) throw new Error();
       const j = await r.json();
       setHistoryBrief(j.brief ?? null);
-    } catch { setHistoryBrief(null); }
+    } catch {
+      // an error is not "no brief was stored" — keep the two states distinct
+      setHistoryBrief(null);
+      setHistErr(true);
+    }
     finally { setHistoryLoading(false); }
   }, [selectedDate]);
 
@@ -1618,7 +1681,18 @@ export default function IntelDashboard() {
   }, [load]);
 
   if (status === "loading") {
-    return <div style={{ padding: 24 }}>{[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}</div>;
+    // skeleton shaped to the board's real chrome heights so ready-state lands
+    // where the bars were — loading → ready repaints nothing structurally
+    return (
+      <div>
+        {[34, 32, 25, 23].map((h, i) => (
+          <div key={i} className="bl-skel" style={{ height: h, margin: 0, borderRadius: 0, borderBottom: "1px solid rgb(110 140 168 / 0.10)" }} />
+        ))}
+        <div style={{ padding: 16 }}>
+          {[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}
+        </div>
+      </div>
+    );
   }
   if (!data) {
     return (
@@ -1683,7 +1757,7 @@ export default function IntelDashboard() {
           onSync={sync}
           onGenerateBrief={generateBrief}
         />
-        <StatusBar data={data} clock={clock} latencyMs={latencyMs} />
+        <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
         <LiveTape tape={fullTape} />
 
         {msg && (
@@ -1784,6 +1858,13 @@ export default function IntelDashboard() {
             </div>
             {historyLoading
               ? <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
+              : histErr && selectedDate
+              ? (
+                <div className="istate istate-err">
+                  Couldn&apos;t load the {selectedDate} brief.{" "}
+                  <button className="ibtn ibtn-sm" onClick={() => loadDate(selectedDate, true)}>Retry</button>
+                </div>
+              )
               : <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />}
           </div>
         )}

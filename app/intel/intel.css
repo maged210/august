@@ -420,18 +420,27 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-sb-label { opacity: 0.55; text-transform: uppercase; font-size: 8.5px; }
 .bl-sb-val { color: var(--bone); font-weight: 500; }
 .bl-sb-ok { color: #7fb88a; } .bl-sb-warn { color: #cbb274; } .bl-sb-err { color: #d98b8b; }
-.bl-sb-clock { margin-left: auto; border-right: none; }
+/* text edges land exactly on the 16px page gutter (container pad + zeroed cell edge) */
+.bl-sb-item:first-child { padding-left: 0; }
+.bl-sb-clock { margin-left: auto; border-right: none; padding-right: 0; }
+/* fixed-width slots for values whose length changes between polls — the
+   neighbors never shift (LATENCY 1→5ch, DATA WAITING→LIVE→STALE) */
+.bl-sb-slot6 { display: inline-block; min-width: 6ch; }
+.bl-sb-slot7 { display: inline-block; min-width: 7ch; }
 
 /* ---- live tape ---- */
 .bl-tape {
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.10);
   display: flex; align-items: center; gap: 0;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  padding: 0; background: rgb(0 0 0 / 0.18);
+  /* height reserved so the strip never pops in when the first quotes land;
+     16px gutter pins its text edge to the page grid */
+  min-height: 23px;
+  padding: 0 16px; background: rgb(0 0 0 / 0.18);
 }
 .bl-tape::-webkit-scrollbar { display: none; }
 .bl-tape-item {
-  display: flex; align-items: center; gap: 8px; padding: 5px 14px;
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px;
   border-right: 1px solid rgb(var(--steel-rgb) / 0.08);
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10.5px; white-space: nowrap; flex-shrink: 0; cursor: default;
@@ -440,26 +449,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-tape-px { color: var(--bone); }
 .bl-tape-chg { font-size: 9.5px; }
 .bl-tape-up { color: #7fb88a; } .bl-tape-dn { color: #d98b8b; }
+/* watchlist badges in the tape are smaller than blotter badges — metrics live
+   here (not inline JSX) so the stylesheet stays the single source of truth */
+.bl-tape .bl-st { font-size: 7.5px; padding: 1px 4px; }
+.bl-tape-item:first-child { padding-left: 0; }
 
-/* ---- tab nav ---- */
-.bl-tabs {
-  display: flex; align-items: stretch; gap: 0;
-  border-bottom: 1px solid rgb(var(--steel-rgb) / 0.14);
-  overflow-x: auto; scrollbar-width: none;
-}
-.bl-tabs::-webkit-scrollbar { display: none; }
-.bl-tab {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
-  padding: 9px 18px; border: none; background: none; cursor: pointer;
-  color: var(--ash); border-bottom: 2px solid transparent; margin-bottom: -1px;
-  transition: color 0.12s, border-color 0.12s; white-space: nowrap;
-}
-.bl-tab:hover { color: var(--bone); }
-.bl-tab.on { color: var(--bone); border-bottom-color: var(--steel); }
-.bl-tab .bl-tab-fkey {
-  font-size: 8px; opacity: 0.5; margin-right: 5px;
-}
+/* (dead .bl-tabs/.bl-tab block removed — the live nav is .bl-head-tabs) */
 
 /* ---- 3-column shell ---- */
 .bl-layout {
@@ -469,13 +464,13 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-left {
   border-right: 1px solid rgb(var(--steel-rgb) / 0.10);
-  overflow-y: auto; padding: 14px 14px 60px;
+  overflow-y: auto; padding: 16px 16px 60px;
   scrollbar-width: thin; scrollbar-color: rgb(var(--steel-rgb) / 0.15) transparent;
 }
 .bl-center { overflow: hidden; display: flex; flex-direction: column; }
 .bl-right {
   border-left: 1px solid rgb(var(--steel-rgb) / 0.10);
-  overflow-y: auto; padding: 16px 14px 60px;
+  overflow-y: auto; padding: 16px 16px 60px;
   scrollbar-width: thin; scrollbar-color: rgb(var(--steel-rgb) / 0.15) transparent;
 }
 @media (max-width: 1100px) { .bl-layout { grid-template-columns: 240px minmax(0, 1fr); } .bl-right { display: none; } }
@@ -551,6 +546,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-row.selected { background: rgb(var(--steel-rgb) / 0.10); }
 .bl-row.selected td { color: var(--bone); }
 .bl-row td { padding: 6px 8px; font-size: 11.5px; vertical-align: middle; white-space: nowrap; }
+/* edge cells share the center column's 12px gutter so the STATUS column and
+   the section-head text above it start on the same x */
+.bl-thead th:first-child, .bl-row td:first-child { padding-left: 12px; }
+.bl-thead th:last-child, .bl-row td:last-child { padding-right: 12px; }
+.bl-optx-th:first-child, .bl-optx-td:first-child, .bl-optx-section-row td:first-child { padding-left: 12px; }
+.bl-optx-th:last-child, .bl-optx-td:last-child { padding-right: 12px; }
 
 /* blotter cell types */
 .bl-c-status { width: 52px; }
@@ -593,7 +594,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* tracker filter chips */
 .bl-filter-row {
-  display: flex; gap: 5px; padding: 5px 12px; flex-shrink: 0;
+  display: flex; gap: 5px; padding: 6px 12px; flex-shrink: 0;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.07);
   overflow-x: auto; scrollbar-width: none;
 }
@@ -659,6 +660,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   .bl-thead { display: none; }
   .bl-row { display: block; padding: 10px 0; cursor: pointer; }
   .bl-row td { display: inline; padding: 2px 4px; white-space: normal; }
+  /* keep the desktop 12px edge-cell rules out of the card layout */
+  .bl-row td:first-child, .bl-row td:last-child { padding: 2px 4px; }
   .bl-row td::before { display: none; }
   .bl-c-setup { max-width: none; display: block; margin-top: 4px; }
 }
@@ -702,12 +705,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-insp-sep { border: none; border-top: 1px solid rgb(var(--steel-rgb) / 0.10); margin: 12px 0; }
 
 /* ---- single-tab views (BRIEF / SOURCES / OPTIONS / ASK) ---- */
-.bl-tabview { max-width: 1000px; margin: 0 auto; padding: 20px; padding-bottom: 80px; }
+.bl-tabview { max-width: 1000px; margin: 0 auto; padding: 20px 16px 80px; }
 
 /* ---- pinned ASK bar ---- */
 .bl-askbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-  padding: 10px 18px;
+  padding: 10px 16px;
   background: color-mix(in srgb, var(--charcoal, #08080b) 94%, transparent);
   border-top: 1px solid rgb(var(--steel-rgb) / 0.14);
   backdrop-filter: blur(8px);
@@ -722,7 +725,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-askbar-input:focus { outline: none; border-color: rgb(var(--steel-rgb) / 0.4); }
 .bl-askbar-input:focus-visible { outline: 2px solid rgb(var(--steel-rgb) / 0.85); outline-offset: 1px; border-color: rgb(var(--steel-rgb) / 0.4); }
 .bl-askbar-ans {
-  position: absolute; bottom: calc(100% + 4px); left: 18px; right: 18px;
+  position: absolute; bottom: calc(100% + 4px); left: 16px; right: 16px;
   background: var(--charcoal, #08080b); border: 1px solid rgb(var(--steel-rgb) / 0.2);
   border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.6;
   color: var(--bone); max-height: 280px; overflow-y: auto;
@@ -734,6 +737,11 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   gap: 12px; min-height: 260px;
   font-family: var(--font-mono), monospace; font-size: 11px;
   color: var(--ash); opacity: 0.7; text-align: center;
+}
+/* the empty state fills the blotter slot so filtering to zero matches never
+   collapses the column and jumps the OPTIONS INTEL panel */
+.bl-center .bl-empty {
+  flex: 1;
 }
 .bl-empty-title {
   font-size: 13px; color: var(--bone); opacity: 1; letter-spacing: 0.1em;
@@ -801,8 +809,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   border-left: none; background: none; cursor: pointer;
   color: var(--ash); transition: color 0.12s, background 0.12s;
 }
-.bl-head-tab:first-child { border-left: 1px solid rgb(var(--steel-rgb) / 0.15); border-radius: 4px 0 0 4px; }
-.bl-head-tab:last-child { border-radius: 0 4px 4px 0; }
+.bl-head-tab:first-child { border-left: 1px solid rgb(var(--steel-rgb) / 0.15); border-radius: 3px 0 0 3px; }
+.bl-head-tab:last-child { border-radius: 0 3px 3px 0; }
 .bl-head-tab:hover { color: var(--bone); background: rgb(var(--steel-rgb)/0.05); }
 .bl-head-tab.on { color: var(--bone); background: rgb(var(--steel-rgb)/0.12); border-color: rgb(var(--steel-rgb)/0.3); }
 .bl-head-tab .bl-tab-fkey { font-size: 7.5px; opacity: 0.5; margin-right: 4px; }
@@ -810,9 +818,13 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 /* ---- STATUS PILLS (2 TRIGGERED / 2 ARMED / 2 ACTIVE) ---- */
 .bl-sp {
   font-family: var(--font-mono), monospace; font-size: 8.5px; letter-spacing: 0.08em;
-  padding: 2px 8px; border-radius: 4px; border: 1px solid; cursor: default;
+  padding: 2px 8px; border-radius: 3px; border: 1px solid; cursor: default;
   display: flex; align-items: center; gap: 4px; flex-shrink: 0;
 }
+/* zero-count pills exist only on mobile, where mounting them later would
+   insert a wrapped row (CLS); desktop hides them — locked design unchanged */
+.bl-sp-zero { opacity: 0.35; }
+@media (min-width: 701px) { .bl-sp-zero { display: none; } }
 .bl-sp-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .bl-sp-trig { color: #7fb88a; border-color: #7fb88a55; background: rgb(127 184 138 / 0.07); }
 .bl-sp-trig .bl-sp-dot { background: #7fb88a; box-shadow: 0 0 4px #7fb88a88; }
@@ -835,7 +847,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* ---- BLOTTER LEGEND ---- */
 .bl-legend {
-  display: flex; align-items: center; gap: 12px; padding: 4px 12px;
+  display: flex; align-items: center; gap: 12px; padding: 6px 12px;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.07); flex-shrink: 0;
   font-family: var(--font-mono), monospace; font-size: 8px; color: var(--ash);
   opacity: 0.65; overflow-x: auto; scrollbar-width: none;
@@ -862,7 +874,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-insp-price-chg { font-family: var(--font-mono), monospace; font-size: 12px; margin-left: 6px; }
 .bl-insp-meta-grid {
   display: grid; grid-template-columns: auto auto auto auto; gap: 0;
-  border: 1px solid rgb(var(--steel-rgb)/0.12); border-radius: 5px;
+  border: 1px solid rgb(var(--steel-rgb)/0.12); border-radius: 4px;
   overflow: hidden; margin: 8px 0;
 }
 .bl-insp-meta-cell {
