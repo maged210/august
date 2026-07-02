@@ -1024,4 +1024,6 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   .bl-hist-today { min-height: 44px; }
   /* the transcript drawer's close affordance needs a real tap area too */
   .idrawer-x { min-width: 44px; min-height: 44px; }
+  /* tracker filter chips are primary mobile controls — real tap targets */
+  .bl-filter-chip { min-height: 44px; padding: 3px 12px; }
 }
