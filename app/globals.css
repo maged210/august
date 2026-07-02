@@ -1174,12 +1174,18 @@ body::after {
   color: #d98b8b;
 }
 
+/* Single-line ellipsis (same clamp as .log-subj) — a real-world subject would
+   otherwise wrap the draft header onto multiple lines. */
 .comms-reply-meta {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
   letter-spacing: 0.03em;
   color: var(--ash);
   margin-bottom: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .comms-reply-to {
   color: var(--bone);
@@ -1405,6 +1411,10 @@ body::after {
   }
   .mk-chart {
     min-height: 300px;
+  }
+  /* Desk collapses to one column — brief first, levels + catalysts after. */
+  .desk-grid {
+    grid-template-columns: 1fr;
   }
   /* Comms: give the subject the whole width on a phone — a quiet metadata row
      (time · sender · tag) above, the subject below with a 2-line clamp. The
@@ -1648,6 +1658,244 @@ body::after {
   color: var(--ash);
   opacity: 0.6;
   line-height: 1.45;
+}
+
+/* ---- markets: DESK | TAPE | ARCHIVE tabs in the surface header ---- */
+.mkt-head-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.mkt-tabs {
+  display: flex;
+  gap: 2px;
+}
+.mkt-tab {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 9px;
+  color: var(--ash);
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.mkt-tab:hover {
+  color: var(--bone);
+}
+.mkt-tab.on {
+  color: var(--bone);
+  border-color: var(--line-strong);
+}
+/* The header cluster can wrap on narrow widths without disturbing other surfaces. */
+.markets-surface .surface-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* ---- markets DESK: today's brief — hero + compact idea cards, levels +
+   catalysts in the right column. Same panel language as the tape; no new
+   effects. The thesis is a strict one-liner (cards stay scannable). ---- */
+.desk-wrap,
+.arch-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.desk-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 0.9fr;
+  gap: 14px;
+  align-items: start;
+}
+.desk-main,
+.desk-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.desk-hero .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.desk-read60 {
+  font-size: var(--fs-md);
+  line-height: 1.65;
+  color: var(--bone);
+}
+.desk-note {
+  margin-top: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ash);
+  opacity: 0.6;
+}
+/* Owner-only trace control — reveals per-idea source cites (see BriefPanel). */
+.desk-trace-toggle {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 8.5px;
+  color: var(--ash);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  padding: 2px 8px;
+}
+.desk-trace-toggle.on {
+  color: var(--steel);
+  border-color: rgb(var(--steel-rgb) / 0.4);
+}
+.desk-idea {
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
+}
+.desk-idea:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+.desk-idea-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.desk-glyph {
+  font-size: 10px;
+  color: var(--ash);
+}
+.desk-tkr {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+}
+.desk-stat {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  opacity: 0.75;
+}
+.desk-thesis {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ash);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desk-vals {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ash);
+  opacity: 0.85;
+}
+.desk-vals b {
+  margin-left: 4px;
+  font-weight: 500;
+  color: var(--bone);
+}
+.desk-trace {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--steel);
+  text-decoration: none;
+}
+.desk-trace:hover {
+  text-decoration: underline;
+}
+/* No brief yet — the single compile affordance (wired to the intel pipeline). */
+.desk-compile-lead {
+  font-size: 14px;
+  color: var(--bone);
+  opacity: 0.9;
+  margin-bottom: 12px;
+}
+.desk-compile-btn {
+  align-self: flex-start;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  color: var(--bone);
+  border: 1px solid var(--steel);
+  border-radius: var(--r-sm);
+  padding: 10px 18px;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.desk-compile-btn:hover:not(:disabled) {
+  background: var(--steel);
+  color: var(--bg, #08080b);
+}
+.desk-compile-btn:disabled {
+  opacity: 0.55;
+}
+/* Quiet footer link to the /intel workbench. */
+.desk-workbench {
+  align-self: flex-end;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 9px;
+  color: var(--ash);
+  opacity: 0.55;
+  text-decoration: none;
+}
+.desk-workbench:hover {
+  opacity: 1;
+  color: var(--steel);
+}
+
+/* ---- markets ARCHIVE: collapsed past-brief rows; expanding renders the same
+   Desk layout read-only. Today never appears here — it lives on DESK. ---- */
+.arch-row {
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.06);
+}
+.arch-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ash);
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.arch-head:hover,
+.arch-head.on {
+  color: var(--bone);
+}
+.arch-chev {
+  font-size: 9px;
+  opacity: 0.6;
+}
+.arch-row > .desk-grid {
+  padding: 4px 4px 18px;
 }
 
 /* ---- markets wave 1: charts, gauges, sparklines, skeletons ---- */

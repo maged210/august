@@ -1,8 +1,11 @@
 // One-shot dashboard payload: config flags, current session, sources, videos, and
 // today's brief (if generated). Keeps the client to a single fetch + poll.
+// Source privacy: the brief is redacted (no channel/video attribution) unless the
+// server-side INTEL_OWNER_VIEW flag is set — same contract as the briefs routes.
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { getBrief, intelStorageConfigured, listSources, listVideos } from "@/lib/intel/store";
 import { intelligenceConfigured } from "@/lib/intel/extract";
+import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
 import { youtubeApiConfigured } from "@/lib/intel/youtube";
 import { etClock, etDateKey, etNiceDate, marketSession, SESSION_LABEL } from "@/lib/intel/session";
 
@@ -17,6 +20,7 @@ export async function GET(req: Request): Promise<Response> {
   const [sources, videos, brief] = await Promise.all([listSources(), listVideos(), getBrief(date)]);
   const lastSync = sources.reduce((m, s) => Math.max(m, s.lastChecked), 0);
   const lastProcessed = videos.reduce((m, v) => Math.max(m, v.status === "analyzed" ? v.updated : 0), 0);
+  const owner = intelOwnerView();
 
   return Response.json({
     config: {
@@ -30,6 +34,7 @@ export async function GET(req: Request): Promise<Response> {
     lastProcessed,
     sources,
     videos,
-    brief: brief ?? null,
+    brief: brief ? (owner ? brief : redactBrief(brief)) : null,
+    ownerView: owner,
   });
 }
