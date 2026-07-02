@@ -74,7 +74,7 @@ export default function MarketsSurface() {
           <span className={`mkt-dot ${status}`} />
           <span className="mkt-status-text">
             {status === "live"
-              ? `LIVE · ${updated} · delayed free proxies`
+              ? `LIVE · ${updated} · delayed proxies`
               : status === "error"
                 ? "feed unavailable — retrying"
                 : "connecting to feeds…"}
@@ -252,33 +252,41 @@ export default function MarketsSurface() {
             <div className="panel-head">Movers</div>
             {data ? (
               <div className="movers-cols">
-                <div>
-                  <div className="movers-h pos">Gainers</div>
-                  {data.movers.gainers.map((m) => (
-                    <div key={m.sym} className="mover">
-                      <span className="mover-sym">{m.sym}</span>
-                      <span className="pos">{pct(m.chgPct)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div className="movers-h neg">Losers</div>
-                  {data.movers.losers.map((m) => (
-                    <div key={m.sym} className="mover">
-                      <span className="mover-sym">{m.sym}</span>
-                      <span className="neg">{pct(m.chgPct)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div className="movers-h">Active</div>
-                  {data.movers.actives.map((m) => (
-                    <div key={m.sym} className="mover">
-                      <span className="mover-sym">{m.sym}</span>
-                      <span className={sign(m.chgPct)}>{pct(m.chgPct)}</span>
-                    </div>
-                  ))}
-                </div>
+                {/* per-column gates: a partially-empty screener response (common
+                    after the close) no longer renders bare headers over nothing */}
+                {data.movers.gainers.length > 0 && (
+                  <div>
+                    <div className="movers-h pos">Gainers</div>
+                    {data.movers.gainers.map((m) => (
+                      <div key={m.sym} className="mover">
+                        <span className="mover-sym">{m.sym}</span>
+                        <span className="pos">{pct(m.chgPct)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {data.movers.losers.length > 0 && (
+                  <div>
+                    <div className="movers-h neg">Losers</div>
+                    {data.movers.losers.map((m) => (
+                      <div key={m.sym} className="mover">
+                        <span className="mover-sym">{m.sym}</span>
+                        <span className="neg">{pct(m.chgPct)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {data.movers.actives.length > 0 && (
+                  <div>
+                    <div className="movers-h">Active</div>
+                    {data.movers.actives.map((m) => (
+                      <div key={m.sym} className="mover">
+                        <span className="mover-sym">{m.sym}</span>
+                        <span className={sign(m.chgPct)}>{pct(m.chgPct)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               fallback(5)
@@ -300,7 +308,7 @@ export default function MarketsSurface() {
                   </li>
                 ))
               ) : (
-                <li className="muted">No US events today</li>
+                <li className="muted">No US releases scheduled today</li>
               )}
             </ul>
           ) : (
@@ -312,7 +320,7 @@ export default function MarketsSurface() {
         {(!data || data.flow.length > 0) && (
           <section className="panel mk-flow">
             <div className="panel-head">
-              Flow · Lite <span className="todo">proxy</span>
+              Unusual Volume <span className="todo">flow proxy</span>
             </div>
             {data ? (
               <ul className="flow-list">

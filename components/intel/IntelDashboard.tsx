@@ -72,8 +72,6 @@ const watchUrl = (v: string, t?: number) =>
   `https://www.youtube.com/watch?v=${v}${t ? `&t=${Math.floor(t)}s` : ""}`;
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const ago = (ms: number) =>
-  ms ? `${Math.max(1, Math.round((Date.now() - ms) / 60000))}m ago` : "never";
 const ageStr = (since: number) => {
   const m = Math.max(1, Math.round((Date.now() - since) / 60000));
   if (m < 60) return `${m}m`;
@@ -81,6 +79,8 @@ const ageStr = (since: number) => {
   if (h < 48) return `${h}h`;
   return `${Math.round(h / 24)}d`;
 };
+// human ages everywhere — "11h ago", never "692m ago"
+const ago = (ms: number) => (ms ? `${ageStr(ms)} ago` : "never");
 const etClock = () =>
   new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
 const fmtPx = (n: number) =>
@@ -264,10 +264,6 @@ function PageHeader({
     { key: "ASK", label: "ASK", fkey: "F5" },
   ];
 
-  const briefAge = data.lastBriefAt
-    ? `${Math.round((Date.now() - data.lastBriefAt) / 60000)}m`
-    : null;
-
   return (
     <div className="bl-head">
       <div className="bl-head-row1">
@@ -295,9 +291,8 @@ function PageHeader({
         )}
         {counts.ARMED > 0 && <div className="bl-sp bl-sp-arm">{counts.ARMED} ARMED</div>}
         {counts.ACTIVE > 0 && <div className="bl-sp bl-sp-active">{counts.ACTIVE} ACTIVE</div>}
-        {briefAge && (
-          <span className="bl-brief-age-pill">{briefAge}</span>
-        )}
+        {/* brief age lives in the status bar's BRIEF item (one row below);
+            HISTORY duplicated the F2 BRIEF tab — both removed to de-crowd row2 */}
         <div className="bl-head-row2-right">
           <button className="ibtn ibtn-sm" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
             {busy === "sync" ? "Syncing…" : "SYNC"}
@@ -305,7 +300,6 @@ function PageHeader({
           <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
             {busy === "brief" ? "…" : "BRIEF"}
           </button>
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => onTab("BRIEF")}>HISTORY</button>
           <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">EXPORT</a>
           <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
         </div>
@@ -326,9 +320,10 @@ function StatusBar({ data, clock, latencyMs }: { data: Overview; clock: string; 
     { label: "DATA", val: latencyMs !== null ? "LIVE" : "WAITING", cls: latencyMs !== null ? "bl-sb-ok" : "" },
     { label: "FEED", val: "POLL 30s", cls: latencyMs !== null ? "bl-sb-ok" : "" },
     { label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—", cls: latencyMs !== null && latencyMs > 2000 ? "bl-sb-warn" : "" },
-    { label: "KEY", val: config.youtube ? "YT_API SET" : "YT_API UNSET", cls: config.youtube ? "bl-sb-ok" : "bl-sb-warn" },
-    { label: "LAST SYNC", val: lastSync ? `${Math.round((Date.now() - lastSync) / 60000)}m` : "—", cls: "" },
-    { label: "BRIEF", val: lastBriefAt ? `${Math.round((Date.now() - lastBriefAt) / 60000)}m` : "—", cls: "" },
+    // the YT_API key nag moved to the SOURCES workflow hub — it's optional by
+    // design and doesn't deserve permanent amber chrome on every tab
+    { label: "LAST SYNC", val: lastSync ? ageStr(lastSync) : "—", cls: "" },
+    { label: "BRIEF", val: lastBriefAt ? ageStr(lastBriefAt) : "—", cls: "" },
   ];
   return (
     <div className="bl-statusbar">
@@ -1818,6 +1813,11 @@ export default function IntelDashboard() {
               )}
               {!config.ai && data.lastBriefAt === 0 && (
                 <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
+              )}
+              {!config.youtube && (
+                <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>
+                  YOUTUBE_API_KEY unset — channel auto-discovery off; add videos by URL and paste transcripts manually.
+                </div>
               )}
             </div>
             <AddSource onReload={load} />

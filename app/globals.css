@@ -213,6 +213,12 @@ body::after {
 .boot-zulu {
   opacity: 0.5;
 }
+/* After the boot typewriter finishes, the flavor lines recede further — the
+   brand line + clock stay; the corner quiets down instead of shouting forever. */
+.boot-hud.settled > .opacity-70 {
+  opacity: 0.38;
+  transition: opacity 600ms var(--ease);
+}
 
 /* Corner frame ticks — thin L-marks framing the stage. Precise periphery, calm
    centre (Westworld/Bloomberg). Above the grain, below the dock + boot HUD. */
@@ -884,6 +890,9 @@ body::after {
 }
 .mk-gauges {
   grid-area: gauges;
+  /* same safety valve as the sibling panels — .panel{overflow:hidden} was
+     amputating the bottom gauge arcs when the 2x2 grid outgrew the 1fr row */
+  overflow-y: auto;
 }
 .mk-econ {
   grid-area: econ;
@@ -965,6 +974,11 @@ body::after {
   font-size: 11.5px;
   padding: 7px 0;
   border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
+}
+/* empty-state li carries a bare text node — the 48px first track truncated it
+   to "No US"; block display lets the sentence breathe */
+.econ-list li.muted {
+  display: block;
 }
 .econ-t {
   color: var(--steel);
@@ -1595,7 +1609,10 @@ body::after {
 
 .movers-cols {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* auto-flow: empty screener columns are no longer rendered, so survivors
+     share the width instead of leaving bare headers over blank tracks */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 14px;
 }
 .movers-h {
@@ -1732,9 +1749,15 @@ body::after {
 /* gauge cluster */
 .gauge-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 8px;
+  /* one row of four: the desktop panel row is ~113px tall — a 2x2 stack needs
+     ~170px+ even with tiny arcs, so it always clipped. Four across fits. */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 6px;
   align-content: start;
+}
+@media (max-width: 1100px) {
+  /* narrow layouts stack panels and size them to content — 2x2 breathes there */
+  .gauge-grid { grid-template-columns: 1fr 1fr; }
 }
 .gauge {
   display: flex;
@@ -1743,7 +1766,7 @@ body::after {
 }
 .gauge-svg {
   width: 100%;
-  max-width: 132px;
+  max-width: 104px; /* 132px pushed the 2x2 grid past its fixed 1fr row → clipped arcs */
   height: auto;
 }
 .gauge-val {
@@ -2838,7 +2861,9 @@ body {
 .brief-summon {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 14px);
-  right: calc(env(safe-area-inset-right, 0px) + clamp(40px, 5vw, 72px));
+  /* 112px clears the fixed INTEL link (it spans ~16-90px from the right edge);
+     the old clamp(40px,5vw,72px) always ended INSIDE the link's box → overlap. */
+  right: calc(env(safe-area-inset-right, 0px) + 112px);
   left: auto;
   z-index: 8;
   display: inline-flex;

@@ -97,7 +97,8 @@ export default function CommandGlobe({ active, flyTo }: Props) {
 
   // ZULU clock
   useEffect(() => {
-    const fmt = () => setZulu(new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
+    // time-only ("18:23:45Z") — the full ISO date is chrome noise in a HUD
+    const fmt = () => setZulu(new Date().toISOString().slice(11, 19) + "Z");
     fmt();
     const id = window.setInterval(fmt, 1000);
     return () => window.clearInterval(id);

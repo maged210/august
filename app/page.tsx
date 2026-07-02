@@ -1243,12 +1243,14 @@ export default function Home() {
           fontFamily: "var(--font-mono), ui-monospace, monospace",
           fontSize: 10,
           letterSpacing: "0.16em",
-          color: "rgba(233,239,246,0.55)",
+          // theme tokens (same language as the adjacent brief-summon pill) so
+          // the link survives light theme and shares the pill shape
+          color: "var(--ash)",
           textDecoration: "none",
-          border: "1px solid rgba(233,239,246,0.16)",
-          borderRadius: 6,
-          padding: "5px 9px",
-          background: "rgba(0,0,0,0.25)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r-full)",
+          padding: "6px 12px",
+          background: "var(--glass)",
         }}
       >
         INTEL →
@@ -1675,9 +1677,9 @@ function BootHud() {
     return () => window.clearTimeout(id);
   }, [n, full.length]);
 
-  // Live ZULU timestamp.
+  // Live ZULU timestamp — time-only; the full ISO date was corner clutter.
   useEffect(() => {
-    const fmt = () => setZulu(new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
+    const fmt = () => setZulu(new Date().toISOString().slice(11, 19) + "Z");
     fmt();
     const id = window.setInterval(fmt, 1000);
     return () => window.clearInterval(id);
@@ -1687,7 +1689,7 @@ function BootHud() {
   const done = n >= full.length;
 
   return (
-    <div className="boot-hud hud fixed left-5 top-5 z-30 select-none">
+    <div className={`boot-hud hud fixed left-5 top-5 z-30 select-none${done ? " settled" : ""}`}>
       {LINES.map((_, i) => (
         <div key={i} className={i === 1 ? "boot-brand" : "opacity-70"}>
           {shown[i] ?? ""}
