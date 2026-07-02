@@ -780,7 +780,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("aug-theme");
-      if (saved === "light" || saved === "dark") setTheme(saved);
+      if (saved === "light" || saved === "dark" || saved === "batman") setTheme(saved);
     } catch {
       /* private mode */
     }
@@ -802,7 +802,8 @@ export default function Home() {
     root.setAttribute("data-theming", "");
     window.clearTimeout(themingTimerRef.current);
     themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    setTheme((t) => (t === "dark" ? "light" : "dark"));
+    // three-way cycle: dark → light → batman (Gotham) → dark
+    setTheme((t) => (t === "dark" ? "light" : t === "light" ? "batman" : "dark"));
   }
 
   // On boot, ask whether today's brief is already waiting (cheap GET, never
@@ -1498,10 +1499,10 @@ export default function Home() {
               type="button"
               className="ctl-round ctl-theme"
               onClick={toggleTheme}
-              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Switch to light theme" : theme === "light" ? "Switch to Gotham theme" : "Switch to dark theme"}
+              aria-label={theme === "dark" ? "Switch to light theme" : theme === "light" ? "Switch to Gotham theme" : "Switch to dark theme"}
             >
-              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+              {theme === "dark" ? <SunIcon /> : theme === "light" ? <SignalIcon /> : <MoonIcon />}
             </button>
           </div>
         </div>
@@ -1654,6 +1655,17 @@ function MoonIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+/* Signal icon — a beam ring, the third theme's cue. Same stroke language as
+   Sun/Moon; monochrome (currentColor), no decoration. */
+function SignalIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="12" cy="12" r="8.5" opacity="0.45" />
     </svg>
   );
 }

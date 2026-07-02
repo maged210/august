@@ -82,7 +82,7 @@ body:has(.intel-root) {
 }
 .ibtn:hover { background: rgb(var(--steel-rgb) / 0.22); }
 .ibtn:disabled { opacity: 0.4; cursor: not-allowed; }
-.ibtn-primary { background: rgb(110 140 168 / 0.25); border-color: rgb(110 140 168 / 0.5); }
+.ibtn-primary { background: rgb(var(--steel-rgb) / 0.25); border-color: rgb(var(--steel-rgb) / 0.5); }
 .ibtn-ghost { background: transparent; color: var(--ash); }
 .ibtn-ghost:hover { color: var(--bone); }
 .ibtn-sm { padding: 5px 9px; font-size: 10px; }

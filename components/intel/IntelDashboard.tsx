@@ -1686,7 +1686,7 @@ export default function IntelDashboard() {
     return (
       <div>
         {[34, 32, 25, 23].map((h, i) => (
-          <div key={i} className="bl-skel" style={{ height: h, margin: 0, borderRadius: 0, borderBottom: "1px solid rgb(110 140 168 / 0.10)" }} />
+          <div key={i} className="bl-skel" style={{ height: h, margin: 0, borderRadius: 0, borderBottom: "1px solid rgb(var(--steel-rgb) / 0.10)" }} />
         ))}
         <div style={{ padding: 16 }}>
           {[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}

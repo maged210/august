@@ -61,7 +61,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('aug-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();",
+              "(function(){try{var t=localStorage.getItem('aug-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':t==='batman'?'batman':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();",
           }}
         />
       </head>

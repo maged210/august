@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 export type AugustState = "boot" | "idle" | "listening" | "thinking" | "speaking";
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "batman";
 
 type Props = {
   state: AugustState;
@@ -41,6 +41,20 @@ const LOOK = {
     coronaOpacity: 0.42,
     envIntensity: 1.25,
     exposure: 1.0,
+  },
+  // Gotham: the same dark-stage physics with the energy in signal gold —
+  // a searchlight against black, slightly dimmer than the steel look.
+  batman: {
+    sphere: 0x0a0a0c,
+    rim: new THREE.Color(0xe8d08a),
+    corona: new THREE.Color(0xd6b25a),
+    glow: new THREE.Color(0xa8905e),
+    additive: true,
+    rimIntensity: 0.95,
+    glowOpacity: 0.45,
+    coronaOpacity: 0.5,
+    envIntensity: 1.0,
+    exposure: 1.1,
   },
 } as const;
 

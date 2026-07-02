@@ -131,6 +131,36 @@
   --grain-opacity: 0.03;
 }
 
+/* ----------------------------------------------------------------------------
+   BATMAN THEME — Gotham grade, same restraint. A token swap, not a skin:
+   blacker stage, warm searchlight text, and THE accent flips from steel-blue
+   to muted signal gold. Bull/bear semantics (pos/neg) inherit the dark values
+   untouched — data colors never cosplay. No logos, no new effects.
+   ---------------------------------------------------------------------------- */
+:root[data-theme="batman"] {
+  --charcoal: #050505; /* Gotham black stage */
+  --charcoal-2: #0a0a0c;
+  --bone: #e9e4d6; /* warm searchlight white */
+  --ash: #99938a;
+  --ink-mute: #6b675f;
+  --graphite: #38352e;
+  --steel: #d6b25a; /* THE accent — signal gold */
+  --steel-rgb: 214 178 90;
+
+  --wash-rgb: 255 244 220; /* warm wash for hairlines/fills */
+  --glass: rgba(7, 7, 8, 0.78);
+  --glass-strong: rgba(5, 5, 6, 0.88);
+  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.2);
+
+  --vignette: radial-gradient(
+    125% 125% at 50% 44%,
+    transparent 36%,
+    rgba(0, 0, 0, 0.42) 74%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+  --grain-opacity: 0.05;
+}
+
 html,
 body {
   height: 100%;
