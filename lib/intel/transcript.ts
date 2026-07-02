@@ -128,9 +128,83 @@ export async function fetchTimedText(videoId: string, lang = "en"): Promise<Tran
   }
 }
 
-/** Public API: try compliant automatic sources, falling back to honest unavailable. */
+// --- external provider (OPTIONAL, key-gated) --------------------------------
+// Implemented against Supadata's documented contract (verified 2026-07-01 at
+// docs.supadata.ai/api-reference/endpoint/youtube/transcript):
+//   GET https://api.supadata.ai/v1/youtube/transcript?videoId=<id>[&lang=en]
+//   header `x-api-key: <TRANSCRIPT_PROVIDER_API_KEY>`
+//   200 → { content: [{ text, offset(ms), duration(ms), lang }], lang, availableLangs }
+//   206 → transcript unavailable · 400 invalid · 404 not found · 500 provider error
+// The interface stays swappable: TRANSCRIPT_PROVIDER selects the adapter
+// ("supadata" is the one implemented); an unknown name reports not_configured
+// honestly rather than guessing at an unverified API.
+
+export function externalProviderConfigured(): boolean {
+  return !!process.env.TRANSCRIPT_PROVIDER_API_KEY;
+}
+
+type SupadataChunk = { text?: string; offset?: number; duration?: number };
+
+export async function fetchExternalTranscript(videoId: string, lang = "en"): Promise<TranscriptResult> {
+  const key = process.env.TRANSCRIPT_PROVIDER_API_KEY;
+  if (!key) {
+    return { status: "not_configured", note: "No transcript provider key set (TRANSCRIPT_PROVIDER_API_KEY)." };
+  }
+  const provider = (process.env.TRANSCRIPT_PROVIDER || "supadata").toLowerCase();
+  if (provider !== "supadata") {
+    return {
+      status: "not_configured",
+      note: `Unknown TRANSCRIPT_PROVIDER "${provider}" — "supadata" is the implemented adapter.`,
+    };
+  }
+  try {
+    const u = new URL("https://api.supadata.ai/v1/youtube/transcript");
+    u.searchParams.set("videoId", videoId);
+    u.searchParams.set("lang", lang);
+    const res = await fetch(u, { cache: "no-store", headers: { "x-api-key": key } });
+    if (res.status === 206) {
+      return { status: "unavailable", source: "external", note: "Provider reports no transcript for this video." };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { status: "permission_required", source: "external", note: `Provider rejected the API key (${res.status}).` };
+    }
+    if (!res.ok) {
+      return { status: "provider_error", source: "external", note: `Provider returned ${res.status}.` };
+    }
+    const body = (await res.json()) as { content?: SupadataChunk[] | string };
+    const content = body?.content;
+    if (!Array.isArray(content) || content.length === 0) {
+      // text=true mode or an empty payload — we only request chunked mode, so
+      // anything else is reported, never guessed at.
+      return { status: "unavailable", source: "external", note: "Provider returned no transcript chunks." };
+    }
+    const segments: TranscriptSegment[] = [];
+    let i = 0;
+    for (const c of content) {
+      const text = (c.text ?? "").trim();
+      if (!text) continue;
+      const start = (c.offset ?? 0) / 1000; // documented in milliseconds
+      const dur = (c.duration ?? 0) / 1000;
+      segments.push(seg(i++, start, start + dur, text));
+    }
+    if (!segments.length) return { status: "unavailable", source: "external", note: "Provider chunks were empty." };
+    return { status: "available", source: "external", segments };
+  } catch {
+    return { status: "provider_error", source: "external", note: "Transcript provider fetch failed." };
+  }
+}
+
+/** Public API: try compliant automatic sources in order — public captions
+ * first (free), then the external provider when configured — falling back to
+ * an honest unavailable. Manual paste always remains first-class. */
 export async function acquireTranscript(videoId: string): Promise<TranscriptResult> {
   const tt = await fetchTimedText(videoId);
   if (tt.status === "available") return tt;
+  if (externalProviderConfigured()) {
+    const ext = await fetchExternalTranscript(videoId);
+    if (ext.status === "available") return ext;
+    // surface the provider's honest status rather than flattening it
+    if (ext.status === "permission_required" || ext.status === "provider_error") return ext;
+  }
   return { status: "unavailable", note: tt.note ?? "No transcript available — paste one manually." };
 }
