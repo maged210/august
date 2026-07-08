@@ -1,0 +1,109 @@
+{
+  "AAPL": {
+    "x": 33.3,
+    "y": 82.1,
+    "city": "Cupertino CA"
+  },
+  "UBER": {
+    "x": 32.3,
+    "y": 78.8,
+    "city": "San Francisco CA"
+  },
+  "TEM": {
+    "x": 203.5,
+    "y": 68.7,
+    "city": "Chicago IL"
+  },
+  "WEN": {
+    "x": 226.4,
+    "y": 77.8,
+    "city": "Dublin OH"
+  },
+  "SHOP": {
+    "city": "Ottawa CA",
+    "nonUS": true
+  },
+  "BABA": {
+    "city": "Hangzhou CN",
+    "nonUS": true
+  },
+  "FCEL": {
+    "x": 270.8,
+    "y": 60.9,
+    "city": "Danbury CT"
+  },
+  "RCAT": {
+    "city": "San Juan PR",
+    "nonUS": true
+  },
+  "UMAC": {
+    "x": 246.3,
+    "y": 150.6,
+    "city": "Orlando FL"
+  },
+  "CRM": {
+    "x": 32.4,
+    "y": 78.7,
+    "city": "San Francisco CA"
+  },
+  "GXO": {
+    "x": 270.5,
+    "y": 63.4,
+    "city": "Greenwich CT"
+  },
+  "CELH": {
+    "x": 255.9,
+    "y": 163.2,
+    "city": "Boca Raton FL"
+  },
+  "AVAV": {
+    "x": 256.9,
+    "y": 80.7,
+    "city": "Arlington VA"
+  },
+  "INTC": {
+    "x": 33.8,
+    "y": 82.1,
+    "city": "Santa Clara CA"
+  },
+  "CAR": {
+    "x": 267,
+    "y": 65.4,
+    "city": "Parsippany NJ"
+  },
+  "TSLA": {
+    "x": 154.7,
+    "y": 146.1,
+    "city": "Austin TX"
+  },
+  "NVDA": {
+    "x": 33.7,
+    "y": 81.9,
+    "city": "Santa Clara CA"
+  },
+  "MSFT": {
+    "x": 51,
+    "y": 17.7,
+    "city": "Redmond WA"
+  },
+  "AMZN": {
+    "x": 50.1,
+    "y": 17.7,
+    "city": "Seattle WA"
+  },
+  "META": {
+    "x": 33.1,
+    "y": 81,
+    "city": "Menlo Park CA"
+  },
+  "GOOGL": {
+    "x": 33.3,
+    "y": 81.5,
+    "city": "Mountain View CA"
+  },
+  "AMD": {
+    "x": 33.8,
+    "y": 81.8,
+    "city": "Santa Clara CA"
+  }
+}
