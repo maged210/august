@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BriefIdea,
   Chapter,
@@ -1730,6 +1730,136 @@ function CatalystLine({ earnings, watchlistSize }: {
   );
 }
 
+// ── UsMapPanel (stage 6 — SPEC-wiring §2.8, SPEC-desktop §2.5d) ──────────────
+
+/** lib/intel/hq.json — hand-curated ticker → HQ table with BUILD-TIME-projected
+ * geoAlbersUsa x/y (scripts/build-us-map.mjs). Tickers absent from it are
+ * silently dot-less BY DESIGN — never geocode, never guess. To add a ticker:
+ * add its lat/lon to the HQ table in the script, re-run
+ * `node scripts/build-us-map.mjs`, commit both generated JSONs. */
+type HqEntry = { x?: number; y?: number; city: string; nonUS?: boolean };
+type MapAssets = { states: { viewBox: string; paths: string[] }; hq: Record<string, HqEntry> };
+
+/** MAP THE STOCKS — flat SVG over build-time-precomputed geoAlbersUsa state
+ * outlines (§2.8 renderer decision: no MapLibre, zero runtime network). Dots
+ * only for watchlist tickers with curated HQ coordinates; radius/color from
+ * the REAL chgPct in the quotes map (design dot spec: r = 3 + min(5,|pct|),
+ * green/red by sign). A tracked ticker with no quote yet gets a minimal ash
+ * dot — no ring, no pct claim. Non-US HQs (incl. off-composite Puerto Rico)
+ * are listed in the one-line footer instead of being guessed onto the map. */
+function UsMapPanel({ blotter, trackedByIdeaId, quotes }: {
+  blotter: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  quotes: QuoteMap;
+}) {
+  // Committed local JSONs behind a dynamic import: the design's LOADING MAP…
+  // is the (lazy) chunk in flight, MAP OFFLINE is the import failing — both
+  // verbatim states stay reachable instead of decorative.
+  const [assets, setAssets] = useState<MapAssets | null>(null);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([import("@/lib/intel/us-states-paths.json"), import("@/lib/intel/hq.json")])
+      .then(([s, h]) => {
+        if (!alive) return;
+        setAssets({ states: s.default, hq: h.default as Record<string, HqEntry> });
+      })
+      .catch(() => { if (alive) setOffline(true); });
+    return () => { alive = false; };
+  }, []);
+
+  // static outline layer, memoized — the 30s quote poll re-renders the rail,
+  // and 51 state paths never change once the chunk lands
+  const outlines = useMemo(
+    () =>
+      assets && (
+        <g aria-hidden="true">
+          {assets.states.paths.map((d, i) => (
+            <path key={i} className="rd-map-state" d={d} />
+          ))}
+        </g>
+      ),
+    [assets],
+  );
+
+  // watchlist = blotter tickers ∪ live tracked tickers (the board the user
+  // sees plus level-anchored ideas still open on the tracker)
+  const syms = new Set<string>();
+  for (const i of blotter) syms.add(i.ticker.toUpperCase());
+  for (const t of trackedByIdeaId.values()) if (t.status !== "CLOSED") syms.add(t.ticker.toUpperCase());
+
+  const dots: { t: string; x: number; y: number; r: number; c: string | null; city: string; pct: number | null }[] = [];
+  const nonUS: string[] = [];
+  if (assets) {
+    for (const t of [...syms].sort()) {
+      const e = assets.hq[t];
+      if (!e) continue; // not curated — silently dot-less (see HqEntry note)
+      if (e.nonUS) { nonUS.push(t); continue; }
+      if (e.x == null || e.y == null) continue;
+      const pct = quotes[t]?.chgPct ?? null;
+      dots.push({
+        t, x: e.x, y: e.y, city: e.city, pct,
+        r: pct != null ? 3 + Math.min(5, Math.abs(pct)) : 2.4,
+        c: pct != null ? (pct >= 0 ? "#6fa085" : "#c58575") : null, // §2.5d literals
+      });
+    }
+  }
+
+  return (
+    <section className="rd-lsec">
+      <div className="rd-ts-card">
+        <div className="rd-ts-head">
+          <span className="rd-ts-title">MAP THE STOCKS</span>
+          <span className="rd-ts-hair" aria-hidden="true" />
+          <span className="rd-ts-note">HQ · US</span>
+        </div>
+        <div className="rd-map-body">
+          {offline ? (
+            <div className="rd-map-offline">MAP OFFLINE</div>
+          ) : !assets ? (
+            <div className="rd-map-pending">LOADING MAP…</div>
+          ) : (
+            <svg
+              className="rd-map-svg"
+              viewBox={assets.states.viewBox}
+              role="img"
+              aria-label={`US map of watchlist headquarters — ${dots.length} plotted`}
+            >
+              {outlines}
+              {dots.map((d) => (
+                <g key={d.t}>
+                  <title>{`${d.t} · ${d.city}${d.pct != null ? ` · ${fmtPct(d.pct)}` : ""}`}</title>
+                  {d.c ? (
+                    <>
+                      <circle cx={d.x} cy={d.y} r={d.r} fill={d.c} opacity={0.35} />
+                      <circle cx={d.x} cy={d.y} r={2.4} fill={d.c} />
+                    </>
+                  ) : (
+                    <circle cx={d.x} cy={d.y} r={2.4} className="rd-map-dot-ash" />
+                  )}
+                  <text className="rd-map-lbl" x={d.x} y={d.y - d.r - 4} textAnchor="middle">{d.t}</text>
+                </g>
+              ))}
+            </svg>
+          )}
+        </div>
+        {assets && !offline && nonUS.length > 0 && (
+          <div className="rd-map-foot">
+            +{" "}
+            {nonUS.map((t, i) => (
+              <Fragment key={t}>
+                {i > 0 && ", "}
+                <b>{t}</b>
+              </Fragment>
+            ))}{" "}
+            (off-map)
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ── LeftPanel (design left rail — SPEC-desktop §2.6.1, SPEC-wiring §2.11) ────
 
 /** TOP STOCKS — pure client derivation (SPEC-wiring §2.11): the blotter
@@ -1822,13 +1952,16 @@ function LeftPanel({
         )}
       </section>
 
-      {/* stage-5 fold-ins in the design's order (sentiment → sectors →
-          catalysts — the overview band precedes board content in the design,
-          so they sit at the top of the rail). Mount order is FIXED: sections
-          appear once when their data lands, but never re-order. Each renders
-          nothing while its desk part is null. (US map is stage 6.) */}
+      {/* stage-5/6 fold-ins in the design's order (sentiment → sectors → map
+          → catalysts — the overview band precedes board content in the
+          design, so they sit at the top of the rail; the catalysts line sits
+          below the band). Mount order is FIXED: sections appear once when
+          their data lands, but never re-order. Desk-fed sections render
+          nothing while their part is null; the map always renders (its own
+          LOADING MAP… / MAP OFFLINE states own the empty frame). */}
       <SentimentGauge fng={desk?.fng ?? null} />
       <SectorStrip sectors={desk?.sectors ?? null} />
+      <UsMapPanel blotter={blotter} trackedByIdeaId={trackedByIdeaId} quotes={quotes} />
       <CatalystLine earnings={desk?.earnings ?? null} watchlistSize={desk?.watchlistSize ?? 0} />
 
       {/* TOP STOCKS — derived, absent until the blotter has ideas. */}
@@ -2460,9 +2593,19 @@ export default function IntelDashboard() {
     } catch { /* keep existing */ }
   }, []);
 
+  // live tracked list mirrored into a ref so fetchBlotterQuotes can read it
+  // without depending on trackedList state (which changes identity every 30s
+  // tracker poll and would re-arm the poll interval effect)
+  const trackedRef = useRef<TrackedIdea[]>([]);
+
   const fetchBlotterQuotes = useCallback(async (brief: DailyBrief) => {
     const ideas = [...(brief.creatorFavorites ?? []), ...(brief.topIdeas ?? [])];
-    const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
+    // stage 6: quote the union the US map plots — blotter symbols PLUS live
+    // (non-CLOSED) tracked tickers, so map dots carry a REAL chgPct even on
+    // days the brief holds no board ideas. Blotter symbols keep priority
+    // under the endpoint's 20-symbol cap.
+    const live = trackedRef.current.filter((t) => t.status !== "CLOSED").map((t) => t.ticker);
+    const syms = [...new Set([...ideas.map((i) => i.ticker), ...live].map((s) => s.toUpperCase()))].slice(0, 20);
     if (!syms.length) return;
     try {
       const t0 = performance.now();
@@ -2480,6 +2623,7 @@ export default function IntelDashboard() {
       const j = await r.json();
       if (r.ok && Array.isArray(j.tracked)) {
         setTrackedList(j.tracked);
+        trackedRef.current = j.tracked;
         setTrackerOk(true);
       } else {
         setTrackerOk(false);
@@ -2522,10 +2666,12 @@ export default function IntelDashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // fetch blotter quotes when brief changes
+  // fetch blotter quotes when the brief changes — and refetch when tracker
+  // health flips (its first landing can postdate the brief, and tracked-only
+  // map dots should not sit ash/quote-less until the 30s poll)
   useEffect(() => {
     if (data?.brief) fetchBlotterQuotes(data.brief);
-  }, [data?.brief, fetchBlotterQuotes]);
+  }, [data?.brief, trackerOk, fetchBlotterQuotes]);
 
   // auto-refresh quotes every 30s (tracker piggybacks — its server pass is
   // throttled to ~2 min, so most polls just return the stored set)

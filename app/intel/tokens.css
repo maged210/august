@@ -1589,6 +1589,41 @@ a.rd-cite:hover { text-decoration: underline; }
 }
 
 /* ==========================================================================
+   STAGE 6 — MAP THE STOCKS (SPEC-desktop §2.5d, SPEC-wiring §2.8): flat SVG
+   over build-time geoAlbersUsa outlines (lib/intel/us-states-paths.json) —
+   zero runtime network. Lives in the rail, so the stage-4 mobile block hides
+   it with the rest of .rd-lrail. Exact design values throughout.
+   ========================================================================== */
+
+.rd-map-body { min-height: 118px; display: flex; align-items: center; margin-top: 5px; }
+.rd-map-svg { width: 100%; height: auto; display: block; }
+.rd-map-state {
+  fill: rgba(106, 160, 200, 0.055);
+  stroke: rgba(138, 166, 196, 0.28);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+.rd-map-lbl {
+  font-family: var(--rd-mono); font-size: 8px;
+  fill: #c7ccd2; /* §1.5 misc literal (sector name · map label) */
+}
+/* tracked ticker with no quote yet — minimal ash dot (no ring, no pct claim) */
+.rd-map-dot-ash { fill: var(--rd-t-ghost); }
+/* verbatim design states — pending ls .14em, offline ls .1em */
+.rd-map-pending, .rd-map-offline {
+  width: 100%; text-align: center;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-ghost);
+}
+.rd-map-pending { letter-spacing: 0.14em; }
+.rd-map-offline { letter-spacing: 0.1em; }
+/* footnote: mono 7.5px ls .04em ghost; tickers pop to #8b929a (t-dim) */
+.rd-map-foot {
+  margin-top: 4px; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.04em; color: var(--rd-t-ghost);
+}
+.rd-map-foot b { font-weight: 400; color: var(--rd-t-dim); }
+
+/* ==========================================================================
    STAGE 4 — MOBILE (<700px): rail hidden (rule of record — mobile paths are
    header row2 + the SOURCES tab), 44px targets on every reachable control
    (the .ibtn selector keeps the OPTIONS tab's old-skin buttons covered)
