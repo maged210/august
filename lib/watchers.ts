@@ -332,11 +332,13 @@ function evaluate(w: Watcher, f: Feeds): { message: string; cursor?: number } | 
 }
 
 async function fire(w: Watcher, message: string): Promise<void> {
-  const screen = w.type === "market" ? "markets" : "world";
+  // Every alert deep-links the deck: market alerts land on the DESK slide, the
+  // rest on WORLD (the orb page resolves ?screen= via resolveTarget on mount).
+  const url = w.type === "market" ? "/?screen=desk" : "/?screen=world";
   await sendToAll({
     title: "AUGUST",
     body: message,
-    url: `/?screen=${screen}`,
+    url,
     tag: `watcher-${w.id}`, // a fresh alert for this watcher replaces a stale one
   });
 }

@@ -57,11 +57,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${mono.variable} ${sans.variable}`} suppressHydrationWarning>
       <head>
-        {/* Set the theme attribute before first paint so the toggle never flashes. */}
+        {/* Set the theme + mood attributes before first paint so neither flashes. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('aug-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();",
+              "(function(){var d=document.documentElement;try{var t=localStorage.getItem('aug-theme');d.setAttribute('data-theme',t==='light'?'light':'dark');var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-theme','dark');d.setAttribute('data-mood','steel');}})();",
           }}
         />
       </head>

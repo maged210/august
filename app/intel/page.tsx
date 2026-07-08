@@ -1,19 +1,11 @@
-import type { Metadata } from "next";
-import "./intel.css";
-import IntelDashboard from "@/components/intel/IntelDashboard";
+import { redirect } from "next/navigation";
 
-// AUGUST Market Intel — a top-level destination at /intel. Dynamic (live data,
-// never statically optimized). The dashboard itself is a client component.
-export const metadata: Metadata = {
-  title: "Market Intel · AUGUST",
-  description: "Creator market-prep videos, turned into evidence-backed nightly intelligence.",
-};
+// The desk moved back onto the command deck as a slide. /intel survives only as
+// a server-side redirect so old bookmarks, watcher pushes, and muscle memory
+// all land on the desk surface. (The dashboard now owns its stylesheet — see
+// components/intel/IntelDashboard.tsx — so nothing is imported here.)
 export const dynamic = "force-dynamic";
 
-export default function IntelPage() {
-  return (
-    <main className="intel-root">
-      <IntelDashboard />
-    </main>
-  );
+export default function IntelPage(): never {
+  redirect("/?screen=desk");
 }

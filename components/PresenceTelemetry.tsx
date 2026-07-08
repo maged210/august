@@ -6,15 +6,16 @@ import type { AugustState } from "@/components/Presence3D";
 // The radial telemetry frame around the Presence orb: faint orbital lattice rings
 // + ticks, and the organs rendered as peripheral readouts (label · value) with a
 // thin leader line + node back toward the orb. PRESENCE is the orb itself (centre
-// label), so the periphery carries four organs at the four corners — MARKETS,
-// WORLD, COMMS (clickable; they navigate the deck) and MEMORY (a status readout,
-// no surface). WORLD fuses the globe + intel feeds: quakes (/api/command) over
-// live wires (/api/intel). Each value is wired to the SAME endpoint its surface
-// fetches — no invented data.
+// label), so the periphery carries four organs at the four corners — DESK, WORLD,
+// COMMS (clickable; they slide the deck to their surfaces) and MEMORY (a status
+// readout, no surface). WORLD fuses the globe + intel feeds: quakes (/api/command)
+// over live wires (/api/intel). Each value is wired to the SAME endpoint its
+// destination fetches — DESK reads live /api/markets — no invented data.
 
 type Readout = { key: string; label: string; angle: number; value: string; sub: string; nav: boolean };
 
-const REFRESH_MS = 30_000;
+const REFRESH_MS = 30_000; // markets/comms/day — the fast-moving readouts
+const REFRESH_SLOW_MS = 60_000; // command/intel — both are server-cached ~5min anyway
 
 // — compact value extractors (real data only; "—" while a feed is warming) ——————
 type Pair = { value: string; sub: string };
@@ -138,6 +139,9 @@ export default function PresenceTelemetry({
   }, []);
 
   // Pull the same organ endpoints the surfaces use (the retired Brief's role).
+  // Polls are gated: nothing fetches while the tab is hidden (a skipped cycle is
+  // caught up the moment the tab returns), and the slow-moving feeds (command,
+  // intel — both server-cached ~5min) poll at half the cadence of markets.
   useEffect(() => {
     let alive = true;
     const pull = (key: string, url: string) =>
@@ -147,18 +151,33 @@ export default function PresenceTelemetry({
           if (alive && j) setFeeds((prev) => ({ ...prev, [key]: j }));
         })
         .catch(() => {});
-    const load = () => {
+    const loadFast = () => {
+      if (document.hidden) return;
       pull("markets", "/api/markets");
-      pull("command", "/api/command");
-      pull("intel", "/api/intel");
       pull("comms", "/api/inbox");
       pull("day", "/api/day"); // AUGUST's awareness of today's calendar (restrained center line)
     };
-    load();
-    const id = window.setInterval(load, REFRESH_MS);
+    const loadSlow = () => {
+      if (document.hidden) return;
+      pull("command", "/api/command");
+      pull("intel", "/api/intel");
+    };
+    loadFast();
+    loadSlow();
+    const fastId = window.setInterval(loadFast, REFRESH_MS);
+    const slowId = window.setInterval(loadSlow, REFRESH_SLOW_MS);
+    const onVisible = () => {
+      // Back from a hidden tab: refresh once so the readouts aren't stale until
+      // the next interval tick (both loaders no-op if the tab is still hidden).
+      loadFast();
+      loadSlow();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
-      window.clearInterval(id);
+      window.clearInterval(fastId);
+      window.clearInterval(slowId);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
@@ -167,10 +186,10 @@ export default function PresenceTelemetry({
     const wo = fmtWorld(feeds.command, feeds.intel);
     const co = fmtComms(feeds.comms);
     const me = fmtMemory(sessionCount);
-    // Four organs on the four corners — balanced. MARKETS, WORLD and COMMS carry a
-    // surface and navigate; MEMORY (no surface) is a quiet status readout.
+    // Four organs on the four corners — balanced. DESK, WORLD and COMMS slide
+    // the deck to their surfaces; MEMORY is a quiet status readout.
     return [
-      { key: "markets", label: "MARKETS", angle: -52, nav: true, ...mk },
+      { key: "desk", label: "DESK", angle: -52, nav: true, ...mk },
       { key: "world", label: "WORLD", angle: 52, nav: true, ...wo },
       { key: "comms", label: "COMMS", angle: 128, nav: true, ...co },
       { key: "memory", label: "MEMORY", angle: -128, nav: false, ...me },

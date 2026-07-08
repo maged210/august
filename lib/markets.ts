@@ -525,7 +525,7 @@ function buildSnapshot(
   const lines: string[] = [];
   lines.push("MARKETS — live, delayed free proxies (NOT the live CME tape):");
   lines.push(
-    "When he asks where something is trading, about his levels, or \"where's NQ vs my levels\", ANSWER directly from these numbers in your own voice — do not just send him to a screen. Only use go_to_screen when he explicitly asks to open or see a surface.",
+    "When he asks where something is trading, about his levels, or \"where's NQ vs my levels\", ANSWER directly from these numbers in your own voice — do not just send him to a screen. Only use go_to_screen when he explicitly asks to open or see a screen.",
   );
   lines.push(
     "CRITICAL: these are the CURRENT live numbers. Use ONLY them for any market price or level. IGNORE any specific market figures you may remember from past conversations — those are stale and wrong (markets move). Never say \"based on our last conversation\" for prices; quote the live values below.",
@@ -535,7 +535,7 @@ function buildSnapshot(
   );
   if (levels) {
     lines.push(
-      `His NQ levels — the daily pivot levels on his Markets surface; when he says "my levels" he means THESE: ` +
+      `His NQ levels — the daily pivot levels on his desk surface; when he says "my levels" he means THESE: ` +
         `resistance ${fmt(levels.resistance)}, pivot ${fmt(levels.pivot)}, support ${fmt(levels.support)}; ` +
         `overnight high ${fmt(levels.onHigh)}, low ${fmt(levels.onLow)}. ` +
         `NQ (${levels.proxy}) is ~${fmt(levels.current)} right now — ${levels.above ? "above" : "below"} the pivot.`,

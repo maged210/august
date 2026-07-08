@@ -90,13 +90,20 @@ export default function OptionsWorkspace({ brief, levels }: { brief: DailyBrief 
           {options.consensus.length > 1 && (
             <div className="icard">
               <div className="icard-h">Options Consensus &amp; Conflicts <span className="optx-note">do channels agree on the underlying?</span></div>
-              {options.consensus.slice(0, 16).map((c) => (
-                <div key={c.ticker} className="consensus-row">
-                  <span className="intel-mono" style={{ color: "var(--bone)" }}>{c.ticker}</span>
-                  <span style={{ fontSize: 11, color: "var(--ash)" }}>{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
-                  <span className={`badge ${c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral"}`}>{c.agreement}</span>
-                </div>
-              ))}
+              {options.consensus.slice(0, 16).map((c) => {
+                // Redacted briefs keep the source COUNT but not channel names —
+                // never print "undefined"; fall back to an honest count.
+                const names = c.sources.map((s) => s.channelTitle).filter(Boolean);
+                return (
+                  <div key={c.ticker} className="consensus-row">
+                    <span className="intel-mono" style={{ color: "var(--bone)" }}>{c.ticker}</span>
+                    <span style={{ fontSize: 11, color: "var(--ash)" }}>
+                      {names.length ? names.join(" · ") : `${c.sources.length} source${c.sources.length === 1 ? "" : "s"}`}
+                    </span>
+                    <span className={`badge ${c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral"}`}>{c.agreement}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 

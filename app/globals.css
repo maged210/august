@@ -131,6 +131,60 @@
   --grain-opacity: 0.03;
 }
 
+/* ----------------------------------------------------------------------------
+   MOOD — a second axis, orthogonal to the light/dark theme above. <html> carries
+   data-mood (steel | ember | phosphor | graphite); each mood re-tints ONLY the
+   accent family — --steel / --steel-rgb — and everything accent-derived
+   (--accent-line, --glow-accent, every rgb(var(--steel-rgb) / …)) follows via
+   var(). The neutrals, the --pos/--neg market colours and the amber catalyst
+   semantics never move, in any mood. STEEL is the default and has no block: the
+   :root values above ARE steel. Each mood keeps the reference relationship — a
+   fuller accent on the dark stage, a calmer ink variant on the light one.
+   ---------------------------------------------------------------------------- */
+/* EMBER — warm workshop gold. Copper-leaning, so it never reads as the semantic
+   catalyst amber (#c9a24a), which keeps its meaning in every mood. */
+:root[data-mood="ember"] {
+  --steel: #c08d5f;
+  --steel-rgb: 192 141 95;
+}
+:root[data-theme="light"][data-mood="ember"] {
+  --steel: #875f33;
+  --steel-rgb: 135 95 51;
+}
+/* PHOSPHOR — muted CRT phosphor green. Leaf-leaning (never teal, never neon) so
+   it stays clearly apart from the --pos market green. */
+:root[data-mood="phosphor"] {
+  --steel: #82a878;
+  --steel-rgb: 130 168 120;
+}
+:root[data-theme="light"][data-mood="phosphor"] {
+  --steel: #4d6140;
+  --steel-rgb: 77 97 64;
+}
+/* GRAPHITE — cool gray-blue, near-mono; the accent recedes into the instrument. */
+:root[data-mood="graphite"] {
+  --steel: #8b95a3;
+  --steel-rgb: 139 149 163;
+}
+:root[data-theme="light"][data-mood="graphite"] {
+  --steel: #49525e;
+  --steel-rgb: 73 82 94;
+}
+/* The World surface re-pins the DARK accent for its dark-glass chrome in both
+   themes (see .command-surface below) — keep that pin mood-true. */
+:root[data-mood="ember"] .command-surface {
+  --steel: #c08d5f;
+  --steel-rgb: 192 141 95;
+}
+:root[data-mood="phosphor"] .command-surface {
+  --steel: #82a878;
+  --steel-rgb: 130 168 120;
+}
+:root[data-mood="graphite"] .command-surface {
+  --steel: #8b95a3;
+  --steel-rgb: 139 149 163;
+}
+
 html,
 body {
   height: 100%;
@@ -282,9 +336,6 @@ body::after {
 }
 .deck-dot:nth-child(4) {
   animation-delay: 440ms;
-}
-.deck-dot:nth-child(5) {
-  animation-delay: 500ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -445,6 +496,7 @@ body::after {
 
 /* ===========================================================================
    Command deck — four horizontally-paginated surfaces behind fixed chrome
+   (Presence · Desk · World · Comms; /intel now just redirects to the Desk)
    =========================================================================== */
 /* tokens consolidated into the design-system :root at the top of this file */
 
@@ -469,6 +521,17 @@ body::after {
   overflow: hidden;
   /* JS (Deck) drives scale+opacity depth during the swipe; scale from the centre */
   transform-origin: center center;
+}
+/* Containment guarantee — the same contract for EVERY deck surface: no surface
+   may size or paint beyond its slide, so nothing can inflate the deck's snap
+   math or push docked chrome (LAYERS chip, HUD strip, intel panel) off-viewport.
+   Each slide's root takes the slide's width (never its content's), clips its own
+   x-overflow, and stays shrinkable if it ever becomes a flex/grid item. Belt
+   over the per-surface guards (.desk-shell, .command-surface, .desk-slide…). */
+.deck-surface > * {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 /* indicator dots — fixed, top-center */
@@ -529,6 +592,70 @@ body::after {
 .deck-dot:focus-visible .deck-dot-label {
   opacity: 0.85;
   max-width: 90px;
+}
+
+/* desk slide — the lazy-mount host + its pre-bundle terminal placeholder.
+   Styled HERE (not intel.css) because the placeholder renders before the
+   dashboard chunk — and the stylesheet that ships with it — has loaded. */
+.desk-slide {
+  position: absolute;
+  inset: 0;
+  /* Belt over the shell's own guard: nothing the dashboard renders may paint
+     or size beyond the slide, so the deck's 100vw snap math can't be broken. */
+  overflow: clip;
+}
+/* world slide — the lazy-mount host for the MapLibre globe. Same contract as
+   .desk-slide: nothing inside may size or paint beyond the slide. The dark
+   stage backdrop is up before the globe chunk lands, so there's no flash. */
+.world-slide {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  background: #05060a;
+}
+.desk-boot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 22%;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--ash);
+}
+.desk-boot-title {
+  font-size: 12px;
+  letter-spacing: 0.34em;
+  color: var(--bone);
+}
+.desk-boot-line {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+.desk-boot-row {
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--steel-rgb) / 0.05),
+    rgb(var(--steel-rgb) / 0.13),
+    rgb(var(--steel-rgb) / 0.05)
+  );
+  background-size: 200% 100%;
+  animation: desk-shimmer 1.3s infinite;
+}
+@keyframes desk-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-boot-row {
+    animation: none;
+  }
 }
 
 /* presence */
@@ -855,7 +982,9 @@ body::after {
   border-bottom: 1px solid var(--line);
 }
 
-/* markets */
+/* markets — the TAPE grid on the desk slide. Viewport-fit on desktop: fr rows
+   split the slide's height and the list panels scroll internally (Bloomberg
+   screens don't page-scroll); ≤720px collapses to a scrolling column. */
 .markets-grid {
   display: grid;
   grid-template-columns: 0.95fr 1.5fr 0.95fr;
@@ -875,6 +1004,7 @@ body::after {
 .mk-watch {
   grid-area: watch;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mk-chart {
   grid-area: chart;
@@ -888,14 +1018,17 @@ body::after {
 .mk-econ {
   grid-area: econ;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mk-movers {
   grid-area: movers;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mk-flow {
   grid-area: flow;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .term-table {
   width: 100%;
@@ -1403,19 +1536,23 @@ body::after {
     overflow-y: auto;
   }
   /* Single column that collapses cleanly when empty sections are hidden — flex
-     (not grid-areas) so a removed panel leaves no reserved row or gap. */
+     (not grid-areas) so a removed panel leaves no reserved row or gap. On
+     mobile the desk SHELL scrolls, so the grid and its panels never do. */
   .markets-grid {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
   }
   .mk-chart {
     min-height: 300px;
   }
-  /* Desk collapses to one column — brief first, levels + catalysts after. */
-  .desk-grid {
-    grid-template-columns: 1fr;
+  .mk-watch,
+  .mk-econ,
+  .mk-movers,
+  .mk-flow {
+    overflow: visible;
   }
+  /* Desk/archive mobile rules live in their own 720px block AFTER the desk
+     base styles below — equal-specificity overrides must come later in source. */
   /* Comms: give the subject the whole width on a phone — a quiet metadata row
      (time · sender · tag) above, the subject below with a 2-line clamp. The
      WORK/NOISE tag is demoted onto the metadata row so it stops eating subject
@@ -1660,65 +1797,37 @@ body::after {
   line-height: 1.45;
 }
 
-/* ---- markets: DESK | TAPE | ARCHIVE tabs in the surface header ---- */
-.mkt-head-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  min-width: 0;
-}
-.mkt-tabs {
-  display: flex;
-  gap: 2px;
-}
-.mkt-tab {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 9px;
-  color: var(--ash);
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--r-xs);
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    border-color var(--dur-fast) var(--ease-snappy);
-}
-.mkt-tab:hover {
-  color: var(--bone);
-}
-.mkt-tab.on {
-  color: var(--bone);
-  border-color: var(--line-strong);
-}
-/* The header cluster can wrap on narrow widths without disturbing other surfaces. */
-.markets-surface .surface-head {
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-
-/* ---- markets DESK: today's brief — hero + compact idea cards, levels +
-   catalysts in the right column. Same panel language as the tape; no new
-   effects. The thesis is a strict one-liner (cards stay scannable). ---- */
+/* ---- BRIEF layout (BriefPanel — the desk's ARCHIVE renderer): hero + compact
+   idea cards, levels + catalysts in the right column. Same panel language as
+   the tape; no new effects. The thesis is a strict one-liner (cards stay
+   scannable). Everything flows at natural height — the ARCHIVE view scrolls
+   internally; panels don't. ---- */
 .desk-wrap,
 .arch-wrap {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  overflow-y: auto;
 }
 .desk-grid {
   display: grid;
   grid-template-columns: 1.6fr 0.9fr;
+  grid-template-areas:
+    "hero  side"
+    "ideas side";
   gap: 14px;
-  align-items: start;
 }
-.desk-main,
+.desk-hero {
+  grid-area: hero;
+}
+.desk-ideas {
+  grid-area: ideas;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
 .desk-side {
+  grid-area: side;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1852,26 +1961,20 @@ body::after {
 .desk-compile-btn:disabled {
   opacity: 0.55;
 }
-/* Quiet footer link to the /intel workbench. */
-.desk-workbench {
-  align-self: flex-end;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 9px;
-  color: var(--ash);
-  opacity: 0.55;
-  text-decoration: none;
-}
-.desk-workbench:hover {
-  opacity: 1;
-  color: var(--steel);
-}
 
-/* ---- markets ARCHIVE: collapsed past-brief rows; expanding renders the same
-   Desk layout read-only. Today never appears here — it lives on DESK. ---- */
+/* ---- ARCHIVE (desk tab): collapsed past-brief rows; expanding renders the
+   BriefPanel layout read-only. Today never appears here — it lives on BOARD.
+   Single-open accordion in natural flow inside the tab's own scroller, so no
+   bounded internal scrollers here. ---- */
+.arch-list {
+  display: flex;
+  flex-direction: column;
+}
 .arch-row {
   border-bottom: 1px solid rgb(var(--wash-rgb) / 0.06);
+}
+.arch-body {
+  padding: 4px 4px 18px;
 }
 .arch-head {
   width: 100%;
@@ -1894,8 +1997,17 @@ body::after {
   font-size: 9px;
   opacity: 0.6;
 }
-.arch-row > .desk-grid {
-  padding: 4px 4px 18px;
+
+/* Mobile: the brief collapses to one column — hero first, levels + catalysts
+   after — and rides the desk shell's natural scroll. */
+@media (max-width: 720px) {
+  .desk-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "hero"
+      "ideas"
+      "side";
+  }
 }
 
 /* ---- markets wave 1: charts, gauges, sparklines, skeletons ---- */
@@ -2125,7 +2237,7 @@ body::after {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.2em;
-  color: #6e8ca8;
+  color: var(--steel);
   margin-right: 8px;
 }
 .composer-row {
@@ -3074,7 +3186,7 @@ body {
   font-size: 8.5px;
   letter-spacing: 0.26em;
   text-indent: 0.26em;
-  color: rgba(110, 140, 168, 0.82); /* steel accent — an awareness, not chrome */
+  color: rgb(var(--steel-rgb) / 0.82); /* steel accent — an awareness, not chrome */
   white-space: nowrap;
   max-width: 62vw;
   overflow: hidden;

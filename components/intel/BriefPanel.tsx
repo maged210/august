@@ -3,10 +3,10 @@
 import { useState, type ReactNode } from "react";
 import type { DailyBrief, OptionBriefIdea, ValueField } from "@/lib/intel/types";
 
-// The shared brief renderer — the Markets DESK tab and its ARCHIVE expansions
-// both draw a brief through this one component, so the layout can never fork.
-// Deliberately lightweight: types + React only (NO OptionsWorkspace/dashboard
-// import chains — this ships in the deck bundle) and styled from globals.css.
+// The read-only brief renderer — the desk's ARCHIVE expansions draw past
+// briefs through this one component (the BOARD carries its own live brief
+// rail). Deliberately lightweight: types + React only (no extra import
+// chains) and styled from globals.css.
 //
 // Source privacy: cards carry no attribution by default. `ownerView` (the
 // server-side INTEL_OWNER_VIEW flag, relayed by the briefs API) is the ONLY
@@ -124,27 +124,30 @@ export default function BriefPanel({
 
   return (
     <div className="desk-grid">
-      <div className="desk-main">
-        <section className="panel desk-hero">
-          <div className="panel-head">
-            Brief · {brief.date}
-            {ownerView ? (
-              <button
-                type="button"
-                className={`desk-trace-toggle${trace ? " on" : ""}`}
-                onClick={() => setTrace((t) => !t)}
-                aria-pressed={trace}
-              >
-                trace
-              </button>
-            ) : null}
-          </div>
-          <p className="desk-read60">{brief.read60 || brief.posture || "No narrative for this brief."}</p>
-          {!brief.grounded ? (
-            <div className="desk-note">AI narrative offline — structured intel only.</div>
+      {/* Hero keeps its natural height; ideas and the side column flow with
+          the content — the ARCHIVE view scrolls internally, so no viewport-fit
+          gymnastics are needed here. */}
+      <section className="panel desk-hero">
+        <div className="panel-head">
+          Brief · {brief.date}
+          {ownerView ? (
+            <button
+              type="button"
+              className={`desk-trace-toggle${trace ? " on" : ""}`}
+              onClick={() => setTrace((t) => !t)}
+              aria-pressed={trace}
+            >
+              trace
+            </button>
           ) : null}
-        </section>
+        </div>
+        <p className="desk-read60">{brief.read60 || brief.posture || "No narrative for this brief."}</p>
+        {!brief.grounded ? (
+          <div className="desk-note">AI narrative offline — structured intel only.</div>
+        ) : null}
+      </section>
 
+      <div className="desk-ideas">
         {ideas.length > 0 && (
           <section className="panel">
             <div className="panel-head">Top ideas</div>
@@ -165,7 +168,7 @@ export default function BriefPanel({
       <div className="desk-side">
         {aside}
         {catalysts.length > 0 && (
-          <section className="panel">
+          <section className="panel desk-catalysts">
             <div className="panel-head">Catalysts · {brief.date}</div>
             <ul className="econ-list">
               {catalysts.map((c, i) => (

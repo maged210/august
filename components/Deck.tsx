@@ -35,13 +35,17 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
     const el = scrollRef.current;
     if (!el) return;
     const i = Math.max(0, Math.min(count - 1, index));
+    // Target the slide's REAL offset, not i×clientWidth — identical when the
+    // geometry is exact, still correct at fractional zoom widths.
+    const slide = el.children[i] as HTMLElement | undefined;
+    const left = slide ? slide.offsetLeft : i * el.clientWidth;
     // An explicit "smooth" overrides CSS scroll-behavior, so reduced motion has
     // to be honored here — the deck slide is the largest animation in the app.
     const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)")
       .matches
       ? "auto"
       : "smooth";
-    el.scrollTo({ left: i * el.clientWidth, behavior });
+    el.scrollTo({ left, behavior });
   };
 
   useImperativeHandle(ref, () => ({ goTo }), [count]);
@@ -71,6 +75,48 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       window.clearTimeout(t);
     };
   }, [onActiveChange]);
+
+  // The deck must never REST off-snap — that is how a surface's docked chrome
+  // ends up half off-viewport (the World LAYERS chip clipped at the left edge).
+  // Two real drift sources exist:
+  //  1. Sequential focus (Tab) into an off-screen slide's control: the browser
+  //     scrolls this container just far enough to reveal the control, and
+  //     Chromium does not re-snap mandatory snap containers after focus scrolls
+  //     — the deck rests misaligned by up to a panel's width.
+  //  2. Window resizes: scrollLeft is preserved while the snap offsets move.
+  // Heal both: promote a focus scroll into a proper slide navigation, and re-pin
+  // the active slide (instantly — it's a layout correction, not motion) once a
+  // resize settles. Both are no-ops when the deck is already aligned.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      const idx = (Array.from(el.children) as HTMLElement[]).findIndex((k) => k.contains(t));
+      if (idx >= 0) goTo(idx);
+    };
+    let rt = 0;
+    const onResize = () => {
+      window.clearTimeout(rt);
+      rt = window.setTimeout(() => {
+        const slide = el.children[activeRef.current] as HTMLElement | undefined;
+        if (!slide || Math.abs(el.scrollLeft - slide.offsetLeft) <= 1) return;
+        const prev = el.style.scrollBehavior;
+        el.style.scrollBehavior = "auto";
+        el.scrollLeft = slide.offsetLeft;
+        el.style.scrollBehavior = prev;
+      }, 120);
+    };
+    el.addEventListener("focusin", onFocusIn);
+    window.addEventListener("resize", onResize);
+    return () => {
+      el.removeEventListener("focusin", onFocusIn);
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(rt);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Chrome parallax: while the deck scrolls, fixed chrome (boot HUD, indicator
   // dots) drifts a few px against the scroll velocity and eases back to 0 at
