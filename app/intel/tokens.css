@@ -692,31 +692,16 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   .rd-bar2-div { display: none; }
   .rd-bar2-right .rd-btn { min-height: 44px; flex: 1; }
 
-  /* ---- STAGE 2: mobile board = cards, fully scrollable, NO horizontal
-     scroll (memory rule) — the rd- equivalent of the old bl- card collapse.
-     The grid template is dropped; cells flow as a wrapped card with the
-     thesis and source cite on their own lines. ---- */
-  .rd-board-wrap { overflow: visible; }
-  .rd-board-min { min-width: 0; }
-  .rd-colhead { display: none; }
-  .rd-row-grid {
-    display: flex; flex-wrap: wrap; align-items: center;
-    gap: 4px 10px; padding: 10px 12px; min-height: 44px;
-  }
-  .rd-c-thesis {
-    flex-basis: 100%; white-space: normal;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-    overflow: hidden; line-height: 1.35;
-  }
-  .rd-c-src { flex-basis: 100%; }
-  .rd-delta { flex-direction: row; align-items: center; gap: 6px; }
-  .rd-rail { width: 56px; }
-  .rd-group { padding: 7px 12px; }
-  .rd-bhead, .rd-legend, .rd-filter-row { padding-left: 12px; padding-right: 12px; }
+  /* ---- STAGE 8: the desktop board chrome (column table, legend, blotter
+     header, filter row) has no phone design — hidden here; the SPEC-mobile
+     card board (.rd-mb block, end of this file) owns <700px. The old stage-2
+     flex-reflow rules were deleted with it (they styled a now-hidden tree). ---- */
+  .rd-bhead, .rd-legend, .rd-filter-row { display: none; }
+  .rd-mhide { display: none !important; }
 
-  /* tracker filter chips are primary mobile controls — real tap targets */
+  /* tracker status chips (re-hosted inside .rd-mstatus) + board-state
+     buttons keep real tap targets */
   .rd-fchip { min-height: 44px; padding: 3px 12px; }
-  /* board-state buttons need real tap areas too */
   .rd-btn-lg, .rd-btn-retry { min-height: 44px; }
 }
 
@@ -1823,4 +1808,340 @@ a.rd-cite:hover { text-decoration: underline; }
   .rd-optx-toggle { min-height: 44px; }
   .rd-optx-row { min-height: 44px; }
   .rd-optk-back { min-height: 44px; min-width: 44px; }
+}
+
+/* ==========================================================================
+   STAGE 8 — MOBILE (<700px): the SPEC-mobile phone layout for the BOARD tab.
+   Summary carousel (Brief / Alerts / At-the-Open) with scroll-bound dots,
+   sticky segmented horizon control, single-expand accordion idea cards.
+   Exact values from docs/design/SPEC-mobile.md. EVERYTHING here is scoped to
+   the breakpoint (or to .rd-m* classes that are display:none above it) —
+   ≥701px renders exactly as stages 1–7 left it.
+   ========================================================================== */
+
+.rd-mb { display: none; }               /* whole mobile board tree — desktop off */
+.rd-tape-badge-short { display: none; } /* mobile "TAPE" label — desktop off */
+
+@media (max-width: 700px) {
+  /* ---- mobile palette + stage (§2.1/§10): the brighter green/amber set is
+     used throughout the phone design; page bg one step darker; ambient 320px
+     with the mobile gradient. Re-pinning the tokens keeps shared chrome
+     (count pills, tape tails, life chips) on the mobile ramp. ---- */
+  .intel-root {
+    --rd-bull: #6fbf93;
+    --rd-amber: #c79a52;
+    --rd-stage: #040506;
+    --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(95, 176, 173, 0.16), transparent 62%);
+    background: #040506;
+  }
+  .cinematic .rd-ambient { height: 320px; }
+  /* all scrollbars hidden on mobile (§1) */
+  .intel-root * { scrollbar-width: none; }
+  .intel-root *::-webkit-scrollbar { display: none; }
+
+  /* ---- sticky app header (§4.1 adapted): bar1 (brand + the fkeys strip —
+     the real tab bar on this app) pins with the design's blur treatment.
+     bar2/status/tape scroll away; the real header height is 77px (33px brand
+     row + 44px fkeys), which is the sticky offset the segmented control uses. ---- */
+  .rd-bar1 {
+    position: sticky; top: 0; z-index: 30;
+    background: rgba(7, 8, 10, 0.86);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--rd-hair-06);
+  }
+  /* LIVE pill mobile form (§10): 8px, radius 20, brighter green, soft bg */
+  .rd-livechip {
+    font-size: 8px; letter-spacing: 0.1em; border-radius: 20px;
+    border-color: rgba(111, 191, 147, 0.32); background: rgba(111, 191, 147, 0.06);
+  }
+  .rd-livechip-dot { width: 4px; height: 4px; }
+
+  /* ---- condensed tape (§4.2): TAPE label, 50s loop, static dot, 10px items
+     without cell borders, no divider labels, 32px right fade ---- */
+  .rd-tape, .rd-tape-badge { background: #070809; }
+  .rd-tape-badge { font-size: 8px; letter-spacing: 0.12em; padding: 0 13px; }
+  .rd-tape-badge-full { display: none; }
+  .rd-tape-badge-short { display: inline; }
+  .rd-tape-badge-dot { background: var(--rd-bull); box-shadow: 0 0 6px -1px var(--rd-bull); animation: none; }
+  .rd-tape-track { animation-duration: 50s; }
+  .rd-tape-q { font-size: 10px; padding: 0 13px; gap: 6px; border-right: none; }
+  .rd-tape-inst { font-size: 9px; }
+  .rd-tape-watchtail { font-size: 9px; }
+  .rd-tape-divider { display: none; }
+  .rd-tape-scroll::after {
+    content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 32px;
+    background: linear-gradient(90deg, transparent, #070809); pointer-events: none;
+  }
+
+  /* the sticky segmented control needs a visible ancestor chain */
+  .rd-center { overflow: visible; }
+  .rd-mb { display: block; }
+
+  /* ---- summary carousel (§4.3) ---- */
+  .rd-mcar {
+    display: flex; gap: 11px; overflow-x: auto;
+    scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+    padding: 15px 16px 4px;
+  }
+  .rd-mcar:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+  .rd-mcard {
+    flex: 0 0 86%; min-width: 0; scroll-snap-align: center;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #0d1014, #0a0c10);
+    border: 1px solid var(--rd-hair-07);
+    box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    padding: 14px 16px;
+  }
+  .rd-mcard-brief { padding: 15px 16px; }
+  .rd-mcar-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rd-mcar-title {
+    font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+    letter-spacing: 0.18em; color: #9aa1a9; white-space: nowrap;
+  }
+  .rd-mread {
+    position: relative; font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.08em;
+    color: #5a616a; padding: 3px 8px; border: 1px solid var(--rd-hair-10);
+    border-radius: 20px; background: none; cursor: pointer; white-space: nowrap;
+  }
+  .rd-mread::before { content: ""; position: absolute; inset: -14px -8px; } /* ≥44px hit */
+  .rd-mread.on { color: var(--rd-acc); border-color: var(--rd-acc-soft40); }
+  .rd-mread:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+  .rd-mbrief-p {
+    font-family: var(--rd-sans); font-size: 14px; line-height: 1.5;
+    color: #b4bac1; margin: 10px 0 0;
+  }
+  .rd-mabs { font-style: italic; color: var(--rd-t-disabled); }
+  .rd-mtiles { display: flex; gap: 7px; margin-top: 12px; }
+  .rd-mtile { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 12px; border: 1px solid; }
+  .rd-mtile-v {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--rd-mono); font-size: 15px; color: #e9ebee;
+  }
+  .rd-mtile-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .rd-mtile-l {
+    display: block; font-family: var(--rd-mono); font-size: 8px;
+    letter-spacing: 0.08em; margin-top: 3px; white-space: nowrap;
+  }
+  .rd-mtile-trig { background: rgba(111, 191, 147, 0.05); border-color: rgba(111, 191, 147, 0.2); }
+  .rd-mtile-trig .rd-mtile-dot { background: #6fbf93; }
+  .rd-mtile-trig .rd-mtile-l { color: #7a8a80; }
+  .rd-mtile-arm { background: rgba(199, 154, 82, 0.05); border-color: rgba(199, 154, 82, 0.2); }
+  .rd-mtile-arm .rd-mtile-dot { background: #c79a52; }
+  .rd-mtile-arm .rd-mtile-l { color: #8a8270; }
+  .rd-mtile-act { background: rgba(106, 160, 200, 0.05); border-color: rgba(106, 160, 200, 0.2); }
+  .rd-mtile-act .rd-mtile-dot { background: #6aa0c8; }
+  .rd-mtile-act .rd-mtile-l { color: #72808a; }
+
+  /* alerts card rows (§4.3 card 2 — real tracker transitions + system rows) */
+  .rd-mnew {
+    font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+    color: #08110b; background: #6fbf93; padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+  }
+  .rd-malert { display: flex; gap: 9px; padding: 7px 0; }
+  .rd-malert + .rd-malert { border-top: 1px solid var(--rd-hair-05); }
+  .rd-malert-dot { width: 5px; height: 5px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .rd-malert-dot.up { background: #6fbf93; }
+  .rd-malert-dot.dn { background: #cd7e6d; }
+  .rd-malert-dot.up.glow { box-shadow: 0 0 5px #6fbf93; }
+  .rd-malert-dot.dn.glow { box-shadow: 0 0 5px #cd7e6d; }
+  .rd-malert-main { min-width: 0; }
+  .rd-malert-body {
+    display: block; font-family: var(--rd-sans); font-size: 12.5px;
+    line-height: 1.35; color: #c4cad0;
+  }
+  .rd-malert-tkr { font-family: var(--rd-mono); font-size: 0.92em; color: #e9ebee; }
+  .rd-malert-meta {
+    display: block; font-family: var(--rd-mono); font-size: 8px;
+    letter-spacing: 0.04em; color: #565c63; margin-top: 2px;
+  }
+  .rd-malert-sys .rd-malert-dot { background: #c79a52; box-shadow: 0 0 5px #c79a52; }
+  .rd-malert-sys .rd-malert-body { color: #aeb4bb; }
+  .rd-malert-sys .rd-malert-tkr { font-size: 0.9em; color: #c79a52; }
+  .rd-mabs-line {
+    font-family: var(--rd-sans); font-style: italic; font-size: 12px;
+    color: var(--rd-t-disabled); padding: 10px 0 2px;
+  }
+  .rd-mabs-line .rd-abs-g { font-style: normal; }
+
+  /* at-the-open card rows (§4.3 card 3) */
+  .rd-mgate { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+  .rd-mgate + .rd-mgate { border-top: 1px solid var(--rd-hair-05); }
+  .rd-mgate-tkr { font-family: var(--rd-mono); font-size: 11px; color: #cdd3d9; width: 42px; flex-shrink: 0; }
+  .rd-mgate-desc { font-family: var(--rd-sans); font-size: 11.5px; color: #7a818a; flex: 1; min-width: 0; }
+  .rd-mgate-px { font-family: var(--rd-mono); color: #a9c1d4; }
+  .rd-mgate-st { font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em; white-space: nowrap; }
+
+  /* carousel dots — 44px buttons around the drawn 4px dots (§4.3 + §7) */
+  .rd-mdots { display: flex; justify-content: center; align-items: center; margin-top: -8px; }
+  .rd-mdot {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; padding: 0; cursor: pointer;
+  }
+  .rd-mdot:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -8px; border-radius: 10px; }
+  .rd-mdot-v {
+    width: 4px; height: 4px; border-radius: 50%; background: rgba(255, 255, 255, 0.2);
+    transition: width 0.15s ease, border-radius 0.15s ease, background 0.15s ease;
+  }
+  .rd-mdot-v.on { width: 16px; border-radius: 2px; background: var(--rd-acc); }
+
+  /* ---- sticky segmented horizon control (§4.4; top = real 77px header) ---- */
+  .rd-mseg-wrap {
+    position: sticky; top: 77px; z-index: 9;
+    padding: 14px 16px 11px;
+    background: linear-gradient(180deg, rgba(7, 8, 10, 0.96) 70%, rgba(7, 8, 10, 0));
+  }
+  .rd-mseg {
+    display: flex; gap: 4px; padding: 4px;
+    background: #0a0c10; border: 1px solid var(--rd-hair-07); border-radius: 13px;
+  }
+  .rd-mseg-btn {
+    position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-family: var(--rd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.05em;
+    color: #6b727a; background: transparent; border: 1px solid transparent;
+    border-radius: 10px; padding: 8px 4px; cursor: pointer; white-space: nowrap;
+  }
+  .rd-mseg-btn::before { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; } /* ≥44px hit */
+  .rd-mseg-btn.on {
+    color: #f0f2f4;
+    background: linear-gradient(180deg, #171c23, #11151b);
+    border-color: var(--rd-hair-09);
+    box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.7);
+  }
+  .rd-mseg-btn:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+  .rd-mseg-n { font-size: 8px; color: #565c63; }
+  .rd-mseg-btn.on .rd-mseg-n { color: var(--rd-acc); }
+
+  /* status chips stay reachable below the horizon control (SPEC-wiring §5 —
+     the design's mobile filter is by horizon only; the tracker-state axis
+     keeps its own row, soft mobile radius) */
+  .rd-mstatus { display: flex; padding: 2px 16px 6px; overflow-x: auto; }
+  .rd-mstatus .rd-filter-seg { border-radius: 10px; }
+
+  /* ---- idea cards (single-expand accordion, §4.5) ---- */
+  .rd-mlist { padding: 4px 16px 6px; display: flex; flex-direction: column; gap: 11px; }
+  .rd-mrow {
+    position: relative; border: 1px solid var(--rd-hair-08); border-radius: 16px;
+    background: linear-gradient(180deg, #0c0f13, #0a0c0f); overflow: hidden;
+    box-shadow: 0 8px 22px -16px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+  }
+  .rd-mrow.open {
+    border-color: var(--rd-acc-soft25);
+    box-shadow: 0 14px 36px -16px var(--rd-acc-soft40), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .rd-mrow:active { transform: scale(0.99); }
+  .rd-mrow-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 1; }
+  .rd-mrow.lc-trig .rd-mrow-rail, .rd-mrow.lc-tgt .rd-mrow-rail { background: var(--rd-bull); }
+  .rd-mrow.lc-arm .rd-mrow-rail { background: var(--rd-amber); }
+  .rd-mrow.lc-act .rd-mrow-rail { background: var(--rd-blue); }
+  .rd-mrow.lc-inval .rd-mrow-rail { background: var(--rd-bear); }
+  .rd-mrow.lc-exp .rd-mrow-rail, .rd-mrow.lc-watch .rd-mrow-rail { background: var(--rd-lo); }
+  .rd-mrow-wash {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(120deg, rgba(116, 176, 138, 0.05), transparent 55%);
+  }
+  .rd-mhead {
+    position: relative; display: block; width: 100%; min-height: 44px;
+    padding: 14px 15px 13px 17px; background: none; border: none;
+    text-align: left; cursor: pointer;
+  }
+  .rd-mhead:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -4px; border-radius: 14px; }
+  .rd-mhead-r1 { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .rd-mlife {
+    display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+    font-family: var(--rd-mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em;
+    padding: 3px 8px; border: 1px solid; border-radius: 20px; white-space: nowrap;
+  }
+  .rd-mlife .rd-life-dot { width: 4px; height: 4px; }
+  .rd-mlife.lc-trig, .rd-mlife.lc-tgt { color: var(--rd-bull); border-color: rgba(111, 191, 147, 0.5); background: rgba(111, 191, 147, 0.12); }
+  .cinematic .rd-mlife.lc-trig { box-shadow: 0 0 12px -4px rgba(111, 191, 147, 0.7); }
+  .rd-mlife.lc-arm { color: var(--rd-amber); border-color: rgba(199, 154, 82, 0.5); }
+  .rd-mlife.lc-act { color: var(--rd-blue); border-color: rgba(106, 160, 200, 0.5); }
+  .rd-mlife.lc-inval { color: var(--rd-bear); border-color: rgba(205, 126, 109, 0.5); }
+  .rd-mlife.lc-exp, .rd-mlife.lc-watch { color: var(--rd-lo); border-color: rgba(100, 107, 115, 0.5); }
+  .rd-mtkr {
+    font-family: var(--rd-mono); font-size: 19px; font-weight: 600;
+    letter-spacing: 0.01em; color: #f0f2f4; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .rd-mdir { display: inline-flex; align-items: center; gap: 3px; font-family: var(--rd-mono); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+  .rd-mdir-g { font-size: 8px; }
+  .rd-mhead-right { margin-left: auto; text-align: right; flex-shrink: 0; }
+  .rd-mpx { display: block; font-family: var(--rd-mono); font-size: 18px; font-weight: 500; letter-spacing: 0.01em; color: #f4f6f8; }
+  .rd-mdelta { display: block; font-family: var(--rd-mono); font-size: 10.5px; margin-top: 2px; }
+  .rd-mdelta-past { color: var(--rd-bull); }
+  .rd-mdelta-to { color: var(--rd-amber); }
+  .rd-mdelta-none { color: #5f6770; }
+  .rd-mdelta-tag { font-size: 9px; opacity: 0.7; }
+  .rd-mhead-r2 { display: flex; align-items: center; gap: 8px; margin-top: 11px; min-width: 0; }
+  .rd-msetup {
+    font-family: var(--rd-mono); font-size: 10px; color: #aeb4bb;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rd-mtf {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.04em; color: #7a818a;
+    padding: 2px 7px; border: 1px solid var(--rd-hair-10); border-radius: 20px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .rd-mspark-slot { margin-left: auto; flex-shrink: 0; display: inline-flex; }
+  .rd-mspark { display: block; overflow: visible; }
+  .rd-mcaret { font-family: var(--rd-mono); font-size: 12px; color: #565c63; flex-shrink: 0; }
+
+  /* ---- expanded body (§4.5 items 1–6) ---- */
+  .rd-mbody { position: relative; padding: 0 17px 16px; border-top: 1px solid rgba(255, 255, 255, 0.055); }
+  .rd-mthesis { font-family: var(--rd-sans); font-size: 13.5px; line-height: 1.52; color: #c4cad0; margin: 13px 0 0; }
+  .rd-mchart-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 14px 0 0; }
+  .rd-mchart-lab { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em; color: #5a616a; white-space: nowrap; }
+  .rd-mchart-delta { font-family: var(--rd-mono); font-size: 9px; white-space: nowrap; }
+  /* the reused InspChart panel takes the mobile card idiom */
+  .rd-mbody .rd-chart { border-radius: 11px; background: #090b0e; border-color: var(--rd-hair-06); }
+  .rd-mlev-h { font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em; color: #5a616a; margin: 15px 0 0; }
+  .rd-mlev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+  /* mobile cell scale (§4.5 cell variants): 12.5px values, 12px absent,
+     soft-radius evidence chips */
+  .rd-mlev-grid .rd-cell { font-size: 12.5px; }
+  .rd-mlev-grid .rd-cell-g { font-size: 10px; }
+  .rd-mlev-grid .rd-cell-qv, .rd-mlev-grid .rd-cell-iv, .rd-mlev-grid .rd-cell-nv {
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  .rd-mlev-grid .rd-abs { font-size: 12px; white-space: normal; }
+  .rd-mlev-grid .rd-lev-plain { font-size: 12.5px; }
+  .rd-mbody .rd-ev { border-radius: 20px; letter-spacing: 0.06em; }
+  .rd-mfoot {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding-top: 2px; border-top: 1px solid rgba(255, 255, 255, 0.055);
+  }
+  .rd-mconf-l { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em; color: #5f6770; }
+  .rd-mconf-bar { width: 60px; height: 4px; background: var(--rd-hair-08); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .rd-mconf-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--rd-acc-soft40), var(--rd-acc)); }
+  .rd-mconf-pct { font-family: var(--rd-mono); font-size: 10.5px; color: #9aa1a9; }
+  .rd-msrc {
+    margin-left: auto; display: inline-flex; align-items: center; min-height: 44px; /* padded hit (§7) */
+    font-family: var(--rd-mono); font-size: 9px; color: var(--rd-acc); text-decoration: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  a.rd-msrc:hover { text-decoration: underline; }
+  .rd-msrc-plain { color: var(--rd-t-faint); }
+
+  /* mobile loading skeleton — the desktop SYNCING strip restyled into the
+     card idiom (no designed mobile treatment; SPEC-mobile §6) */
+  .rd-mskel {
+    height: 88px; border-radius: 16px;
+    background: rgba(255, 255, 255, 0.06);
+    animation: augShimmer 1.4s ease-in-out infinite;
+  }
+
+  /* ---- OPTIONS INTEL strip takes the §4.6 mobile form (soft radius, inset
+     margins; the real expand/table behavior is kept — the design left the
+     strip inert) ---- */
+  .rd-optx { margin: 5px 16px 0; border-radius: 14px; background: #0a0c0f; }
+  .rd-optx-toggle { padding: 12px 15px; }
+  .rd-optx-sub { display: none; }
+  .rd-optx-cp, .rd-optx-cc { border-radius: 20px; padding: 3px 7px; }
+
+  /* ---- disclaimer (§4.8 exact) ---- */
+  .rd-disc {
+    padding: 15px 20px 18px; font-size: 8px;
+    letter-spacing: 0.03em; color: #42474e;
+  }
 }

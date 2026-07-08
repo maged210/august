@@ -503,7 +503,9 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
     <div className="rd-tape">
       <span className="rd-tape-badge">
         <span className="rd-tape-badge-dot" aria-hidden="true" />
-        LIVE TAPE
+        {/* stage 8: mobile design label is the shorter "TAPE" (SPEC-mobile §4.2) */}
+        <span className="rd-tape-badge-full">LIVE TAPE</span>
+        <span className="rd-tape-badge-short">TAPE</span>
       </span>
       <div className="rd-tape-scroll">
         {tape.length === 0 ? (
@@ -891,7 +893,8 @@ const SKEL_DELAYS = [0, 0.07, 0.12, 0.17, 0.22, 0.27, 0.32, 0.37, 0.42, 0.47, 0.
 
 function BoardLoading() {
   return (
-    <div role="status" aria-label="Syncing sources and extracting ideas">
+    // rd-mhide: desktop-only (stage 8 — MobileBoard owns the <700px loading state)
+    <div className="rd-mhide" role="status" aria-label="Syncing sources and extracting ideas">
       <div className="rd-load-strip">
         <span className="rd-load-dot" aria-hidden="true" />
         SYNCING SOURCES · EXTRACTING IDEAS…
@@ -916,6 +919,61 @@ const BOARD_COLS = [
   "LIVE", "Δ→TRIG", "P&L", "AGE", "SPARK", "CONF", "EVID", "SRC",
 ];
 
+/** design EMPTY state, verbatim copy (SPEC-wiring §2.12) — shared by the
+ * desktop board and the stage-8 mobile board. Buttons wired to the real
+ * actions: ADD SOURCE opens the SOURCES tab, GENERATE BRIEF runs the real
+ * handler (disabled without ANTHROPIC_API_KEY, same as the header). */
+function BoardEmpty({ busy, aiOn, onAddSource, onGenerateBrief, className }: {
+  busy: string | null;
+  aiOn: boolean;
+  onAddSource: () => void;
+  onGenerateBrief: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`rd-board-empty${className ? ` ${className}` : ""}`}>
+      <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+      <div className="rd-empty-title">NO IDEAS ON THE BOARD</div>
+      <p className="rd-empty-copy">
+        No trade ideas have been extracted yet. Add a source or generate tonight&apos;s brief to populate the blotter.
+      </p>
+      <div className="rd-empty-btns">
+        <button type="button" className="rd-btn-lg rd-btn-lg-acc" onClick={onAddSource}>ADD SOURCE</button>
+        <button
+          type="button" className="rd-btn-lg"
+          disabled={busy === "brief" || !aiOn} aria-busy={busy === "brief"}
+          title={!aiOn ? "needs ANTHROPIC_API_KEY" : undefined}
+          onClick={onGenerateBrief}
+        >
+          {busy === "brief" ? "GENERATING…" : "GENERATE BRIEF"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** the tracker-state filter segment — one markup for the desktop filter row
+ * and the mobile status row (stage 8); semantics + aria-pressed unchanged */
+const BLOTTER_FILTERS: BlotterFilter[] = ["ALL", "TRACKED", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"];
+
+function FilterSeg({ filter, onFilter }: { filter: BlotterFilter; onFilter: (f: BlotterFilter) => void }) {
+  return (
+    <div className="rd-filter-seg">
+      {BLOTTER_FILTERS.map((f) => (
+        <button
+          key={f}
+          type="button"
+          className={`rd-fchip${filter === f ? " on" : ""}`}
+          aria-pressed={filter === f}
+          onClick={() => onFilter(f)}
+        >
+          {f}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function BlotterTable({
   ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, busy, aiOn, onAddSource, onGenerateBrief,
 }: {
@@ -933,29 +991,8 @@ function BlotterTable({
 }) {
   if (ideas.length === 0) {
     if (loading) return <BoardLoading />;
-    // design EMPTY state, verbatim copy (SPEC-wiring §2.12) — buttons wired to
-    // the real actions: ADD SOURCE opens the SOURCES tab, GENERATE BRIEF runs
-    // the real handler (disabled without ANTHROPIC_API_KEY, same as the header)
-    return (
-      <div className="rd-board-empty">
-        <div className="rd-empty-glyph" aria-hidden="true">∅</div>
-        <div className="rd-empty-title">NO IDEAS ON THE BOARD</div>
-        <p className="rd-empty-copy">
-          No trade ideas have been extracted yet. Add a source or generate tonight&apos;s brief to populate the blotter.
-        </p>
-        <div className="rd-empty-btns">
-          <button type="button" className="rd-btn-lg rd-btn-lg-acc" onClick={onAddSource}>ADD SOURCE</button>
-          <button
-            type="button" className="rd-btn-lg"
-            disabled={busy === "brief" || !aiOn} aria-busy={busy === "brief"}
-            title={!aiOn ? "needs ANTHROPIC_API_KEY" : undefined}
-            onClick={onGenerateBrief}
-          >
-            {busy === "brief" ? "GENERATING…" : "GENERATE BRIEF"}
-          </button>
-        </div>
-      </div>
-    );
+    // rd-mhide: the stage-8 MobileBoard renders its own BoardEmpty <700px
+    return <BoardEmpty busy={busy} aiOn={aiOn} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} className="rd-mhide" />;
   }
 
   const visible = visibleBlotter(ideas, trackedByIdeaId, filter);
@@ -964,7 +1001,7 @@ function BlotterTable({
     // filter-miss state — no design equivalent; kept with the honest copy,
     // restyled to the empty-state treatment (SPEC-wiring §2.12 last row)
     return (
-      <div className="rd-board-empty rd-board-nomatch">
+      <div className="rd-board-empty rd-board-nomatch rd-mhide">
         <div className="rd-empty-glyph" aria-hidden="true">∅</div>
         <div className="rd-empty-title">NO IDEAS MATCH</div>
         <p className="rd-empty-copy">No ideas in the {filter.toLowerCase()} state right now.</p>
@@ -980,7 +1017,7 @@ function BlotterTable({
   }
 
   return (
-    <div className="rd-board-wrap">
+    <div className="rd-board-wrap rd-mhide">
       <div className="rd-board-min">
         <div className="rd-colhead">
           {BOARD_COLS.map((c) => (
@@ -1018,6 +1055,484 @@ function BlotterTable({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── STAGE 8 — MOBILE BOARD (SPEC-mobile; <700px only, CSS-gated) ─────────────
+// The phone layout for the BOARD tab: summary carousel (Brief / Alerts /
+// At-the-Open) with scroll-bound dots, sticky segmented HORIZON control (the
+// design's ALL/TODAY/SWING/LONG — a timeframe-group axis layered on top of the
+// tracker-state filter, which stays reachable in the row below, per
+// SPEC-wiring §5's mobile rule), and single-expand accordion idea cards.
+// Every value is wired to the same real sources the desktop board reads
+// (blotter/tracker/quotes/brief); the whole tree is display:none ≥701px, so
+// the desktop board is untouched.
+
+// mobile P palette for SVG strokes (SPEC-mobile §2.1 — brighter than desktop)
+const MB_HEX = { bull: "#6fbf93", bear: "#cd7e6d", amber: "#c79a52" };
+
+type HorizonKey = "ALL" | "TODAY" | "SWING" | "LONG";
+// design segments → REAL timeframe groups (SPEC-mobile §4.4 mapping, expressed
+// through the board's TF_GROUP so the two surfaces can never disagree)
+const HORIZONS: { key: HorizonKey; group: string | null }[] = [
+  { key: "ALL", group: null },
+  { key: "TODAY", group: "TODAY · TOP IDEAS" },
+  { key: "SWING", group: "SHORT-TERM · SWING" },
+  { key: "LONG", group: "LONG-TERM" },
+];
+
+/** mobile spark (§4.5 row 2 / §10): 52×22 viewBox at 112×30, stroke 1.4,
+ * end dot r1.9, + area fill at 0.13 — REAL ~1mo daily closes, same series as
+ * the desktop spark */
+function RdSparkM({ closes, color }: { closes: number[]; color: string }) {
+  if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  const W = 52, H = 22, padY = 3;
+  let min = Math.min(...closes), max = Math.max(...closes);
+  const pad = (max - min) * 0.1 || Math.abs(closes[closes.length - 1]) * 0.01 || 1;
+  min -= pad; max += pad;
+  const xAt = (i: number) => (i / (closes.length - 1)) * W;
+  const yAt = (v: number) => (H - padY) - ((v - min) / (max - min)) * (H - 2 * padY);
+  const d = closes.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
+  const area = `${d} L ${W},${H} L 0,${H} Z`;
+  return (
+    <svg
+      className="rd-mspark" viewBox={`0 0 ${W} ${H}`} width={112} height={30}
+      preserveAspectRatio="none" role="img" aria-label="1-month daily-close sparkline"
+    >
+      <title>1M · DAILY closes</title>
+      <path d={area} fill={hexA(color, 0.13)} />
+      <path d={d} fill="none" stroke={color} strokeWidth={1.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r={1.9} fill={color} />
+    </svg>
+  );
+}
+
+/** one accordion idea card (§4.5) — collapsed header is the whole tap target;
+ * the expanded body folds the inspector's honest content in: thesis, the
+ * REUSED InspChart (real 1M daily closes — the design's own chart was seeded
+ * and self-labeled illustrative, so the label here is the honest
+ * PRICE · 1M · DAILY), the shared LEVELS fields, conf + source cite. */
+function MobileIdeaCard({ idea, tracked, open, onToggle }: {
+  idea: BlotterIdea;
+  tracked: TrackedIdea | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const dir = idea.direction;
+  const life = rowLife(idea, tracked);
+  const dirMeta = RD_DIR[dir];
+  const closes = idea.quote?.closes ?? [];
+  const live = idea.quote?.price ?? null;
+
+  // trigger precedence identical to the desktop row/inspector
+  const trigVal = tracked ? tracked.statedLevels.trigger?.value ?? null : idea.entry?.value ?? null;
+  const trigSrc = tracked ? tracked.statedLevels.trigger : idea.entry;
+  const hasTrig = trigVal != null && trigVal > 0;
+  const delta = live != null && hasTrig ? deltaView(live, trigVal, dir) : null;
+  const deltaCls =
+    delta?.label === "PAST TRIGGER" ? "rd-mdelta-past" : delta?.label === "TO TRIGGER" ? "rd-mdelta-to" : "";
+
+  // spark/chart color per the design rule (§3.6 / mobile delta logic), mobile hexes
+  const favored = hasTrig && live != null ? (dir === "bullish" ? live >= trigVal : live <= trigVal) : null;
+  const lineColor = favored != null
+    ? (favored ? MB_HEX.bull : MB_HEX.amber)
+    : dir === "bearish" ? MB_HEX.bear : MB_HEX.bull;
+
+  // setup word: CAT_LABEL of the chapter category when present, else omitted —
+  // never an invented classifier (SPEC-wiring §2.1)
+  const setup = idea.chapter ? CAT_LABEL[idea.chapter.normalizedCategory] : undefined;
+  const conf = Math.round(idea.confidence * 100);
+  const fields = buildLevelFields(idea, trigVal, trigSrc, "Not stated");
+  const bodyId = `rd-mbody-${idea.id}`;
+
+  return (
+    <div className={`rd-mrow ${life.family}${open ? " open" : ""}`}>
+      <span className="rd-mrow-rail" aria-hidden="true" />
+      {life.live && <span className="rd-mrow-wash" aria-hidden="true" />}
+      <button
+        type="button"
+        className="rd-mhead"
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        onClick={onToggle}
+      >
+        <span className="rd-mhead-r1">
+          <span className={`rd-mlife ${life.family}`} title={life.title}>
+            <span className="rd-life-dot" aria-hidden="true" />
+            {life.label}
+            {life.conflict && <span className="rd-life-conflict" title="conflicting stated triggers from this source">!</span>}
+          </span>
+          <span className="rd-mtkr">{idea.ticker}</span>
+          <span className={`rd-mdir ${dirMeta.cls}`} title={dirMeta.title}>
+            <span className="rd-mdir-g" aria-hidden="true">{dirMeta.glyph}</span>
+            {dirMeta.label}
+          </span>
+          <span className="rd-mhead-right">
+            <span className="rd-mpx">{live != null ? rdPx(live) : "—"}</span>
+            {delta ? (
+              <span
+                className={`rd-mdelta ${deltaCls}`}
+                title={live != null && trigVal != null ? `live ${rdPx(live)} vs stated trigger ${rdPx(trigVal)}` : undefined}
+              >
+                {delta.label === "PAST TRIGGER" ? `(${delta.val})` : delta.val}
+                {delta.label && (
+                  <span className="rd-mdelta-tag"> {delta.label === "PAST TRIGGER" ? "past" : "to trig"}</span>
+                )}
+              </span>
+            ) : (
+              <span className="rd-mdelta rd-mdelta-none">~ thesis-driven</span>
+            )}
+          </span>
+        </span>
+        <span className="rd-mhead-r2">
+          {setup && <span className="rd-msetup">{setup}</span>}
+          <span className="rd-mtf">{TF_FULL[idea.timeHorizon] ?? "—"}</span>
+          <span className="rd-mspark-slot">
+            <RdSparkM closes={closes} color={lineColor} />
+          </span>
+          <span className="rd-mcaret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="rd-mbody" id={bodyId}>
+          <p className="rd-mthesis">{idea.thesis}</p>
+          <div className="rd-mchart-h">
+            <span className="rd-mchart-lab">PRICE · 1M · DAILY</span>
+            {delta && (
+              <span className={`rd-mchart-delta ${deltaCls}`}>Δ→TRIG {delta.val}</span>
+            )}
+          </div>
+          {live != null ? (
+            <InspChart closes={closes} live={live} trigger={hasTrig ? trigVal : null} lineColor={lineColor} />
+          ) : (
+            // a quote-less row has no live point to draw — honest absent panel
+            <div className="rd-chart rd-chart-noseries">
+              <span className="rd-abs"><span className="rd-abs-g" aria-hidden="true">∅</span> NO QUOTE YET</span>
+            </div>
+          )}
+          <div className="rd-mlev-h">LEVELS · TAGGED BY EVIDENCE</div>
+          <div className="rd-mlev-grid">
+            {fields.map((f) => (
+              <div key={f.key} className={`rd-lev-f ${f.cls}`}>
+                <div className="rd-lev-lab">
+                  <span className="rd-lev-lab-t">{f.key}</span>
+                  {f.ev && <EvChip kind={f.ev} />}
+                </div>
+                {f.cell}
+              </div>
+            ))}
+          </div>
+          <div className="rd-mfoot">
+            <span className="rd-mconf-l">CONF</span>
+            <span className="rd-mconf-bar" aria-hidden="true"><span className="rd-mconf-fill" style={{ width: `${conf}%` }} /></span>
+            <span className="rd-mconf-pct">{conf}%</span>
+            {idea.videoId ? (
+              <a
+                className="rd-msrc"
+                href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
+                target="_blank" rel="noreferrer"
+                title="open source at timestamp"
+              >
+                ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
+              </a>
+            ) : (
+              <span className="rd-msrc rd-msrc-plain">▸ {idea.channelTitle}</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileBoard({
+  blotter, trackedByIdeaId, trackedList, filter, onFilter, brief, quotes,
+  loading, busy, aiOn, youtubeOk, trackerOk, onAddSource, onGenerateBrief,
+}: {
+  blotter: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  trackedList: TrackedIdea[];
+  filter: BlotterFilter;
+  onFilter: (f: BlotterFilter) => void;
+  brief: DailyBrief | null;
+  quotes: QuoteMap;
+  loading: boolean;
+  busy: string | null;
+  aiOn: boolean;
+  youtubeOk: boolean;
+  trackerOk: boolean | null;
+  onAddSource: () => void;
+  onGenerateBrief: () => void;
+}) {
+  // design §5 state model: horizon default is the design's TODAY — shipped as
+  // ALL so a board whose real ideas sit in other horizons never opens empty
+  // (the mock was always populated; real data isn't). Single-expand accordion,
+  // all-closed is a valid state (the design's default-open first card is
+  // skipped for the same reason: rows arrive async).
+  const [horizon, setHorizon] = useState<HorizonKey>("ALL");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [carIdx, setCarIdx] = useState(0);
+  const [read60, setRead60] = useState(false);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+
+  // dots bound to scroll position (the design's dots were static — must bind)
+  const onCarScroll = () => {
+    const el = trackRef.current;
+    if (!el) return;
+    const center = el.scrollLeft + el.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < el.children.length; i++) {
+      const c = el.children[i] as HTMLElement;
+      const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - center);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    setCarIdx(best);
+  };
+  const goCard = (i: number) => {
+    const el = trackRef.current;
+    const c = el?.children[i] as HTMLElement | undefined;
+    if (!el || !c) return;
+    el.scrollTo({ left: c.offsetLeft - (el.clientWidth - c.offsetWidth) / 2, behavior: "smooth" });
+  };
+
+  // status axis first (shared with desktop), then the horizon axis; rows keep
+  // the board's display order (TODAY → SWING → LONG groups)
+  const statusRows = visibleBlotter(blotter, trackedByIdeaId, filter);
+  const activeGroup = HORIZONS.find((h) => h.key === horizon)?.group ?? null;
+  const rows = BOARD_GROUPS.flatMap((g) =>
+    statusRows.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g.key),
+  ).filter((i) => activeGroup === null || (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === activeGroup);
+  // segment counts are computed over ALL ideas (design contract, §4.4)
+  const hCount = (g: string | null) =>
+    g === null ? blotter.length : blotter.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g).length;
+
+  // brief-card stat tiles — same derivation as the header count pills
+  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
+  for (const idea of blotter) {
+    const s = deriveStatus(idea);
+    if (s === "TRIG") counts.TRIG++;
+    else if (s === "ARMED") counts.ARMED++;
+    else if (s === "ACTIVE") counts.ACTIVE++;
+  }
+
+  // ALERTS — REAL tracker lifecycle transitions only (statusHistory), newest
+  // first; the initial ACTIVE/ARMED entry is not an alert. System rows carry
+  // the design's own degraded-status treatment (§4.3 card 2 row 4) for real
+  // degradations: YT key unset, tracker unreachable.
+  const transitions = trackedList
+    .flatMap((t) =>
+      t.statusHistory
+        .filter((h) => h.state === "TRIGGERED" || h.state === "INVALIDATED" || h.state === "TARGET_HIT")
+        .map((h) => ({
+          ticker: t.ticker, state: h.state, at: h.at, reason: h.reason,
+          tf: TF_FULL[t.timeframe] ?? "—",
+        })),
+    )
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 4);
+  const fresh = transitions.filter((a) => Date.now() - a.at < 24 * 3600_000).length;
+  const gates = (brief?.levels ?? []).slice(0, 4);
+
+  return (
+    <div className="rd-mb">
+      {/* ── summary carousel (§4.3) — scroll-snap, 86% cards, bound dots ── */}
+      <div
+        className="rd-mcar"
+        ref={trackRef}
+        onScroll={onCarScroll}
+        role="group"
+        aria-roledescription="carousel"
+        aria-label="Board summary — brief, alerts, at the open"
+        tabIndex={0}
+      >
+        <section className="rd-mcard rd-mcard-brief" role="group" aria-roledescription="slide" aria-label="Tonight's brief, card 1 of 3">
+          <div className="rd-mcar-h">
+            <span className="rd-mcar-title">TONIGHT&apos;S BRIEF</span>
+            {brief?.read60 && (
+              /* the design's READ · 60s chip was a mock estimate — here it is
+                 the REAL read60 digest toggle */
+              <button type="button" className={`rd-mread${read60 ? " on" : ""}`} aria-pressed={read60} onClick={() => setRead60((r) => !r)}>
+                READ · 60s
+              </button>
+            )}
+          </div>
+          {brief ? (
+            <>
+              {read60 && brief.read60 ? (
+                <p className="rd-mbrief-p">{brief.read60}</p>
+              ) : brief.posture ? (
+                <p className="rd-mbrief-p">{brief.posture}</p>
+              ) : (
+                <p className="rd-mbrief-p rd-mabs">
+                  <span className="rd-abs-g" aria-hidden="true">∅</span> No posture line in tonight&apos;s brief.
+                </p>
+              )}
+              <div className="rd-mtiles">
+                <div className="rd-mtile rd-mtile-trig">
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.TRIG}</span>
+                  <span className="rd-mtile-l">TRIGGERED</span>
+                </div>
+                <div className="rd-mtile rd-mtile-arm">
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ARMED}</span>
+                  <span className="rd-mtile-l">ARMED</span>
+                </div>
+                <div className="rd-mtile rd-mtile-act">
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ACTIVE}</span>
+                  <span className="rd-mtile-l">ACTIVE</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="rd-mbrief-p rd-mabs">
+              <span className="rd-abs-g" aria-hidden="true">∅</span> No brief generated yet — add a source, then generate tonight&apos;s brief.
+            </p>
+          )}
+        </section>
+
+        <section className="rd-mcard" role="group" aria-roledescription="slide" aria-label="Alerts, card 2 of 3">
+          <div className="rd-mcar-h">
+            <span className="rd-mcar-title">ALERTS</span>
+            {fresh > 0 && <span className="rd-mnew">{fresh} NEW</span>}
+          </div>
+          <div>
+            {transitions.map((a, i) => (
+              <div key={`${a.ticker}-${a.at}-${a.state}`} className="rd-malert">
+                <span className={`rd-malert-dot ${a.state === "INVALIDATED" ? "dn" : "up"}${i < 2 ? " glow" : ""}`} aria-hidden="true" />
+                <span className="rd-malert-main">
+                  <span className="rd-malert-body"><span className="rd-malert-tkr">{a.ticker}</span> {a.reason}</span>
+                  <span className="rd-malert-meta">{ageStr(a.at)} ago · {a.tf}</span>
+                </span>
+              </div>
+            ))}
+            {!youtubeOk && (
+              <div className="rd-malert rd-malert-sys">
+                <span className="rd-malert-dot" aria-hidden="true" />
+                <span className="rd-malert-main">
+                  <span className="rd-malert-body"><span className="rd-malert-tkr">YT_API</span> key unset — live status limited</span>
+                  <span className="rd-malert-meta">system</span>
+                </span>
+              </div>
+            )}
+            {trackerOk === false && (
+              <div className="rd-malert rd-malert-sys">
+                <span className="rd-malert-dot" aria-hidden="true" />
+                <span className="rd-malert-main">
+                  <span className="rd-malert-body"><span className="rd-malert-tkr">TRACKER</span> offline — statuses fall back to client-derived</span>
+                  <span className="rd-malert-meta">system</span>
+                </span>
+              </div>
+            )}
+            {transitions.length === 0 && youtubeOk && trackerOk !== false && (
+              <div className="rd-mabs-line">
+                <span className="rd-abs-g" aria-hidden="true">∅</span> No lifecycle transitions recorded yet.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rd-mcard" role="group" aria-roledescription="slide" aria-label="At the open, card 3 of 3">
+          <div className="rd-mcar-h"><span className="rd-mcar-title">AT THE OPEN</span></div>
+          <div>
+            {gates.map((l) => {
+              const { label, cls } = atOpenState(l, quotes);
+              return (
+                <div key={l.id} className="rd-mgate">
+                  <span className="rd-mgate-tkr">{l.instrument}</span>
+                  <span className="rd-mgate-desc">
+                    {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
+                    {l.level != null && <span className="rd-mgate-px"> ${l.level}</span>}
+                  </span>
+                  <span className={`rd-mgate-st ${cls || "rd-open-ns"}`}>{label}</span>
+                </div>
+              );
+            })}
+            {gates.length === 0 && (
+              <div className="rd-mabs-line">
+                <span className="rd-abs-g" aria-hidden="true">∅</span> No gates — no levels in tonight&apos;s brief.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* dots — bound to scroll, 44px targets, jump on tap */}
+      <div className="rd-mdots" role="group" aria-label="Summary card position">
+        {["Tonight's brief", "Alerts", "At the open"].map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            className="rd-mdot"
+            aria-label={`Go to card ${i + 1} of 3: ${label}`}
+            aria-current={carIdx === i || undefined}
+            onClick={() => goCard(i)}
+          >
+            <span className={`rd-mdot-v${carIdx === i ? " on" : ""}`} aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+
+      {/* ── sticky segmented horizon control (§4.4) ── */}
+      <div className="rd-mseg-wrap">
+        <div className="rd-mseg" role="group" aria-label="Filter ideas by horizon">
+          {HORIZONS.map((h) => (
+            <button
+              key={h.key}
+              type="button"
+              className={`rd-mseg-btn${horizon === h.key ? " on" : ""}`}
+              aria-pressed={horizon === h.key}
+              onClick={() => setHorizon(h.key)}
+            >
+              {h.key}
+              <span className="rd-mseg-n">{hCount(h.group)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* tracker-state chips — the second real filter axis, kept reachable */}
+      <div className="rd-mstatus" role="group" aria-label="Filter ideas by tracker state">
+        <FilterSeg filter={filter} onFilter={onFilter} />
+      </div>
+
+      {/* ── idea cards ── */}
+      {blotter.length === 0 ? (
+        loading ? (
+          <div role="status" aria-label="Syncing sources and extracting ideas">
+            <div className="rd-load-strip">
+              <span className="rd-load-dot" aria-hidden="true" />
+              SYNCING SOURCES · EXTRACTING IDEAS…
+            </div>
+            <div className="rd-mlist" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <BoardEmpty busy={busy} aiOn={aiOn} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} />
+        )
+      ) : rows.length === 0 ? (
+        <div className="rd-board-empty rd-board-nomatch">
+          <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+          <div className="rd-empty-title">NO IDEAS MATCH</div>
+          <p className="rd-empty-copy">
+            No {horizon === "ALL" ? "" : `${horizon.toLowerCase()} `}ideas in the {filter.toLowerCase()} state right now.
+          </p>
+        </div>
+      ) : (
+        <div className="rd-mlist">
+          {rows.map((idea) => (
+            <MobileIdeaCard
+              key={idea.id}
+              idea={idea}
+              tracked={trackedByIdeaId.get(idea.id) ?? null}
+              open={expandedId === idea.id}
+              onToggle={() => setExpandedId((c) => (c === idea.id ? null : idea.id))}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1607,6 +2122,54 @@ function fieldEvKind(
   return hasVerbatim(v) ? "DIRECT" : null;
 }
 
+/** LEVELS · TAGGED BY EVIDENCE fields — one honest construction shared by the
+ * desktop inspector and the stage-8 mobile expanded card. Absent copy differs
+ * per surface (design: desktop "Not stated by source", mobile "Not stated");
+ * everything else — cell renderers, per-field chips (§2.2), the tracker-first
+ * trigger precedence the callers compute — is identical. */
+function buildLevelFields(
+  idea: BlotterIdea,
+  trigVal: number | null,
+  trigSrc: { value: number | null; text: string } | null | undefined,
+  absentText: string,
+) {
+  const tgt = idea.targets[0];
+  const catalyst = idea.catalysts[0] ?? null;
+  return [
+    {
+      key: "ENTRY", cls: "rd-lev-entry",
+      ev: fieldEvKind(idea.entry, idea.explicitness),
+      cell: <ValueCell v={idea.entry} explicitness={idea.explicitness} absentText={absentText} />,
+    },
+    {
+      key: "TRIGGER", cls: "rd-lev-trigger",
+      ev: trigVal != null
+        ? (idea.explicitness === "inferred" ? "INFERRED" as const : hasVerbatim(trigSrc) ? "DIRECT" as const : null)
+        : null,
+      cell: trigVal != null
+        ? (idea.explicitness === "inferred" ? <InferredCell text={rdPx(trigVal)} /> : <QuotedCell text={rdPx(trigVal)} />)
+        : <AbsentCell text={absentText} />,
+    },
+    {
+      key: "INVALIDATION", cls: "rd-lev-inval",
+      ev: fieldEvKind(idea.invalidation, idea.explicitness),
+      cell: <ValueCell v={idea.invalidation} explicitness={idea.explicitness} numeric absentText={absentText} />,
+    },
+    {
+      key: "TARGET", cls: "rd-lev-target",
+      ev: fieldEvKind(tgt, idea.explicitness),
+      cell: <ValueCell v={tgt} explicitness={idea.explicitness} numeric absentText={absentText} />,
+    },
+    {
+      // the catalyst string IS the field's extracted source text — chip kind
+      // from the idea's explicitness, only when a catalyst exists
+      key: "CATALYST", cls: "rd-lev-cat",
+      ev: catalyst ? (idea.explicitness === "inferred" ? "INFERRED" as const : "DIRECT" as const) : null,
+      cell: catalyst ? <span className="rd-lev-plain">{catalyst}</span> : <AbsentCell text={absentText} />,
+    },
+  ];
+}
+
 /** idea-mode inspector body — design §2.6.3, every value wired to the real
  * idea/tracker/quote (quote is guaranteed by the caller: no quote → the
  * AWAITING ANALYSIS state renders instead) */
@@ -1648,41 +2211,9 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
     : idea.invalidation?.value != null ? rdPx(idea.invalidation.value) : null;
   const planTp = tgt ? (hasVerbatim(tgt) ? tgt.text : tgt.value != null ? rdPx(tgt.value) : null) : null;
 
-  // LEVELS fields — REUSED cell renderers + honest per-field chips (§2.2)
-  const catalyst = idea.catalysts[0] ?? null;
-  const insFields = [
-    {
-      key: "ENTRY", cls: "rd-lev-entry",
-      ev: fieldEvKind(idea.entry, idea.explicitness),
-      cell: <ValueCell v={idea.entry} explicitness={idea.explicitness} absentText="Not stated by source" />,
-    },
-    {
-      key: "TRIGGER", cls: "rd-lev-trigger",
-      ev: trigVal != null
-        ? (idea.explicitness === "inferred" ? "INFERRED" as const : hasVerbatim(trigSrc) ? "DIRECT" as const : null)
-        : null,
-      cell: trigVal != null
-        ? (idea.explicitness === "inferred" ? <InferredCell text={rdPx(trigVal)} /> : <QuotedCell text={rdPx(trigVal)} />)
-        : <AbsentCell text="Not stated by source" />,
-    },
-    {
-      key: "INVALIDATION", cls: "rd-lev-inval",
-      ev: fieldEvKind(idea.invalidation, idea.explicitness),
-      cell: <ValueCell v={idea.invalidation} explicitness={idea.explicitness} numeric absentText="Not stated by source" />,
-    },
-    {
-      key: "TARGET", cls: "rd-lev-target",
-      ev: fieldEvKind(tgt, idea.explicitness),
-      cell: <ValueCell v={tgt} explicitness={idea.explicitness} numeric absentText="Not stated by source" />,
-    },
-    {
-      // the catalyst string IS the field's extracted source text — chip kind
-      // from the idea's explicitness, only when a catalyst exists
-      key: "CATALYST", cls: "rd-lev-cat",
-      ev: catalyst ? (idea.explicitness === "inferred" ? "INFERRED" as const : "DIRECT" as const) : null,
-      cell: catalyst ? <span className="rd-lev-plain">{catalyst}</span> : <AbsentCell text="Not stated by source" />,
-    },
-  ];
+  // LEVELS fields — REUSED cell renderers + honest per-field chips (§2.2),
+  // built by the shared constructor (stage 8: also feeds the mobile card)
+  const insFields = buildLevelFields(idea, trigVal, trigSrc, "Not stated by source");
 
   return (
     <div className="rd-insp-body">
@@ -3257,6 +3788,26 @@ export default function IntelDashboard() {
               desk={desk}
             />
             <div className="rd-center">
+              {/* stage 8 — the SPEC-mobile phone board (display:none ≥701px);
+                  first in DOM so the mobile order is carousel → filter →
+                  cards → options strip. Desktop board chrome below is hidden
+                  <700px (rd-mhide + the stage-8 media block). */}
+              <MobileBoard
+                blotter={blotter}
+                trackedByIdeaId={trackedByIdeaId}
+                trackedList={trackedList}
+                filter={blotterFilter}
+                onFilter={setBlotterFilter}
+                brief={brief}
+                quotes={quotes}
+                loading={busy === "sync" || busy === "brief"}
+                busy={busy}
+                aiOn={config.ai}
+                youtubeOk={config.youtube}
+                trackerOk={trackerOk}
+                onAddSource={() => setTab("SOURCES")}
+                onGenerateBrief={generateBrief}
+              />
               {/* board header (SPEC-desktop §2.6.2) — real count, real cadence */}
               <div className="rd-bhead">
                 <span className="rd-bhead-title">TRADE BLOTTER</span>
@@ -3276,21 +3827,10 @@ export default function IntelDashboard() {
                 <span className="rd-leg">° price since first mention (not trade P&amp;L)</span>
               </div>
               {/* tracker filter — TRACKED = level-anchored ideas only;
-                  semantics + aria-pressed unchanged, design segmented look */}
+                  semantics + aria-pressed unchanged, design segmented look
+                  (desktop placement; <700px it re-hosts inside MobileBoard) */}
               <div className="rd-filter-row" role="group" aria-label="Filter ideas by tracker state">
-                <div className="rd-filter-seg">
-                  {(["ALL", "TRACKED", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as BlotterFilter[]).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      className={`rd-fchip${blotterFilter === f ? " on" : ""}`}
-                      aria-pressed={blotterFilter === f}
-                      onClick={() => setBlotterFilter(f)}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
+                <FilterSeg filter={blotterFilter} onFilter={setBlotterFilter} />
               </div>
               <BlotterTable
                 ideas={blotter}
