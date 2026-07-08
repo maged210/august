@@ -13,7 +13,9 @@ import type {
   IntelSource,
   IntelVideo,
   OptionBriefIdea,
+  OptionDirection,
   OptionIdea,
+  OptionsProviderStatus,
   TradeIdea,
   ValueField,
   VideoAnalysis,
@@ -1020,9 +1022,111 @@ function BlotterTable({
   );
 }
 
-// ── OptionsIntelPanel ────────────────────────────────────────────────────────
+// ── OptionsIntelPanel (design §2.6.2 item 5, rd- skin) ───────────────────────
+// CREATOR PLAYS ← brief.options.bestCreatorPlays; AUGUST CANDIDATES ←
+// brief.options.augustCandidates. Field map per SPEC-wiring §2.9: candidates
+// are ALWAYS chipped INFERRED and NEVER sized; creator sizing = quotedPremium
+// (the creator's number — never overwritten) + expirationText.resolved ?? .text.
+// Rows open the OPTION TICKET in the inspector column (inspectorMode 'option').
+// No brief.options / both lists empty → the panel renders NOTHING (kept).
+//
+// NOTE (SPEC-wiring §2.9): the design's options HEAT MAP (call/put skew,
+// hardcoded "C 72%" tags) is deliberately NOT rendered — no real skew source
+// is wired today, and the panel must never show fake percentages. If wanted
+// later, build /api/intel/options/skew (SPEC-wiring §4 #2: call/put volume+OI
+// sums off the existing keyless chain) and add it in its own stage.
 
-function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
+/** options DIR meta — design dirMap plus the real OptionDirection extras
+ * (volatility / watch have no design treatment: honest NEUT styling + tooltip) */
+const RD_OPT_DIR: Record<OptionDirection, { label: string; glyph: string; cls: string; title?: string }> = {
+  bullish: { label: "BULL", glyph: "▲", cls: "rd-dir-bull" },
+  bearish: { label: "BEAR", glyph: "▼", cls: "rd-dir-bear" },
+  neutral: { label: "NEUT", glyph: "◆", cls: "rd-dir-neut" },
+  volatility: { label: "VOL", glyph: "◆", cls: "rd-dir-neut", title: "volatility play" },
+  watch: { label: "NEUT", glyph: "◆", cls: "rd-dir-neut", title: "watch idea" },
+};
+
+/** REF LEVEL for an option row/ticket (SPEC-wiring §2.9). Creator plays: the
+ * creator-stated first-leg strike (quoted) else the entry-condition wording
+ * (narrative) else the quoted equity trigger. Candidates: the creator's quoted
+ * equity trigger first; AUGUST's chain-picked strike is a fallback shown with
+ * the INFERRED treatment — the creator never said that number. */
+function optRef(o: OptionBriefIdea): { text: string; kind: "quoted" | "narr" | "inferred" } | null {
+  const strike = o.legs[0]?.strike ?? null;
+  const entryText =
+    o.entryCondition?.text && !/not specified/i.test(o.entryCondition.text) ? o.entryCondition.text : null;
+  if (o.origin === "creator_explicit") {
+    if (strike != null) return { text: rdPx(strike), kind: "quoted" };
+    if (entryText) return { text: entryText, kind: "narr" };
+    if (o.underlyingTrigger != null) return { text: rdPx(o.underlyingTrigger), kind: "quoted" };
+    return null;
+  }
+  if (o.underlyingTrigger != null) return { text: rdPx(o.underlyingTrigger), kind: "quoted" };
+  if (strike != null) return { text: rdPx(strike), kind: "inferred" };
+  if (entryText) return { text: entryText, kind: "narr" };
+  return null;
+}
+
+/** REF LEVEL cell through the REUSED evidence-cell renderers */
+function OptRefCell({ o }: { o: OptionBriefIdea }) {
+  const ref = optRef(o);
+  if (!ref) return <AbsentCell />;
+  if (ref.kind === "quoted") return <QuotedCell text={ref.text} />;
+  if (ref.kind === "inferred") return <InferredCell text={ref.text} />;
+  return <NarrCell text={ref.text} />;
+}
+
+/** SIZING / EXPIRY cell for creator plays (§2.9): quotedPremium +
+ * expirationText.resolved ?? .text; nothing stated → the design's ∅ cell */
+function OptSizing({ o }: { o: OptionBriefIdea }) {
+  const expiry = o.expirationText?.resolved ?? o.expirationText?.text ?? null;
+  const premium = o.quotedPremium != null ? `$${o.quotedPremium}` : null;
+  if (!premium && !expiry) return <AbsentCell text="not sized" />;
+  if (!premium) {
+    return (
+      <span className="rd-optx-size-t">
+        <AbsentCell text="not sized" /> · {expiry}
+      </span>
+    );
+  }
+  return <span className="rd-optx-size-t">{premium}{expiry ? ` · ${expiry}` : ""}</span>;
+}
+
+function OptxRow({ o, candidate, onOpen }: {
+  o: OptionBriefIdea;
+  candidate: boolean;
+  onOpen: (o: OptionBriefIdea) => void;
+}) {
+  const dir = RD_OPT_DIR[o.direction];
+  // §2.9 chip law: candidates always INFERRED; plays DIRECT only when
+  // creator-stated (origin creator_explicit)
+  const ev: EvKind = !candidate && o.origin === "creator_explicit" ? "DIRECT" : "INFERRED";
+  return (
+    <button
+      type="button"
+      className="rd-optx-row"
+      onClick={() => onOpen(o)}
+      title={`${o.underlyingSymbol} · ${o.strategyType.replace(/_/g, " ")} — open the option ticket`}
+    >
+      <span className="rd-optx-tkr">{o.underlyingSymbol}</span>
+      <span className="rd-optx-struct">{o.strategyType.replace(/_/g, " ")}</span>
+      <span className={`rd-optx-dir ${dir.cls}`} title={dir.title}>
+        <span className="rd-optx-dirg" aria-hidden="true">{dir.glyph}</span>
+        {dir.label}
+      </span>
+      <span className="rd-optx-cell"><OptRefCell o={o} /></span>
+      <span className="rd-optx-cell">
+        {candidate ? <AbsentCell text="not sized" /> : <OptSizing o={o} />}
+      </span>
+      <EvChip kind={ev} />
+    </button>
+  );
+}
+
+function OptionsIntelPanel({ brief, onOpenTicket }: {
+  brief: DailyBrief | null;
+  onOpenTicket: (o: OptionBriefIdea) => void;
+}) {
   const [open, setOpen] = useState(false);
   if (!brief?.options) return null;
   const { bestCreatorPlays, augustCandidates } = brief.options;
@@ -1030,96 +1134,350 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
   const candCount = augustCandidates.length;
   if (!playCount && !candCount) return null;
 
-  const optDir = (o: OptionBriefIdea) =>
-    o.direction === "bullish" ? <span className="bl-bull-glyph" style={{ fontSize: 9 }}>▲ BULL</span>
-    : o.direction === "bearish" ? <span className="bl-bear-glyph" style={{ fontSize: 9 }}>▼ BEAR</span>
-    : <span className="bl-neut-glyph" style={{ fontSize: 9 }}>— NEUT</span>;
-
-  const optContract = (o: OptionBriefIdea) => {
-    if (!o.legs.length) return "—";
-    return o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}`).join(" / ");
-  };
-
   return (
-    <div className="bl-optx">
-      <button className="bl-optx-toggle" onClick={() => setOpen((o) => !o)}>
-        <span style={{ marginRight: 4, opacity: 0.5 }}>{open ? "▾" : "▸"}</span>
-        <span className="bl-optx-title">OPTIONS INTEL</span>
-        <span style={{ opacity: 0.45 }}>creator option plays · AUGUST candidates · secondary</span>
-        <div className="bl-optx-counts">
-          {playCount > 0 && <span className="bl-optx-cp">{playCount} PLAY{playCount !== 1 ? "S" : ""}</span>}
-          {candCount > 0 && <span className="bl-optx-cp">{candCount} CANDIDATE{candCount !== 1 ? "S" : ""}</span>}
-        </div>
+    <div className="rd-optx">
+      <button type="button" className="rd-optx-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="rd-optx-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span className="rd-optx-title">OPTIONS INTEL</span>
+        <span className="rd-optx-sub">creator option plays · AUGUST candidates — secondary</span>
+        <span className="rd-optx-counts">
+          {playCount > 0 && <span className="rd-optx-cp">{playCount} PLAY{playCount === 1 ? "" : "S"}</span>}
+          {candCount > 0 && <span className="rd-optx-cc">{candCount} CANDIDATE{candCount === 1 ? "" : "S"}</span>}
+        </span>
       </button>
       {open && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="bl-optx-table">
-            <thead>
-              <tr>
-                <th className="bl-optx-th">TICKER</th>
-                <th className="bl-optx-th">STRUCTURE</th>
-                <th className="bl-optx-th">DIR</th>
-                <th className="bl-optx-th">REF LEVEL</th>
-                <th className="bl-optx-th">SIZING / EXPIRY</th>
-                <th className="bl-optx-th">EVIDENCE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bestCreatorPlays.length > 0 && (
+        <div className="rd-optx-body">
+          <div className="rd-optx-scroll">
+            <div className="rd-optx-min">
+              <div className="rd-optx-cols">
+                <span>TICKER</span><span>STRUCTURE</span><span>DIR</span>
+                <span>REF LEVEL</span><span>SIZING / EXPIRY</span><span>EVIDENCE</span>
+              </div>
+              {playCount > 0 && (
                 <>
-                  <tr className="bl-optx-section-row"><td colSpan={6}>CREATOR PLAYS</td></tr>
-                  {bestCreatorPlays.map((o, i) => (
-                    <tr key={i}>
-                      <td className="bl-optx-td bl-optx-tkr">{o.underlyingSymbol}</td>
-                      <td className="bl-optx-td">{o.strategyType.replace(/_/g, " ")}</td>
-                      <td className="bl-optx-td">{optDir(o)}</td>
-                      <td className="bl-optx-td" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
-                        {optContract(o)}
-                      </td>
-                      <td className="bl-optx-td" style={{ fontSize: 10, opacity: 0.7 }}>
-                        {o.quotedPremium != null ? `$${o.quotedPremium}` : <span className="bl-ns">∅ not sized</span>}
-                        {o.expirationText?.resolved ? ` → ${o.expirationText.resolved}` : o.expirationText?.text ? ` → ${o.expirationText.text}` : ""}
-                      </td>
-                      <td className="bl-optx-td">
-                        <span className={`bl-ev ${o.origin === "creator_explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
-                          {o.origin === "creator_explicit" ? "DIRECT" : "INFERRED"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  <div className="rd-optx-sect">
+                    <span className="rd-optx-sect-t rd-optx-sect-cp">CREATOR PLAYS</span>
+                    <span className="rd-optx-sect-hair" aria-hidden="true" />
+                    <span className="rd-optx-sect-note">stated in transcript</span>
+                  </div>
+                  {bestCreatorPlays.map((o) => <OptxRow key={o.id} o={o} candidate={false} onOpen={onOpenTicket} />)}
                 </>
               )}
-              {augustCandidates.length > 0 && (
+              {candCount > 0 && (
                 <>
-                  <tr className="bl-optx-section-row">
-                    <td colSpan={3}>AUGUST CANDIDATES</td>
-                    <td colSpan={3} style={{ opacity: 0.35, fontSize: 7, fontFamily: "var(--font-mono), monospace", textTransform: "uppercase" }}>
-                      AUGUST-generated · not creator-stated
-                    </td>
-                  </tr>
-                  {augustCandidates.map((o, i) => (
-                    <tr key={i}>
-                      <td className="bl-optx-td bl-optx-tkr">{o.underlyingSymbol}</td>
-                      <td className="bl-optx-td">{o.strategyType.replace(/_/g, " ")}</td>
-                      <td className="bl-optx-td">{optDir(o)}</td>
-                      <td className="bl-optx-td" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
-                        {o.legs[0]?.strike != null ? <span style={{ color: "var(--bone)" }}>${o.legs[0].strike}</span> : <span className="bl-ns">∅ not sized</span>}
-                      </td>
-                      <td className="bl-optx-td"><span className="bl-ns">∅ not sized</span></td>
-                      <td className="bl-optx-td">
-                        <span className="bl-ev bl-ev-inferred">INFERRED</span>
-                      </td>
-                    </tr>
-                  ))}
+                  <div className="rd-optx-sect rd-optx-sect-aug">
+                    <span className="rd-optx-sect-t rd-optx-sect-cc">AUGUST CANDIDATES</span>
+                    <span className="rd-optx-sect-hair" aria-hidden="true" />
+                    <span className="rd-optx-sect-note">AUGUST-generated · not creator-stated</span>
+                  </div>
+                  {augustCandidates.map((o) => <OptxRow key={o.id} o={o} candidate onOpen={onOpenTicket} />)}
                 </>
               )}
-            </tbody>
-          </table>
-          <div className="bl-optx-foot">
-            ∿ AUGUST suggests the structure and references the quoted equity trigger — never the strike or size. ∅ not sized until you set it.
+            </div>
+          </div>
+          {/* ported footer disclaimer — verbatim, sans the design's "Illustrative." */}
+          <div className="rd-optx-foot">
+            <span className="rd-optx-foot-g" aria-hidden="true">~</span> AUGUST suggests the structure and
+            references the quoted equity trigger — never the strike or size.{" "}
+            <span className="rd-optx-foot-ns">∅ not sized</span> until you set it.
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── OPTION TICKET (inspector option mode — design §2.6.3, SPEC-wiring §2.9) ──
+
+/** honest short labels for the provider chip (chain `status` once the fetch
+ * lands; brief.options.providerStatus before that) */
+const PROV_SHORT: Record<OptionsProviderStatus, string> = {
+  connected: "LIVE", delayed: "DELAYED · YAHOO", missing_configuration: "NO PROVIDER",
+  unauthorized: "UNAUTHORIZED", rate_limited: "RATE-LIMITED", unsupported_symbol: "UNSUPPORTED SYMBOL",
+  provider_error: "PROVIDER ERROR", stale: "STALE",
+};
+const provOk = (s: OptionsProviderStatus) => s === "connected" || s === "delayed";
+
+// minimal client mirror of the chain route's NormalizedContract — only the
+// fields the ticket renders
+type TicketContract = {
+  contractSymbol: string; strike: number; type: "call" | "put";
+  bid: number | null; ask: number | null; mid: number | null; last: number | null;
+  volume: number | null; openInterest: number | null; impliedVolatility: number | null;
+};
+type TicketChainResp = {
+  status: OptionsProviderStatus; delayed: boolean; greeksAvailable: boolean;
+  quoteTimestamp: number | null; expirations: number[]; expiration: number | null;
+  underlyingPrice: number | null; calls: TicketContract[]; puts: TicketContract[];
+};
+type TicketChainState =
+  | { phase: "loading" }
+  | { phase: "error"; status: OptionsProviderStatus | null }
+  | {
+      phase: "ready"; status: OptionsProviderStatus; delayed: boolean; greeksAvailable: boolean;
+      quoteTimestamp: number | null; contract: TicketContract | null;
+    };
+
+async function fetchTicketChain(symbol: string, expiration?: number): Promise<TicketChainResp> {
+  const r = await fetch(
+    `/api/intel/options/chain?symbol=${encodeURIComponent(symbol)}${expiration != null ? `&expiration=${expiration}` : ""}`,
+    { cache: "no-store" },
+  );
+  if (!r.ok) throw new Error(`chain ${r.status}`);
+  return r.json();
+}
+// Yahoo expiration epochs are midnight UTC of the expiry date
+const epochDate = (epochSec: number) => new Date(epochSec * 1000).toISOString().slice(0, 10);
+// chain quoteTimestamp is epoch SECONDS (Yahoo regularMarketTime); tolerate ms
+const asOfEt = (ts: number) =>
+  new Date(ts > 1e12 ? ts : ts * 1000).toLocaleTimeString("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+
+function OptkCell({ label, val }: { label: string; val: string | null }) {
+  return (
+    <div className="rd-optk-c">
+      <div className="rd-optk-c-l">{label}</div>
+      <div className="rd-optk-c-v">{val ?? "—"}</div>
+    </div>
+  );
+}
+
+/** option-mode inspector body. Plan cells per §2.9 — ENTRY = entryCondition
+ * wording ?? underlyingTrigger, EXIT/STOP = underlyingInvalidation,
+ * TAKE-PROFIT = underlyingTargets[0]; null → the absent planCell, never an
+ * invented level. Live contract data comes from the existing chain endpoint,
+ * fetched when the ticket opens; the creator-quoted premium is NEVER
+ * overwritten by it (the law) — the two live in separate blocks. */
+function OptionTicket({ option, briefStatus, onBack }: {
+  option: OptionBriefIdea;
+  briefStatus: OptionsProviderStatus | null;
+  onBack: () => void;
+}) {
+  const [chain, setChain] = useState<TicketChainState>({ phase: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setChain({ phase: "loading" });
+    (async () => {
+      try {
+        const sym = option.underlyingSymbol.toUpperCase();
+        const leg = option.legs[0] ?? null;
+        let j = await fetchTicketChain(sym);
+        // the leg names a specific expiration → refetch that slice when the
+        // chain lists it (the default fetch returns the nearest expiration)
+        if (leg?.expiration && Array.isArray(j.expirations)) {
+          const wanted = j.expirations.find((e) => epochDate(e) === leg.expiration);
+          if (wanted != null && j.expiration !== wanted) j = await fetchTicketChain(sym, wanted);
+        }
+        if (cancelled) return;
+        if (!provOk(j.status)) { setChain({ phase: "error", status: j.status }); return; }
+        // match the stated contract: exact contractSymbol first, else the
+        // leg's type + exact strike in the fetched expiration — NEVER a
+        // "close enough" strike
+        let contract: TicketContract | null = null;
+        if (leg) {
+          const all = [...(j.calls ?? []), ...(j.puts ?? [])];
+          if (leg.contractSymbol) contract = all.find((c) => c.contractSymbol === leg.contractSymbol) ?? null;
+          if (!contract && leg.strike != null) {
+            const pool = leg.optionType === "call" ? j.calls ?? [] : j.puts ?? [];
+            contract = pool.find((c) => c.strike === leg.strike) ?? null;
+          }
+        }
+        setChain({
+          phase: "ready", status: j.status, delayed: !!j.delayed, greeksAvailable: !!j.greeksAvailable,
+          quoteTimestamp: j.quoteTimestamp ?? null, contract,
+        });
+      } catch {
+        if (!cancelled) setChain({ phase: "error", status: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [option]);
+
+  const dir = RD_OPT_DIR[option.direction];
+  const ev: EvKind = option.origin === "creator_explicit" ? "DIRECT" : "INFERRED";
+  const struct = option.strategyType.replace(/_/g, " ");
+  const ref = optRef(option);
+  const leg = option.legs[0] ?? null;
+
+  const entryText =
+    option.entryCondition?.text && !/not specified/i.test(option.entryCondition.text)
+      ? option.entryCondition.text
+      : option.underlyingTrigger != null ? rdPx(option.underlyingTrigger) : null;
+  const exitText = option.underlyingInvalidation != null ? rdPx(option.underlyingInvalidation) : null;
+  const tpVal = option.underlyingTargets[0];
+  const tpText = tpVal != null ? rdPx(tpVal) : null;
+  const expiry = option.expirationText?.resolved ?? option.expirationText?.text ?? null;
+
+  const provStatus = chain.phase === "loading" ? briefStatus : chain.status;
+
+  return (
+    <div className="rd-insp-body">
+      {/* title row: underlying + OPTION chip + ← IDEA back (design §2.6.3) */}
+      <div className="rd-insp-top">
+        <div className="rd-insp-idrow">
+          <span className="rd-insp-ticker">{option.underlyingSymbol}</span>
+          <span className="rd-optk-chip">OPTION</span>
+        </div>
+        <button type="button" className="rd-optk-back" onClick={onBack}>← IDEA</button>
+      </div>
+
+      {/* chips: dir / structure / origin-driven evidence + honest origin facts */}
+      <div className="rd-insp-chips">
+        <span className={`rd-pchip ${dir.cls}`} title={dir.title}>
+          <span className="rd-pchip-g" aria-hidden="true">{dir.glyph}</span>
+          {dir.label}
+        </span>
+        <span className="rd-pchip rd-pchip-struct">{struct}</span>
+        <span className={`rd-ev rd-ev-lg ${ev === "DIRECT" ? "rd-ev-direct" : "rd-ev-inferred"}`}>
+          <span className="rd-ev-g" aria-hidden="true">{ev === "DIRECT" ? "▮" : "~"}</span>
+          {ev}
+        </span>
+        {option.origin === "august_candidate" && (
+          <span className="rd-pchip rd-pchip-fact" title="AUGUST-generated candidate — not creator-stated">
+            AUGUST CANDIDATE
+          </span>
+        )}
+        {option.origin === "directional_only" && (
+          <span className="rd-pchip rd-pchip-fact" title="directional thesis — no specific contract stated">
+            DIRECTIONAL ONLY
+          </span>
+        )}
+      </div>
+
+      {/* REF LEVEL — the equity level the plan frames off (~ when AUGUST-picked) */}
+      {ref && (
+        <div className="rd-optk-ref">
+          REF LEVEL
+          <span className={`rd-optk-refv${ref.kind === "inferred" ? " rd-optk-refv-inf" : ""}`}>
+            <span aria-hidden="true">{ref.kind === "inferred" ? "~" : "❝"} </span>
+            {ref.text}
+          </span>
+        </div>
+      )}
+
+      {/* TRADE PLAN — §2.9 sources through the reused plan-cell treatment */}
+      <div className="rd-insp-seclabel rd-optk-planhead">TRADE PLAN</div>
+      <div className="rd-plan rd-plan-opt">
+        <div className="rd-plan-box rd-plan-entry">
+          <div className="rd-plan-lab">ENTRY</div>
+          {entryText ? <div className="rd-plan-val">{entryText}</div> : <AbsentCell />}
+        </div>
+        <div className="rd-plan-box rd-plan-exit">
+          <div className="rd-plan-lab">EXIT / STOP</div>
+          {exitText ? <div className="rd-plan-val">{exitText}</div> : <AbsentCell />}
+        </div>
+        <div className="rd-plan-box rd-plan-tp">
+          <div className="rd-plan-lab">TAKE-PROFIT</div>
+          {tpText ? <div className="rd-plan-val">{tpText}</div> : <AbsentCell text="n/s — thesis-driven" />}
+        </div>
+      </div>
+
+      {/* creator-quoted facts — quotedPremium is the CREATOR's number and is
+          never overwritten by market data; live data sits in its own block */}
+      <div className="rd-insp-stats">
+        <div className="rd-insp-stat" title="creator-quoted — never overwritten by market data">
+          <div className="rd-insp-stat-label">CREATOR PREMIUM</div>
+          <div className="rd-insp-stat-val">
+            {option.quotedPremium != null ? `$${option.quotedPremium}` : <AbsentCell />}
+          </div>
+        </div>
+        <div className="rd-insp-stat" title={option.expirationText?.text || undefined}>
+          <div className="rd-insp-stat-label">EXPIRY</div>
+          <div className="rd-insp-stat-val">{expiry ?? <AbsentCell />}</div>
+        </div>
+        <div className="rd-insp-stat" title={option.breakevens.length ? undefined : "breakeven needs a stated strike + premium"}>
+          <div className="rd-insp-stat-label">BREAKEVEN</div>
+          <div className="rd-insp-stat-val">
+            {option.breakevens.length
+              ? option.breakevens.map(rdPx).join(" / ")
+              : <span className="rd-optk-nc">Not computable</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* LIVE CONTRACT — the existing chain endpoint, fetched on ticket open */}
+      <div className="rd-optk-liverow">
+        <span className="rd-insp-seclabel">LIVE CONTRACT</span>
+        {provStatus && (
+          <span className={`rd-optk-prov${provOk(provStatus) ? "" : " rd-optk-prov-warn"}`}>
+            {PROV_SHORT[provStatus]}
+          </span>
+        )}
+        {chain.phase === "ready" && chain.delayed && chain.status !== "delayed" && (
+          <span className="rd-optk-prov rd-optk-prov-warn">DELAYED</span>
+        )}
+      </div>
+      {chain.phase === "loading" ? (
+        <div className="rd-optk-live" role="status">
+          <span className="sr-only">Loading contract data for {option.underlyingSymbol}</span>
+          <div className="rd-insp-shimmers rd-optk-shims" aria-hidden="true">
+            <span className="rd-shim" />
+            <span className="rd-shim" style={{ width: "70%", animationDelay: "0.2s" }} />
+            <span className="rd-shim" style={{ width: "84%", animationDelay: "0.4s" }} />
+          </div>
+        </div>
+      ) : chain.phase === "error" ? (
+        <div className="rd-optk-live">
+          <div className="rd-optk-provline">
+            <span className="rd-abs-g" aria-hidden="true">∅</span>{" "}
+            Contract data unavailable — {chain.status ? PROV_SHORT[chain.status] : "provider unreachable"}. Nothing is estimated.
+          </div>
+        </div>
+      ) : (
+        <div className="rd-optk-live">
+          {chain.contract ? (
+            <>
+              <div className="rd-optk-csym" title={chain.contract.contractSymbol}>{chain.contract.contractSymbol}</div>
+              <div className="rd-optk-grid">
+                <OptkCell label="BID" val={chain.contract.bid != null ? rdPx(chain.contract.bid) : null} />
+                <OptkCell label="ASK" val={chain.contract.ask != null ? rdPx(chain.contract.ask) : null} />
+                <OptkCell label="MID" val={chain.contract.mid != null ? rdPx(chain.contract.mid) : null} />
+                <OptkCell label="OPEN INT" val={chain.contract.openInterest != null ? chain.contract.openInterest.toLocaleString("en-US") : null} />
+                <OptkCell label="VOLUME" val={chain.contract.volume != null ? chain.contract.volume.toLocaleString("en-US") : null} />
+                <OptkCell label="IMPL VOL" val={chain.contract.impliedVolatility != null ? `${(chain.contract.impliedVolatility * 100).toFixed(0)}%` : null} />
+              </div>
+            </>
+          ) : (
+            <div className="rd-optk-provline">
+              <span className="rd-abs-g" aria-hidden="true">∅</span>{" "}
+              {leg
+                ? leg.strike != null
+                  ? `No listed ${leg.optionType} at ${rdPx(leg.strike)}${leg.expiration ? ` · ${leg.expiration}` : ""} in the fetched chain.`
+                  : "The creator didn't state a strike — no contract to quote."
+                : "No contract specified — nothing to quote."}
+            </div>
+          )}
+          {/* Greeks NULL honesty — verbatim copy (SPEC-wiring §2.9) */}
+          {!chain.greeksAvailable && <div className="rd-optk-greeks">Greeks unavailable from this provider</div>}
+          {chain.quoteTimestamp != null && (
+            <div className="rd-optk-asof">as of {asOfEt(chain.quoteTimestamp)} ET{chain.delayed ? " · delayed" : ""}</div>
+          )}
+        </div>
+      )}
+
+      {/* ticket footnote — verbatim, sans the design's "Illustrative." */}
+      <div className="rd-optk-note">
+        <span className="rd-optk-note-g" aria-hidden="true">~</span> AUGUST frames entry / exit / take-profit
+        off the quoted equity level — it never invents the strike or contract size.
+      </div>
+
+      {/* source cite — same evidence discipline as the idea inspector */}
+      <div className="rd-insp-foot rd-optk-foot">
+        {option.videoId ? (
+          <a
+            className="rd-insp-src"
+            href={watchUrl(option.videoId, option.sourceStartSeconds)}
+            target="_blank" rel="noreferrer"
+            title="open source at timestamp"
+          >
+            ▸ {option.channelTitle} @ {mmss(option.sourceStartSeconds)} · rank {option.rankScore}
+          </a>
+        ) : (
+          <span className="rd-insp-src">▸ {option.channelTitle} · rank {option.rankScore}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -1479,7 +1837,7 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
   );
 }
 
-function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
+function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, onBackToIdea }: {
   idea: BlotterIdea | null;
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
@@ -1487,7 +1845,16 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
    * order — null when the selection is filtered out of view */
   rowNo: number | null;
   rowCount: number;
+  /** stage 7: 'option' swaps the body for the OPTION TICKET until back/dismiss */
+  mode: "idea" | "option";
+  option: OptionBriefIdea | null;
+  briefStatus: OptionsProviderStatus | null;
+  onBackToIdea: () => void;
 }) {
+  // option mode only renders with a live option from the CURRENT brief —
+  // a regenerated brief that dropped the id falls back to the idea inspector
+  const opt = mode === "option" ? option : null;
+
   // breadcrumb (§2.11): ticker · setup word · n/{visible}. The setup word is
   // CAT_LABEL of the idea's chapter category when present, else omitted —
   // never an invented classifier (SPEC-wiring §2.1). Denominator DERIVED.
@@ -1500,9 +1867,18 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
     <div className="rd-insp">
       <div className="rd-insp-head">
         <span className="rd-insp-title">INSPECTOR</span>
-        {crumb && <span className="rd-insp-crumb" title={crumb}>▸ {crumb}</span>}
+        {opt ? (
+          /* option-mode breadcrumb (§2.6.3): ▸ {t} · OPTION TICKET */
+          <span className="rd-insp-crumb rd-insp-crumb-opt" title={`${opt.underlyingSymbol} · option ticket`}>
+            ▸ {opt.underlyingSymbol} · OPTION TICKET
+          </span>
+        ) : (
+          crumb && <span className="rd-insp-crumb" title={crumb}>▸ {crumb}</span>
+        )}
       </div>
-      {!idea ? (
+      {opt ? (
+        <OptionTicket key={opt.id} option={opt} briefStatus={briefStatus} onBack={onBackToIdea} />
+      ) : !idea ? (
         /* design EMPTY state, verbatim copy (§2.12) — replaces SELECT A ROW */
         <div className="rd-insp-state">
           <div className="rd-insp-state-glyph" aria-hidden="true">∅</div>
@@ -2533,6 +2909,12 @@ export default function IntelDashboard() {
   const [openVideo, setOpenVideo] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("BOARD");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // stage 7: OPTION TICKET inspector mode — an options-table row swaps the
+  // inspector body for the ticket until ← IDEA (or a board-row click) returns
+  // it. The option is id-derived from the CURRENT brief (same pattern as
+  // selectedIdea), so a stale ticket can never outlive its brief.
+  const [inspectorMode, setInspectorMode] = useState<"idea" | "option">("idea");
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [historyDates, setHistoryDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
@@ -2770,6 +3152,15 @@ export default function IntelDashboard() {
   const trackedByIdeaId = new Map<string, TrackedIdea>();
   for (const t of trackedList) for (const iid of t.ideaIds) trackedByIdeaId.set(iid, t);
   const selectedTracked = selectedIdea ? trackedByIdeaId.get(selectedIdea.id) ?? null : null;
+
+  // stage 7: the ticket's option, resolved from the CURRENT brief's option
+  // sections (plays + candidates — the two lists the panel renders)
+  const optionPool: OptionBriefIdea[] = brief?.options
+    ? [...brief.options.bestCreatorPlays, ...brief.options.augustCandidates]
+    : [];
+  const selectedOption = selectedOptionId
+    ? optionPool.find((o) => o.id === selectedOptionId) ?? null
+    : null;
   const conflictVariants = selectedTracked?.conflictKey
     ? trackedList.filter((t) => t.conflictKey === selectedTracked.conflictKey && t.id !== selectedTracked.id)
     : [];
@@ -2862,7 +3253,7 @@ export default function IntelDashboard() {
               onGoSources={() => setTab("SOURCES")}
               blotter={blotter}
               trackedByIdeaId={trackedByIdeaId}
-              onSelectIdea={setSelectedId}
+              onSelectIdea={(id) => { setSelectedId(id); setInspectorMode("idea"); }}
               desk={desk}
             />
             <div className="rd-center">
@@ -2906,14 +3297,20 @@ export default function IntelDashboard() {
                 trackedByIdeaId={trackedByIdeaId}
                 filter={blotterFilter}
                 selectedId={selectedId}
-                onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+                onSelect={(id) => {
+                  setSelectedId((c) => (c === id ? null : id));
+                  setInspectorMode("idea"); // design §5: a row click always shows the idea inspector
+                }}
                 loading={busy === "sync" || busy === "brief"}
                 busy={busy}
                 aiOn={config.ai}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
               />
-              <OptionsIntelPanel brief={brief} />
+              <OptionsIntelPanel
+                brief={brief}
+                onOpenTicket={(o) => { setSelectedOptionId(o.id); setInspectorMode("option"); }}
+              />
             </div>
             <div className="rd-inspcol">
               <Inspector
@@ -2922,6 +3319,10 @@ export default function IntelDashboard() {
                 variants={conflictVariants}
                 rowNo={selRowIdx >= 0 ? selRowIdx + 1 : null}
                 rowCount={displayRows.length}
+                mode={inspectorMode}
+                option={selectedOption}
+                briefStatus={brief?.options?.providerStatus ?? null}
+                onBackToIdea={() => setInspectorMode("idea")}
               />
             </div>
           </div>

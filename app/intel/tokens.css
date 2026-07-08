@@ -1648,3 +1648,179 @@ a.rd-cite:hover { text-decoration: underline; }
   .rd-askbar-shell { min-height: 44px; }
   .rd-ask-btn { min-height: 44px; }
 }
+
+/* ==========================================================================
+   STAGE 7 — OPTIONS INTEL panel (SPEC-desktop §2.6.2 item 5) + OPTION TICKET
+   (inspector option mode, §2.6.3). Wiring per SPEC-wiring §2.9: creator plays
+   vs AUGUST candidates (always INFERRED, never sized), quotedPremium never
+   overwritten, Greeks-null honesty. The design's options HEAT MAP (call/put
+   skew tags) is NOT rendered anywhere — no real skew source exists today and
+   fake percentages must never ship; /api/intel/options/skew (SPEC-wiring §4
+   #2) is the wiring path if it's ever wanted.
+   ========================================================================== */
+
+/* ---- collapsible OPTIONS INTEL card below the board ---- */
+.rd-optx {
+  margin: 12px 16px 4px; border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-bar1-bg); overflow: hidden; flex-shrink: 0;
+}
+.rd-optx-toggle {
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 13px;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+}
+.rd-optx-toggle:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-optx-caret { color: var(--rd-t-faint2); font-size: 11px; width: 11px; flex-shrink: 0; }
+.rd-optx-title {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.14em; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-optx-toggle:hover .rd-optx-title { color: var(--rd-t-chip); }
+.rd-optx-sub {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.04em;
+  color: var(--rd-t-ghost); min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-optx-counts { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.rd-optx-cp, .rd-optx-cc {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 2px; white-space: nowrap;
+}
+.rd-optx-cp { color: #5f86a3; border: 1px solid rgba(106, 160, 200, 0.25); }
+.rd-optx-cc { color: var(--rd-inferred); border: 1px dashed rgba(154, 143, 176, 0.35); }
+
+.rd-optx-body { border-top: 1px solid var(--rd-hair-06); padding: 10px 13px 12px; }
+/* narrow screens: the 6-col grid keeps its design widths and scrolls */
+.rd-optx-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent; }
+.rd-optx-min { min-width: 560px; }
+.rd-optx-cols, .rd-optx-row {
+  display: grid; grid-template-columns: 54px 150px 48px 112px minmax(0, 1fr) 100px;
+  gap: 9px; align-items: center;
+}
+.rd-optx-cols { padding: 0 4px 6px; }
+.rd-optx-cols span {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-optx-sect { display: flex; align-items: center; gap: 9px; margin: 2px 0; padding: 0 4px; }
+.rd-optx-sect-aug { margin: 11px 0 2px; }
+.rd-optx-sect-t { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.13em; white-space: nowrap; }
+.rd-optx-sect-cp { color: #5f86a3; }
+.rd-optx-sect-cc { color: var(--rd-inferred); }
+.rd-optx-sect-hair { height: 1px; flex: 1; background: var(--rd-hair-06); min-width: 8px; }
+.rd-optx-sect-note {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.05em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-optx-row {
+  width: 100%; padding: 6px 4px; border: none; border-top: 1px solid var(--rd-hair-05);
+  background: none; cursor: pointer; text-align: left; border-radius: 0;
+}
+.rd-optx-row:hover { background: rgba(255, 255, 255, 0.03); }
+.rd-optx-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-optx-tkr { font-family: var(--rd-mono); font-size: 11px; font-weight: 600; color: var(--rd-t-primary); }
+.rd-optx-struct {
+  font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-optx-dir {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rd-mono); font-size: 9.5px; white-space: nowrap;
+}
+.rd-optx-dirg { font-size: 7px; }
+.rd-optx-cell { min-width: 0; overflow: hidden; }
+/* options-row cell variant (§3.4): 10px value / 8.5px glyph; ev chip ls .06em */
+.rd-optx-cell .rd-cell { font-size: 10px; }
+.rd-optx-cell .rd-cell-g { font-size: 8.5px; }
+.rd-optx-cell .rd-abs { font-size: 10px; }
+.rd-optx-size-t {
+  font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.rd-optx-row .rd-ev { gap: 4px; letter-spacing: 0.06em; }
+.rd-optx-foot {
+  margin-top: 10px; font-family: var(--rd-mono); font-size: 8.5px;
+  line-height: 1.5; letter-spacing: 0.02em; color: var(--rd-t-ghost);
+}
+.rd-optx-foot-g { color: var(--rd-inferred); }
+.rd-optx-foot-ns { color: var(--rd-t-disabled); }
+
+/* ---- OPTION TICKET (inspector option mode, §2.6.3) ---- */
+.rd-insp-crumb-opt { color: #c9a3d6; }
+.rd-optk-chip {
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
+  color: #c9a3d6; padding: 3px 8px; border: 1px solid rgba(154, 143, 176, 0.5);
+  border-radius: 2px; white-space: nowrap;
+}
+.rd-optk-back {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg); border: 1px solid var(--rd-hair-10);
+  border-radius: 2px; padding: 4px 9px; cursor: pointer; flex-shrink: 0;
+}
+.rd-optk-back:hover { color: var(--rd-t-chip); }
+.rd-optk-back:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+.rd-pchip-struct { color: var(--rd-t-secondary); border-color: var(--rd-hair-12); letter-spacing: 0.06em; }
+.rd-pchip-g { font-size: 8px; }
+.rd-optk-ref {
+  display: flex; align-items: center; gap: 8px; margin-top: 13px; min-width: 0;
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--rd-t-dim3);
+}
+.rd-optk-refv { color: #8aa6c4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-optk-refv-inf { color: #b3a9c4; }
+.rd-optk-planhead { margin: 15px 0 7px; }
+/* option-variant plan boxes: padding 9px 10px, values mono 12px (§2.6.3) */
+.rd-plan-opt .rd-plan-box { padding: 9px 10px; }
+.rd-plan-opt .rd-plan-val { font-size: 12px; }
+.rd-optk-nc { font-family: var(--rd-sans); font-style: italic; font-size: 10px; color: var(--rd-t-disabled); }
+.rd-optk-liverow { display: flex; align-items: center; gap: 8px; margin-top: 15px; }
+.rd-optk-prov {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-dim); padding: 1px 6px; border: 1px solid var(--rd-hair-12);
+  border-radius: 2px; white-space: nowrap;
+}
+.rd-optk-prov-warn { color: var(--rd-val-amber); border-color: rgba(191, 160, 90, 0.3); }
+.rd-optk-live { margin-top: 8px; }
+.rd-optk-shims { margin-top: 0; }
+.rd-optk-provline {
+  font-family: var(--rd-sans); font-style: italic; font-size: 11px;
+  line-height: 1.5; color: var(--rd-t-disabled);
+}
+.rd-optk-csym {
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.03em;
+  color: var(--rd-t-secondary2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-optk-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px;
+  margin-top: 7px; border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 8px 10px;
+}
+.rd-optk-c { min-width: 0; }
+.rd-optk-c-l {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); margin-bottom: 2px; white-space: nowrap;
+}
+.rd-optk-c-v {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-brightest);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-optk-greeks {
+  margin-top: 8px; font-family: var(--rd-sans); font-style: italic;
+  font-size: 10.5px; color: var(--rd-t-disabled);
+}
+.rd-optk-asof {
+  margin-top: 3px; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.05em; color: var(--rd-t-ghost);
+}
+.rd-optk-note {
+  margin-top: 14px; font-family: var(--rd-mono); font-size: 8.5px;
+  line-height: 1.55; letter-spacing: 0.02em; color: var(--rd-t-ghost);
+}
+.rd-optk-note-g { color: var(--rd-inferred); }
+.rd-optk-foot { justify-content: flex-end; }
+
+/* mobile touch targets (44px rule; the inspector column is desktop-only but
+   the panel toggle + rows render at every width) */
+@media (max-width: 700px) {
+  .rd-optx-toggle { min-height: 44px; }
+  .rd-optx-row { min-height: 44px; }
+  .rd-optk-back { min-height: 44px; min-width: 44px; }
+}

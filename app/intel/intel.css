@@ -1,9 +1,11 @@
-/* Market Intel — legacy scoped styles. After the intel-redesign stages 1–4 the
-   page chrome, board, inspector, left rail, and the BRIEF/SOURCES/ASK bodies
-   all live in tokens.css (rd- namespace). What remains here is exactly the set
-   of classes still referenced by JSX: the OPTIONS workspace
-   (components/intel/OptionsWorkspace.tsx + TradingViewIntelChart.tsx — stage 7
-   scope) and the board's OPTIONS INTEL panel (bl-optx*, also stage 7). Every
+/* Market Intel — legacy scoped styles. After the intel-redesign stages 1–7 the
+   page chrome, board, inspector, left rail, the BRIEF/SOURCES/ASK bodies, AND
+   the board's OPTIONS INTEL panel + option ticket all live in tokens.css
+   (rd- namespace). What remains here is exactly the set of classes still
+   referenced by JSX: the OPTIONS workspace (components/intel/
+   OptionsWorkspace.tsx + TradingViewIntelChart.tsx), which stage 7 gave a
+   light token-alignment pass only (fonts/colors/radii re-pointed at the rd-
+   tokens; layout untouched — a full restyle is stage-8 territory). Every
    other rule was deleted after a zero-reference grep audit. */
 
 /* SCROLL FIX: globals.css sets body{overflow:hidden} for the fixed-screen orb surfaces.
@@ -46,39 +48,45 @@ body:has(.intel-root) {
   color: var(--bone);
 }
 
-/* buttons (OPTIONS workspace + TradingView chart) */
+/* buttons (OPTIONS workspace + TradingView chart) — stage-7 token alignment:
+   fonts/colors/radii re-pointed at the rd- tokens (fallbacks keep the old
+   values outside .intel-root); paddings/layout untouched */
 .ibtn {
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace;
   font-size: 11px;
   letter-spacing: 0.04em;
   padding: 8px 14px;
-  border-radius: 7px;
-  border: 1px solid rgb(var(--steel-rgb) / 0.28);
-  background: rgb(var(--steel-rgb) / 0.12);
-  color: var(--bone);
+  border-radius: 2px;
+  border: 1px solid var(--rd-hair-12, rgb(var(--steel-rgb) / 0.28));
+  background: var(--rd-btn-bg, rgb(var(--steel-rgb) / 0.12));
+  color: var(--rd-t-secondary2, var(--bone));
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.ibtn:hover { background: rgb(var(--steel-rgb) / 0.22); }
+.ibtn:hover { background: rgba(255, 255, 255, 0.07); color: var(--rd-t-chip, var(--bone)); }
 .ibtn:disabled { opacity: 0.4; cursor: not-allowed; }
-.ibtn-primary { background: rgb(var(--steel-rgb) / 0.25); border-color: rgb(var(--steel-rgb) / 0.5); }
-.ibtn-ghost { background: transparent; color: var(--ash); }
-.ibtn-ghost:hover { color: var(--bone); }
+.ibtn-primary {
+  background: var(--rd-acc-soft12, rgb(var(--steel-rgb) / 0.25));
+  border-color: var(--rd-acc-soft40, rgb(var(--steel-rgb) / 0.5));
+  color: var(--rd-accbtn-text, var(--bone));
+}
+.ibtn-ghost { background: transparent; color: var(--rd-t-dim, var(--ash)); }
+.ibtn-ghost:hover { color: var(--rd-t-chip, var(--bone)); }
 .ibtn-sm { padding: 5px 9px; font-size: 10px; }
 
 .icard {
-  border: 1px solid rgb(var(--steel-rgb) / 0.14);
-  border-radius: 12px;
-  background: rgb(var(--steel-rgb) / 0.04);
+  border: 1px solid var(--rd-hair-07, rgb(var(--steel-rgb) / 0.14));
+  border-radius: 3px;
+  background: var(--rd-card, rgb(var(--steel-rgb) / 0.04));
   padding: 16px;
   margin-bottom: 16px;
 }
 .icard-h {
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace;
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ash);
+  color: var(--rd-t-muted, var(--ash));
   margin: 0 0 12px;
   display: flex;
   align-items: center;
@@ -97,15 +105,15 @@ body:has(.intel-root) {
 .idea-cite:hover { color: var(--bone); }
 .notspec { color: var(--ash); opacity: 0.7; font-style: italic; }
 
-/* badges (OPTIONS workspace) */
+/* badges (OPTIONS workspace) — stage-7 token alignment (font + 2px radius) */
 .badge {
   display: inline-block;
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace;
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
   border: 1px solid currentColor;
   vertical-align: middle;
 }
@@ -114,25 +122,25 @@ body:has(.intel-root) {
 .b-explicit { color: var(--steel); } .b-inferred { color: var(--ash); opacity: 0.85; }
 .b-stale { color: #c98b6a; } .b-conflict { color: #d98b8b; } .b-triggered { color: #7fb88a; }
 
-/* inputs (OPTIONS workspace symbol bar etc.) */
+/* inputs (OPTIONS workspace symbol bar etc.) — stage-7 token alignment */
 .iinput {
   width: 100%;
-  background: rgb(var(--steel-rgb) / 0.08);
-  border: 1px solid rgb(var(--steel-rgb) / 0.22);
-  border-radius: 7px;
-  color: var(--bone);
+  background: var(--rd-bar3-bg, rgb(var(--steel-rgb) / 0.08));
+  border: 1px solid var(--rd-hair-12, rgb(var(--steel-rgb) / 0.22));
+  border-radius: 2px;
+  color: var(--rd-t-body, var(--bone));
   font-size: 13px;
   padding: 9px 11px;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--rd-sans, var(--font-sans)), system-ui, sans-serif;
 }
-.iinput:focus { outline: none; border-color: rgb(var(--steel-rgb) / 0.5); }
-.iinput:focus-visible { outline: 2px solid rgb(var(--steel-rgb) / 0.85); outline-offset: 1px; border-color: rgb(var(--steel-rgb) / 0.5); }
-textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
+.iinput:focus { outline: none; border-color: var(--rd-acc-soft40, rgb(var(--steel-rgb) / 0.5)); }
+.iinput:focus-visible { outline: 2px solid var(--rd-acc-soft40, rgb(var(--steel-rgb) / 0.85)); outline-offset: 1px; border-color: var(--rd-acc-soft40, rgb(var(--steel-rgb) / 0.5)); }
+textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
 
-/* states (OPTIONS workspace) */
-.istate { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; color: var(--ash); padding: 14px 0; }
-.inote { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; color: var(--ash); opacity: 0.8; }
-.iwarn { color: #c98b6a; }
+/* states (OPTIONS workspace) — stage-7 token alignment */
+.istate { font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace; font-size: 11px; color: var(--rd-t-faint, var(--ash)); padding: 14px 0; }
+.inote { font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace; font-size: 10px; color: var(--rd-t-ghost, var(--ash)); }
+.iwarn { color: var(--rd-val-amber, #c98b6a); }
 
 /* consensus row (OPTIONS workspace consensus card) */
 .consensus-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); align-items: center; font-size: 12px; }
@@ -167,36 +175,38 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .optx-toggle-note { font-size: 10.5px; color: var(--ash); opacity: 0.7; }
 .optx-section .optx { margin-top: 6px; }
 
+/* stage-7 token alignment: flat token card instead of the steel gradient;
+   layout (margins/padding) untouched */
 .optx {
   margin-top: 18px;
-  border: 1px solid rgb(var(--steel-rgb) / 0.18);
-  border-radius: 12px;
+  border: 1px solid var(--rd-hair-07, rgb(var(--steel-rgb) / 0.18));
+  border-radius: 3px;
   padding: 16px;
-  background:
-    radial-gradient(900px 280px at 12% -40%, rgb(var(--steel-rgb) / 0.08), transparent 70%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.015), transparent 40%),
-    rgb(0 0 0 / 0.22);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  background: var(--rd-card, rgb(0 0 0 / 0.22));
 }
 .optx-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .optx-title {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 13px; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--bone);
+  font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace;
+  font-size: 13px; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--rd-t-primary, var(--bone));
 }
-.optx-prov { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.06em; color: var(--steel); }
-.optx-note { font-size: 10.5px; color: var(--ash); font-weight: 400; margin-left: 8px; letter-spacing: 0; }
+.optx-prov { font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.06em; color: var(--rd-t-dim, var(--steel)); }
+.optx-note { font-size: 10.5px; color: var(--rd-t-faint, var(--ash)); font-weight: 400; margin-left: 8px; letter-spacing: 0; }
 
 /* symbol switcher */
 .optx-symbar { display: flex; align-items: center; gap: 8px; margin: 12px 0 10px; flex-wrap: wrap; }
 .optx-syminput { max-width: 240px; text-transform: uppercase; }
 .optx-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .optx-chip {
-  font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px;
-  color: var(--ash); background: rgb(var(--steel-rgb) / 0.06);
-  border: 1px solid rgb(var(--steel-rgb) / 0.16); border-radius: 6px; padding: 4px 9px; cursor: pointer;
+  font-family: var(--rd-mono, var(--font-mono)), ui-monospace, monospace; font-size: 11px;
+  color: var(--rd-t-secondary2, var(--ash)); background: var(--rd-btn-bg, rgb(var(--steel-rgb) / 0.06));
+  border: 1px solid var(--rd-hair-12, rgb(var(--steel-rgb) / 0.16)); border-radius: 2px; padding: 4px 9px; cursor: pointer;
 }
-.optx-chip:hover { color: var(--bone); border-color: rgb(var(--steel-rgb) / 0.34); }
-.optx-chip.on { color: var(--charcoal); background: var(--bone); border-color: var(--bone); }
+.optx-chip:hover { color: var(--rd-t-chip, var(--bone)); border-color: var(--rd-hair-14, rgb(var(--steel-rgb) / 0.34)); }
+.optx-chip.on {
+  color: var(--rd-accbtn-text, var(--charcoal));
+  background: var(--rd-acc-soft12, var(--bone));
+  border-color: var(--rd-acc-soft40, var(--bone));
+}
 
 /* chart + creator-levels rail */
 .optx-chartrow { display: grid; grid-template-columns: 1fr 240px; gap: 14px; margin-bottom: 12px; }
@@ -259,54 +269,9 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .optx-factor b { font-family: var(--font-mono), monospace; color: var(--bone); }
 .optx-factor em { color: var(--steel); font-style: normal; font-size: 11px; }
 
-/* ==========================================================================
-   Board OPTIONS INTEL embedded panel (stage-7 scope — still on the old skin)
-   ========================================================================== */
-
-/* direction glyphs */
-.bl-bull-glyph { color: #7fb88a; font-size: 11px; }
-.bl-bear-glyph { color: #d98b8b; font-size: 11px; }
-.bl-neut-glyph { color: var(--ash); font-size: 11px; }
-
-/* evidence ladder badges */
-.bl-ev { font-family: var(--font-mono), monospace; font-size: 7.5px; letter-spacing: 0.1em; padding: 2px 5px; border-radius: 3px; }
-.bl-ev-direct { color: var(--bone); background: rgb(var(--steel-rgb) / 0.18); border: 1px solid rgb(var(--steel-rgb) / 0.4); }
-.bl-ev-inferred { color: var(--ash); background: transparent; border: 1px dashed rgb(var(--steel-rgb) / 0.28); }
-.bl-ns { font-family: var(--font-mono), monospace; color: var(--ash); opacity: 0.5; font-style: italic; font-size: 10.5px; }
-
-.bl-optx {
-  border-top: 1px solid rgb(var(--steel-rgb)/0.12); flex-shrink: 0;
-}
-.bl-optx-toggle {
-  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
-  cursor: pointer; width: 100%; background: none; border: none; text-align: left;
-  font-family: var(--font-mono), monospace; font-size: 8.5px; color: var(--ash);
-  letter-spacing: 0.08em;
-}
-.bl-optx-toggle:hover { color: var(--bone); }
-.bl-optx-title { color: var(--bone); font-size: 9.5px; margin-right: 2px; }
-.bl-optx-counts { margin-left: auto; display: flex; gap: 4px; }
-.bl-optx-cp {
-  font-size: 8px; padding: 1px 6px; border-radius: 3px;
-  border: 1px solid rgb(var(--steel-rgb)/0.25); color: var(--ash);
-}
-.bl-optx-table { width: 100%; border-collapse: collapse; }
-.bl-optx-th {
-  font-family: var(--font-mono), monospace; font-size: 7.5px; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--ash); opacity: 0.45; padding: 4px 8px;
-  text-align: left; border-bottom: 1px solid rgb(var(--steel-rgb)/0.08);
-}
-.bl-optx-td { padding: 4px 8px; font-size: 10.5px; color: var(--ash); vertical-align: middle; }
-.bl-optx-tkr { font-family: var(--font-mono), monospace; color: var(--bone); font-size: 12px; font-weight: 600; }
-.bl-optx-section-row td {
-  font-family: var(--font-mono), monospace; font-size: 7px; letter-spacing: 0.15em;
-  text-transform: uppercase; color: var(--ash); opacity: 0.45;
-  padding: 5px 8px 2px; border-top: 1px solid rgb(var(--steel-rgb)/0.07);
-}
-.bl-optx-foot { font-size: 9.5px; color: var(--ash); opacity: 0.45; padding: 5px 12px 8px; font-style: italic; }
-/* edge cells share the center column's 12px gutter */
-.bl-optx-th:first-child, .bl-optx-td:first-child, .bl-optx-section-row td:first-child { padding-left: 12px; }
-.bl-optx-th:last-child, .bl-optx-td:last-child { padding-right: 12px; }
+/* (stage 7) The board's OPTIONS INTEL panel moved to the rd- skin in
+   tokens.css (.rd-optx* / .rd-optk*); every bl-* rule that backed the old
+   panel was deleted after a zero-JSX-reference grep audit. */
 
 /* ---- MOBILE: 44px touch targets for the old-skin drawer (OPTIONS workspace
    contract drawer still uses .idrawer; the redesigned surfaces get their 44px
