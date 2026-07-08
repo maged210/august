@@ -40,7 +40,16 @@ type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-const TAPE_MACRO = ["SPY", "QQQ", "IWM", "^VIX", "GC=F", "CL=F", "BTC-USD", "ETH-USD"];
+// Design macro list (SPEC-wiring §2.3) — all keyless Yahoo symbols through the
+// existing /api/intel/quotes path; zero new data sources.
+// TODO(stage 2+): US10Y via ^TNX needs divide-by-10 + basis-point change
+// formatting (SPEC-wiring §2.3) — deferred; do not add ^TNX without that math.
+const TAPE_MACRO = ["^GSPC", "^NDX", "^DJI", "^RUT", "^VIX", "DX-Y.NYB", "CL=F", "GC=F", "BTC-USD"];
+// display labels for the tape (strip Yahoo's ^ / =F / exchange suffixes)
+const TAPE_LABEL: Record<string, string> = {
+  "^GSPC": "SPX", "^NDX": "NDX", "^DJI": "DJI", "^RUT": "RUT", "^VIX": "VIX",
+  "DX-Y.NYB": "DXY", "CL=F": "WTI", "GC=F": "GOLD", "BTC-USD": "BTC",
+};
 
 const TF_LABEL: Record<string, string> = {
   intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
@@ -264,47 +273,68 @@ function PageHeader({
     { key: "ASK", label: "ASK", fkey: "F5" },
   ];
 
+  // Redesign chrome (SPEC-desktop §2.1 + §2.2). Only REAL destinations ship in
+  // the workspace tabs bar: INTEL (this route, active) + the AUGUST home at /.
+  // The design's MARKETS/ORB/SCREENER/JOURNAL tabs are dead routes — not
+  // rendered (SPEC-wiring §2.11). Fkeys F1–F5 are the real tabs; F6 = SYNC.
   return (
-    <div className="bl-head">
-      <div className="bl-head-row1">
-        <span className="bl-head-title">MARKET INTEL</span>
-        <span className="bl-head-live" />
-        <span className="bl-head-livebadge">LIVE</span>
-        <span className="bl-head-date">{data.clock.nice.toUpperCase()}</span>
-        <span className="bl-head-session">
-          DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
-        </span>
-        <div className="bl-head-tabs">
+    <>
+      {/* BAR 1 — app nav + function keys */}
+      <div className="rd-bar1">
+        <div className="rd-bar1-left">
+          <span className="rd-brand"><span className="rd-brand-dot" aria-hidden="true" />AUGUST</span>
+          <span className="rd-bar1-div" aria-hidden="true" />
+          <nav className="rd-wstabs" aria-label="AUGUST workspaces">
+            <span className="rd-wstab on" aria-current="page">INTEL</span>
+            <a className="rd-wstab" href="/">AUGUST</a>
+          </nav>
+        </div>
+        <div className="rd-fkeys">
           {tabs.map((t) => (
-            <button key={t.key} className={`bl-head-tab${tab === t.key ? " on" : ""}`} onClick={() => onTab(t.key)}>
-              <span className="bl-tab-fkey">{t.fkey}</span>{t.label}
+            <button key={t.key} type="button" className="rd-fkey" aria-pressed={tab === t.key} onClick={() => onTab(t.key)}>
+              <span className={`rd-fkey-k${tab === t.key ? " on" : ""}`}>{t.fkey}</span>
+              {t.label}
             </button>
           ))}
+          <button type="button" className="rd-fkey" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
+            <span className="rd-fkey-k">F6</span>
+            {busy === "sync" ? "SYNC…" : "SYNC"}
+          </button>
         </div>
       </div>
-      <div className="bl-head-row2">
-        {/* pills always mount (zero counts dim on mobile, hide on desktop) so
-            row2's wrapped mobile geometry never shifts when counts land */}
-        <div className={`bl-sp bl-sp-trig${counts.TRIG ? "" : " bl-sp-zero"}`}>
-          <span className="bl-sp-dot" />
-          {counts.TRIG} TRIGGERED
+
+      {/* BAR 2 — title + counts + actions */}
+      <div className="rd-bar2">
+        <div className="rd-topglow" aria-hidden="true" />
+        <div className="rd-bar2-left">
+          <h1 className="rd-title">MARKET INTEL</h1>
+          <span className="rd-livechip"><span className="rd-livechip-dot" aria-hidden="true" />LIVE</span>
+          <span className="rd-meta">
+            <span className="rd-datechip">{data.clock.nice.toUpperCase()}</span>
+            DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
+          </span>
         </div>
-        <div className={`bl-sp bl-sp-arm${counts.ARMED ? "" : " bl-sp-zero"}`}>{counts.ARMED} ARMED</div>
-        <div className={`bl-sp bl-sp-active${counts.ACTIVE ? "" : " bl-sp-zero"}`}>{counts.ACTIVE} ACTIVE</div>
-        {/* brief age lives in the status bar's BRIEF item (one row below);
-            HISTORY duplicated the F2 BRIEF tab — both removed to de-crowd row2 */}
-        <div className="bl-head-row2-right">
-          <button className="ibtn ibtn-sm" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
-            {busy === "sync" ? "Syncing…" : "SYNC"}
+        <div className="rd-bar2-right">
+          {/* pills always mount (zero counts dim on mobile, hide on desktop) so
+              the wrapped mobile geometry never shifts when counts land */}
+          <span className={`rd-count rd-count-trig${counts.TRIG ? "" : " rd-count-zero"}`}>
+            <span className="rd-count-dot" aria-hidden="true" />
+            {counts.TRIG} TRIGGERED
+          </span>
+          <span className={`rd-count rd-count-arm${counts.ARMED ? "" : " rd-count-zero"}`}>{counts.ARMED} ARMED</span>
+          <span className={`rd-count rd-count-act${counts.ACTIVE ? "" : " rd-count-zero"}`}>{counts.ACTIVE} ACTIVE</span>
+          <span className="rd-bar2-div" aria-hidden="true" />
+          <button type="button" className="rd-btn" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
+            {busy === "sync" ? "SYNCING…" : "SYNC"}
           </button>
-          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
+          <button type="button" className="rd-btn rd-btn-acc" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
             {busy === "brief" ? "…" : "BRIEF"}
           </button>
-          <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">EXPORT</a>
-          <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
+          <a className="rd-btn" href="/api/intel/export/today">EXPORT</a>
+          <a className="rd-btn" href="/">← AUGUST</a>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -320,34 +350,58 @@ function StatusBar({
   trackerOk: boolean | null;
 }) {
   const { lastSync, lastBriefAt } = data;
-  // Honest chrome: quotes arrive via 30s HTTP polling (no websocket exists);
-  // DATA degrades to STALE when two consecutive polls fail to land (75s),
-  // LATENCY is the measured last roundtrip, TRACKER reports the engine's
-  // reachability. Volatile values sit in fixed ch-slots so neighbors never
-  // shift between polls. The YT_API hint lives in the SOURCES hub.
+  // Honest chrome (SPEC-wiring §2.10): quotes arrive via 30s HTTP polling —
+  // no websocket exists, so FEED says POLL 30s, never WS. DATA degrades to
+  // STALE when two consecutive polls fail to land (75s), LATENCY is the
+  // measured last roundtrip, KEY is the real YOUTUBE_API_KEY flag, TRACKER
+  // reports the engine's reachability (retained — the design dropped it, but
+  // rows silently fall back to derived statuses when the tracker is down and
+  // the chrome must say so). Ages are human (30h, never 1821m). Volatile
+  // values sit in fixed ch-slots so neighbors never shift between polls.
   const dataState =
     lastQuoteOkAt === null ? "WAITING" : Date.now() - lastQuoteOkAt < 75_000 ? "LIVE" : "STALE";
-  const items = [
-    { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), cls: "" },
-    { label: "DATA", val: dataState, cls: `${dataState === "LIVE" ? "bl-sb-ok" : dataState === "STALE" ? "bl-sb-warn" : ""} bl-sb-slot7` },
-    { label: "FEED", val: "POLL 30s", cls: dataState === "LIVE" ? "bl-sb-ok" : "" },
-    { label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—", cls: `${latencyMs !== null && latencyMs > 2000 ? "bl-sb-warn" : ""} bl-sb-slot6` },
-    { label: "TRACKER", val: trackerOk === null ? "—" : trackerOk ? "ON" : "OFFLINE", cls: `${trackerOk === null ? "" : trackerOk ? "bl-sb-ok" : "bl-sb-warn"} bl-sb-slot7` },
-    { label: "LAST SYNC", val: lastSync ? ageStr(lastSync) : "—", cls: "" },
-    { label: "BRIEF", val: lastBriefAt ? ageStr(lastBriefAt) : "—", cls: "" },
+  const slowLat = latencyMs !== null && latencyMs > 2000;
+  const items: { label: string; val: string; dot: string | null; valCls: string }[] = [
+    { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), dot: "rd-dot-amber", valCls: "rd-sb-amber" },
+    {
+      label: "DATA", val: dataState,
+      dot: dataState === "LIVE" ? "rd-dot-ok rd-dot-glow" : dataState === "STALE" ? "rd-dot-amber" : "rd-dot-idle",
+      valCls: `${dataState === "LIVE" ? "rd-sb-ok" : dataState === "STALE" ? "rd-sb-amber" : "rd-sb-plain"} rd-slot7`,
+    },
+    { label: "FEED", val: "POLL 30s", dot: dataState === "LIVE" ? "rd-dot-ok" : "rd-dot-idle", valCls: "rd-sb-plain" },
+    {
+      label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—",
+      dot: latencyMs === null ? "rd-dot-idle" : slowLat ? "rd-dot-amber" : "rd-dot-ok",
+      valCls: `${slowLat ? "rd-sb-amber" : "rd-sb-plain"} rd-slot6`,
+    },
+    {
+      label: "KEY", val: data.config.youtube ? "YT_API OK" : "YT_API UNSET",
+      dot: data.config.youtube ? "rd-dot-ok" : "rd-dot-amber",
+      valCls: data.config.youtube ? "rd-sb-plain" : "rd-sb-amber",
+    },
+    {
+      label: "TRACKER", val: trackerOk === null ? "—" : trackerOk ? "ON" : "OFFLINE",
+      dot: trackerOk === null ? null : trackerOk ? "rd-dot-ok" : "rd-dot-amber",
+      valCls: `${trackerOk === null ? "rd-sb-plain" : trackerOk ? "rd-sb-ok" : "rd-sb-amber"} rd-slot7`,
+    },
+    { label: "LAST SYNC", val: lastSync ? ageStr(lastSync) : "—", dot: null, valCls: "rd-sb-plain" },
+    { label: "BRIEF", val: lastBriefAt ? ageStr(lastBriefAt) : "—", dot: null, valCls: "rd-sb-plain" },
   ];
   return (
-    <div className="bl-statusbar">
+    <div className="rd-sb">
       {items.map((it) => (
-        <div key={it.label} className="bl-sb-item">
-          <span className="bl-sb-label">{it.label}</span>
-          <span className={`bl-sb-val ${it.cls}`}>{it.val}</span>
-        </div>
+        <span key={it.label} className="rd-sb-item">
+          {it.dot && <span className={`rd-sb-dot ${it.dot}`} aria-hidden="true" />}
+          <span className="rd-sb-label">{it.label}</span>
+          <span className={`rd-sb-val ${it.valCls}`}>{it.val}</span>
+        </span>
       ))}
-      <div className="bl-sb-item bl-sb-clock">
-        <span className="bl-sb-label">ET</span>
-        <span className="bl-sb-val">{clock}</span>
-      </div>
+      {/* HH:MM ET, 1/min tick — no 1 Hz re-render of the bar for seconds.
+          The design's REC indicator is mock (nothing records) — not shipped. */}
+      <span className="rd-sb-item rd-sb-now">
+        <span className="rd-sb-label">NOW</span>
+        <span className="rd-sb-val rd-sb-clockval">{clock} ET</span>
+      </span>
     </div>
   );
 }
@@ -358,38 +412,81 @@ type TapeItem =
   | { kind: "macro"; sym: string; price: number; chgPct: number }
   | { kind: "watch"; sym: string; price: number; chgPct: number; status: IdeaStatus };
 
-function LiveTape({ tape }: { tape: TapeItem[] }) {
-  const macro = tape.filter((t) => t.kind === "macro") as Extract<TapeItem, { kind: "macro" }>[];
-  const watch = tape.filter((t) => t.kind === "watch") as Extract<TapeItem, { kind: "watch" }>[];
-  const stCls: Record<IdeaStatus, string> = {
-    TRIG: "bl-st-trig", ARMED: "bl-st-arm", ACTIVE: "bl-st-active", WATCH: "bl-st-watch", INVLD: "bl-st-invld",
-  };
+// design lifeShort text + lifeMap colors for watchlist tails (SPEC-desktop
+// §3.1/§3.3). WATCH is a real derived state with no design equivalent — kept
+// honest, rendered in the low-emphasis color.
+const TAPE_LIFE: Record<IdeaStatus, { label: string; color: string }> = {
+  TRIG: { label: "TRIG", color: "var(--rd-bull)" },
+  ARMED: { label: "ARMED", color: "var(--rd-amber)" },
+  ACTIVE: { label: "ACTIVE", color: "var(--rd-blue)" },
+  INVLD: { label: "INVAL", color: "var(--rd-bear)" },
+  WATCH: { label: "WATCH", color: "var(--rd-lo)" },
+};
+// design price format for the tape (§3.3): thousands separators, 2dp
+const tapePx = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** one run of tape content — rendered twice back-to-back for the design's
+ * seamless −50% marquee loop; the duplicate is aria-hidden decoration */
+function TapeRun({
+  macro, watch, duplicate,
+}: {
+  macro: Extract<TapeItem, { kind: "macro" }>[];
+  watch: Extract<TapeItem, { kind: "watch" }>[];
+  duplicate?: boolean;
+}) {
   return (
-    <div className="bl-tape">
-      {tape.length === 0 && (
-        <div className="bl-tape-item">
-          <span className="bl-tape-sym" style={{ opacity: 0.4 }}>TAPE · AWAITING FIRST QUOTE</span>
-        </div>
-      )}
+    <div className={`rd-tape-run${duplicate ? " rd-tape-dup" : ""}`} aria-hidden={duplicate || undefined}>
       {macro.map((t) => (
-        <div key={t.sym} className="bl-tape-item">
-          <span className="bl-tape-sym">{t.sym.replace(/^\^/, "")}</span>
-          <span className="bl-tape-px">{fmtPx(t.price)}</span>
-          <span className={`bl-tape-chg ${t.chgPct >= 0 ? "bl-tape-up" : "bl-tape-dn"}`}>{fmtPct(t.chgPct)}</span>
-        </div>
+        <span key={t.sym} className="rd-tape-q">
+          <span className="rd-tape-sym">{TAPE_LABEL[t.sym] ?? t.sym.replace(/^\^/, "")}</span>
+          <span className="rd-tape-px">{tapePx(t.price)}</span>
+          <span className={`rd-tape-inst ${t.chgPct >= 0 ? "rd-tape-up" : "rd-tape-dn"}`}>
+            {t.chgPct >= 0 ? "▲" : "▼"}{fmtPct(t.chgPct)}
+          </span>
+        </span>
       ))}
       {watch.length > 0 && (
         <>
-          <div className="bl-tape-sep">WATCHLIST</div>
+          <span className="rd-tape-divider">WATCHLIST</span>
           {watch.map((t) => (
-            <div key={t.sym} className="bl-tape-item">
-              <span className="bl-tape-sym">{t.sym}</span>
-              <span className="bl-tape-px">${fmtPx(t.price)}</span>
-              <span className={`bl-st ${stCls[t.status]}`}>{t.status}</span>
-            </div>
+            <span key={t.sym} className="rd-tape-q">
+              <span className="rd-tape-sym">{t.sym}</span>
+              <span className="rd-tape-px">${fmtPx(t.price)}</span>
+              <span className="rd-tape-watchtail" style={{ color: TAPE_LIFE[t.status].color }}>
+                {TAPE_LIFE[t.status].label}
+              </span>
+            </span>
           ))}
         </>
       )}
+    </div>
+  );
+}
+
+function LiveTape({ tape }: { tape: TapeItem[] }) {
+  const macro = tape.filter((t) => t.kind === "macro") as Extract<TapeItem, { kind: "macro" }>[];
+  const watch = tape.filter((t) => t.kind === "watch") as Extract<TapeItem, { kind: "watch" }>[];
+  // Design tape (SPEC-desktop §2.4): LIVE TAPE badge cell + 64s marquee that
+  // pauses on hover (and under prefers-reduced-motion, via tokens.css). The
+  // 30px fixed height keeps the old 23px no-CLS reservation; the honest
+  // AWAITING FIRST QUOTE state stays until the first quote lands.
+  return (
+    <div className="rd-tape">
+      <span className="rd-tape-badge">
+        <span className="rd-tape-badge-dot" aria-hidden="true" />
+        LIVE TAPE
+      </span>
+      <div className="rd-tape-scroll">
+        {tape.length === 0 ? (
+          <span className="rd-tape-await">TAPE · AWAITING FIRST QUOTE</span>
+        ) : (
+          <div className="rd-tape-track">
+            <TapeRun macro={macro} watch={watch} />
+            <TapeRun macro={macro} watch={watch} duplicate />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1681,15 +1778,19 @@ export default function IntelDashboard() {
   }, [load]);
 
   if (status === "loading") {
-    // skeleton shaped to the board's real chrome heights so ready-state lands
-    // where the bars were — loading → ready repaints nothing structurally
+    // skeleton shaped to the redesign chrome heights (bar1 33 / bar2 42 /
+    // status 25 / tape 30) so ready-state lands where the bars were —
+    // loading → ready repaints nothing structurally. Shimmer is the design's
+    // augShimmer treatment with its staggered delays (SPEC-desktop §2.6.2).
     return (
       <div>
-        {[34, 32, 25, 23].map((h, i) => (
-          <div key={i} className="bl-skel" style={{ height: h, margin: 0, borderRadius: 0, borderBottom: "1px solid rgb(var(--steel-rgb) / 0.10)" }} />
+        {[33, 42, 25, 30].map((h, i) => (
+          <div key={i} className="rd-skel-bar" style={{ height: h, animationDelay: `${i * 0.07}s` }} />
         ))}
         <div style={{ padding: 16 }}>
-          {[1, 2, 3, 4].map((i) => <div key={i} className="bl-skel" style={{ marginBottom: 6 }} />)}
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rd-skel-row" style={{ animationDelay: `${0.28 + i * 0.07}s` }} />
+          ))}
         </div>
       </div>
     );
@@ -1742,7 +1843,12 @@ export default function IntelDashboard() {
 
   return (
     <SymbolProvider initial={initialSymbol}>
-      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {/* design frame structure (SPEC-desktop §2): ambient illumination layer
+          at z-0, content wrapper at z-1 — the ambient glow shows through
+          transparent regions below the chrome */}
+      <div style={{ position: "relative" }}>
+        <div className="rd-ambient" aria-hidden="true" />
+        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <div className="sr-only" role="status" aria-live="polite">
           {busy === "sync" ? "Syncing channels" : busy === "brief" ? "Generating brief" : ""}
         </div>
@@ -1934,6 +2040,7 @@ export default function IntelDashboard() {
         {openVideo && (
           <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />
         )}
+        </div>
       </div>
     </SymbolProvider>
   );

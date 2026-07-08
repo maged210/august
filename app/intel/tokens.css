@@ -1,0 +1,377 @@
+/* ==========================================================================
+   /intel REDESIGN — design tokens + stage-1 chrome (rd- namespace)
+   Source of truth: docs/design/SPEC-desktop.md §1 (TOKENS) + §2.1–2.4 (bars),
+   values copied exactly. Everything here is scoped under .intel-root so no
+   other route inherits it. The `cinematic` class (on the .intel-root node,
+   ALWAYS ON for now) gates the illumination layers — Flat/Minimal presets can
+   be shipped later by removing/limiting that class.
+   New classes use the rd- prefix so they can never collide with the current
+   bl- skin, which keeps rendering below this chrome during the staged reskin.
+   ========================================================================== */
+
+.intel-root {
+  /* ---- P palette (semantic colors, SPEC-desktop §1.4) ---- */
+  --rd-bull: #6fa085;      /* bullish · TRIGGERED · positive */
+  --rd-bear: #cd7e6d;      /* bearish · INVALIDATED · errors */
+  --rd-amber: #bfa05a;     /* ARMED · NEUTRAL dir · warnings */
+  --rd-blue: #6aa0c8;      /* ACTIVE · DIRECT evidence · quoted */
+  --rd-teal: #5fb0ad;      /* EXTRACTED evidence (== Cyan accent) */
+  --rd-inferred: #9a8fb0;  /* INFERRED evidence · ~ glyphs */
+  --rd-lo: #646b73;        /* EXPIRED · low-emphasis */
+  --rd-live: #74b08a;      /* live ◉ dots · tape dot · TODAY tick */
+  --rd-live-rgb: 116, 176, 138;
+
+  /* ---- accent ramp — locked Cyan default (§1.2) ---- */
+  --rd-acc: #5fb0ad;
+  --rd-acc-rgb: 95, 176, 173;
+  --rd-acc-soft06: rgba(95, 176, 173, 0.06);
+  --rd-acc-soft12: rgba(95, 176, 173, 0.12);
+  --rd-acc-soft25: rgba(95, 176, 173, 0.25);
+  --rd-acc-soft40: rgba(95, 176, 173, 0.42); /* named 40, alpha 0.42 per spec */
+
+  /* ---- stage / surface colors (§1.5) ---- */
+  --rd-stage: #050608;          /* page bg */
+  --rd-frame: #08090b;          /* frame · Bar 4 · overview band */
+  --rd-bar1-bg: #0a0c0f;        /* app nav · group headers */
+  --rd-bar3-bg: #070809;        /* status bar · ASK band · inputs */
+  --rd-tape-label-bg: #0b0e12;  /* LIVE TAPE pill */
+  --rd-card: #0b0d10;           /* cards · blotter column header */
+  --rd-legend-bg: #090b0e;      /* legend + loading strips */
+  --rd-btn-bg: #0e1116;         /* neutral buttons · inactive fkey chip */
+  --rd-inset: #0a0c0f;          /* inspector stat strip · chart · rows */
+
+  /* ---- hairlines (§1.5) ---- */
+  --rd-hair-045: rgba(255, 255, 255, 0.045);
+  --rd-hair-05: rgba(255, 255, 255, 0.05);
+  --rd-hair-06: rgba(255, 255, 255, 0.06);
+  --rd-hair-07: rgba(255, 255, 255, 0.07);
+  --rd-hair-08: rgba(255, 255, 255, 0.08);
+  --rd-hair-09: rgba(255, 255, 255, 0.09);
+  --rd-hair-10: rgba(255, 255, 255, 0.1);
+  --rd-hair-12: rgba(255, 255, 255, 0.12);
+  --rd-hair-13: rgba(255, 255, 255, 0.13);
+  --rd-hair-14: rgba(255, 255, 255, 0.14);
+
+  /* ---- text ramp (§1.5) ---- */
+  --rd-t-brightest: #eef1f4;   /* live prices */
+  --rd-t-primary: #e9ebee;     /* tickers · H1 */
+  --rd-t-chip: #dfe3e7;        /* date chip · hero group label */
+  --rd-t-body: #c4cad0;        /* thesis · source titles */
+  --rd-t-secondary: #aeb4bb;   /* setup col */
+  --rd-t-secondary2: #aab1b9;  /* buttons · status values */
+  --rd-t-muted: #9aa1a9;       /* section headers */
+  --rd-t-dim: #8b929a;         /* tape px · sub-labels */
+  --rd-t-dim2: #868d95;
+  --rd-t-dim3: #7e858d;        /* fkey labels · tape badge */
+  --rd-t-dim4: #7a818a;
+  --rd-t-faint: #6b727a;       /* legend · counters */
+  --rd-t-faint2: #646b73;
+  --rd-t-faint3: #5a616a;
+  --rd-t-ghost: #565c63;       /* micro-labels */
+  --rd-t-disabled: #4d535a;    /* absent n/s · disclaimer */
+  --rd-t-absent: #3a4047;      /* ∅ glyph · — */
+  --rd-t-empty: #33393f;       /* big empty-state ∅ */
+
+  /* ---- misc literals (§1.5 Misc row) ---- */
+  --rd-tape-sym: #cdd3d9;      /* tape sym · NOW value */
+  --rd-tape-div: #454b52;      /* tape divider */
+  --rd-val-amber: #cdb892;     /* amber status values */
+  --rd-val-green: #9ec3ab;     /* green DATA value */
+  --rd-accbtn-text: #e3edf6;   /* accent-button text */
+  --rd-retry-text: #e7c2b8;    /* retry button text */
+
+  /* ---- fonts (§1.6) — variables injected by next/font on this node ---- */
+  --rd-mono: var(--rd-font-mono, "IBM Plex Mono"), monospace;
+  --rd-sans: var(--rd-font-sans, "Hanken Grotesk"), sans-serif;
+
+  /* ---- illumination values at Cinematic (§1.3); layers gated below ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(95, 176, 173, 0.16), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(95, 176, 173, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(95, 176, 173, 0.55), 0 0 22px -8px rgba(95, 176, 173, 0.6);
+  --rd-live-wash: rgba(116, 176, 138, 0.045);
+  --rd-status-glow: 0 0 16px -3px rgba(116, 176, 138, 0.85);
+}
+
+/* ---- keyframes (§1.8, verbatim) ---- */
+@keyframes augPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes augShimmer { 0%, 100% { opacity: 0.28; } 50% { opacity: 0.6; } }
+@keyframes augTape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+/* §1.8 global scrollbar restyle deliberately NOT ported this stage — a scoped
+   `::-webkit-scrollbar` rule here would out-cascade the old skin's hidden
+   scrollbars (.bl-* strips). Re-add when the bl- skin is retired. */
+
+/* ==========================================================================
+   ILLUMINATION LAYERS — gated by the .cinematic root class (§1.3)
+   ========================================================================== */
+
+.rd-ambient { display: none; }
+.cinematic .rd-ambient {
+  display: block;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 240px;
+  background: var(--rd-ambient-grad);
+  pointer-events: none;
+  z-index: 0;
+}
+.rd-topglow { display: none; }
+.cinematic .rd-topglow {
+  display: block;
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 1px;
+  background: var(--rd-topline);
+}
+
+/* ==========================================================================
+   BAR 1 — app nav + function keys (h 33px, §2.1)
+   ========================================================================== */
+
+.rd-bar1 {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 16px; height: 33px;
+  border-bottom: 1px solid var(--rd-hair-07);
+  background: var(--rd-bar1-bg);
+}
+.rd-bar1-left { display: flex; align-items: center; gap: 13px; height: 100%; }
+.rd-brand {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.22em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-brand-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 35% 30%, var(--rd-acc), #0a0c0f 75%);
+  box-shadow: 0 0 8px -1px var(--rd-acc-soft40);
+}
+.rd-bar1-div { width: 1px; height: 15px; background: var(--rd-hair-10); flex-shrink: 0; }
+.rd-wstabs { display: flex; align-items: stretch; gap: 1px; height: 33px; }
+.rd-wstab {
+  display: inline-flex; align-items: center;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint); padding: 0 11px;
+  border-bottom: 2px solid transparent; background: transparent;
+  text-decoration: none; white-space: nowrap;
+}
+.rd-wstab.on {
+  color: var(--rd-t-primary);
+  border-bottom-color: var(--rd-acc);
+  background: var(--rd-acc-soft06);
+}
+a.rd-wstab:hover { color: var(--rd-t-secondary2); }
+.rd-fkeys { display: flex; align-items: center; gap: 9px; }
+.rd-fkey {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.05em;
+  color: var(--rd-t-dim4);
+  background: none; border: none; padding: 0; cursor: pointer; white-space: nowrap;
+}
+.rd-fkey:hover { color: var(--rd-t-secondary2); }
+.rd-fkey:disabled { opacity: 0.5; cursor: default; }
+.rd-fkey-k {
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 600;
+  border-radius: 2px; padding: 1px 4px;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-10);
+}
+.rd-fkey-k.on {
+  color: var(--rd-acc);
+  background: var(--rd-acc-soft12);
+  border-color: var(--rd-acc-soft40);
+}
+
+/* ==========================================================================
+   BAR 2 — title + counts + actions (h 42px, §2.2)
+   ========================================================================== */
+
+.rd-bar2 {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 0 16px; height: 42px;
+  border-bottom: 1px solid var(--rd-hair-08);
+  background: linear-gradient(180deg, #0c0f13, #0a0c0f);
+}
+.rd-bar2-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rd-title {
+  margin: 0; font-family: var(--rd-mono); font-weight: 600; font-size: 15px;
+  letter-spacing: 0.2em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-livechip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.12em;
+  color: var(--rd-bull); padding: 2px 7px;
+  border: 1px solid rgba(111, 160, 133, 0.32); border-radius: 2px; white-space: nowrap;
+}
+.rd-livechip-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-bull);
+  animation: augPulse 2s ease-in-out infinite;
+}
+.rd-meta {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-datechip {
+  color: var(--rd-t-chip); letter-spacing: 0.08em; padding: 2px 7px;
+  border: 1px solid var(--rd-hair-14); border-radius: 2px; white-space: nowrap;
+}
+.rd-bar2-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-count {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.08em;
+  padding: 3px 9px; border: 1px solid; border-radius: 2px; white-space: nowrap;
+}
+.rd-count-trig { color: var(--rd-bull); border-color: rgba(111, 160, 133, 0.3); background: rgba(111, 160, 133, 0.08); }
+.rd-count-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-bull);
+  animation: augPulse 2s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-count-arm { color: var(--rd-amber); border-color: rgba(191, 160, 90, 0.3); }
+.rd-count-act { color: var(--rd-blue); border-color: rgba(106, 160, 200, 0.3); }
+/* zero-count pills stay mounted (no CLS when counts land): dimmed on mobile,
+   hidden on desktop — same contract as the old bl-sp-zero */
+.rd-count-zero { opacity: 0.35; }
+@media (min-width: 701px) { .rd-count-zero { display: none; } }
+.rd-bar2-div { width: 1px; height: 17px; background: var(--rd-hair-10); margin: 0 2px; flex-shrink: 0; }
+.rd-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.05em;
+  color: var(--rd-t-secondary2);
+  background: var(--rd-btn-bg); border: 1px solid var(--rd-hair-10);
+  border-radius: 2px; padding: 6px 11px; cursor: pointer;
+  text-decoration: none; white-space: nowrap;
+}
+.rd-btn:hover { color: var(--rd-t-chip); }
+.rd-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-btn-acc {
+  color: var(--rd-accbtn-text);
+  background: var(--rd-acc-soft12);
+  border-color: var(--rd-acc-soft40);
+}
+
+/* ==========================================================================
+   BAR 3 — operational status (h 25px, §2.3)
+   design uses overflow:hidden; we allow horizontal scroll (hidden scrollbar)
+   so no status fact is unreachable on narrow screens — visually identical
+   ========================================================================== */
+
+.rd-sb {
+  display: flex; align-items: center; padding: 0 16px; height: 25px;
+  border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-bar3-bg);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.rd-sb::-webkit-scrollbar { display: none; }
+.rd-sb-item {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 13px;
+  border-right: 1px solid var(--rd-hair-05);
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.04em;
+  white-space: nowrap; flex-shrink: 0;
+}
+.rd-sb-label { color: var(--rd-t-ghost); letter-spacing: 0.1em; }
+.rd-sb-plain { color: var(--rd-t-secondary2); }
+.rd-sb-ok { color: var(--rd-val-green); }
+.rd-sb-amber { color: var(--rd-val-amber); }
+.rd-sb-now { margin-left: auto; border-right: none; padding-right: 0; }
+.rd-sb-clockval { color: var(--rd-tape-sym); }
+/* fixed ch-slots: volatile values never shift their neighbors between polls */
+.rd-slot6 { display: inline-block; min-width: 6ch; }
+.rd-slot7 { display: inline-block; min-width: 7ch; }
+.rd-sb-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.rd-dot-ok { background: var(--rd-bull); }
+.rd-dot-glow { box-shadow: 0 0 6px -1px var(--rd-bull); }
+.rd-dot-amber { background: var(--rd-amber); }
+.rd-dot-idle { background: var(--rd-t-ghost); }
+
+/* ==========================================================================
+   BAR 4 — live ticker tape (h 30px, §2.4)
+   fixed 30px height keeps the no-CLS reservation the old 23px min-height gave
+   ========================================================================== */
+
+.rd-tape {
+  display: flex; align-items: stretch; height: 30px; min-height: 30px;
+  border-bottom: 1px solid var(--rd-hair-07);
+  background: var(--rd-frame);
+  overflow: hidden;
+}
+.rd-tape-badge {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 0 14px; border-right: 1px solid var(--rd-hair-09);
+  background: var(--rd-tape-label-bg);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-dim3); white-space: nowrap;
+}
+.rd-tape-badge-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-live);
+  box-shadow: 0 0 6px -1px var(--rd-live);
+  animation: augPulse 2.2s ease-in-out infinite;
+}
+.rd-tape-scroll { flex: 1; overflow: hidden; position: relative; }
+.rd-tape-track {
+  display: flex; align-items: center; width: max-content; height: 30px;
+  animation: augTape 64s linear infinite;
+}
+.rd-tape-scroll:hover .rd-tape-track { animation-play-state: paused; }
+.rd-tape-run { display: flex; align-items: center; height: 30px; }
+.rd-tape-divider {
+  display: inline-flex; align-items: center; padding: 0 16px;
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.16em;
+  color: var(--rd-tape-div); white-space: nowrap;
+}
+.rd-tape-q {
+  display: inline-flex; align-items: center; gap: 7px; padding: 0 15px;
+  border-right: 1px solid var(--rd-hair-045);
+  font-family: var(--rd-mono); font-size: 10.5px; white-space: nowrap;
+}
+.rd-tape-sym { color: var(--rd-tape-sym); font-weight: 500; }
+.rd-tape-px { color: var(--rd-t-dim); }
+.rd-tape-inst { font-size: 9.5px; }
+.rd-tape-up { color: var(--rd-bull); }
+.rd-tape-dn { color: var(--rd-bear); }
+.rd-tape-watchtail { font-size: 8px; letter-spacing: 0.06em; }
+.rd-tape-await {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 15px;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-tape-track { animation: none; }
+  .rd-tape-dup { display: none; } /* single copy; region becomes scrollable */
+  .rd-tape-scroll { overflow-x: auto; scrollbar-width: none; }
+  .rd-tape-scroll::-webkit-scrollbar { display: none; }
+}
+
+/* ==========================================================================
+   LOADING SKELETON — augShimmer treatment (§2.6.2 / §4), chrome-shaped
+   ========================================================================== */
+
+.rd-skel-bar {
+  background: rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
+.rd-skel-row {
+  height: 32px; border-radius: 2px; margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   MOBILE (<700px) — keep every real action reachable; the fkeys strip is the
+   tab navigation, so it tiles full-width with 44px touch targets (same
+   contract the old .bl-head-tab strip honored)
+   ========================================================================== */
+
+@media (max-width: 700px) {
+  .rd-bar1 { height: auto; flex-wrap: wrap; padding: 0 10px; gap: 0 10px; }
+  .rd-bar1-left { height: 33px; }
+  .rd-fkeys { order: 2; width: 100%; gap: 0; }
+  .rd-fkey { flex: 1; justify-content: center; min-height: 44px; padding: 0 2px; }
+  .rd-fkey-k { display: none; }
+
+  .rd-bar2 { height: auto; flex-wrap: wrap; padding: 8px 10px; gap: 6px 8px; }
+  .rd-meta { display: none; }
+  .rd-bar2-right { flex-wrap: wrap; width: 100%; }
+  .rd-bar2-div { display: none; }
+  .rd-bar2-right .rd-btn { min-height: 44px; flex: 1; }
+}
