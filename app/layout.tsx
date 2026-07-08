@@ -61,7 +61,10 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('aug-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':t==='batman'?'batman':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();",
+              // Light is the default stage. One-time migration: a previously
+              // stored 'dark' (the old default) is reset to light once; an
+              // explicit re-pick of dark/gotham after that is honored forever.
+              "(function(){try{var m=localStorage.getItem('aug-theme-lightdefault');var t=localStorage.getItem('aug-theme');if(!m){localStorage.setItem('aug-theme-lightdefault','1');if(t==='dark'){t='light';localStorage.setItem('aug-theme','light');}}document.documentElement.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();",
           }}
         />
       </head>

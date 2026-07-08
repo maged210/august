@@ -159,7 +159,7 @@ export default function Home() {
   const [briefDismissed, setBriefDismissed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   // White / black theme — persisted; the toggle flips the whole token system.
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
