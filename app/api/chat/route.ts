@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
-import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES } from "@/lib/tools";
+import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES, MOODS } from "@/lib/tools";
+import { resolveTarget, SCREENS } from "@/lib/screens";
 import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
@@ -217,7 +218,17 @@ export async function POST(req: Request): Promise<Response> {
           } else if (tb.name === "close_map") {
             resultText = "The globe has closed; you're back to the orb.";
           } else if (tb.name === "go_to_screen") {
-            resultText = `The deck is now on the ${screen} surface.`;
+            // Aliases (markets/intel → desk) resolve to a canonical surface name.
+            const target = resolveTarget(screen);
+            resultText = target
+              ? `The deck is now on the ${SCREENS[target.index]} surface.`
+              : "That surface doesn't exist — the deck stayed where it was.";
+          } else if (tb.name === "set_mood") {
+            // The client re-tints from the framed event; confirm the new accent.
+            const mood = typeof input.mood === "string" ? input.mood.toLowerCase() : "";
+            resultText = (MOODS as readonly string[]).includes(mood)
+              ? `The deck is re-lit — the accent is ${mood} now.`
+              : "No such mood — the lights stayed as they were.";
           } else if (isWatcher) {
             try {
               resultText = await runWatcherTool(tb.name, input);

@@ -280,8 +280,10 @@ export default function CommsSurface() {
                     >
                       <span className="log-t">{fmtTime(m.ts)}</span>
                       <span className="log-arrow">{isSent ? "↩" : m.unread ? "●" : "›"}</span>
-                      <span className="log-from">{m.sender}</span>
-                      <span className="log-subj">{m.subject}</span>
+                      <span className="log-from" title={m.sender}>{m.sender}</span>
+                      {/* single-line ellipsis clamp (globals: .log-subj) — the title
+                          keeps the full subject reachable on hover */}
+                      <span className="log-subj" title={m.subject}>{m.subject}</span>
                       <span className="log-tag">{isSent ? "replied" : m.category}</span>
                     </div>
 
@@ -349,7 +351,9 @@ function ReplyComposer({
 
       {phase === "ready" ? (
         <>
-          <div className="comms-reply-meta">
+          {/* clamped to one line in globals (.comms-reply-meta) — the confirm step
+              still shows the exact full subject before anything sends */}
+          <div className="comms-reply-meta" title={meta?.subject}>
             to <span className="comms-reply-to">{meta?.fromName || meta?.to}</span> ·{" "}
             <span className="comms-reply-subj">{meta?.subject}</span>
           </div>

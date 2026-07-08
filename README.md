@@ -104,48 +104,55 @@ and the app runs exactly as before.
 ## Look closer (the globe)
 
 Ask AUGUST to see a place — "show me Tokyo", "show me flights over Europe", "take me to
-Reykjavik" — and he flies the **Command** globe there. No API key required.
+Reykjavik" — and he flies the **World** globe there. No API key required.
 
 - **Claude tool use.** A `look_closer` tool (lat, lon, label, zoom) is defined server-side;
   Claude fills the coordinates from its own knowledge — no geocoding service. The chat route
   runs the tool-use continuation so he both flies the globe **and** says something in
   character about the place.
-- **One globe.** `look_closer` slides the deck to the Command surface and `flyTo`s the
+- **One globe.** `look_closer` slides the deck to the World surface and `flyTo`s the
   coordinates with a smooth arc, dropping a labeled marker — the same live globe described
   below, not a second one.
 - **Return** by saying "close the map" / "go back" (a `close_map` tool slides back to the orb).
 
 ## Command deck
 
-The app is a horizontally-paginated deck of five full-screen surfaces — **Presence**,
-**Markets**, **Intel**, **Comms**, **Command** — behind fixed chrome (the HUD, the indicator
-dots, and the reply + command input, which stay on every surface).
+The app is a horizontally-paginated deck of four full-screen surfaces — **Presence**,
+**Desk**, **World**, **Comms** — behind fixed chrome (the HUD, the indicator dots, and the
+reply + command input, which stay on every surface). Legacy `/intel` URLs redirect to the
+Desk slide (`/?screen=desk`).
 
 - **Navigate** by swipe / trackpad, the **← →** arrow keys, the indicator dots, or by
-  asking AUGUST ("go to markets", "show command") — a `go_to_screen` tool slides the deck.
+  asking AUGUST ("take me to the world", "open the desk", "go to markets") — a
+  `go_to_screen` tool slides the deck (markets/intel are accepted aliases for the desk).
 - **Presence** (home) is a Three.js centerpiece of slowly-rotating concentric mechanical
   rings, audio-reactive off the mic and his TTS (loads `/public/circle.glb` instead if it
-  exists), plus **the Brief** — one synthesis line per surface (Markets and Command live).
-- **Markets** and **Command** are live (see below). **Intel / Comms** remain styled terminal
-  placeholders with clear `TODO: live data` markers — their data lands in later passes.
-- The look-closer globe **is** the Command surface — one globe AUGUST can fly.
+  exists), with corner readouts wired to the live feeds.
+- **Desk** is the market terminal (BOARD · TAPE · ARCHIVE · SOURCES · OPTIONS): today's
+  brief beside a live trade blotter + inspector, the full market grid, past briefs, and the
+  sources/options workbench. It lazy-mounts (dynamic import + IntersectionObserver) so the
+  orb page never pays for charts upfront, and it is viewport-locked on desktop — panels
+  scroll internally, never the page.
+- **World** fuses the intelligence globe with the news wires; **Comms** is live Gmail
+  (read + draft→confirm→send). The **Desk** is live end-to-end.
+- The look-closer globe **is** the World surface — one globe AUGUST can fly.
 
 | Deck file | What it is |
 | --- | --- |
 | `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings, audio-reactive |
 | `components/Deck.tsx` | Horizontal scroll-snap deck + indicator dots + arrow keys + `goTo()` |
-| `components/Brief.tsx` | The Brief — per-surface synthesis lines (Markets + Command live) |
 | `components/command/CommandGlobe.tsx` | MapLibre intelligence globe — flights / quakes / day-night, HUD, toggles |
-| `components/surfaces/*` | Markets / Intel / Comms surfaces |
-| `lib/screens.ts` | Surface ids + labels |
-| `lib/brief.ts` | Brief lines (Markets + Command live; others stubbed) |
+| `components/surfaces/CommsSurface.tsx` | Comms surface — Gmail read + draft/confirm/send |
+| `components/surfaces/DeskSurface.tsx` | Desk slide host — lazy-mounts the dashboard as it approaches view |
+| `components/intel/IntelDashboard.tsx` | The desk — BOARD / TAPE / ARCHIVE / SOURCES / OPTIONS |
+| `lib/screens.ts` | Surface ids + labels + aliases (`resolveTarget`) |
 | `lib/markets.ts` | Live free market data + per-source caching + AUGUST's snapshot (server) |
 | `lib/command.ts` | Live flights (OpenSky) + quakes (USGS) + caching + AUGUST's snapshot (server) |
 | `app/api/{markets,flights,quakes,command}/route.ts` | Cached JSON feeds the surfaces poll |
 
 ## Markets (live, free data)
 
-The Markets surface is live and chart-rich, auto-refreshing on a ~30s poll. Every source is
+The desk's TAPE tab is live and chart-rich, auto-refreshing on a ~30s poll. Every source is
 free and mostly keyless; per-source TTL caching in `lib/markets.ts` keeps us off rate limits.
 A graceful skeleton shows while data loads — never an endless spinner.
 
@@ -180,9 +187,9 @@ reads `FlowItem[]`, so nothing else changes.
 AUGUST reads this surface: the **Brief**'s Markets line is live, and he answers "where's NQ vs
 my levels?" from the live numbers (a cached snapshot is injected into his system prompt).
 
-## Command (live intelligence globe)
+## World (live intelligence globe)
 
-The **Command** surface is a full-screen MapLibre globe (globe projection, Carto's free
+The **World** surface is a full-screen MapLibre globe (globe projection, Carto's free
 dark-matter style) in an OSIRIS-style command aesthetic. It's the same globe `look_closer`
 flies. Every layer is drawn in **WebGL** (no DOM markers) and fed by a cached server-side
 proxy route, so the free APIs are never hammered.

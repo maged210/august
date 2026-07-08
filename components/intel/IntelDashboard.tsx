@@ -1,6 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+// The DESK — AUGUST's market surface, hosted on the command deck as a slide.
+// BOARD is the working view (today's brief rail, the live trade blotter with
+// quotes + status, the inspector, options intel, and the ask bar over the
+// processed transcripts); TAPE is the full live market grid; ARCHIVE is past
+// briefs; SOURCES + OPTIONS are the workbench. The deck slide is viewport-
+// locked on desktop, so every tab body fits the viewport and panels scroll
+// internally; on mobile the shell itself scrolls.
+//
+// Source privacy: overview/brief responses are redacted server-side (no
+// channel/video attribution) unless INTEL_OWNER_VIEW is set — every cite in
+// this file gates on `videoId`, so a redacted brief simply renders no source
+// rows. The TRACE toggle (owner-only) reveals cites on the board.
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import type { Markets } from "@/lib/markets";
 import type {
   BriefIdea,
   Chapter,
@@ -16,8 +30,22 @@ import type {
   TradeIdea,
   VideoAnalysis,
 } from "@/lib/intel/types";
+import { etDateKey } from "@/lib/intel/session";
+import Gauge from "@/components/markets/Gauge";
+import WidgetState from "@/components/WidgetState";
+import BriefPanel from "./BriefPanel";
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
+// The desk's stylesheet rides with this (lazily loaded) component — /intel is
+// a redirect now, so the CSS must be owned by the dashboard itself.
+import "@/app/intel/intel.css";
+
+// WebGL/canvas chart components — browser only, loaded only inside the desk.
+const PriceChart = dynamic(() => import("@/components/markets/PriceChart"), { ssr: false });
+const Sparkline = dynamic(() => import("@/components/markets/Sparkline"), {
+  ssr: false,
+  loading: () => <div className="spark" />,
+});
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -30,16 +58,37 @@ type Overview = {
   sources: IntelSource[];
   videos: IntelVideo[];
   brief: DailyBrief | null;
+  ownerView?: boolean;
 };
 
 type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: number; closes: number[] }>;
-type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
+// BOARD (blotter + brief rail) is the default working view; TAPE is the live
+// grid; ARCHIVE is past briefs only (today never appears there).
+type Tab = "BOARD" | "TAPE" | "ARCHIVE" | "SOURCES" | "OPTIONS";
 type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
 
 // ── constants ────────────────────────────────────────────────────────────────
 
+// Tab-gated polling: quotes (tape + blotter) only while BOARD is up; the
+// /api/markets snapshot while BOARD (levels rail) or TAPE (the grid); today's
+// brief re-checks on a slow cadence while BOARD is up — it changes at most a
+// few times a day.
+const QUOTES_REFRESH_MS = 30_000;
+const MKT_REFRESH_MS = 30_000;
+const BRIEF_REFRESH_MS = 60_000;
+
 const TAPE_MACRO = ["SPY", "QQQ", "IWM", "^VIX", "GC=F", "CL=F", "BTC-USD", "ETH-USD"];
+
+// Design-system colors (globals.css :root) — POS/NEG match the --pos/--neg
+// tokens (the same convention as components/markets/Sparkline.tsx), AMBER is
+// the system's caution accent, ASH the secondary ink. GREEN is the one extra
+// scale step the 5-zone fear/greed gauge needs between ASH and POS.
+const POS = "#7fb0a3";
+const NEG = "#bb7d72";
+const ASH = "#9a9a9f";
+const AMBER = "#c9a24a";
+const GREEN = "#9bbf8a";
 
 const TF_LABEL: Record<string, string> = {
   intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
@@ -47,7 +96,6 @@ const TF_LABEL: Record<string, string> = {
 const TF_FULL: Record<string, string> = {
   intraday: "INTRADAY", next_session: "NEXT SESSION", swing: "SWING", long_term: "LONG TERM", unspecified: "—",
 };
-
 const TF_GROUP: Record<string, string> = {
   intraday: "TODAY · TOP IDEAS",
   next_session: "SHORT-TERM · SWING",
@@ -79,6 +127,21 @@ const fmtPx = (n: number) =>
   n >= 1000 ? n.toFixed(2) : n >= 10 ? n.toFixed(2) : n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 const fmtPct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 
+// — market tape formatters (the ported deck grid) ——
+const pct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+const sign = (n: number) => (n >= 0 ? "pos" : "neg");
+const fmt = (n: number, dp = 2) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const lastPx = (n: number) =>
+  n >= 1000
+    ? n.toLocaleString("en-US", { maximumFractionDigits: 0 })
+    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+type Selected = { sym: string; kind: string; label: string };
+const DEFAULT_SELECTED: Selected = { sym: "QQQ", kind: "yahoo", label: "QQQ · NQ proxy" };
+
+type BriefFetch = { brief: DailyBrief | null; ownerView: boolean };
+
 function deriveStatus(idea: BlotterIdea): IdeaStatus {
   const q = idea.quote;
   if (!q) return "WATCH";
@@ -106,8 +169,8 @@ function deltaTrig(idea: BlotterIdea): string {
   const q = idea.quote;
   const ent = idea.entry?.value;
   if (!q || ent == null || ent <= 0) return "—";
-  const pct = ((q.price - ent) / ent) * 100;
-  return (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+  const p = ((q.price - ent) / ent) * 100;
+  return (p >= 0 ? "+" : "") + p.toFixed(1) + "%";
 }
 
 function buildBlotter(brief: DailyBrief | null, quotes: QuoteMap): BlotterIdea[] {
@@ -123,14 +186,14 @@ function atOpenState(l: IntelLevel, quotes: QuoteMap): { label: string; cls: str
   const q = quotes[l.instrument.toUpperCase()];
   if (!q || l.level == null) return { label: "—", cls: "" };
   const { price } = q;
-  const pct = ((price - l.level) / l.level) * 100;
+  const p = ((price - l.level) / l.level) * 100;
   if (l.type === "resistance" || l.type === "breakout") {
     if (price > l.level) return { label: "CLEARED", cls: "bl-cleared" };
   }
   if (l.type === "support" || l.type === "breakdown") {
     if (price < l.level) return { label: "BROKEN", cls: "bl-broken" };
   }
-  return { label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%", cls: pct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg" };
+  return { label: (p >= 0 ? "+" : "") + p.toFixed(1) + "%", cls: p >= 0 ? "bl-dlt-pos" : "bl-dlt-neg" };
 }
 
 function val(v: { value: number | null; text: string }) {
@@ -172,7 +235,7 @@ function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
   ).join(" ");
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="bl-spark">
-      <polyline points={points} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.2" />
+      <polyline points={points} fill="none" stroke={up ? POS : NEG} strokeWidth="1.2" />
     </svg>
   );
 }
@@ -192,14 +255,14 @@ function InspChart({ closes, entry, up }: { closes: number[]; entry: number | nu
     <div className="bl-insp-chart">
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {entY != null && (
-          <line x1={0} y1={entY} x2={W} y2={entY} stroke="#cbb274" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
+          <line x1={0} y1={entY} x2={W} y2={entY} stroke={AMBER} strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
         )}
-        <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.5" />
-        <circle cx={lastX} cy={lastY} r={2.5} fill={up ? "#7fb88a" : "#d98b8b"} />
+        <polyline points={pts} fill="none" stroke={up ? POS : NEG} strokeWidth="1.5" />
+        <circle cx={lastX} cy={lastY} r={2.5} fill={up ? POS : NEG} />
       </svg>
       <div className="bl-insp-chart-labels">
         <span>{fmtPx(min)}</span>
-        {entry != null && <span style={{ color: "#cbb274" }}>entry {fmtPx(entry)}</span>}
+        {entry != null && <span style={{ color: AMBER }}>entry {fmtPx(entry)}</span>}
         <span>{fmtPx(max)}</span>
       </div>
     </div>
@@ -209,10 +272,9 @@ function InspChart({ closes, entry, up }: { closes: number[]; entry: number | nu
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief,
+  data, tab, onTab, blotter, busy, onSync, onGenerateBrief,
 }: {
   data: Overview;
-  clock: string;
   tab: Tab;
   onTab: (t: Tab) => void;
   blotter: BlotterIdea[];
@@ -228,13 +290,8 @@ function PageHeader({
     else if (s === "ACTIVE") counts.ACTIVE++;
   }
 
-  const tabs: { key: Tab; label: string; fkey: string }[] = [
-    { key: "BOARD", label: "BOARD", fkey: "F1" },
-    { key: "BRIEF", label: "BRIEF", fkey: "F2" },
-    { key: "SOURCES", label: "SOURCES", fkey: "F3" },
-    { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
-    { key: "ASK", label: "ASK", fkey: "F5" },
-  ];
+  // No decorative F-key chips — nothing here is wired to a function key.
+  const tabs: Tab[] = ["BOARD", "TAPE", "ARCHIVE", "SOURCES", "OPTIONS"];
 
   const briefAge = data.lastBriefAt
     ? `${Math.round((Date.now() - data.lastBriefAt) / 60000)}m`
@@ -243,17 +300,17 @@ function PageHeader({
   return (
     <div className="bl-head">
       <div className="bl-head-row1">
-        <span className="bl-head-title">MARKET INTEL</span>
+        <span className="bl-head-title">DESK</span>
         <span className="bl-head-live" />
         <span className="bl-head-livebadge">LIVE</span>
         <span className="bl-head-date">{data.clock.nice.toUpperCase()}</span>
         <span className="bl-head-session">
-          DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
+          {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
         </span>
         <div className="bl-head-tabs">
           {tabs.map((t) => (
-            <button key={t.key} className={`bl-head-tab${tab === t.key ? " on" : ""}`} onClick={() => onTab(t.key)}>
-              <span className="bl-tab-fkey">{t.fkey}</span>{t.label}
+            <button key={t} className={`bl-head-tab${tab === t ? " on" : ""}`} onClick={() => onTab(t)}>
+              {t}
             </button>
           ))}
         </div>
@@ -277,9 +334,7 @@ function PageHeader({
           <button className="ibtn ibtn-sm ibtn-primary" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
             {busy === "brief" ? "…" : "BRIEF"}
           </button>
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => onTab("BRIEF")}>HISTORY</button>
           <a className="ibtn ibtn-sm ibtn-ghost" href="/api/intel/export/today">EXPORT</a>
-          <a className="ibtn ibtn-sm ibtn-ghost" href="/">← AUGUST</a>
         </div>
       </div>
     </div>
@@ -288,13 +343,16 @@ function PageHeader({
 
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({ data, clock }: { data: Overview; clock: string }) {
+// DATA reflects the real /api/markets poll — no fake WS/latency theater.
+function StatusBar({ data, clock, mktStatus }: { data: Overview; clock: string; mktStatus: "loading" | "live" | "error" }) {
   const { config, lastSync, lastBriefAt } = data;
   const items = [
     { label: "SESSION", val: data.clock.sessionLabel.toUpperCase(), cls: "" },
-    { label: "DATA", val: "LIVE", cls: "bl-sb-ok" },
-    { label: "FEED", val: "WS-CONNECTED", cls: "bl-sb-ok" },
-    { label: "LATENCY", val: "—ms", cls: "" },
+    {
+      label: "DATA",
+      val: mktStatus === "live" ? "LIVE" : mktStatus === "error" ? "OFFLINE" : "CONNECTING",
+      cls: mktStatus === "live" ? "bl-sb-ok" : mktStatus === "error" ? "bl-sb-err" : "",
+    },
     { label: "KEY", val: config.youtube ? "YT_API SET" : "YT_API UNSET", cls: config.youtube ? "bl-sb-ok" : "bl-sb-warn" },
     { label: "LAST SYNC", val: lastSync ? `${Math.round((Date.now() - lastSync) / 60000)}m` : "—", cls: "" },
     { label: "BRIEF", val: lastBriefAt ? `${Math.round((Date.now() - lastBriefAt) / 60000)}m` : "—", cls: "" },
@@ -327,6 +385,7 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
   const stCls: Record<IdeaStatus, string> = {
     TRIG: "bl-st-trig", ARMED: "bl-st-arm", ACTIVE: "bl-st-active", WATCH: "bl-st-watch", INVLD: "bl-st-invld",
   };
+  if (macro.length === 0 && watch.length === 0) return null;
   return (
     <div className="bl-tape">
       {macro.map((t) => (
@@ -441,8 +500,8 @@ function BlotterTable({
             const rows = groups[g];
             if (!rows?.length) return null;
             return (
-              <>
-                <tr key={`hd-${g}`}>
+              <Fragment key={g}>
+                <tr>
                   <td colSpan={13} className="bl-section-head">{g.toLowerCase()}</td>
                 </tr>
                 {rows.map((idea) => (
@@ -453,7 +512,7 @@ function BlotterTable({
                     onSelect={() => onSelect(idea.id)}
                   />
                 ))}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
@@ -568,7 +627,10 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
 
 // ── Inspector ────────────────────────────────────────────────────────────────
 
-function Inspector({ idea }: { idea: BlotterIdea | null }) {
+// `trace` is the owner-only provenance reveal: cites render only when the
+// server sent attribution (ownerView; a redacted idea has no videoId at all)
+// AND the owner flipped the board's TRACE toggle on.
+function Inspector({ idea, trace }: { idea: BlotterIdea | null; trace: boolean }) {
   if (!idea) {
     return (
       <div className="bl-insp-empty">
@@ -608,7 +670,7 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
       {/* Live price block */}
       {idea.quote && (
         <div className="bl-insp-price-block">
-          <div className="bl-insp-price-live">LIVE · REAL-TIME</div>
+          <div className="bl-insp-price-live">LIVE · DELAYED FREE PROXY</div>
           <span className="bl-insp-price">${fmtPx(idea.quote.price)}</span>
           <span className={`bl-insp-price-chg ${idea.quote.chgPct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg"}`}>
             {fmtPct(idea.quote.chgPct)}
@@ -728,58 +790,102 @@ function Inspector({ idea }: { idea: BlotterIdea | null }) {
         <span className="bl-conf-pct">{conf}%</span>
       </div>
 
-      {/* Cite */}
-      {idea.videoId && (
-        <div className="bl-insp-cite2">
-          · {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
-          {idea.rankScore !== undefined ? ` · rank ${idea.rankScore.toFixed(2)}` : ""}
-        </div>
-      )}
-      {idea.videoId && (
-        <a className="bl-insp-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
-          ▸ open source
-        </a>
+      {/* Cite — owner-only (redacted ideas carry no videoId) + trace toggle */}
+      {trace && idea.videoId && (
+        <>
+          <div className="bl-insp-cite2">
+            · {idea.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}
+            {idea.rankScore !== undefined ? ` · rank ${idea.rankScore.toFixed(2)}` : ""}
+          </div>
+          <a className="bl-insp-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
+            ▸ open source
+          </a>
+        </>
       )}
     </div>
   );
 }
 
-// ── LeftPanel ────────────────────────────────────────────────────────────────
+// ── ConsensusStrip — cross-channel agree/conflict on the brief rail ─────────
+// Main's ConsensusRow resurrected, redaction-aware: a redacted brief keeps each
+// item's source COUNT + explicitness but no channel names, so the strip falls
+// back to an honest count — never "undefined".
+function ConsensusStrip({ items }: { items: ConsensusItem[] }) {
+  if (!items.length) return null;
+  return (
+    <>
+      <div className="bl-ph">Consensus &amp; Conflicts</div>
+      {items.slice(0, 8).map((c) => {
+        const names = c.sources.map((s) => s.channelTitle).filter(Boolean);
+        const agreeCls =
+          c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral";
+        return (
+          <div key={`${c.ticker}:${c.direction}`} className="consensus-row" style={{ padding: "5px 0" }}>
+            <span className="intel-mono" style={{ color: "var(--bone)" }}>
+              {c.ticker}{" "}
+              {c.direction === "bullish" ? <span className="bl-bull-glyph">▲</span>
+                : c.direction === "bearish" ? <span className="bl-bear-glyph">▼</span>
+                : <span className="bl-neut-glyph">—</span>}
+            </span>
+            <span style={{ fontSize: 10.5, color: "var(--ash)" }}>
+              {names.length ? names.join(" · ") : `${c.sources.length} source${c.sources.length === 1 ? "" : "s"}`}
+            </span>
+            <span className={`badge ${agreeCls}`}>{c.agreement}</span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ── LeftPanel — the board's brief rail ───────────────────────────────────────
+// ONE brief presentation on the board: main's condensed read (posture rows,
+// bull/bear, AT THE OPEN) merged with the newer brief work — the read-60 lead,
+// the owner-only TRACE toggle, the honest compile affordance. BriefPanel
+// remains the ARCHIVE renderer.
 
 function LeftPanel({
-  brief, sources, videos, onOpenVideo, onReload, removeSource, quotes,
-  onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
+  brief, ownerView, trace, onTrace, sources, videos, onOpenVideo, onReload, removeSource, quotes,
+  busy, lastBriefAt, aiOn, compileMsg, onGenerateBrief,
 }: {
   brief: DailyBrief | null;
+  ownerView: boolean;
+  trace: boolean;
+  onTrace: () => void;
   sources: IntelSource[];
   videos: IntelVideo[];
   onOpenVideo: (id: string) => void;
   onReload: () => Promise<void>;
   removeSource: (id: string) => Promise<void>;
   quotes: QuoteMap;
-  onSync: () => void;
-  onGenerateBrief: () => void;
   busy: string | null;
   lastBriefAt: number;
   aiOn: boolean;
+  compileMsg: string | null;
+  onGenerateBrief: () => void;
 }) {
   return (
     <div className="bl-left">
-      <div className="bl-lp-actions">
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
-          {busy === "sync" ? "Syncing…" : "SYNC"}
-        </button>
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
-          {busy === "brief" ? "Generating…" : "BRIEF"}
-        </button>
+      <div className="bl-ph" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>Today&apos;s Brief{brief ? ` · ${brief.date}` : ""}</span>
+        {ownerView && brief ? (
+          <button
+            type="button"
+            className={`desk-trace-toggle${trace ? " on" : ""}`}
+            onClick={onTrace}
+            aria-pressed={trace}
+            title="Reveal source attribution (owner only)"
+          >
+            trace
+          </button>
+        ) : null}
       </div>
-      {lastBriefAt > 0 && (
-        <div className="bl-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
-      )}
-      {brief && (
+      {brief ? (
         <>
-          <div className="bl-ph">Tonight&apos;s Brief</div>
-          {brief.posture && <p className="bl-brief-posture">{brief.posture}</p>}
+          <p className="bl-brief-posture">{brief.read60 || brief.posture || "No narrative for this brief."}</p>
+          {!brief.grounded && (
+            <div className="inote iwarn" style={{ marginBottom: 8 }}>AI narrative offline — structured intel only.</div>
+          )}
           <dl style={{ margin: 0 }}>
             {brief.watchAtOpen && (
               <div className="bl-brief-field"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
@@ -798,9 +904,35 @@ function LeftPanel({
             </div>
           )}
         </>
+      ) : (
+        // No brief yet — the compile affordance (wired to the intel pipeline,
+        // honest about 501/429).
+        <div style={{ padding: "4px 0 6px" }}>
+          <p className="desk-compile-lead" style={{ fontSize: 12 }}>No brief compiled for {etDateKey()}.</p>
+          <button
+            type="button"
+            className="desk-compile-btn"
+            disabled={busy === "brief" || !aiOn}
+            aria-busy={busy === "brief"}
+            onClick={onGenerateBrief}
+          >
+            {busy === "brief" ? "COMPILING…" : "COMPILE TODAY'S BRIEF →"}
+          </button>
+          {!aiOn ? (
+            <div className="desk-note">needs ANTHROPIC_API_KEY on the server</div>
+          ) : compileMsg ? (
+            <div className="desk-note">{compileMsg}</div>
+          ) : null}
+        </div>
+      )}
+      {lastBriefAt > 0 && (
+        <div className="bl-lp-age" style={{ marginTop: 8 }}>brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
       )}
 
-      {/* AT THE OPEN */}
+      {/* Trade-idea consensus — sources render as names only when present */}
+      {brief && <ConsensusStrip items={brief.consensus} />}
+
+      {/* AT THE OPEN — the brief's levels checked against live quotes */}
       {brief && brief.levels.length > 0 && (
         <>
           <div className="bl-ph">AT THE OPEN</div>
@@ -820,45 +952,60 @@ function LeftPanel({
         </>
       )}
 
-      <div className="bl-ph">Sources · {sources.length}</div>
-      {sources.length === 0
-        ? <div className="istate" style={{ fontSize: 11 }}>No sources.</div>
-        : sources.map((s) => (
-          <div key={s.id} className="irow" style={{ padding: "4px 0" }}>
-            {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
-            <div className="irow-main">
-              <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
-              <div className="irow-meta">
-                <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
-                <span style={{ fontSize: 9, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
+      {/* Roster is owner-only — non-owners get an honest quiet state, not an
+          empty shell (the API withholds the lists without INTEL_OWNER_VIEW). */}
+      {!ownerView ? (
+        <>
+          <div className="bl-ph">Sources &amp; Videos</div>
+          <div className="bl-lp-age">owner only — the source roster stays private</div>
+        </>
+      ) : (
+        <>
+          <div className="bl-ph">Sources · {sources.length}</div>
+          {sources.length === 0
+            ? <div className="istate" style={{ fontSize: 11 }}>No sources.</div>
+            : sources.map((s) => (
+              <div key={s.id} className="irow" style={{ padding: "4px 0" }}>
+                {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
+                <div className="irow-main">
+                  <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
+                  <div className="irow-meta">
+                    <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
+                    <span style={{ fontSize: 9, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
+                  </div>
+                </div>
+                <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9 }} onClick={() => removeSource(s.id)}>✕</button>
               </div>
-            </div>
-            <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9 }} onClick={() => removeSource(s.id)}>✕</button>
-          </div>
-        ))}
+            ))}
 
-      <div className="bl-ph">Videos · {videos.length}</div>
-      {videos.length === 0
-        ? <div className="istate" style={{ fontSize: 11 }}>No videos yet.</div>
-        : videos.slice(0, 8).map((v) => (
-          <div key={v.videoId} className="irow clickable" style={{ padding: "4px 0" }} onClick={() => onOpenVideo(v.videoId)}>
-            {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
-            <div className="irow-main">
-              <div className="irow-title" style={{ fontSize: 10.5 }}>{v.title}</div>
-              <div className="irow-meta">
-                {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7 }}>Analyzed</span>}
-                {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7 }}>Processing</span>}
-                {v.liveState === "live" && <span className="badge b-live" style={{ fontSize: 7 }}>Live</span>}
-                {v.status !== "analyzed" && v.status !== "analyzing" && (
-                  <span className="bl-lp-hint">→ tap · paste transcript</span>
-                )}
+          <div className="bl-ph">Videos · {videos.length}</div>
+          {videos.length === 0
+            ? <div className="istate" style={{ fontSize: 11 }}>No videos yet.</div>
+            : videos.slice(0, 8).map((v) => (
+              <div key={v.videoId} className="irow clickable" style={{ padding: "4px 0" }} onClick={() => onOpenVideo(v.videoId)}>
+                {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
+                <div className="irow-main">
+                  <div className="irow-title" style={{ fontSize: 10.5 }}>{v.title}</div>
+                  <div className="irow-meta">
+                    {v.status === "analyzed" && <span className="badge b-verified" style={{ fontSize: 7 }}>Analyzed</span>}
+                    {v.status === "analyzing" && <span className="badge b-proc" style={{ fontSize: 7 }}>Processing</span>}
+                    {v.liveState === "live" && <span className="badge b-live" style={{ fontSize: 7 }}>Live</span>}
+                    {v.status !== "analyzed" && v.status !== "analyzing" && (
+                      <span className="bl-lp-hint">→ tap · paste transcript</span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
+        </>
+      )}
 
       <div className="bl-ph">Add Sources</div>
       <AddSource onReload={onReload} compact />
+
+      <div className="idisc" style={{ textAlign: "left", marginTop: 18 }}>
+        The desk is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
+      </div>
     </div>
   );
 }
@@ -872,26 +1019,47 @@ function AskBar({ ai }: { ai: boolean }) {
     citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
+  // Honest failure states, same voice as the brief compile path: rate limits
+  // say so, server errors say so, and a dead connection never renders as JSON.
   const ask = async () => {
     if (q.trim().length < 3) return;
     setBusy(true);
+    setErr(null);
     try {
       const r = await fetch("/api/intel/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q }),
       });
-      setRes(await r.json());
+      if (r.status === 429) {
+        setRes(null);
+        setErr("rate limited — try again in a moment");
+      } else if (!r.ok) {
+        setRes(null);
+        setErr("Ask failed — try again.");
+      } else {
+        setRes(await r.json());
+      }
+    } catch {
+      setRes(null);
+      setErr("ask failed — connection");
     } finally { setBusy(false); }
   };
 
   return (
     <div className="bl-askbar">
+      {err && (
+        <div className="bl-askbar-ans">
+          <div className="inote iwarn">{err}</div>
+          <button className="ibtn ibtn-sm ibtn-ghost" style={{ marginTop: 8 }} onClick={() => setErr(null)}>Dismiss</button>
+        </div>
+      )}
       {res && (
         <div className="bl-askbar-ans">
           <div style={{ marginBottom: 8 }}>{res.answer}</div>
-          {res.citations.map((c, i) => (
+          {(res.citations ?? []).filter((c) => c.videoId).map((c, i) => (
             <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
               ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
             </a>
@@ -901,7 +1069,7 @@ function AskBar({ ai }: { ai: boolean }) {
       )}
       <input
         className="bl-askbar-input"
-        placeholder={ai ? "> what did the source say about QQQ, and which ideas have no stated invalidation?" : "> ask AUGUST (needs ANTHROPIC_API_KEY)"}
+        placeholder={ai ? "> ask the desk — what did the source say about QQQ?" : "> ask the desk (needs ANTHROPIC_API_KEY)"}
         value={q}
         disabled={!ai}
         onChange={(e) => setQ(e.target.value)}
@@ -916,7 +1084,7 @@ function AskBar({ ai }: { ai: boolean }) {
 
 // ── preserved sub-components ─────────────────────────────────────────────────
 
-function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea; favorite?: boolean; onOpenVideo?: (id: string) => void }) {
+function IdeaCard({ idea, favorite }: { idea: BriefIdea | TradeIdea; favorite?: boolean }) {
   const b = idea as BriefIdea;
   return (
     <div className="idea">
@@ -959,9 +1127,13 @@ function LevelRow({ l }: { l: IntelLevel }) {
         {l.level !== null ? l.level : <span className="notspec">{l.levelText || "⌀ n/s"}</span>}
         {l.crossed ? <span className="badge b-triggered">crossed</span> : null}
       </span>
-      {l.videoId
-        ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
-        : <span className="idea-cite">@{mmss(l.sourceStartSeconds)}</span>}
+      {/* Redacted briefs delete sourceStartSeconds — only render a timestamp
+          that actually exists (never NaN:NaN). */}
+      {!Number.isFinite(l.sourceStartSeconds)
+        ? null
+        : l.videoId
+          ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
+          : <span className="idea-cite">@{mmss(l.sourceStartSeconds)}</span>}
     </div>
   );
 }
@@ -1001,17 +1173,6 @@ function DrawerOptionRow({ o }: { o: OptionIdea }) {
         <div className="idea-f"><span>Breakeven</span>{o.breakevens.length ? <b>{o.breakevens.join(", ")}</b> : <span className="notspec">Not computable</span>}</div>
       </div>
       {o.videoId && <a className="idea-cite" href={watchUrl(o.videoId, o.sourceStartSeconds)} target="_blank" rel="noreferrer">▸ source @ {mmss(o.sourceStartSeconds)}</a>}
-    </div>
-  );
-}
-
-function ConsensusRow({ c }: { c: ConsensusItem }) {
-  const cls = c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral";
-  return (
-    <div className="consensus-row">
-      <span className="intel-mono" style={{ color: "var(--bone)" }}>{c.ticker}</span>
-      <span style={{ fontSize: 11, color: "var(--ash)" }}>{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
-      <span className={`badge ${cls}`}>{c.agreement}</span>
     </div>
   );
 }
@@ -1276,48 +1437,6 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
   );
 }
 
-function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief | null; ai: boolean; onOpenVideo: (id: string) => void; historical?: boolean }) {
-  const [read60, setRead60] = useState(false);
-  if (!brief) {
-    return (
-      <div className="icard">
-        <div className="icard-h">{historical ? "No brief for this date" : "Tonight's Brief"}</div>
-        <div className="istate">{historical ? "No brief was stored for this date." : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}</div>
-      </div>
-    );
-  }
-  return (
-    <>
-      <div className="icard">
-        <div className="icard-h">
-          {historical ? `Brief · ${brief.date}` : `Tonight's Brief · ${brief.date}`}
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
-        </div>
-        {brief.read60 && read60 && <p className="brief-read60">{brief.read60}</p>}
-        {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
-        {!read60 && <dl style={{ margin: 0 }}>
-          {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
-          {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
-          {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
-          {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
-          {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
-        </dl>}
-        {!read60 && (brief.bullCase || brief.bearCase) && (
-          <div className="bullbear">
-            <div className="bull"><h4>BULL CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bullCase || "—"}</div></div>
-            <div className="bear"><h4>BEAR CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bearCase || "—"}</div></div>
-          </div>
-        )}
-      </div>
-      {brief.creatorFavorites.length > 0 && <div className="icard"><div className="icard-h">Creator Favorites</div>{brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}</div>}
-      <div className="icard"><div className="icard-h">Top Trade Ideas</div>{brief.topIdeas.length === 0 ? <div className="istate">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}</div>
-      {brief.levels.length > 0 && <div className="icard"><div className="icard-h">Levels &amp; Triggers</div>{brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}</div>}
-      {brief.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalyst Map</div>{brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-      {brief.consensus.length > 0 && <div className="icard"><div className="icard-h">Consensus &amp; Conflicts</div>{brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}</div>}
-    </>
-  );
-}
-
 // ── IntelDashboard (main) ────────────────────────────────────────────────────
 
 export default function IntelDashboard() {
@@ -1327,14 +1446,26 @@ export default function IntelDashboard() {
   const [msg, setMsg] = useState<string | null>(null);
   const [openVideo, setOpenVideo] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("BOARD");
+  const [clock, setClock] = useState(etClock());
+
+  // Board: blotter selection, live quotes, the macro tape, owner trace toggle.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [historyDates, setHistoryDates] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [quotes, setQuotes] = useState<QuoteMap>({});
   const [tape, setTape] = useState<TapeItem[]>([]);
-  const [clock, setClock] = useState(etClock());
+  const [trace, setTrace] = useState(false);
+  const [compileMsg, setCompileMsg] = useState<string | null>(null);
+
+  // Market tape (the deck grid): /api/markets snapshot, polled only while a
+  // market tab (BOARD levels rail / TAPE grid) is on screen.
+  const [mkt, setMkt] = useState<Markets | null>(null);
+  const [mktStatus, setMktStatus] = useState<"loading" | "live" | "error">("loading");
+  const [mktUpdated, setMktUpdated] = useState("");
+  const [selected, setSelected] = useState<Selected>(DEFAULT_SELECTED);
+
+  // Archive: past brief dates; expanded rows lazy-fetch their brief once.
+  const [archDates, setArchDates] = useState<string[] | null>(null);
+  const [archOpen, setArchOpen] = useState<string | null>(null);
+  const [archBriefs, setArchBriefs] = useState<Record<string, BriefFetch | "loading" | "error">>({});
 
   const load = useCallback(async () => {
     try {
@@ -1347,6 +1478,16 @@ export default function IntelDashboard() {
     }
   }, []);
 
+  // initial fetch
+  useEffect(() => { load(); }, [load]);
+
+  // ET clock
+  useEffect(() => {
+    const t = setInterval(() => setClock(etClock()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Macro tape quotes (SPY/QQQ/VIX/gold/oil/crypto) — merged into the strip.
   const fetchMacroTape = useCallback(async () => {
     try {
       const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
@@ -1362,6 +1503,7 @@ export default function IntelDashboard() {
     } catch { /* keep existing */ }
   }, []);
 
+  // Blotter quotes for the brief's tickers (live price / spark / status).
   const fetchBlotterQuotes = useCallback(async (brief: DailyBrief) => {
     const ideas = [...(brief.creatorFavorites ?? []), ...(brief.topIdeas ?? [])];
     const syms = [...new Set(ideas.map((i) => i.ticker.toUpperCase()))].slice(0, 20);
@@ -1373,49 +1515,103 @@ export default function IntelDashboard() {
     } catch { /* keep */ }
   }, []);
 
-  // initial parallel fetch
+  // Quotes poll — only while the BOARD is on screen (tab-gated). Keyed on the
+  // brief's stable identity, NOT the object: the 60s brief re-poll swaps in a
+  // fresh object every time, which must not restart this 30s interval. The ref
+  // hands each tick the latest brief without joining the dependency list.
+  const briefRef = useRef<DailyBrief | null>(null);
+  useEffect(() => { briefRef.current = data?.brief ?? null; }, [data]);
+  const briefKey = data?.brief?.date ?? data?.brief?.generatedAt ?? null;
   useEffect(() => {
-    load();
-    fetchMacroTape();
-    fetch("/api/intel/briefs", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
-      .catch(() => {});
-  }, [load, fetchMacroTape]);
+    if (tab !== "BOARD") return;
+    const tick = () => {
+      if (document.hidden) return; // hidden tab — go quiet (same as PresenceTelemetry)
+      fetchMacroTape();
+      if (briefRef.current) fetchBlotterQuotes(briefRef.current);
+    };
+    tick();
+    const id = window.setInterval(tick, QUOTES_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [tab, briefKey, fetchMacroTape, fetchBlotterQuotes]);
 
-  // ET clock
-  useEffect(() => {
-    const t = setInterval(() => setClock(etClock()), 60000);
-    return () => clearInterval(t);
+  // /api/markets snapshot — exposed so the shared error state's RETRY refetches.
+  const loadMarkets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/markets", { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const j: Markets = await res.json();
+      setMkt(j);
+      setMktStatus("live");
+      setMktUpdated(new Date().toLocaleTimeString("en-US", { hour12: false }));
+    } catch {
+      setMktStatus((s) => (s === "live" ? "live" : "error"));
+    }
   }, []);
 
-  // fetch blotter quotes when brief changes
+  // Poll the market snapshot only while it's visible: BOARD (levels rail) or
+  // TAPE (the full grid).
+  const marketTabActive = tab === "BOARD" || tab === "TAPE";
   useEffect(() => {
-    if (data?.brief) fetchBlotterQuotes(data.brief);
-  }, [data?.brief, fetchBlotterQuotes]);
+    if (!marketTabActive) return;
+    const tick = () => {
+      if (document.hidden) return; // hidden tab — go quiet (same as PresenceTelemetry)
+      loadMarkets();
+    };
+    tick();
+    const id = window.setInterval(tick, MKT_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [marketTabActive, loadMarkets]);
 
-  // auto-refresh quotes every 30s
+  // Today's brief re-checks on a modest cadence while BOARD is on screen —
+  // through the redacting briefs route (GET is unlimited; overview is not).
   useEffect(() => {
-    if (!data?.brief) return;
-    const brief = data.brief;
-    const t = setInterval(() => {
-      fetchMacroTape();
-      fetchBlotterQuotes(brief);
-    }, 30000);
-    return () => clearInterval(t);
-  }, [data?.brief, fetchMacroTape, fetchBlotterQuotes]);
+    if (tab !== "BOARD") return;
+    const id = window.setInterval(() => {
+      if (document.hidden) return; // hidden tab — go quiet (same as PresenceTelemetry)
+      fetch(`/api/intel/briefs/${etDateKey()}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+        .then((j: BriefFetch) => {
+          setData((prev) =>
+            prev ? { ...prev, brief: j.brief ?? prev.brief, ownerView: j.ownerView } : prev,
+          );
+        })
+        .catch(() => {});
+    }, BRIEF_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [tab]);
 
-  const loadDate = useCallback(async (date: string) => {
-    if (date === selectedDate) { setSelectedDate(null); setHistoryBrief(null); return; }
-    setSelectedDate(date);
-    setHistoryLoading(true);
+  // Archive dates refetch on every visit to the tab — the list is cheap, and a
+  // once-only fetch goes stale across the ET midnight rollover. Today is
+  // excluded by contract: today's brief stands alone on the BOARD.
+  const loadDates = useCallback(async () => {
     try {
-      const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
-      const j = await r.json();
-      setHistoryBrief(j.brief ?? null);
-    } catch { setHistoryBrief(null); }
-    finally { setHistoryLoading(false); }
-  }, [selectedDate]);
+      const res = await fetch("/api/intel/briefs", { cache: "no-store" });
+      const j = (await res.json()) as { dates?: string[] };
+      const today = etDateKey();
+      setArchDates(Array.isArray(j.dates) ? j.dates.filter((d) => d < today) : []);
+    } catch {
+      setArchDates((prev) => prev ?? []); // a stale list beats wiping one already shown
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "ARCHIVE") loadDates();
+  }, [tab, loadDates]);
+
+  const fetchArchive = useCallback((date: string) => {
+    setArchBriefs((p) => ({ ...p, [date]: "loading" }));
+    fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((j: BriefFetch) =>
+        setArchBriefs((p) => ({ ...p, [date]: { brief: j.brief ?? null, ownerView: !!j.ownerView } })),
+      )
+      .catch(() => setArchBriefs((p) => ({ ...p, [date]: "error" })));
+  }, []);
+
+  const toggleArchive = (date: string) => {
+    setArchOpen((cur) => (cur === date ? null : date));
+    if (!archBriefs[date]) fetchArchive(date);
+  };
 
   const removeSource = useCallback(async (id: string) => {
     await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -1432,13 +1628,28 @@ export default function IntelDashboard() {
     } finally { setBusy(null); }
   }, [load]);
 
+  // One compile path for the header BRIEF button and the board's empty-state
+  // CTA — runs the pipeline route with honest 501/429 errors, then refreshes.
   const generateBrief = useCallback(async () => {
-    setBusy("brief"); setMsg(null);
+    setBusy("brief"); setMsg(null); setCompileMsg(null);
     try {
       const r = await fetch("/api/intel/briefs/today", { method: "POST" });
-      const j = await r.json();
-      if (!j.ok) setMsg(`Brief: ${j.error ?? "failed"}`);
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Partial<BriefFetch>;
+      if (r.ok && j.ok && j.brief) {
+        setData((prev) => (prev ? { ...prev, brief: j.brief ?? null, ownerView: j.ownerView } : prev));
+      } else if (r.status === 501) {
+        setCompileMsg("needs ANTHROPIC_API_KEY on the server");
+        setMsg("Brief: needs ANTHROPIC_API_KEY on the server");
+      } else if (r.status === 429) {
+        setCompileMsg("rate limited — try again in a moment");
+        setMsg("Brief: rate limited — try again in a moment");
+      } else if (!j.ok) {
+        setCompileMsg(j.error ? `compile failed: ${j.error}` : "compile failed");
+        setMsg(`Brief: ${j.error ?? "failed"}`);
+      }
       await load();
+    } catch {
+      setCompileMsg("compile failed — connection");
     } finally { setBusy(null); }
   }, [load]);
 
@@ -1448,13 +1659,13 @@ export default function IntelDashboard() {
   if (!data) {
     return (
       <div style={{ padding: 24 }}>
-        <div className="istate istate-err">Couldn&apos;t load Market Intel. <button className="ibtn ibtn-sm" onClick={load}>Retry</button></div>
+        <div className="istate istate-err">Couldn&apos;t load the desk. <button className="ibtn ibtn-sm" onClick={load}>Retry</button></div>
       </div>
     );
   }
 
   const { config, sources, videos, brief } = data;
-  const displayBrief = selectedDate ? historyBrief : brief;
+  const ownerView = !!data.ownerView;
   const blotter = buildBlotter(brief, quotes);
   const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
 
@@ -1476,16 +1687,88 @@ export default function IntelDashboard() {
     brief?.options?.directionalOnly[0]?.underlyingSymbol ||
     brief?.topIdeas[0]?.ticker || "SPY";
 
+  const levels = mkt?.levels ?? null;
+  const fredMissing = !!mkt && !mkt.macro.fredAvailable;
+  // Shared non-data state for every tape panel: skeleton while connecting, FEED
+  // OFFLINE · RETRY if the first load failed. Stale data keeps rendering as data.
+  const fallback = (rows: number) => (
+    <WidgetState state={mktStatus === "error" ? "error" : "loading"} rows={rows} onRetry={loadMarkets} />
+  );
+
+  // The NQ levels panel renders in two places (TAPE grid + BOARD right rail) —
+  // one definition so the markup can't drift.
+  const levelsPanel = (!mkt || levels) && (
+    <section className="panel mk-levels">
+      <div className="panel-head">{mkt?.levels?.proxy ?? "NQ"} · Levels</div>
+      {levels ? (
+        <>
+          <div className="nq-price">
+            {fmt(levels.current)}{" "}
+            <span className={levels.above ? "pos" : "neg"}>
+              {levels.above ? "above pivot" : "below pivot"}
+            </span>
+          </div>
+          <ul className="kv-list">
+            <li className="lvl-res">
+              <span>Resistance</span>
+              <span>{fmt(levels.resistance)}</span>
+            </li>
+            <li className="lvl-piv">
+              <span>Pivot</span>
+              <span>{fmt(levels.pivot)}</span>
+            </li>
+            <li className="lvl-sup">
+              <span>Support</span>
+              <span>{fmt(levels.support)}</span>
+            </li>
+            <li>
+              <span>O/N High</span>
+              <span>{fmt(levels.onHigh)}</span>
+            </li>
+            <li>
+              <span>O/N Low</span>
+              <span>{fmt(levels.onLow)}</span>
+            </li>
+          </ul>
+          <div className="lvl-note">{levels.proxy} · prior session</div>
+        </>
+      ) : (
+        fallback(5)
+      )}
+    </section>
+  );
+
+  // Honest feed status for the tape (live · updated · delayed proxies).
+  const feedline = (
+    <div className="mkt-feedline">
+      <div className="mkt-status">
+        <span className={`mkt-dot ${mktStatus}`} />
+        <span className="mkt-status-text">
+          {mktStatus === "live"
+            ? `LIVE · ${mktUpdated} · delayed free proxies`
+            : mktStatus === "error"
+              ? "feed unavailable — retrying"
+              : "connecting to feeds…"}
+        </span>
+      </div>
+    </div>
+  );
+
+  const disclaimer = (
+    <div className="idisc">
+      The desk is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
+    </div>
+  );
+
   return (
     <SymbolProvider initial={initialSymbol}>
-      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <div className="desk-shell">
         <div className="sr-only" role="status" aria-live="polite">
           {busy === "sync" ? "Syncing channels" : busy === "brief" ? "Generating brief" : ""}
         </div>
 
         <PageHeader
           data={data}
-          clock={clock}
           tab={tab}
           onTab={setTab}
           blotter={blotter}
@@ -1493,158 +1776,396 @@ export default function IntelDashboard() {
           onSync={sync}
           onGenerateBrief={generateBrief}
         />
-        <StatusBar data={data} clock={clock} />
+        <StatusBar data={data} clock={clock} mktStatus={mktStatus} />
         <LiveTape tape={fullTape} />
 
         {msg && (
-          <div className="istate" style={{ margin: "6px 16px", color: "var(--steel)", fontSize: 11.5 }}>
+          <div className="istate desk-msg">
             {msg} <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setMsg(null)}>✕</button>
           </div>
         )}
         {!config.storage && (
-          <div className="istate iwarn" style={{ margin: "4px 16px", fontSize: 11.5 }}>
+          <div className="istate iwarn desk-msg">
             Upstash not configured — UPSTASH_REDIS_REST_URL/TOKEN needed.
           </div>
         )}
 
-        {/* ── BOARD ── */}
-        {tab === "BOARD" && (
-          <div className="bl-layout" style={{ flex: 1 }}>
-            <LeftPanel
-              brief={brief}
-              sources={sources}
-              videos={videos}
-              onOpenVideo={setOpenVideo}
-              onReload={load}
-              removeSource={removeSource}
-              quotes={quotes}
-              onSync={sync}
-              onGenerateBrief={generateBrief}
-              busy={busy}
-              lastBriefAt={data.lastBriefAt}
-              aiOn={config.ai}
-            />
-            <div className="bl-center">
-              {/* blotter sub-header */}
-              <div className="bl-center-head">
-                <span className="bl-ch-title">TRADE BLOTTER</span>
-                <span className="bl-ch-sep">·</span>
-                <span>{blotter.length} IDEAS</span>
-                <span className="bl-ch-sep">·</span>
-                <span>URGENCY</span>
-                <span className="bl-ch-sep">·</span>
-                <span>AUTO-REFRESH 30s</span>
-                <div className="bl-preview-states">
-                  <span className="bl-ps bl-ps-live">LIVE</span>
-                  <span className="bl-ps">LOADING</span>
-                  <span className="bl-ps">EMPTY</span>
-                  <span className="bl-ps">ERROR</span>
-                </div>
-              </div>
-              {/* legend */}
-              <div className="bl-legend">
-                <span className="bl-leg"><span className="bl-leg-dot" style={{ background: "#7fb88a" }} /> live market</span>
-                <span className="bl-leg"><span style={{ fontSize: 9 }}>★</span> quoted from transcript</span>
-                <span className="bl-leg"><span className="bl-leg-ring" /> not stated</span>
-                <span className="bl-leg"><span className="bl-leg-sq" /> direct</span>
-                <span className="bl-leg"><span className="bl-leg-dsq" /> inferred</span>
-              </div>
-              <BlotterTable
-                ideas={blotter}
-                selectedId={selectedId}
-                onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+        <div className="desk-body">
+          {/* ── BOARD — brief rail | live blotter | inspector + levels ── */}
+          {tab === "BOARD" && (
+            <div className="bl-layout">
+              <LeftPanel
+                brief={brief}
+                ownerView={ownerView}
+                trace={trace}
+                onTrace={() => setTrace((t) => !t)}
+                sources={sources}
+                videos={videos}
+                onOpenVideo={setOpenVideo}
+                onReload={load}
+                removeSource={removeSource}
+                quotes={quotes}
+                busy={busy}
+                lastBriefAt={data.lastBriefAt}
+                aiOn={config.ai}
+                compileMsg={compileMsg}
+                onGenerateBrief={generateBrief}
               />
-              <OptionsIntelPanel brief={brief} />
-            </div>
-            <div className="bl-right">
-              <Inspector idea={selectedIdea} />
-            </div>
-          </div>
-        )}
-
-        {/* ── BRIEF ── */}
-        {tab === "BRIEF" && (
-          <div className="bl-tabview">
-            <div className="bl-hist-bar">
-              {selectedDate && (
-                <button
-                  className="ibtn ibtn-primary bl-hist-today"
-                  onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}
-                >
-                  ← TODAY&apos;S BRIEF
-                </button>
-              )}
-              <span className="bl-hist-label">BRIEF HISTORY</span>
-              <div className="bl-hist-pills">
-                {historyDates.length === 0
-                  ? <span className="bl-hist-empty">No prior briefs stored.</span>
-                  : historyDates.map((d) => (
-                    <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
-                  ))}
-              </div>
-            </div>
-            {historyLoading
-              ? <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
-              : <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />}
-          </div>
-        )}
-
-        {/* ── SOURCES ── */}
-        {tab === "SOURCES" && (
-          <div className="bl-tabview">
-            <div className="icard bl-src-hub">
-              <div className="icard-h">WORKFLOW</div>
-              <ol className="bl-src-steps">
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">1</span><span>Add a channel or video URL in the box below</span></li>
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">2</span><span>Click any video → paste its transcript → Analyze</span></li>
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></li>
-              </ol>
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={sync}>
-                  {busy === "sync" ? "Syncing…" : "SYNC CHANNELS"}
-                </button>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} aria-busy={busy === "brief"} onClick={generateBrief}>
-                  {busy === "brief" ? "Generating…" : "GENERATE BRIEF"}
-                </button>
-              </div>
-              {data.lastBriefAt > 0 && (
-                <div className="bl-lp-age" style={{ marginTop: 8 }}>
-                  last brief {ago(data.lastBriefAt)}{!config.ai ? " · needs ANTHROPIC_API_KEY" : ""}
+              <div className="bl-center">
+                <div className="bl-center-head">
+                  <span className="bl-ch-title">TRADE BLOTTER</span>
+                  <span className="bl-ch-sep">·</span>
+                  <span>{blotter.length} IDEAS</span>
+                  <span className="bl-ch-sep">·</span>
+                  <span>URGENCY</span>
+                  <span className="bl-ch-sep">·</span>
+                  <span>AUTO-REFRESH 30s</span>
                 </div>
-              )}
-              {!config.ai && data.lastBriefAt === 0 && (
-                <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
-              )}
+                <div className="bl-legend">
+                  <span className="bl-leg"><span className="bl-leg-dot" style={{ background: "var(--pos)" }} /> live market</span>
+                  <span className="bl-leg"><span style={{ fontSize: 9 }}>★</span> quoted from transcript</span>
+                  <span className="bl-leg"><span className="bl-leg-ring" /> not stated</span>
+                  <span className="bl-leg"><span className="bl-leg-sq" /> direct</span>
+                  <span className="bl-leg"><span className="bl-leg-dsq" /> inferred</span>
+                </div>
+                <BlotterTable
+                  ideas={blotter}
+                  selectedId={selectedId}
+                  onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+                />
+                <OptionsIntelPanel brief={brief} />
+                <AskBar ai={config.ai} />
+              </div>
+              <div className="bl-right">
+                <Inspector idea={selectedIdea} trace={trace} />
+                <div style={{ marginTop: 14 }}>{levelsPanel}</div>
+              </div>
             </div>
-            <AddSource onReload={load} />
-            <SourceMonitor sources={sources} onRemove={removeSource} />
-            <VideoLibrary videos={videos} onOpen={setOpenVideo} />
-          </div>
-        )}
+          )}
 
-        {/* ── OPTIONS ── */}
-        {tab === "OPTIONS" && (
-          <div className="bl-tabview">
-            <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
-          </div>
-        )}
+          {/* ── TAPE — the full live market grid, viewport-fit on desktop ── */}
+          {tab === "TAPE" && (
+            <div className="desk-tapeview">
+              {feedline}
+              <div className="markets-grid">
+                {/* sector strip — hidden when loaded-but-empty (no inert shell) */}
+                {(!mkt || mkt.sectors.length > 0) && (
+                  <section className="panel mk-sectors">
+                    <div className="panel-head">Sectors</div>
+                    {mkt ? (
+                      <div className="sector-strip">
+                        {mkt.sectors.map((s) => (
+                          <div key={s.etf} className="sector-chip" title={s.etf}>
+                            <span className="sector-name">{s.name}</span>
+                            <span className={sign(s.chgPct)}>{pct(s.chgPct)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      fallback(2)
+                    )}
+                  </section>
+                )}
 
-        {/* ── ASK ── */}
-        {tab === "ASK" && (
-          <div className="bl-tabview" style={{ paddingBottom: 120 }}>
-            <div className="icard">
-              <div className="icard-h">Ask AUGUST</div>
-              <p className="inote">Use the bar below — AUGUST answers from your processed video transcripts.</p>
-              {!config.ai && <div className="istate iwarn">Needs ANTHROPIC_API_KEY.</div>}
+                {/* watchlist with sparklines — hidden when loaded-but-empty */}
+                {(!mkt || mkt.watchlist.length > 0) && (
+                  <section className="panel mk-watch">
+                    <div className="panel-head">Watchlist · click to chart</div>
+                    {mkt ? (
+                      <table className="term-table watch-table">
+                        <tbody>
+                          {mkt.watchlist.map((q) => (
+                            <tr
+                              key={q.sym}
+                              className={`watch-row${selected.sym === q.chartSym ? " sel" : ""}`}
+                              onClick={() =>
+                                setSelected({ sym: q.chartSym, kind: q.kind, label: `${q.sym} · ${q.desc}` })
+                              }
+                            >
+                              <td className="t-sym">
+                                {q.sym}
+                                {q.proxy ? <span className="proxy-tag">px</span> : null}
+                              </td>
+                              <td className="t-spark">
+                                <Sparkline data={q.spark} up={q.chgPct >= 0} />
+                              </td>
+                              <td className="t-last">{lastPx(q.last)}</td>
+                              <td className={`t-chg ${sign(q.chgPct)}`}>{pct(q.chgPct)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      fallback(8)
+                    )}
+                  </section>
+                )}
+
+                {/* hero price chart */}
+                <PriceChart sym={selected.sym} kind={selected.kind} label={selected.label} />
+
+                {/* NQ levels — hidden when loaded but no levels data */}
+                {levelsPanel}
+
+                {/* gauge cluster */}
+                <section className="panel mk-gauges">
+                  <div className="panel-head">
+                    Gauges {fredMissing ? <span className="todo">FRED key for macro</span> : null}
+                  </div>
+                  <div className="gauge-grid">
+                    <Gauge
+                      label="Crypto Fear / Greed"
+                      value={mkt?.fng?.value ?? null}
+                      min={0}
+                      max={100}
+                      display={(v) => String(Math.round(v))}
+                      note={mkt?.fng?.label}
+                      zones={[
+                        { upTo: 25, color: NEG },
+                        { upTo: 45, color: AMBER },
+                        { upTo: 55, color: ASH },
+                        { upTo: 75, color: GREEN },
+                        { upTo: 100, color: POS },
+                      ]}
+                    />
+                    <Gauge
+                      label="VIX"
+                      value={mkt?.vix ?? null}
+                      min={10}
+                      max={40}
+                      display={(v) => v.toFixed(1)}
+                      zones={[
+                        { upTo: 15, color: POS },
+                        { upTo: 20, color: ASH },
+                        { upTo: 30, color: AMBER },
+                        { upTo: 40, color: NEG },
+                      ]}
+                    />
+                    <Gauge
+                      label="10Y − 2Y"
+                      value={mkt?.macro.t10y2y ?? null}
+                      min={-1}
+                      max={3}
+                      display={(v) => `${v.toFixed(2)}%`}
+                      note={mkt?.macro.t10y2y != null && mkt.macro.t10y2y < 0 ? "inverted" : undefined}
+                      unavailable={fredMissing ? "needs FRED key" : undefined}
+                      zones={[
+                        { upTo: 0, color: NEG },
+                        { upTo: 3, color: POS },
+                      ]}
+                    />
+                    <Gauge
+                      label="Fin. Stress"
+                      value={mkt?.macro.stress ?? null}
+                      min={-2}
+                      max={4}
+                      display={(v) => v.toFixed(2)}
+                      unavailable={fredMissing ? "needs FRED key" : undefined}
+                      zones={[
+                        { upTo: 0, color: POS },
+                        { upTo: 4, color: NEG },
+                      ]}
+                    />
+                  </div>
+                </section>
+
+                {/* movers — hidden when loaded-but-empty */}
+                {(!mkt ||
+                  mkt.movers.gainers.length > 0 ||
+                  mkt.movers.losers.length > 0 ||
+                  mkt.movers.actives.length > 0) && (
+                  <section className="panel mk-movers">
+                    <div className="panel-head">Movers</div>
+                    {mkt ? (
+                      <div className="movers-cols">
+                        <div>
+                          <div className="movers-h pos">Gainers</div>
+                          {mkt.movers.gainers.map((m) => (
+                            <div key={m.sym} className="mover">
+                              <span className="mover-sym">{m.sym}</span>
+                              <span className="pos">{pct(m.chgPct)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <div className="movers-h neg">Losers</div>
+                          {mkt.movers.losers.map((m) => (
+                            <div key={m.sym} className="mover">
+                              <span className="mover-sym">{m.sym}</span>
+                              <span className="neg">{pct(m.chgPct)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <div className="movers-h">Active</div>
+                          {mkt.movers.actives.map((m) => (
+                            <div key={m.sym} className="mover">
+                              <span className="mover-sym">{m.sym}</span>
+                              <span className={sign(m.chgPct)}>{pct(m.chgPct)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      fallback(5)
+                    )}
+                  </section>
+                )}
+
+                {/* econ calendar */}
+                <section className="panel mk-econ">
+                  <div className="panel-head">Economic Calendar · US · today</div>
+                  {mkt ? (
+                    <ul className="econ-list">
+                      {mkt.econ.length ? (
+                        mkt.econ.map((e, i) => (
+                          <li key={i}>
+                            <span className="econ-t">{e.time}</span>
+                            <span className="econ-e">{e.title}</span>
+                            <span className={`econ-i ${e.impact}`}>{e.impact || "—"}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="muted">No US events today</li>
+                      )}
+                    </ul>
+                  ) : (
+                    fallback(4)
+                  )}
+                </section>
+
+                {/* flow lite — hidden when loaded-but-empty */}
+                {(!mkt || mkt.flow.length > 0) && (
+                  <section className="panel mk-flow">
+                    <div className="panel-head">
+                      Flow · Lite <span className="todo">proxy</span>
+                    </div>
+                    {mkt ? (
+                      <ul className="flow-list">
+                        {mkt.flow.map((f) => (
+                          <li key={f.sym}>
+                            <span className="flow-sym">{f.sym}</span>
+                            <span className={sign(f.chgPct)}>{pct(f.chgPct)}</span>
+                            <span className="flow-mult">{f.volMult.toFixed(1)}× vol</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      fallback(5)
+                    )}
+                    <div className="flow-note">
+                      Unusual equity volume — free stand-in for options flow (real flow is paid).
+                    </div>
+                  </section>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="idisc" style={{ paddingBottom: 64 }}>
-          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
+          {/* ── ARCHIVE — past briefs only; a single-open accordion that
+              scrolls inside the slide. ── */}
+          {tab === "ARCHIVE" && (
+            <div className="desk-scrollview">
+              <div className="bl-tabview bl-tabview-wide">
+                <div className="arch-wrap">
+                  {archDates === null ? (
+                    <WidgetState state="loading" rows={4} />
+                  ) : archDates.length === 0 ? (
+                    <div className="muted">No archived briefs yet.</div>
+                  ) : (
+                    <div className="arch-list">
+                      {archDates.map((d) => {
+                        const entry = archBriefs[d];
+                        const open = archOpen === d;
+                        return (
+                          <div key={d} className={`arch-row${open ? " open" : ""}`}>
+                            <button
+                              type="button"
+                              className={`arch-head${open ? " on" : ""}`}
+                              aria-expanded={open}
+                              onClick={() => toggleArchive(d)}
+                            >
+                              <span className="arch-chev">{open ? "▾" : "▸"}</span>
+                              <span className="arch-date">{d}</span>
+                            </button>
+                            {open ? (
+                              <div className="arch-body">
+                                {!entry || entry === "loading" ? (
+                                  <WidgetState state="loading" rows={4} />
+                                ) : entry === "error" ? (
+                                  <WidgetState state="error" onRetry={() => fetchArchive(d)} />
+                                ) : entry.brief ? (
+                                  <BriefPanel brief={entry.brief} ownerView={entry.ownerView} />
+                                ) : (
+                                  <div className="muted">No brief stored for this date.</div>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {disclaimer}
+              </div>
+            </div>
+          )}
+
+          {/* ── SOURCES ── */}
+          {tab === "SOURCES" && (
+            <div className="desk-scrollview">
+              <div className="bl-tabview">
+                <div className="icard bl-src-hub">
+                  <div className="icard-h">WORKFLOW</div>
+                  <ol className="bl-src-steps">
+                    <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">1</span><span>Add a channel or video URL in the box below</span></li>
+                    <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">2</span><span>Click any video → paste its transcript → Analyze</span></li>
+                    <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">3</span><span>Hit Generate Brief — read it on the BOARD tab</span></li>
+                  </ol>
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={sync}>
+                      {busy === "sync" ? "Syncing…" : "SYNC CHANNELS"}
+                    </button>
+                    <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} aria-busy={busy === "brief"} onClick={generateBrief}>
+                      {busy === "brief" ? "Generating…" : "GENERATE BRIEF"}
+                    </button>
+                  </div>
+                  {data.lastBriefAt > 0 && (
+                    <div className="bl-lp-age" style={{ marginTop: 8 }}>
+                      last brief {ago(data.lastBriefAt)}{!config.ai ? " · needs ANTHROPIC_API_KEY" : ""}
+                    </div>
+                  )}
+                  {!config.ai && data.lastBriefAt === 0 && (
+                    <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
+                  )}
+                </div>
+                <AddSource onReload={load} />
+                {/* Roster + library are owner-only — an honest quiet state
+                    beats empty shells (the API withholds both lists). */}
+                {ownerView ? (
+                  <>
+                    <SourceMonitor sources={sources} onRemove={removeSource} />
+                    <VideoLibrary videos={videos} onOpen={setOpenVideo} />
+                  </>
+                ) : (
+                  <div className="inote" style={{ marginTop: 12 }}>owner only — the source roster and video library stay private</div>
+                )}
+                {disclaimer}
+              </div>
+            </div>
+          )}
+
+          {/* ── OPTIONS ── */}
+          {tab === "OPTIONS" && (
+            <div className="desk-scrollview">
+              <div className="bl-tabview">
+                <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
+                {disclaimer}
+              </div>
+            </div>
+          )}
         </div>
-
-        <AskBar ai={config.ai} />
 
         {openVideo && (
           <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />

@@ -43,18 +43,42 @@ export const CLOSE_MAP_TOOL = {
 export const GO_TO_SCREEN_TOOL = {
   name: "go_to_screen",
   description:
-    'Navigate the command deck to one of its surfaces. Call this when he asks to go to, open, show, pull up, or switch to a screen — "go to markets", "show comms", "take me to the world", "show me the news", "back to presence". The deck slides to that surface. Do NOT call this merely because he asked a data question you can answer directly (e.g. "where is NQ vs my levels?") — answer those from your data, and only navigate when he actually wants to move there.',
+    'Slide the deck to a surface. Call this when he asks to go to, open, show, pull up, or switch to one — "go to the world", "show comms", "open the desk", "go to markets", "back to presence". The deck has four surfaces: presence, desk, world, comms. "markets" and "intel" are accepted as aliases for the desk (today\'s brief, the live trade blotter, the tape, the archive). Do NOT call this merely because he asked a data question you can answer directly (e.g. "where is NQ vs my levels?") — answer those from your data, and only navigate when he actually wants to move there.',
   input_schema: {
     type: "object" as const,
     properties: {
       screen: {
         type: "string" as const,
-        enum: ["presence", "markets", "world", "comms"],
+        enum: ["presence", "desk", "world", "comms", "markets", "intel"],
         description:
-          "Which surface to show: presence (home/orb), markets, world (the live intelligence globe — flights, earthquakes, day/night — fused with the world news wires and your grounded synthesis), or comms. 'Intel' and the news live on the world surface.",
+          "Where to go: presence (home/orb), desk (the market desk — today's brief, the live blotter and tape, the brief archive; also reachable as 'markets' or 'intel'), world (the live intelligence globe — flights, earthquakes, day/night — fused with the world news wires and your grounded synthesis), or comms. The news and the globe live on the world surface.",
       },
     },
     required: ["screen"],
+  },
+};
+
+// --- Mood — the deck's accent temperature. One axis, orthogonal to the light/dark
+// theme; the client repaints the accent tokens and re-lights the orb (page.tsx +
+// Presence3D). This list is the single source of truth for the mood names — the
+// tool enum, the /api/chat continuation and the client switcher all key off it.
+export const MOODS = ["steel", "ember", "phosphor", "graphite"] as const;
+export type Mood = (typeof MOODS)[number];
+
+export const SET_MOOD_TOOL = {
+  name: "set_mood",
+  description:
+    'Re-tint the deck: set the accent mood that colours the interface and re-lights the orb. Four moods: steel (the default cold blue), ember (warm gold), phosphor (muted terminal green), graphite (near-monochrome gray). Call this when he asks to change the look, the lights, or the accent — "run it ember", "phosphor", "make it warmer" (ember), "go green" (phosphor), "strip the colour" (graphite), "lights back to steel". Purely cosmetic: it never touches data or alerts, and it is NOT the light/dark theme toggle.',
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      mood: {
+        type: "string" as const,
+        enum: [...MOODS],
+        description: "The accent mood to apply: steel, ember, phosphor, or graphite.",
+      },
+    },
+    required: ["mood"],
   },
 };
 
@@ -122,6 +146,7 @@ export const TOOLS = [
   LOOK_CLOSER_TOOL,
   CLOSE_MAP_TOOL,
   GO_TO_SCREEN_TOOL,
+  SET_MOOD_TOOL,
   CREATE_WATCHER_TOOL,
   LIST_WATCHERS_TOOL,
   REMOVE_WATCHER_TOOL,
@@ -134,10 +159,13 @@ export const WATCHER_TOOL_NAMES = new Set(["create_watcher", "list_watchers", "r
 
 // Appended to the system prompt so the capability feels native and in-character.
 export const TOOL_GUIDANCE = `\n\n---\nTHE COMMAND DECK
-You sit at the head of a command deck of four surfaces — Presence (home/orb), Markets, World (a live intelligence globe — flights, earthquakes, day/night — fused with the world news wires and your grounded synthesis), and Comms. When he asks to go to, open, pull up, or show a surface, call go_to_screen and acknowledge briefly, in character. If he asks for "intel", "the news", or "the globe", that is the World surface.
+You sit at the head of a command deck of four surfaces — Presence (home/orb), Desk (the market desk: today's brief, the live trade blotter and tape, the brief archive), World (a live intelligence globe — flights, earthquakes, day/night — fused with the world news wires and your grounded synthesis), and Comms. When he asks to go to, open, pull up, or show one, call go_to_screen and acknowledge briefly, in character. If he asks for "the news" or "the globe", that is the World surface. When he asks for markets, the desk, the tape, or market intel, that is the Desk surface — call go_to_screen with "desk".
 
 THE GLOBE
 The World surface is a live globe with the world news wires docked alongside it. When he asks to see, look at, or be shown a place — or to see flights / quakes / what's happening over somewhere — call look_closer with coordinates from your own knowledge; it opens the World globe and flies there. Say something brief and in character as it comes into view. When he asks to close the map, go back, or return to the orb, call close_map (it returns to Presence). Keep coordinates to yourself; never recite latitude/longitude or mention "tools" or screen indices.
+
+THE LIGHTS
+The deck runs one of four accent moods — steel (the default cold blue), ember (warm gold), phosphor (muted terminal green), graphite (near-monochrome). When he asks to change the look or the lights — "run it ember", "phosphor", "warm it up", "strip the colour", "back to steel" — call set_mood and acknowledge in a dry word or two ("Ember it is."). It's cosmetic, nothing else changes; don't confuse it with the light/dark theme, which he flips himself, and never call it for a data question.
 
 WATCHERS — STANDING ALERTS
 You can stand watch over what matters to him and reach out when something happens. When he asks you to watch, keep an eye on, or ping/alert/notify him when a condition trips, call create_watcher — market (a ticker crossing a price), quake (a magnitude, optionally near a place), or intel (a keyword on the news wires). When he asks what you're watching, call list_watchers; to stop one, call remove_watcher. After any of these, confirm in your own voice EXACTLY what you're now watching (or no longer watching) — short and plain, e.g. "Done — I'll watch NVDA and ping you the moment it slips under 120." You check these periodically and alert ONCE per trip, so reassure him he won't be spammed. If you can't set one (an unknown ticker, missing detail), say so plainly and ask for what you need. Never invent a confirmation — only confirm what the tool actually returned.`;

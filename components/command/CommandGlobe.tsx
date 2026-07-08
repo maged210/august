@@ -74,12 +74,21 @@ function planeImage(): ImageData {
 
 export default function CommandGlobe({ active, flyTo }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const readyRef = useRef(false);
   const activeRef = useRef(active);
   const targetRef = useRef<GlobeTarget | null>(flyTo);
   const loadFlightsRef = useRef<() => void>(() => {});
+  const loadQuakesRef = useRef<() => void>(() => {});
+  const updateNightRef = useRef<() => void>(() => {});
+  // Render gating: while the World slide is far off-view or the tab is hidden,
+  // the map triggers ZERO repaints — every data-driven update (night band, quake
+  // refresh) defers, marks itself stale, and is flushed once on resume.
+  const runningRef = useRef(false);
+  const staleRef = useRef({ night: false, quakes: false });
+  const [inView, setInView] = useState(false);
 
   const [aircraft, setAircraft] = useState<number | null>(null);
   const [quakes, setQuakes] = useState<number | null>(null);
@@ -95,13 +104,55 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     targetRef.current = flyTo;
   }, [flyTo]);
 
-  // ZULU clock
+  // Pause/resume — an IO on the surface root (the DeskSurface pattern) drives the
+  // repaint gate together with tab visibility; resume flushes deferred updates.
   useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setInView(true); // ancient browser — never gate
+      return;
+    }
+    // rootMargin extends the viewport, so the globe resumes while the slide is
+    // still approaching (mid-swipe / mid-goTo), before it has fully arrived.
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => setInView(e.isIntersecting)),
+      { rootMargin: "25%" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => {
+    const apply = () => {
+      const running = inView && !document.hidden;
+      const resumed = running && !runningRef.current;
+      runningRef.current = running;
+      if (resumed) {
+        // Apply whatever the pause skipped — once, in order (night is a pure
+        // recompute; quakes is a cached fetch).
+        if (staleRef.current.night) {
+          staleRef.current.night = false;
+          updateNightRef.current();
+        }
+        if (staleRef.current.quakes) {
+          staleRef.current.quakes = false;
+          loadQuakesRef.current();
+        }
+      }
+    };
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => document.removeEventListener("visibilitychange", apply);
+  }, [inView]);
+
+  // ZULU clock — ticks (and re-renders the HUD) only while the surface is on or
+  // near the screen; it re-syncs instantly on resume.
+  useEffect(() => {
+    if (!inView) return;
     const fmt = () => setZulu(new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
     fmt();
     const id = window.setInterval(fmt, 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [inView]);
 
   function flyToTarget(t: GlobeTarget) {
     const map = mapRef.current;
@@ -145,6 +196,10 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     });
 
     const loadQuakes = async () => {
+      if (!runningRef.current) {
+        staleRef.current.quakes = true; // deferred — flushed on resume
+        return;
+      }
       try {
         const fc = await (await fetch("/api/quakes", { cache: "no-store" })).json();
         (mapRef.current?.getSource("quakes") as maplibregl.GeoJSONSource | undefined)?.setData(fc);
@@ -153,6 +208,7 @@ export default function CommandGlobe({ active, flyTo }: Props) {
         /* keep last */
       }
     };
+    loadQuakesRef.current = loadQuakes;
     const loadFlights = async () => {
       const m = mapRef.current;
       if (!m || !readyRef.current || document.hidden) return;
@@ -187,10 +243,15 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     };
     loadFlightsRef.current = loadFlights;
     const updateNight = () => {
+      if (!runningRef.current) {
+        staleRef.current.night = true; // deferred — flushed on resume
+        return;
+      }
       (mapRef.current?.getSource("night") as maplibregl.GeoJSONSource | undefined)?.setData(
         nightFeature(new Date()),
       );
     };
+    updateNightRef.current = updateNight;
 
     // Keep the map sized to its container — fixes the blank / stuck-400x300 canvas
     // when the container starts at 0 (off-screen deck surface) and grows later.
@@ -343,7 +404,7 @@ export default function CommandGlobe({ active, flyTo }: Props) {
   if (quakes != null) hudStats.push(`${quakes} quakes`);
 
   return (
-    <div className="command-surface">
+    <div ref={rootRef} className="command-surface">
       <div ref={containerRef} className="command-map" />
       <div className="command-vignette" aria-hidden />
 

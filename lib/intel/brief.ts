@@ -5,7 +5,7 @@
 // non-narrative brief when the model key is absent.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { SYSTEM_PROMPT } from "@/lib/persona";
+import { SYSTEM_PROMPT, USER_NAME } from "@/lib/persona";
 import type {
   BriefIdea,
   ConsensusItem,
@@ -79,9 +79,11 @@ function buildConsensus(all: { idea: TradeIdea; channelTitle: string; videoId: s
 
 async function narrate(brief: Omit<DailyBrief, "posture" | "whatChanged" | "whatMattersTomorrow" | "read60" | "bullCase" | "bearCase" | "watchAtOpen" | "invalidation" | "grounded">): Promise<Partial<DailyBrief>> {
   const key = process.env.ANTHROPIC_API_KEY;
+  // Model input is anonymized: channel/video names never go in (source COUNTS only),
+  // so the generated free text can't leak attribution into redacted briefs.
   const struct = {
-    topIdeas: brief.topIdeas.slice(0, 10).map((i) => ({ ticker: i.ticker, direction: i.direction, horizon: i.timeHorizon, thesis: i.thesis, entry: i.entry.text, invalidation: i.invalidation.text, source: i.channelTitle, favorite: i.creatorDesignation.isFavoriteSetup })),
-    consensus: brief.consensus.slice(0, 12).map((c) => ({ ticker: c.ticker, agreement: c.agreement, sources: c.sources.map((s) => s.channelTitle) })),
+    topIdeas: brief.topIdeas.slice(0, 10).map((i) => ({ ticker: i.ticker, direction: i.direction, horizon: i.timeHorizon, thesis: i.thesis, entry: i.entry.text, invalidation: i.invalidation.text, favorite: i.creatorDesignation.isFavoriteSetup })),
+    consensus: brief.consensus.slice(0, 12).map((c) => ({ ticker: c.ticker, agreement: c.agreement, sourceCount: c.sources.length })),
     levels: brief.levels.slice(0, 16).map((l) => ({ instrument: l.instrument, level: l.level ?? l.levelText, type: l.type })),
     catalysts: brief.catalysts.slice(0, 16).map((c) => ({ name: c.name, when: c.eventTime, importance: c.importance })),
     risks: brief.risks.slice(0, 10),
@@ -117,7 +119,7 @@ async function narrate(brief: Omit<DailyBrief, "posture" | "whatChanged" | "what
     const res = await c.messages.create({
       model: MODEL,
       max_tokens: 1500,
-      system: SYSTEM_PROMPT + "\n\nYou are writing a market-prep briefing for Maged from creators' video analysis. Ground EVERY statement in the structured items below — do not introduce a ticker, level, or catalyst not present. Where sources conflict, say so; never merge contradictory calls. This is decision-support, not financial advice.",
+      system: SYSTEM_PROMPT + `\n\nYou are writing a market-prep briefing for ${USER_NAME} from creators' video analysis. Ground EVERY statement in the structured items below — do not introduce a ticker, level, or catalyst not present. Never name a specific channel, creator, or video — refer to sources only generically ("one source", "3 sources agree"). Where sources conflict, say so; never merge contradictory calls. This is decision-support, not financial advice.`,
       messages: [{ role: "user", content: `Structured intelligence for ${brief.date}:\n${JSON.stringify(struct, null, 2)}\n\nCall write_brief.` }],
       tools: [tool],
       tool_choice: { type: "tool", name: "write_brief" },
@@ -315,7 +317,9 @@ export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
   return brief;
 }
 
-/** Markdown export for a brief. */
+/** Markdown export for a brief. Attribution renders only when present — the
+ * export route always passes a redacted brief (see lib/intel/redact.ts), so
+ * these channel mentions are effectively owner-side formatting only. */
 export function briefToMarkdown(b: DailyBrief): string {
   const L: string[] = [];
   L.push(`# AUGUST Market Intel — ${b.date}`, "");
@@ -327,11 +331,11 @@ export function briefToMarkdown(b: DailyBrief): string {
   if (b.bearCase) L.push(`**Bear case:** ${b.bearCase}`, "");
   if (b.creatorFavorites.length) {
     L.push("## Creator Favorites");
-    for (const i of b.creatorFavorites) L.push(`- **${i.ticker}** (${i.direction}, ${i.channelTitle}) — ${i.thesis} | entry: ${i.entry.text} | invalidation: ${i.invalidation.text}`);
+    for (const i of b.creatorFavorites) L.push(`- **${i.ticker}** (${i.direction}${i.channelTitle ? `, ${i.channelTitle}` : ""}) — ${i.thesis} | entry: ${i.entry.text} | invalidation: ${i.invalidation.text}`);
     L.push("");
   }
   L.push("## Top Ideas");
-  for (const i of b.topIdeas) L.push(`- **${i.ticker}** ${i.direction} [${i.timeHorizon}] (${i.channelTitle}, score ${i.rankScore}) — ${i.thesis}`);
+  for (const i of b.topIdeas) L.push(`- **${i.ticker}** ${i.direction} [${i.timeHorizon}] (${i.channelTitle ? `${i.channelTitle}, ` : ""}score ${i.rankScore}) — ${i.thesis}`);
   if (b.options && (b.options.bestCreatorPlays.length || b.options.augustCandidates.length || b.options.directionalOnly.length)) {
     const o = b.options;
     const legStr = (i: { legs: { action: string; optionType: string; strike: number | null; expiration: string | null }[] }) =>
@@ -339,7 +343,7 @@ export function briefToMarkdown(b: DailyBrief): string {
     L.push("", "## Tonight's Options Brief", `_Options provider: ${o.providerStatus} (delayed, no Greeks). Scores reflect fit + data quality, not expected profit._`);
     if (o.bestCreatorPlays.length) {
       L.push("", "### Creator Options Plays");
-      for (const i of o.bestCreatorPlays) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (${i.channelTitle}, score ${i.rankScore}) — ${legStr(i)}${i.quotedPremium !== null ? ` | creator premium ${i.quotedPremium}` : ""}`);
+      for (const i of o.bestCreatorPlays) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (${i.channelTitle ? `${i.channelTitle}, ` : ""}score ${i.rankScore}) — ${legStr(i)}${i.quotedPremium !== null ? ` | creator premium ${i.quotedPremium}` : ""}`);
     }
     if (o.augustCandidates.length) {
       L.push("", "### AUGUST Options Candidates _(AUGUST-generated — not creator recommendations, not advice)_");
@@ -347,7 +351,7 @@ export function briefToMarkdown(b: DailyBrief): string {
     }
     if (o.directionalOnly.length) {
       L.push("", "### Directional Setups Without a Contract");
-      for (const i of o.directionalOnly) L.push(`- **${i.underlyingSymbol}** ${i.direction} (${i.channelTitle}) — directional thesis; exact options contract not specified.`);
+      for (const i of o.directionalOnly) L.push(`- **${i.underlyingSymbol}** ${i.direction}${i.channelTitle ? ` (${i.channelTitle})` : ""} — directional thesis; exact options contract not specified.`);
     }
   }
   L.push("", "## Levels");

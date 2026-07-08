@@ -1,25 +1,79 @@
-/* Market Intel — scoped styles. Reuses AUGUST's design tokens (--bone --ash --steel
-   --charcoal, mono/sans fonts) for a dense market-terminal feel. Dark-first; the page
-   scrolls (unlike the fixed orb). No new color system. */
+/* The DESK — scoped styles, shipped with the (lazily loaded) dashboard chunk.
+   Reuses AUGUST's design tokens (--bone --ash --steel --charcoal, mono/sans
+   fonts) for a dense market-terminal feel. The desk is a deck SLIDE: on
+   desktop the shell is viewport-locked and panels scroll internally (no page
+   scroll — Bloomberg screens don't page-scroll); ≤720px the shell itself
+   scrolls. No new color system. */
 
-/* SCROLL FIX: globals.css sets body{overflow:hidden} for the fixed-screen orb surfaces.
-   /intel is the one exception — it holds unbounded, growing content and must scroll.
-   :has() is supported in all evergreen browsers; it lets us opt this route back in
-   without touching any other surface. */
-body:has(.intel-root) {
-  overflow-y: auto;
-  overscroll-behavior-y: auto;
-}
-
-.intel-root {
-  min-height: 100dvh;
+/* ---- desk shell — the slide's frame ---- */
+.desk-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Containment guard: desk content can never widen the deck slide. The shell
+     takes its width from inset (not content) and clips x-overflow, so a wide
+     child crops inside the slide instead of breaking the deck's 100vw snap
+     math. (≤720px sets overflow-y:auto, which makes this compute to hidden —
+     still contained.) */
+  max-width: 100%;
+  overflow-x: clip;
+  /* Top clears the boot HUD + deck dots; bottom reserves the composer dock —
+     the same geometry as the other deck surfaces (see .surface). */
+  padding: 88px 16px clamp(150px, 20vh, 235px);
   background:
     radial-gradient(1200px 600px at 50% -10%, rgb(var(--steel-rgb) / 0.06), transparent 70%),
     var(--charcoal, #08080b);
   color: var(--bone, #e8e6e1);
   font-family: var(--font-sans), system-ui, sans-serif;
-  padding: 0 0 80px;
 }
+.desk-shell > .bl-statusbar,
+.desk-shell > .bl-tape {
+  flex: none;
+}
+/* The active tab's viewport-fit region. */
+.desk-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Transient sync/config notices — slim rows that never steal panel height. */
+.desk-msg {
+  flex: none;
+  margin: 4px 2px 0;
+  padding: 2px 0;
+  font-size: 11.5px;
+  color: var(--steel);
+  overflow-wrap: anywhere;
+}
+.desk-msg.iwarn {
+  color: #c9a24a;
+}
+/* Reading tabs (ARCHIVE / SOURCES / OPTIONS) scroll inside the slide. */
+.desk-scrollview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* TAPE hosts the viewport-fit market grid. */
+.desk-tapeview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 10px;
+}
+.desk-tapeview .mkt-feedline {
+  flex: none;
+  margin-bottom: 10px;
+}
+
 .intel-wrap {
   max-width: 1180px;
   margin: 0 auto;
@@ -82,7 +136,7 @@ body:has(.intel-root) {
 }
 .ibtn:hover { background: rgb(var(--steel-rgb) / 0.22); }
 .ibtn:disabled { opacity: 0.4; cursor: not-allowed; }
-.ibtn-primary { background: rgb(110 140 168 / 0.25); border-color: rgb(110 140 168 / 0.5); }
+.ibtn-primary { background: rgb(var(--steel-rgb) / 0.25); border-color: rgb(var(--steel-rgb) / 0.5); }
 .ibtn-ghost { background: transparent; color: var(--ash); }
 .ibtn-ghost:hover { color: var(--bone); }
 .ibtn-sm { padding: 5px 9px; font-size: 10px; }
@@ -118,10 +172,10 @@ body:has(.intel-root) {
 .brief-row dd { margin: 0; font-size: 13px; line-height: 1.5; color: var(--bone); }
 .bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (max-width: 640px) { .bullbear { grid-template-columns: 1fr; } }
-.bull { border-left: 2px solid #7fb88a; padding-left: 10px; }
-.bear { border-left: 2px solid #d98b8b; padding-left: 10px; }
+.bull { border-left: 2px solid var(--pos); padding-left: 10px; }
+.bear { border-left: 2px solid var(--neg); padding-left: 10px; }
 .bull h4, .bear h4 { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.1em; margin: 0 0 4px; }
-.bull h4 { color: #7fb88a; } .bear h4 { color: #d98b8b; }
+.bull h4 { color: var(--pos); } .bear h4 { color: var(--neg); }
 
 /* idea cards */
 .idea {
@@ -155,12 +209,12 @@ body:has(.intel-root) {
   border: 1px solid currentColor;
   vertical-align: middle;
 }
-.b-bull { color: #7fb88a; } .b-bear { color: #d98b8b; } .b-watch { color: #cbb274; } .b-neutral { color: var(--ash); }
-.b-fav { color: #d8b46a; background: rgb(216 180 106 / 0.08); }
-.b-pred { color: #9aaed8; }
+.b-bull { color: var(--pos); } .b-bear { color: var(--neg); } .b-watch { color: #c9a24a; } .b-neutral { color: var(--ash); }
+.b-fav { color: #c9a24a; background: rgb(201 162 74 / 0.08); }
+.b-pred { color: var(--steel); }
 .b-explicit { color: var(--steel); } .b-inferred { color: var(--ash); opacity: 0.85; }
-.b-stale { color: #c98b6a; } .b-conflict { color: #d98b8b; } .b-triggered { color: #7fb88a; } .b-invalid { color: #d98b8b; }
-.b-live { color: #d98b8b; } .b-proc { color: #cbb274; } .b-pending { color: var(--ash); } .b-verified { color: #7fb88a; }
+.b-stale { color: #c9a24a; } .b-conflict { color: var(--neg); } .b-triggered { color: var(--pos); } .b-invalid { color: var(--neg); }
+.b-live { color: var(--neg); } .b-proc { color: #c9a24a; } .b-pending { color: var(--ash); } .b-verified { color: var(--pos); }
 
 /* source + video rows */
 .irow {
@@ -197,11 +251,11 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* states */
 .istate { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; color: var(--ash); padding: 14px 0; }
-.istate-err { color: #d98b8b; }
+.istate-err { color: var(--neg); }
 .iskel { height: 14px; border-radius: 4px; background: linear-gradient(90deg, rgb(var(--steel-rgb)/0.06), rgb(var(--steel-rgb)/0.14), rgb(var(--steel-rgb)/0.06)); background-size: 200% 100%; animation: ishimmer 1.3s infinite; margin: 8px 0; }
 @keyframes ishimmer { to { background-position: -200% 0; } }
 .inote { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; color: var(--ash); opacity: 0.8; }
-.iwarn { color: #c98b6a; }
+.iwarn { color: #c9a24a; }
 .idisc { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; color: var(--ash); opacity: 0.65; margin-top: 24px; text-align: center; }
 
 /* drawer */
@@ -217,7 +271,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .chap { display: flex; gap: 10px; padding: 6px 0; font-size: 12px; cursor: pointer; border-top: 1px solid rgb(var(--steel-rgb)/0.07); align-items: baseline; }
 .chap:hover { color: var(--bone); }
 .chap-t { font-family: var(--font-mono), ui-monospace, monospace; color: var(--steel); font-size: 11px; min-width: 52px; }
-.chap-hi { color: #d8b46a; }
+.chap-hi { color: #c9a24a; }
 
 .consensus-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); align-items: center; font-size: 12px; }
 .lvl-row { display: grid; grid-template-columns: 56px auto 1fr auto; gap: 10px; padding: 6px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); font-size: 12px; align-items: center; }
@@ -255,9 +309,9 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   background: rgb(var(--steel-rgb) / 0.06);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.iadd-ok   { color: #7fb88a; }
+.iadd-ok   { color: var(--pos); }
 .iadd-exist { color: var(--ash); }
-.iadd-err  { color: #d98b8b; }
+.iadd-err  { color: var(--neg); }
 
 /* --- chapter filter ------------------------------------------------------- */
 .chap.active { background: rgb(var(--steel-rgb) / 0.1); border-radius: 5px; }
@@ -271,17 +325,6 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10.5px; color: var(--ash); margin-bottom: 8px;
 }
-
-/* a tiny entry link dropped onto the main orb page */
-.intel-entry {
-  position: fixed; top: 14px; right: 16px; z-index: 30;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px; letter-spacing: 0.16em;
-  color: rgba(233,239,246,0.55); text-decoration: none;
-  border: 1px solid rgba(233,239,246,0.16); border-radius: 6px; padding: 5px 9px;
-  background: rgba(0,0,0,0.25);
-}
-.intel-entry:hover { color: rgba(233,239,246,0.95); }
 
 /* ==========================================================================
    PASS 3 — OPTIONS INTEL WORKSPACE (additive). Premium trading-terminal treatment
@@ -309,9 +352,9 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   padding: 16px;
   background:
     radial-gradient(900px 280px at 12% -40%, rgb(var(--steel-rgb) / 0.08), transparent 70%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.015), transparent 40%),
+    linear-gradient(180deg, rgb(var(--wash-rgb) / 0.015), transparent 40%),
     rgb(0 0 0 / 0.22);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  box-shadow: inset 0 1px 0 rgb(var(--wash-rgb) / 0.03);
 }
 .optx-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .optx-title {
@@ -362,11 +405,11 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .optx-lvl-px { font-family: var(--font-mono), monospace; color: var(--bone); min-width: 56px; }
 .optx-lvl-go { margin-left: auto; background: none; border: none; color: var(--steel); cursor: pointer; font-size: 12px; }
 .optx-lvl-go:hover { color: var(--bone); }
-.optx-lvl-resistance .optx-lvl-px, .optx-lvl-breakout .optx-lvl-px, .optx-lvl-target .optx-lvl-px { color: #7fb88a; }
-.optx-lvl-support .optx-lvl-px, .optx-lvl-breakdown .optx-lvl-px, .optx-lvl-invalidation .optx-lvl-px { color: #d98b8b; }
+.optx-lvl-resistance .optx-lvl-px, .optx-lvl-breakout .optx-lvl-px, .optx-lvl-target .optx-lvl-px { color: var(--pos); }
+.optx-lvl-support .optx-lvl-px, .optx-lvl-breakdown .optx-lvl-px, .optx-lvl-invalidation .optx-lvl-px { color: var(--neg); }
 
 /* candidate generator */
-.optx-gen { border-color: rgb(216 180 106 / 0.22); }
+.optx-gen { border-color: rgb(201 162 74 / 0.22); }
 .optx-genrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .optx-dirtoggle { display: inline-flex; border: 1px solid rgb(var(--steel-rgb)/0.2); border-radius: 7px; overflow: hidden; }
 .optx-dirtoggle button { font-size: 11px; color: var(--ash); background: none; border: none; padding: 5px 10px; cursor: pointer; }
@@ -375,7 +418,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* option idea cards */
 .optx-best { border-color: rgb(var(--steel-rgb) / 0.3); }
-.optx-candcard { border-color: rgb(216 180 106 / 0.22); background: rgb(216 180 106 / 0.025); }
+.optx-candcard { border-color: rgb(201 162 74 / 0.22); background: rgb(201 162 74 / 0.025); }
 .optidea { padding: 10px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); }
 .optidea:first-of-type { border-top: none; }
 .optidea-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
@@ -406,6 +449,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 9.5px; letter-spacing: 0.06em;
   overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 .bl-statusbar::-webkit-scrollbar { display: none; }
@@ -417,14 +461,14 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-sb-item:first-child { padding-left: 0; }
 .bl-sb-label { opacity: 0.55; text-transform: uppercase; font-size: 8.5px; }
 .bl-sb-val { color: var(--bone); font-weight: 500; }
-.bl-sb-ok { color: #7fb88a; } .bl-sb-warn { color: #cbb274; } .bl-sb-err { color: #d98b8b; }
+.bl-sb-ok { color: var(--pos); } .bl-sb-warn { color: #c9a24a; } .bl-sb-err { color: var(--neg); }
 .bl-sb-clock { margin-left: auto; border-right: none; padding-right: 0; }
 
 /* ---- live tape ---- */
 .bl-tape {
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.10);
   display: flex; align-items: center; gap: 0;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
   padding: 0; background: rgb(0 0 0 / 0.18);
 }
 .bl-tape::-webkit-scrollbar { display: none; }
@@ -437,13 +481,13 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-tape-sym { color: var(--ash); letter-spacing: 0.08em; font-size: 9.5px; text-transform: uppercase; }
 .bl-tape-px { color: var(--bone); }
 .bl-tape-chg { font-size: 9.5px; }
-.bl-tape-up { color: #7fb88a; } .bl-tape-dn { color: #d98b8b; }
+.bl-tape-up { color: var(--pos); } .bl-tape-dn { color: var(--neg); }
 
 /* ---- tab nav ---- */
 .bl-tabs {
   display: flex; align-items: stretch; gap: 0;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.14);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-tabs::-webkit-scrollbar { display: none; }
 .bl-tab {
@@ -455,29 +499,36 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-tab:hover { color: var(--bone); }
 .bl-tab.on { color: var(--bone); border-bottom-color: var(--steel); }
-.bl-tab .bl-tab-fkey {
-  font-size: 8px; opacity: 0.5; margin-right: 5px;
-}
 
-/* ---- 3-column shell ---- */
+/* ---- 3-column BOARD shell — fills the slide; each column scrolls itself ---- */
 .bl-layout {
   display: grid;
   grid-template-columns: 268px minmax(0, 1fr) 288px;
-  gap: 0; min-height: calc(100vh - 120px);
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 .bl-left {
   border-right: 1px solid rgb(var(--steel-rgb) / 0.10);
-  overflow-y: auto; padding: 14px 14px 60px;
+  min-width: 0;
+  overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 24px;
   scrollbar-width: thin; scrollbar-color: rgb(var(--steel-rgb) / 0.15) transparent;
 }
-.bl-center { overflow: hidden; display: flex; flex-direction: column; }
+.bl-center { overflow: hidden; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .bl-right {
   border-left: 1px solid rgb(var(--steel-rgb) / 0.10);
-  overflow-y: auto; padding: 16px 14px 60px;
+  min-width: 0;
+  overflow-y: auto; overscroll-behavior: contain; padding: 16px 14px 24px;
   scrollbar-width: thin; scrollbar-color: rgb(var(--steel-rgb) / 0.15) transparent;
 }
 @media (max-width: 1100px) { .bl-layout { grid-template-columns: 240px minmax(0, 1fr); } .bl-right { display: none; } }
-@media (max-width: 700px) { .bl-layout { grid-template-columns: 1fr; } .bl-left { display: none; } }
+/* ≤700px: stack — brief rail above the blotter cards; the shell scrolls. */
+@media (max-width: 700px) {
+  .bl-layout { display: flex; flex-direction: column; min-height: auto; }
+  .bl-left { border-right: none; overflow: visible; }
+  .bl-center { overflow: visible; }
+}
 
 /* ---- left panel headings ---- */
 .bl-ph {
@@ -502,10 +553,10 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-brief-field dd { margin: 0; color: var(--bone); line-height: 1.4; }
 .bl-bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.bl-bull { border-left: 2px solid #7fb88a; padding-left: 8px; }
-.bl-bear { border-left: 2px solid #d98b8b; padding-left: 8px; }
-.bl-bull-h { font-family: var(--font-mono), monospace; font-size: 8.5px; letter-spacing: 0.08em; color: #7fb88a; margin-bottom: 3px; }
-.bl-bear-h { font-family: var(--font-mono), monospace; font-size: 8.5px; letter-spacing: 0.08em; color: #d98b8b; margin-bottom: 3px; }
+.bl-bull { border-left: 2px solid var(--pos); padding-left: 8px; }
+.bl-bear { border-left: 2px solid var(--neg); padding-left: 8px; }
+.bl-bull-h { font-family: var(--font-mono), monospace; font-size: 8.5px; letter-spacing: 0.08em; color: var(--pos); margin-bottom: 3px; }
+.bl-bear-h { font-family: var(--font-mono), monospace; font-size: 8.5px; letter-spacing: 0.08em; color: var(--neg); margin-bottom: 3px; }
 .bl-bull p, .bl-bear p { font-size: 11px; color: var(--bone); line-height: 1.45; margin: 0; }
 
 /* AT THE OPEN levels */
@@ -515,12 +566,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-atopen-inst { font-family: var(--font-mono), monospace; color: var(--bone); font-size: 10px; }
 .bl-atopen-px { font-family: var(--font-mono), monospace; font-size: 11px; }
-.bl-lvl-r { color: #7fb88a; } .bl-lvl-s { color: #d98b8b; }
+.bl-lvl-r { color: var(--pos); } .bl-lvl-s { color: var(--neg); }
 .bl-lvl-ref { color: var(--ash); }
 
 /* ---- TRADE BLOTTER table ---- */
 .bl-blotter-wrap {
-  flex: 1; overflow: auto;
+  flex: 1; overflow: auto; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: rgb(var(--steel-rgb) / 0.15) transparent;
 }
 .bl-section-head {
@@ -569,18 +620,18 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 /* status badges */
 .bl-st { display: inline-block; font-family: var(--font-mono), monospace; font-size: 8px; letter-spacing: 0.12em; padding: 2px 5px; border-radius: 3px; border: 1px solid; }
 .bl-st-watch { color: var(--ash); border-color: rgb(var(--steel-rgb) / 0.2); }
-.bl-st-trig { color: #7fb88a; border-color: #7fb88a; box-shadow: 0 0 6px #7fb88a44; }
-.bl-st-invld { color: #d98b8b; border-color: #d98b8b; }
-.bl-st-arm { color: #cbb274; border-color: #cbb274; }
+.bl-st-trig { color: var(--pos); border-color: var(--pos); box-shadow: 0 0 6px rgb(var(--pos-rgb) / 0.27); }
+.bl-st-invld { color: var(--neg); border-color: var(--neg); }
+.bl-st-arm { color: #c9a24a; border-color: #c9a24a; }
 
 /* direction glyphs */
-.bl-bull-glyph { color: #7fb88a; font-size: 11px; }
-.bl-bear-glyph { color: #d98b8b; font-size: 11px; }
+.bl-bull-glyph { color: var(--pos); font-size: 11px; }
+.bl-bear-glyph { color: var(--neg); font-size: 11px; }
 .bl-neut-glyph { color: var(--ash); font-size: 11px; }
 
 /* delta coloring */
-.bl-dlt-pos { color: #7fb88a; }
-.bl-dlt-neg { color: #d98b8b; }
+.bl-dlt-pos { color: var(--pos); }
+.bl-dlt-neg { color: var(--neg); }
 
 /* evidence ladder badges */
 .bl-ev { font-family: var(--font-mono), monospace; font-size: 7.5px; letter-spacing: 0.1em; padding: 2px 5px; border-radius: 3px; }
@@ -637,16 +688,20 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-insp-cite:hover { color: var(--bone); }
 .bl-insp-sep { border: none; border-top: 1px solid rgb(var(--steel-rgb) / 0.10); margin: 12px 0; }
 
-/* ---- single-tab views (BRIEF / SOURCES / OPTIONS / ASK) ---- */
-.bl-tabview { max-width: 1000px; margin: 0 auto; padding: 20px; padding-bottom: 80px; }
+/* ---- reading-tab views (ARCHIVE / SOURCES / OPTIONS) ---- */
+.bl-tabview { max-width: 1000px; margin: 0 auto; padding: 20px 20px 24px; }
+/* ARCHIVE carries the brief grid — a denser layout that wants more lateral
+   room than the reading tabs. */
+.bl-tabview-wide { max-width: 1280px; }
+/* Honest feed status above the tape (reuses the .mkt-status language). */
+.mkt-feedline { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 
-/* ---- pinned ASK bar ---- */
+/* ---- ASK bar — docked at the foot of the BOARD's center column ---- */
 .bl-askbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-  padding: 10px 18px;
-  background: color-mix(in srgb, var(--charcoal, #08080b) 94%, transparent);
+  position: relative; flex: none;
+  padding: 8px 10px;
+  background: rgb(0 0 0 / 0.25);
   border-top: 1px solid rgb(var(--steel-rgb) / 0.14);
-  backdrop-filter: blur(8px);
   display: flex; gap: 8px; align-items: center;
 }
 .bl-askbar-input {
@@ -657,11 +712,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-askbar-input:focus { outline: none; border-color: rgb(var(--steel-rgb) / 0.4); }
 .bl-askbar-input:focus-visible { outline: 2px solid rgb(var(--steel-rgb) / 0.85); outline-offset: 1px; border-color: rgb(var(--steel-rgb) / 0.4); }
+/* The answer opens UPWARD over the blotter, anchored to the bar. */
 .bl-askbar-ans {
-  position: absolute; bottom: calc(100% + 4px); left: 18px; right: 18px;
+  position: absolute; bottom: calc(100% + 4px); left: 10px; right: 10px; z-index: 6;
   background: var(--charcoal, #08080b); border: 1px solid rgb(var(--steel-rgb) / 0.2);
   border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.6;
-  color: var(--bone); max-height: 280px; overflow-y: auto;
+  color: var(--bone); max-height: 280px; overflow-y: auto; overscroll-behavior: contain;
 }
 
 /* ---- loading/error/empty states in blotter style ---- */
@@ -685,8 +741,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-spark svg { display: block; }
 .bl-spark-empty { font-family: var(--font-mono), monospace; color: var(--ash); opacity: 0.4; font-size: 11px; }
 
-/* ---- ACTIVE status (cyan) ---- */
-.bl-st-active { color: #5b9bd5; border-color: #5b9bd5; }
+/* ---- ACTIVE status (steel — the system's live-state accent) ---- */
+.bl-st-active { color: var(--steel); border-color: var(--steel); }
 
 /* ---- PAGE HEADER (2 rows) ---- */
 .bl-head {
@@ -697,12 +753,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-head-row1 {
   display: flex; align-items: center; gap: 10px; padding: 7px 16px;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.07);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-head-row1::-webkit-scrollbar { display: none; }
 .bl-head-row2 {
   display: flex; align-items: center; padding: 5px 16px; gap: 6px;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-head-row2::-webkit-scrollbar { display: none; }
 .bl-head-title {
@@ -712,13 +768,13 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-head-live {
   width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  background: #7fb88a; box-shadow: 0 0 5px #7fb88a88;
+  background: var(--pos); box-shadow: 0 0 5px rgb(var(--pos-rgb) / 0.53);
   animation: bl-pulse 2s ease-in-out infinite;
 }
 @keyframes bl-pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
 .bl-head-livebadge {
   font-family: var(--font-mono), monospace; font-size: 8px; letter-spacing: 0.1em;
-  color: #7fb88a; border: 1px solid #7fb88a55; border-radius: 3px; padding: 1px 5px;
+  color: var(--pos); border: 1px solid rgb(var(--pos-rgb) / 0.33); border-radius: 3px; padding: 1px 5px;
   flex-shrink: 0;
 }
 .bl-head-date {
@@ -741,7 +797,6 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-head-tab:last-child { border-radius: 0 4px 4px 0; }
 .bl-head-tab:hover { color: var(--bone); background: rgb(var(--steel-rgb)/0.05); }
 .bl-head-tab.on { color: var(--bone); background: rgb(var(--steel-rgb)/0.12); border-color: rgb(var(--steel-rgb)/0.3); }
-.bl-head-tab .bl-tab-fkey { font-size: 7.5px; opacity: 0.5; margin-right: 4px; }
 
 /* ---- STATUS PILLS (2 TRIGGERED / 2 ARMED / 2 ACTIVE) ---- */
 .bl-sp {
@@ -750,10 +805,10 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: flex; align-items: center; gap: 4px; flex-shrink: 0;
 }
 .bl-sp-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.bl-sp-trig { color: #7fb88a; border-color: #7fb88a55; background: rgb(127 184 138 / 0.07); }
-.bl-sp-trig .bl-sp-dot { background: #7fb88a; box-shadow: 0 0 4px #7fb88a88; }
-.bl-sp-arm { color: #cbb274; border-color: #cbb27455; background: rgb(203 178 116 / 0.07); }
-.bl-sp-active { color: #5b9bd5; border-color: #5b9bd555; background: rgb(91 155 213 / 0.07); }
+.bl-sp-trig { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.33); background: rgb(var(--pos-rgb) / 0.07); }
+.bl-sp-trig .bl-sp-dot { background: var(--pos); box-shadow: 0 0 4px rgb(var(--pos-rgb) / 0.53); }
+.bl-sp-arm { color: #c9a24a; border-color: rgb(201 162 74 / 0.33); background: rgb(201 162 74 / 0.07); }
+.bl-sp-active { color: var(--steel); border-color: rgb(var(--steel-rgb) / 0.33); background: rgb(var(--steel-rgb) / 0.07); }
 .bl-brief-age-pill {
   font-family: var(--font-mono), monospace; font-size: 8px; letter-spacing: 0.06em;
   color: var(--ash); border: 1px solid rgb(var(--steel-rgb)/0.15); border-radius: 3px;
@@ -766,7 +821,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: flex; align-items: center; gap: 8px; padding: 6px 12px;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.10); flex-shrink: 0;
   font-family: var(--font-mono), monospace; font-size: 9px; color: var(--ash);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-center-head::-webkit-scrollbar { display: none; }
 .bl-ch-title { color: var(--bone); font-size: 10.5px; letter-spacing: 0.1em; }
@@ -776,14 +831,14 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-size: 8px; padding: 2px 5px; border-radius: 3px;
   border: 1px solid rgb(var(--steel-rgb)/0.15); color: var(--ash); letter-spacing: 0.06em;
 }
-.bl-ps-live { color: #7fb88a; border-color: #7fb88a55; background: rgb(127 184 138 / 0.07); }
+.bl-ps-live { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.33); background: rgb(var(--pos-rgb) / 0.07); }
 
 /* ---- BLOTTER LEGEND ---- */
 .bl-legend {
   display: flex; align-items: center; gap: 12px; padding: 4px 12px;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.07); flex-shrink: 0;
   font-family: var(--font-mono), monospace; font-size: 8px; color: var(--ash);
-  opacity: 0.65; overflow-x: auto; scrollbar-width: none;
+  opacity: 0.65; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-legend::-webkit-scrollbar { display: none; }
 .bl-leg { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -797,8 +852,8 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-tape-sep { flex-shrink: 0; padding: 0 6px; color: var(--ash); opacity: 0.25; font-size: 10px; align-self: center; }
 
 /* ---- AT THE OPEN states ---- */
-.bl-cleared { color: #7fb88a; font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
-.bl-broken { color: #d98b8b; font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
+.bl-cleared { color: var(--pos); font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
+.bl-broken { color: var(--neg); font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
 
 /* ---- INSPECTOR v2 ---- */
 .bl-insp-price-block { margin: 8px 0 12px; }
@@ -934,17 +989,40 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-size: 9.5px; color: var(--ash); opacity: 0.4;
 }
 
+/* ---- MOBILE SHELL (≤720px): the slide MAY scroll vertically — one page-like
+   scroller (the shell), no nested panel scrollers, pan-y so the deck's
+   horizontal swipe still works from the edges. ---- */
+@media (max-width: 720px) {
+  .desk-shell {
+    display: block;
+    padding: 76px 10px calc(env(safe-area-inset-bottom, 0px) + 175px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  .desk-body {
+    display: block;
+    min-height: auto;
+  }
+  .desk-scrollview {
+    overflow: visible;
+  }
+  .desk-tapeview {
+    display: block;
+  }
+  .bl-blotter-wrap {
+    overscroll-behavior: auto;
+  }
+}
+
 /* ---- MOBILE HEADER: keep all navigation + actions on-screen ----
-   Below 700px .bl-left is display:none, so the F-tab strip and the row2
-   button cluster are the ONLY way to reach source mgmt / re-brief / history.
-   Wrap both rows, shed low-value chrome, and tile the 5 tabs full-width so
-   nothing clips off the right edge of a ~360px phone. */
+   Wrap both header rows, shed low-value chrome, and tile the 5 tabs
+   full-width so nothing clips off the right edge of a ~360px phone. */
 @media (max-width: 700px) {
   .bl-head-row1 { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
   .bl-head-session, .bl-head-date { display: none; }
   .bl-head-tabs { margin-left: 0; order: 2; width: 100%; }
   .bl-head-tab { flex: 1; padding: 6px 4px; text-align: center; min-height: 44px; }
-  .bl-head-tab .bl-tab-fkey { display: none; }
 
   .bl-head-row2 { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
   .bl-head-row2-right { margin-left: 0; width: 100%; }

@@ -6,9 +6,11 @@ import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import PresenceTelemetry from "@/components/PresenceTelemetry";
-import MarketsSurface from "@/components/surfaces/MarketsSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
-import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
+import DeskSurface from "@/components/surfaces/DeskSurface";
+import WorldSurface from "@/components/surfaces/WorldSurface";
+import { SCREENS, SCREEN_LABELS, screenIndex, resolveTarget } from "@/lib/screens";
+import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import type { GlobeTarget } from "@/components/command/CommandGlobe";
 import {
@@ -38,9 +40,9 @@ import {
 } from "@/lib/push-client";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
-// WebGL components load only in the browser.
+// WebGL components load only in the browser. (The globe goes further: WorldSurface
+// lazy-mounts it behind an IntersectionObserver, so boot never pays for MapLibre.)
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
-const CommandGlobe = dynamic(() => import("@/components/command/CommandGlobe"), { ssr: false });
 
 const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
 
@@ -160,6 +162,9 @@ export default function Home() {
   const [briefOpen, setBriefOpen] = useState(false);
   // White / black theme — persisted; the toggle flips the whole token system.
   const [theme, setTheme] = useState<Theme>("dark");
+  // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
+  // the theme, it re-tints only the accent family and re-lights the orb.
+  const [mood, setMood] = useState<Mood>("steel");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
@@ -805,6 +810,42 @@ export default function Home() {
     setTheme((t) => (t === "dark" ? "light" : "dark"));
   }
 
+  // Mood: same persistence contract as the theme — load the saved choice once,
+  // then keep <html data-mood> + storage in sync (layout.tsx sets the attribute
+  // pre-paint, so a saved mood boots without a flash, exactly like the theme).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("aug-mood");
+      if ((MOODS as readonly string[]).includes(saved ?? "")) setMood(saved as Mood);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  useEffect(() => {
+    document.documentElement.setAttribute("data-mood", mood);
+    try {
+      window.localStorage.setItem("aug-mood", mood);
+    } catch {
+      /* private mode */
+    }
+  }, [mood]);
+
+  // Set the accent mood — the switcher and the set_mood tool share this one
+  // path. The token swap rides the same transient cross-fade as the theme flip;
+  // the orb eases its light temperature over in its own render loop (~600ms).
+  const applyMood = useCallback((m: Mood) => {
+    const root = document.documentElement;
+    root.setAttribute("data-theming", "");
+    window.clearTimeout(themingTimerRef.current);
+    themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
+    setMood(m);
+  }, []);
+
+  // The mood control cycles steel → ember → phosphor → graphite.
+  function cycleMood() {
+    applyMood(MOODS[(MOODS.indexOf(mood) + 1) % MOODS.length]);
+  }
+
   // On boot, ask whether today's brief is already waiting (cheap GET, never
   // compiles). If one's ready and not dismissed today, auto-deliver it (on-open).
   useEffect(() => {
@@ -857,10 +898,11 @@ export default function Home() {
     };
   }, [booted]);
 
-  // Deep-link: a Watcher push opens "/?screen=markets|world" — slide the deck to that
-  // surface so the tap lands where the alert points, then strip the param.
+  // Deep-link: a Watcher push, the /intel redirect, or a stale bookmark opens
+  // "/?screen=..." — slide the deck to that surface, then strip the param.
+  // Runs on MOUNT (not after the ~2.2s boot timer) so deep links land fast;
+  // the boot visuals simply continue on the destination surface.
   useEffect(() => {
-    if (!booted) return;
     let screen: string | null = null;
     try {
       const u = new URL(window.location.href);
@@ -873,14 +915,15 @@ export default function Home() {
       /* no-op */
     }
     if (!screen) return;
-    const idx = screenIndex(screen);
-    if (idx >= 0) {
+    const target = resolveTarget(screen);
+    if (target) {
       markAugNav();
       // Defer one tick so the deck is mounted + measured before it scrolls.
-      const t = window.setTimeout(() => deckRef.current?.goTo(idx), 80);
+      const t = window.setTimeout(() => deckRef.current?.goTo(target.index), 80);
       return () => window.clearTimeout(t);
     }
-  }, [booted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Summon the brief panel on demand; compile if none exists yet.
   function summonBrief() {
@@ -987,11 +1030,16 @@ export default function Home() {
         markAugNav();
         deckRef.current?.goTo(screenIndex("presence"));
       } else if (t.tool === "go_to_screen" && t.input) {
-        const idx = screenIndex(String(t.input.screen ?? ""));
-        if (idx >= 0) {
+        // Everything (market words included) is a deck surface — slide to it.
+        const target = resolveTarget(String(t.input.screen ?? ""));
+        if (target) {
           markAugNav();
-          deckRef.current?.goTo(idx);
+          deckRef.current?.goTo(target.index);
         }
+      } else if (t.tool === "set_mood" && t.input) {
+        // Same path as the mood control: re-tint the tokens, re-light the orb.
+        const m = String(t.input.mood ?? "").toLowerCase();
+        if ((MOODS as readonly string[]).includes(m)) applyMood(m as Mood);
       }
     }
   }
@@ -1231,28 +1279,6 @@ export default function Home() {
 
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
-      {/* Market Intel — a top-level destination. Inline-styled so it needs no shared
-          CSS and can't disturb the orb page. */}
-      <a
-        href="/intel"
-        style={{
-          position: "fixed",
-          top: 14,
-          right: 16,
-          zIndex: 30,
-          fontFamily: "var(--font-mono), ui-monospace, monospace",
-          fontSize: 10,
-          letterSpacing: "0.16em",
-          color: "rgba(233,239,246,0.55)",
-          textDecoration: "none",
-          border: "1px solid rgba(233,239,246,0.16)",
-          borderRadius: 6,
-          padding: "5px 9px",
-          background: "rgba(0,0,0,0.25)",
-        }}
-      >
-        INTEL →
-      </a>
       <BootHud />
       <FrameTicks />
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1267,12 +1293,16 @@ export default function Home() {
         onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
-            <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} />
+            <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} mood={mood} />
             <PresenceTelemetry
               state={state}
               sessionCount={messages.length}
               visible={booted && !briefOpen}
-              onNavigate={(key) => deckRef.current?.goTo(screenIndex(key))}
+              onNavigate={(key) => {
+                // Every readout is a deck surface — slide to it.
+                const target = resolveTarget(key);
+                if (target) deckRef.current?.goTo(target.index);
+              }}
             />
             {booted && !briefOpen ? (
               <button type="button" className="brief-summon" onClick={summonBrief}>
@@ -1291,8 +1321,8 @@ export default function Home() {
               />
             ) : null}
           </div>,
-          <MarketsSurface key="markets" />,
-          <CommandGlobe
+          <DeskSurface key="desk" />,
+          <WorldSurface
             key="world"
             active={activeScreen === screenIndex("world")}
             flyTo={commandTarget}
@@ -1501,6 +1531,15 @@ export default function Home() {
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </button>
+            <button
+              type="button"
+              className="ctl-round ctl-mood"
+              onClick={cycleMood}
+              title={`Mood: ${mood} — tap to cycle`}
+              aria-label={`Accent mood: ${mood}. Tap to cycle moods.`}
+            >
+              <MoodIcon />
+            </button>
           </div>
         </div>
       </div>
@@ -1652,6 +1691,23 @@ function MoonIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+// Mood control — an aperture ring around a live accent swatch: the centre dot is
+// painted with var(--steel), so the control always shows the current mood.
+function MoodIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <circle cx="12" cy="12" r="8.4" />
+      <circle
+        cx="12"
+        cy="12"
+        r="3.4"
+        stroke="none"
+        style={{ fill: "var(--steel)", transition: "fill 300ms ease" }}
+      />
     </svg>
   );
 }

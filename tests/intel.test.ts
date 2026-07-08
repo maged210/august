@@ -18,8 +18,9 @@ import { rankOption } from "../lib/intel/options-rank.ts";
 import { normalizeOptionIdea, numberSupported, type RawOptionIdea } from "../lib/intel/normalize.ts";
 import { pickExpiration, passesLiquidity, effLiquidity, priceOf, convictionFor } from "../lib/intel/candidates.ts";
 import { mergeOptionSettings } from "../lib/intel/option-settings.ts";
+import { redactBrief } from "../lib/intel/redact.ts";
 import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
-import type { OptionIdea } from "../lib/intel/types.ts";
+import type { BriefIdea, DailyBrief, OptionIdea } from "../lib/intel/types.ts";
 
 test("parseYouTubeUrl: watch URL → video id", () => {
   assert.deepEqual(parseYouTubeUrl("https://www.youtube.com/watch?v=Eo_B71QWJa8"), { kind: "video", videoId: "Eo_B71QWJa8" });
@@ -432,4 +433,97 @@ test("mergeOptionSettings: inverted DTE band is swapped so min<=max; unknown key
   assert.equal(out.preferredDteMin, 10);
   assert.equal(out.preferredDteMax, 50);
   assert.equal("bogusKey" in out, false);
+});
+
+// --- source privacy (redact.ts) --------------------------------------------
+const mkBriefIdea = (): BriefIdea => ({
+  id: "ti_1",
+  ticker: "NVDA",
+  assetName: "NVIDIA",
+  assetType: "equity",
+  direction: "bullish",
+  timeHorizon: "swing",
+  thesis: "Breakout continuation over 120",
+  catalysts: ["earnings"],
+  entry: { value: 120, type: "price", text: "over 120" },
+  invalidation: { value: 112, type: "price", text: "loses 112" },
+  targets: [{ value: 130, type: "price", text: "130" }],
+  risks: [],
+  confidence: 0.8,
+  explicitness: "explicit",
+  creatorDesignation: { isFavoriteSetup: true, isPrediction: false, isWatchlistMention: false },
+  sourceSegmentIds: ["s1"],
+  sourceStartSeconds: 61,
+  sourceEndSeconds: 88,
+  chapter: { title: "Setups", normalizedCategory: "favorite_setups", startSeconds: 60, endSeconds: 90, priority: "high", creatorDefined: true },
+  videoId: "vid123",
+  channelTitle: "Some Channel",
+  videoTitle: "Nightly prep",
+  rankScore: 7.5,
+  rankFactors: [],
+});
+
+const mkBrief = (): DailyBrief => ({
+  date: "2026-06-30",
+  generatedAt: 1,
+  marketSession: "closed",
+  posture: "risk-on",
+  whatChanged: "",
+  whatMattersTomorrow: "",
+  read60: "Sixty seconds.",
+  bullCase: "",
+  bearCase: "",
+  watchAtOpen: "",
+  invalidation: "",
+  topIdeas: [mkBriefIdea()],
+  creatorFavorites: [mkBriefIdea()],
+  consensus: [{
+    ticker: "NVDA",
+    direction: "bullish",
+    sources: [{ channelTitle: "Some Channel", videoId: "vid123", startSeconds: 61, explicitness: "explicit" }],
+    agreement: "single",
+    note: "Single source.",
+  }],
+  levels: [{
+    id: "lv1", instrument: "NQ", level: 20000, levelText: "20000", type: "support", explanation: "prior low",
+    videoId: "vid123", sourceSegmentIds: ["s2"], sourceStartSeconds: 120, sourceEndSeconds: 130,
+  }],
+  catalysts: [{
+    name: "CPI", eventTime: null, importance: "high", affectedTickers: [], creatorMentioned: true,
+    externallyVerified: false, explanation: "", sourceSegmentIds: ["s3"],
+  }],
+  risks: [],
+  sourceVideoIds: ["vid123"],
+  grounded: true,
+  options: {
+    bestCreatorPlays: [],
+    augustCandidates: [{ ...mkOption({ origin: "august_candidate", videoId: "vid123" }), channelTitle: "Some Channel", videoTitle: "Nightly prep", rankScore: 50, rankFactors: [] }],
+    directionalOnly: [],
+    optionsRisk: [],
+    providerStatus: "delayed",
+    consensus: [],
+  },
+});
+
+test("redactBrief: no attribution or evidence field survives (exports carry no sources)", () => {
+  const json = JSON.stringify(redactBrief(mkBrief()));
+  for (const key of ["channelTitle", "videoTitle", "videoId", "sourceSegmentIds", "sourceStartSeconds", "sourceEndSeconds", "sourceChapterId", "chapter"]) {
+    assert.equal(json.includes(`"${key}"`), false, `"${key}" must not survive redaction`);
+  }
+  assert.equal(json.includes("Some Channel"), false);
+  assert.equal(json.includes("vid123"), false);
+});
+
+test("redactBrief: keeps the tradecraft, empties sourceVideoIds, never mutates input", () => {
+  const brief = mkBrief();
+  const out = redactBrief(brief);
+  assert.equal(out.topIdeas[0].ticker, "NVDA");
+  assert.equal(out.topIdeas[0].entry.text, "over 120");
+  assert.equal(out.topIdeas[0].rankScore, 7.5);
+  assert.equal(out.consensus[0].sources.length, 1); // the agreement signal survives
+  assert.equal(out.options?.augustCandidates.length, 1);
+  assert.deepEqual(out.sourceVideoIds, []);
+  // the stored brief keeps full provenance for the owner
+  assert.equal(brief.topIdeas[0].channelTitle, "Some Channel");
+  assert.deepEqual(brief.sourceVideoIds, ["vid123"]);
 });
