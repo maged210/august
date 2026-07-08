@@ -40,6 +40,18 @@ type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
 type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
 
+// /api/intel/desk payload (SPEC-wiring §4 #1) — each part independently
+// nullable; a null part means its component renders NOTHING (no placeholder).
+type DeskFng = { value: number; rating: string; asOf: number };
+type DeskSector = { code: string; name: string; etf: string; chgPct: number };
+type DeskEarning = { symbol: string; date: string; hour: "bmo" | "amc" | "dmh" | null };
+type DeskData = {
+  fng: DeskFng | null;
+  sectors: DeskSector[] | null;
+  earnings: DeskEarning[] | null;
+  watchlistSize: number;
+};
+
 // ── constants ────────────────────────────────────────────────────────────────
 
 // Design macro list (SPEC-wiring §2.3) — all keyless Yahoo symbols through the
@@ -256,7 +268,7 @@ function InspChart({ closes, live, trigger, lineColor }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief,
+  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng,
 }: {
   data: Overview;
   clock: string;
@@ -266,6 +278,7 @@ function PageHeader({
   busy: string | null;
   onSync: () => void;
   onGenerateBrief: () => void;
+  fng: DeskFng | null;
 }) {
   const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
   for (const idea of blotter) {
@@ -322,6 +335,9 @@ function PageHeader({
           <span className="rd-meta">
             <span className="rd-datechip">{data.clock.nice.toUpperCase()}</span>
             DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
+            {/* stage-5: F&G band chip appended LAST so its async arrival never
+                shifts the date/desk text (absent while the fng part is null) */}
+            <FngChip fng={fng} />
           </span>
         </div>
         <div className="rd-bar2-right">
@@ -1513,6 +1529,207 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
   );
 }
 
+// ── stage-5 fold-ins (SPEC-wiring §2.5–2.7 / SPEC-desktop §2.5) ──────────────
+// The design's overview band folded into the rail. HARD RULES carried in code:
+// every component here renders NOTHING when its desk part is null — the rail
+// simply tightens. No placeholder boxes, no fake neutral-50 gauge, and the
+// crypto F&G index is never silently substituted for CNN's equity index.
+
+// F&G band thresholds + colors (SPEC-desktop §2.5a, exact):
+// ≤24 EXTREME FEAR · ≤44 FEAR · ≤55 NEUTRAL · ≤74 GREED · else EXTREME GREED
+const FNG_BANDS: { max: number; label: string; c: string }[] = [
+  { max: 24, label: "EXTREME FEAR", c: "#cd7e6d" },
+  { max: 44, label: "FEAR", c: "#c68a5e" },
+  { max: 55, label: "NEUTRAL", c: "#bfa05a" },
+  { max: 74, label: "GREED", c: "#6fa085" },
+  { max: 100, label: "EXTREME GREED", c: "#74b08a" },
+];
+const fngBand = (v: number) => FNG_BANDS.find((b) => v <= b.max) ?? FNG_BANDS[FNG_BANDS.length - 1];
+const fngClamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+
+// gauge geometry (SPEC-desktop §2.5a): cx=100 cy=104 r=82, 5 arcs spanning
+// 180→144→108→72→36→0.01 degrees — fixed, computed once at module level
+const GAUGE_SEGS: { d: string; color: string }[] = (() => {
+  const cx = 100, cy = 104, r = 82;
+  const stops = [180, 144, 108, 72, 36, 0.01];
+  const colors = ["#b06a58", "#c68a5e", "#ad9158", "#6fa085", "#74b08a"];
+  const pt = (deg: number): [number, number] => {
+    const a = (deg * Math.PI) / 180;
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  };
+  return colors.map((color, i) => {
+    const [x1, y1] = pt(stops[i]);
+    const [x2, y2] = pt(stops[i + 1]);
+    return { d: `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`, color };
+  });
+})();
+
+/** F&G band chip in the title-bar meta cluster. The design computed the chip
+ * border/bg (hexA(c,0.42) / hexA(c,0.09)) without binding them — this chip is
+ * their use. Data is CNN's EQUITY index via /api/intel/desk; when that part
+ * is null (CNN down, no cache) the chip is absent — never a fake neutral. */
+function FngChip({ fng }: { fng: DeskFng | null }) {
+  if (!fng) return null;
+  const v = fngClamp(fng.value);
+  const band = fngBand(v);
+  return (
+    <span
+      className="rd-fng-chip"
+      style={{ color: band.c, borderColor: hexA(band.c, 0.42), background: hexA(band.c, 0.09) }}
+      title={`CNN Fear & Greed (equities) — ${v} · ${band.label}`}
+    >
+      F&amp;G {v} · {band.label}
+    </span>
+  );
+}
+
+/** MARKET SENTIMENT — the design's 5-segment semicircle gauge (§2.5a), needle
+ * at 180 − 1.8·value, value + regime line, FEAR/GREED axis. Renders nothing
+ * without a real CNN reading. */
+function SentimentGauge({ fng }: { fng: DeskFng | null }) {
+  if (!fng) return null;
+  const v = fngClamp(fng.value);
+  const band = fngBand(v);
+  const a = ((180 - 1.8 * v) * Math.PI) / 180;
+  const nx = 100 + 74 * Math.cos(a); // needle at r−8 = 74
+  const ny = 104 - 74 * Math.sin(a);
+  return (
+    <section className="rd-lsec">
+      <div className="rd-ts-card">
+        <div className="rd-ts-head">
+          <span className="rd-ts-title">MARKET SENTIMENT</span>
+          <span className="rd-ts-hair" aria-hidden="true" />
+          <span className="rd-ts-note">CNN F&amp;G</span>
+        </div>
+        <svg
+          className="rd-gauge-svg"
+          viewBox="0 0 200 118"
+          role="img"
+          aria-label={`CNN Fear and Greed index ${v} — ${band.label}`}
+        >
+          {GAUGE_SEGS.map((s) => (
+            <path key={s.color} d={s.d} stroke={s.color} strokeWidth={13} strokeLinecap="butt" opacity={0.85} fill="none" />
+          ))}
+          <line x1={100} y1={104} x2={nx.toFixed(2)} y2={ny.toFixed(2)} stroke="#e9ebee" strokeWidth={2.4} strokeLinecap="round" />
+          <circle cx={100} cy={104} r={5} fill="#e9ebee" />
+        </svg>
+        <div className="rd-gauge-vrow">
+          <span className="rd-gauge-val" style={{ color: band.c }}>{v}</span>
+          <span className="rd-gauge-regime" style={{ color: band.c }}>{band.label}</span>
+        </div>
+        <div className="rd-gauge-axis" aria-hidden="true"><span>FEAR</span><span>GREED</span></div>
+      </div>
+    </section>
+  );
+}
+
+/** SECTOR HEAT MAP — 11 SPDR heat boxes (real Yahoo chgPct via the desk
+ * endpoint), intensity scaled to the day's max |Δ| (§2.6.2b formulas exact),
+ * ▾ MOVE / A–Z sort toggle as client state. 3-column rail adaptation of the
+ * design's 4-column band card. Hidden when the sectors part is null. */
+function SectorStrip({ sectors }: { sectors: DeskSector[] | null }) {
+  const [sort, setSort] = useState<"move" | "name">("move");
+  if (!sectors || sectors.length === 0) return null;
+  const maxAbs = Math.max(...sectors.map((s) => Math.abs(s.chgPct)), 0.01);
+  const rows = [...sectors].sort(
+    sort === "move" ? (x, y) => y.chgPct - x.chgPct : (x, y) => x.code.localeCompare(y.code),
+  );
+  return (
+    <section className="rd-lsec">
+      <div className="rd-ts-card">
+        <div className="rd-ts-head">
+          <span className="rd-ts-title">SECTOR HEAT MAP</span>
+          <span className="rd-ts-hair" aria-hidden="true" />
+          <button
+            type="button"
+            className="rd-sec-sort"
+            aria-pressed={sort === "name"}
+            aria-label="Sort sectors alphabetically instead of by move"
+            onClick={() => setSort((s) => (s === "move" ? "name" : "move"))}
+          >
+            {sort === "move" ? "▾ MOVE" : "A–Z"}
+          </button>
+        </div>
+        <div className="rd-sec-tiles">
+          {rows.map((s) => {
+            const t = Math.min(1, Math.abs(s.chgPct) / maxAbs);
+            const base = s.chgPct >= 0 ? "111,158,131" : "197,133,117";
+            const text = s.chgPct >= 0 ? (t > 0.55 ? "#c3e4d1" : "#93c1a6") : (t > 0.55 ? "#ecbcb0" : "#d3a396");
+            return (
+              <div
+                key={s.etf}
+                className="rd-sec-tile"
+                title={`${s.name} (${s.etf}) ${fmtPct(s.chgPct)}`}
+                style={{
+                  background: `rgba(${base},${(0.1 + t * 0.44).toFixed(3)})`,
+                  borderColor: `rgba(${base},${(0.22 + t * 0.4).toFixed(3)})`,
+                }}
+              >
+                <span className="rd-sec-name">{s.code}</span>
+                <span className="rd-sec-pct" style={{ color: text }}>{fmtPct(s.chgPct)}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="rd-sec-legend" aria-hidden="true">
+          <span>−</span><span className="rd-sec-swatch" /><span>+</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// "Mon Jun 30" per the design's catalyst chips — UTC keeps the date-only
+// string from sliding a day in western timezones
+const catDate = (iso: string): string => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+  const md = d.toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
+  return `${wd} ${md}`;
+};
+
+const CAT_HOUR: Record<string, { tag: string; cls: string; title: string }> = {
+  bmo: { tag: "BMO", cls: "rd-cat-bmo", title: "before market open" },
+  amc: { tag: "AMC", cls: "rd-cat-amc", title: "after market close" },
+  dmh: { tag: "—", cls: "rd-cat-dmh", title: "during market hours" },
+};
+
+/** CATALYSTS — verified Finnhub earnings dates for the tracked watchlist
+ * (§2.7). Note copy is real ("{hits} of {watchlist} watchlist · <7 sessions"
+ * — the design's 'illustrative' is gone by design). Hidden when the earnings
+ * part is null (FINNHUB_API_KEY unset / fetch failed) AND when the window is
+ * simply empty — a note with zero rows isn't a designed state. */
+function CatalystLine({ earnings, watchlistSize }: {
+  earnings: DeskEarning[] | null;
+  watchlistSize: number;
+}) {
+  if (!earnings || earnings.length === 0) return null;
+  const hits = new Set(earnings.map((e) => e.symbol)).size;
+  return (
+    <section className="rd-lsec">
+      <div className="rd-lsec-head"><span className="rd-lsec-h">CATALYSTS</span></div>
+      <div className="rd-cat-rows">
+        {earnings.map((e) => {
+          const h = e.hour ? CAT_HOUR[e.hour] : null;
+          return (
+            <span
+              key={`${e.symbol}-${e.date}`}
+              className="rd-cat-chip"
+              title={`${e.symbol} earnings · ${e.date}${h ? ` · ${h.title}` : ""}`}
+            >
+              <span className="rd-cat-tkr">{e.symbol}</span>
+              <span className="rd-cat-date">{catDate(e.date)}</span>
+              <span className={`rd-cat-tag ${h ? h.cls : "rd-cat-dmh"}`}>{h ? h.tag : "—"}</span>
+            </span>
+          );
+        })}
+      </div>
+      <div className="rd-cat-note">{hits} of {watchlistSize} watchlist · &lt;7 sessions</div>
+    </section>
+  );
+}
+
 // ── LeftPanel (design left rail — SPEC-desktop §2.6.1, SPEC-wiring §2.11) ────
 
 /** TOP STOCKS — pure client derivation (SPEC-wiring §2.11): the blotter
@@ -1568,7 +1785,7 @@ function LeftPanel({
   brief, quotes, onReload,
   onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
   sourceCount, videoCount, onGoSources,
-  blotter, trackedByIdeaId, onSelectIdea,
+  blotter, trackedByIdeaId, onSelectIdea, desk,
 }: {
   brief: DailyBrief | null;
   onReload: () => Promise<void>;
@@ -1584,6 +1801,7 @@ function LeftPanel({
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
   onSelectIdea: (id: string) => void;
+  desk: DeskData | null;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   return (
@@ -1604,9 +1822,16 @@ function LeftPanel({
         )}
       </section>
 
-      {/* TOP STOCKS — derived, absent until the blotter has ideas.
-          (Fold-in chips/strip/line and the map panel are stages 5–6 — no
-          placeholder sections; they are simply absent until built.) */}
+      {/* stage-5 fold-ins in the design's order (sentiment → sectors →
+          catalysts — the overview band precedes board content in the design,
+          so they sit at the top of the rail). Mount order is FIXED: sections
+          appear once when their data lands, but never re-order. Each renders
+          nothing while its desk part is null. (US map is stage 6.) */}
+      <SentimentGauge fng={desk?.fng ?? null} />
+      <SectorStrip sectors={desk?.sectors ?? null} />
+      <CatalystLine earnings={desk?.earnings ?? null} watchlistSize={desk?.watchlistSize ?? 0} />
+
+      {/* TOP STOCKS — derived, absent until the blotter has ideas. */}
       <TopStocksPanel blotter={blotter} trackedByIdeaId={trackedByIdeaId} onSelectIdea={onSelectIdea} />
 
       {/* TONIGHT'S BRIEF digest + AT THE OPEN (one section, per the design) */}
@@ -2199,6 +2424,10 @@ export default function IntelDashboard() {
   // when the overview fetch last failed (ET, with seconds) — the board error
   // state renders this real timestamp, never the design's sample ERR line
   const [errAt, setErrAt] = useState<string | null>(null);
+  // fold-ins payload (fng / sectors / earnings) — null until the first desk
+  // fetch lands; sections are simply absent until then (no spinners, no CLS
+  // reservations — the rail is a vertical stack with a fixed mount order)
+  const [desk, setDesk] = useState<DeskData | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -2268,6 +2497,24 @@ export default function IntelDashboard() {
       .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
       .catch(() => {});
   }, [load, fetchMacroTape, fetchTracker]);
+
+  // desk fold-ins: once on mount + every 5 min — deliberately SEPARATE from
+  // the 30s quotes poll (SPEC-wiring §4: server TTLs — fng 30m, sectors 15m,
+  // earnings 6h — absorb even this; a 30s cadence would just burn requests).
+  // Failures keep the last payload: a blip never blanks a rendered gauge.
+  const fetchDesk = useCallback(async () => {
+    try {
+      const r = await fetch("/api/intel/desk", { cache: "no-store" });
+      if (!r.ok) return;
+      const j: DeskData = await r.json();
+      setDesk(j);
+    } catch { /* keep the last desk payload */ }
+  }, []);
+  useEffect(() => {
+    fetchDesk();
+    const t = setInterval(fetchDesk, 5 * 60_000);
+    return () => clearInterval(t);
+  }, [fetchDesk]);
 
   // ET clock
   useEffect(() => {
@@ -2436,6 +2683,7 @@ export default function IntelDashboard() {
           busy={busy}
           onSync={sync}
           onGenerateBrief={generateBrief}
+          fng={desk?.fng ?? null}
         />
         <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
         <LiveTape tape={fullTape} />
@@ -2469,6 +2717,7 @@ export default function IntelDashboard() {
               blotter={blotter}
               trackedByIdeaId={trackedByIdeaId}
               onSelectIdea={setSelectedId}
+              desk={desk}
             />
             <div className="rd-center">
               {/* board header (SPEC-desktop §2.6.2) — real count, real cadence */}

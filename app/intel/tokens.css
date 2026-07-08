@@ -1509,6 +1509,86 @@ a.rd-cite:hover { text-decoration: underline; }
 }
 
 /* ==========================================================================
+   STAGE 5 — FOLD-INS (SPEC-wiring §2.5–2.7, SPEC-desktop §2.5)
+   FngChip (bar2 meta) · SentimentGauge · SectorStrip · CatalystLine.
+   Band/heat colors that depend on live VALUES are inline styles computed in
+   the components (design formulas verbatim); only static chrome lives here.
+   Mobile (<700px) hides all of these already: the chip sits in .rd-meta and
+   the other three in .rd-lrail — both display:none in the mobile block.
+   ========================================================================== */
+
+/* F&G band chip — datechip metrics; color/border/bg inline per band */
+.rd-fng-chip {
+  display: inline-flex; align-items: center;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.08em;
+  padding: 2px 7px; border: 1px solid transparent; border-radius: 2px;
+  white-space: nowrap;
+}
+
+/* sentiment gauge (§2.5a: svg 196px wide, value 32px/600, regime 12px) */
+.rd-gauge-svg { display: block; width: 100%; max-width: 196px; height: auto; margin: 8px auto 0; }
+.rd-gauge-vrow { display: flex; align-items: baseline; justify-content: center; gap: 10px; margin-top: 2px; }
+.rd-gauge-val { font-family: var(--rd-mono); font-size: 32px; font-weight: 600; line-height: 1; }
+.rd-gauge-regime { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.12em; }
+.rd-gauge-axis {
+  display: flex; justify-content: space-between; margin-top: 7px;
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost);
+}
+
+/* sector heat map (§2.5b) — 3-col rail adaptation of the 4-col band card;
+   tile bg/border/text are inline (intensity vs the day's max |Δ|) */
+.rd-sec-sort {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  padding: 2px 7px; cursor: pointer; white-space: nowrap;
+}
+.rd-sec-sort:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+.rd-sec-tiles {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr; gap: 4px; margin-top: 9px;
+}
+.rd-sec-tile {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  min-width: 0; padding: 7px 8px; border: 1px solid transparent; border-radius: 2px;
+}
+.rd-sec-name {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.06em;
+  color: #c7ccd2; /* §1.5 misc literal (sector name · map label) */
+  white-space: nowrap; overflow: hidden;
+}
+/* design pct is 14px in the 1fr band card — 12px fits the 3-col rail tile */
+.rd-sec-pct { font-family: var(--rd-mono); font-size: 12px; white-space: nowrap; }
+.rd-sec-legend {
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  margin-top: 7px; font-family: var(--rd-mono); font-size: 7px; color: var(--rd-t-ghost);
+}
+.rd-sec-swatch {
+  width: 42px; height: 6px; border-radius: 1px;
+  background: linear-gradient(90deg, #b06a58, #4a4f55 50%, #5a9e79);
+}
+
+/* catalysts line (§2.5 slim line, stacked for the rail) */
+.rd-cat-rows { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-cat-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9.5px;
+  padding: 3px 9px; border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  white-space: nowrap;
+}
+.rd-cat-tkr { color: var(--rd-t-chip); font-weight: 600; }
+.rd-cat-date { color: var(--rd-t-dim2); }
+.rd-cat-tag { font-size: 8.5px; letter-spacing: 0.08em; }
+.rd-cat-bmo { color: var(--rd-blue); }
+.rd-cat-amc { color: var(--rd-amber); }
+.rd-cat-dmh { color: var(--rd-t-absent); }
+.rd-cat-note {
+  margin-top: 8px; font-family: var(--rd-mono); font-size: 8px;
+  letter-spacing: 0.05em; color: var(--rd-t-ghost);
+}
+
+/* ==========================================================================
    STAGE 4 — MOBILE (<700px): rail hidden (rule of record — mobile paths are
    header row2 + the SOURCES tab), 44px targets on every reachable control
    (the .ibtn selector keeps the OPTIONS tab's old-skin buttons covered)
