@@ -7,6 +7,7 @@ import type {
   ChapterCategory,
   ConsensusItem,
   DailyBrief,
+  Explicitness,
   IntelCatalyst,
   IntelLevel,
   IntelSource,
@@ -14,6 +15,7 @@ import type {
   OptionBriefIdea,
   OptionIdea,
   TradeIdea,
+  ValueField,
   VideoAnalysis,
 } from "@/lib/intel/types";
 import { SymbolProvider } from "./symbolContext";
@@ -51,20 +53,26 @@ const TAPE_LABEL: Record<string, string> = {
   "DX-Y.NYB": "DXY", "CL=F": "WTI", "GC=F": "GOLD", "BTC-USD": "BTC",
 };
 
-const TF_LABEL: Record<string, string> = {
-  intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
-};
 const TF_FULL: Record<string, string> = {
   intraday: "INTRADAY", next_session: "NEXT SESSION", swing: "SWING", long_term: "LONG TERM", unspecified: "—",
 };
 
+// DESIGN grouping rule (SPEC-wiring §2.1 tf row): intraday + next_session share
+// the hero TODAY group, swing is SHORT-TERM, long_term/unspecified are LONG-TERM.
 const TF_GROUP: Record<string, string> = {
   intraday: "TODAY · TOP IDEAS",
-  next_session: "SHORT-TERM · SWING",
+  next_session: "TODAY · TOP IDEAS",
   swing: "SHORT-TERM · SWING",
   long_term: "LONG-TERM",
   unspecified: "LONG-TERM",
 };
+
+// horizon group chrome (SPEC-desktop §2.6.2 item 3) — subs/ticks verbatim
+const BOARD_GROUPS: { key: string; sub: string; hero?: boolean; tickCls: string }[] = [
+  { key: "TODAY · TOP IDEAS", sub: "next session · highest urgency", hero: true, tickCls: "rd-tick-today" },
+  { key: "SHORT-TERM · SWING", sub: "days to weeks", tickCls: "rd-tick-swing" },
+  { key: "LONG-TERM", sub: "position · months+", tickCls: "rd-tick-long" },
+];
 
 const CAT_LABEL: Partial<Record<ChapterCategory, string>> = {
   market_outlook: "Outlook", market_recap: "Recap", overnight_news: "Overnight",
@@ -95,6 +103,14 @@ const etClock = () =>
 const fmtPx = (n: number) =>
   n >= 1000 ? n.toFixed(2) : n >= 10 ? n.toFixed(2) : n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 const fmtPct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+// design price format (SPEC-desktop §3.3): $ + thousands separators, always 2dp
+const rdPx = (n: number) =>
+  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// ET clock with seconds — the board error line wants a precise real timestamp
+const etClockSec = () =>
+  new Date().toLocaleTimeString("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
 
 function deriveStatus(idea: BlotterIdea): IdeaStatus {
   const q = idea.quote;
@@ -196,21 +212,6 @@ function TrackedBadge({ t }: { t: TrackedIdea }) {
       {b.label}
       {t.conflictKey && <span className="bl-st-conflict" title="conflicting stated triggers from this source">!</span>}
     </span>
-  );
-}
-
-function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
-  if (!closes || closes.length < 2) return <span className="bl-spark-empty">—</span>;
-  const pts = closes.slice(-20);
-  const min = Math.min(...pts), max = Math.max(...pts), W = 52, H = 18;
-  const range = max - min || 1;
-  const points = pts.map((v, i) =>
-    `${((i / (pts.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * H).toFixed(1)}`
-  ).join(" ");
-  return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="bl-spark">
-      <polyline points={points} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.2" />
-    </svg>
   );
 }
 
@@ -491,7 +492,213 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
   );
 }
 
-// ── BlotterRow ───────────────────────────────────────────────────────────────
+// ── evidence system (SPEC-wiring §2.2 / SPEC-desktop §3.4) ───────────────────
+// TWO honest provenance levels ship: DIRECT (explicit idea + verbatim source
+// text on a ValueField) and INFERRED (idea-level explicitness === "inferred").
+// EXTRACTED is deliberately NOT emitted — its chip CSS (.rd-ev-extracted) is
+// kept for a future third per-field provenance level. Explicit ideas with no
+// verbatim level text get the absent glyph, never a decorative DIRECT chip.
+
+type EvKind = "DIRECT" | "INFERRED";
+
+function EvChip({ kind }: { kind: EvKind }) {
+  return kind === "DIRECT" ? (
+    <span className="rd-ev rd-ev-direct"><span className="rd-ev-g" aria-hidden="true">▮</span>DIRECT</span>
+  ) : (
+    <span className="rd-ev rd-ev-inferred"><span className="rd-ev-g" aria-hidden="true">~</span>INFERRED</span>
+  );
+}
+
+const hasVerbatim = (v: ValueField | undefined | null): boolean =>
+  !!v && !!v.text && !/not specified/i.test(v.text);
+
+function ideaEvKind(idea: BlotterIdea): EvKind | null {
+  if (idea.explicitness === "inferred") return "INFERRED";
+  if (hasVerbatim(idea.entry) || hasVerbatim(idea.invalidation) || hasVerbatim(idea.targets[0])) return "DIRECT";
+  return null; // explicit, but no verbatim level text — no chip
+}
+
+// ── value-cell renderers (design mkQuoted / mkInferred / mkNarr / ABSENT) ────
+
+/** mkQuoted — numeric level quoted verbatim from the transcript (❝ + dotted underline) */
+function QuotedCell({ text }: { text: string }) {
+  return (
+    <span className="rd-cell" title={text}>
+      <span className="rd-cell-g rd-g-quote" aria-hidden="true">❝</span>
+      <span className="rd-cell-qv">{text}</span>
+    </span>
+  );
+}
+/** mkInferred — level AUGUST inferred, not stated (~) */
+function InferredCell({ text }: { text: string }) {
+  return (
+    <span className="rd-cell" title={text}>
+      <span className="rd-cell-g rd-g-inf" aria-hidden="true">~</span>
+      <span className="rd-cell-iv">{text}</span>
+    </span>
+  );
+}
+/** mkNarr — qualitative condition quoted from the transcript (❝, no underline) */
+function NarrCell({ text }: { text: string }) {
+  return (
+    <span className="rd-cell" title={text}>
+      <span className="rd-cell-g rd-g-quote" aria-hidden="true">❝</span>
+      <span className="rd-cell-nv">{text}</span>
+    </span>
+  );
+}
+/** ABSENT — nothing stated by the source */
+function AbsentCell({ text = "n/s" }: { text?: string }) {
+  return (
+    <span className="rd-abs">
+      <span className="rd-abs-g" aria-hidden="true">∅</span> {text}
+    </span>
+  );
+}
+
+/** ValueField → designed cell, exactly per SPEC-wiring §2.2 last paragraph:
+ * inferred idea → mkInferred; value != null → mkQuoted (verbatim text
+ * preferred; `numeric` forces the $ figure for level columns); text-only
+ * condition → mkNarr; nothing stated → ABSENT. */
+function ValueCell({ v, explicitness, numeric }: { v: ValueField | undefined; explicitness: Explicitness; numeric?: boolean }) {
+  const text = hasVerbatim(v) ? v!.text : null;
+  const val = v?.value ?? null;
+  if (val == null && !text) return <AbsentCell />;
+  const shown = numeric ? (val != null ? rdPx(val) : text!) : (text ?? rdPx(val!));
+  if (explicitness === "inferred") return <InferredCell text={shown} />;
+  if (val != null) return <QuotedCell text={shown} />;
+  return <NarrCell text={shown} />;
+}
+
+// ── life badges (tracker-driven; SPEC-desktop §2.6.2 cell 1) ─────────────────
+// Engine states map onto the design families (SPEC-wiring §2.1): TARGET_HIT
+// keeps the engine's TGT ✓ badge in the TRIGGERED (green) family; CLOSED and
+// stale rows take the design's EXPIRED visual (labels stay honest); the
+// conflict `!` marker is retained. Untracked rows fall back to deriveStatus.
+
+const RD_LIFE: Record<TrackedStatus, { label: string; cls: string; family: string }> = {
+  TRIGGERED: { label: "TRIG", cls: "rd-life-trig", family: "lc-trig" },
+  ARMED: { label: "ARMED", cls: "rd-life-arm", family: "lc-arm" },
+  ACTIVE: { label: "ACTIVE", cls: "rd-life-act", family: "lc-act" },
+  TARGET_HIT: { label: "TGT ✓", cls: "rd-life-tgt", family: "lc-tgt" },
+  INVALIDATED: { label: "INVAL", cls: "rd-life-inval", family: "lc-inval" },
+  CLOSED: { label: "EXP", cls: "rd-life-exp", family: "lc-exp" },
+};
+const RD_LIFE_DERIVED: Record<IdeaStatus, { label: string; cls: string; family: string }> = {
+  TRIG: { label: "TRIG", cls: "rd-life-trig", family: "lc-trig" },
+  ARMED: { label: "ARMED", cls: "rd-life-arm", family: "lc-arm" },
+  ACTIVE: { label: "ACTIVE", cls: "rd-life-act", family: "lc-act" },
+  INVLD: { label: "INVAL", cls: "rd-life-inval", family: "lc-inval" },
+  WATCH: { label: "WATCH", cls: "rd-life-watch", family: "lc-watch" }, // real derived state, no design equivalent — low emphasis
+};
+
+/** life meta for a row: badge label/class + accent family + live (glow) flag */
+function rowLife(idea: BlotterIdea, tracked: TrackedIdea | null) {
+  if (tracked) {
+    const meta = RD_LIFE[tracked.status];
+    const expired = tracked.status === "CLOSED" || tracked.stale;
+    return {
+      ...meta,
+      cls: expired ? "rd-life-exp" : meta.cls,
+      family: expired ? "lc-exp" : meta.family,
+      live: tracked.status === "TRIGGERED" && !tracked.stale,
+      title: [tracked.statusHistory.at(-1)?.reason, tracked.stale ? "stale — no recent mentions" : null]
+        .filter(Boolean).join(" · ") || undefined,
+      conflict: !!tracked.conflictKey,
+    };
+  }
+  const s = deriveStatus(idea);
+  return {
+    ...RD_LIFE_DERIVED[s],
+    live: s === "TRIG",
+    title: "derived client-side — no tracker record",
+    conflict: false,
+  };
+}
+
+// ── direction cell (design dirMap; watch → NEUTRAL styling, word in tooltip) ─
+
+const RD_DIR: Record<TradeIdea["direction"], { label: string; glyph: string; cls: string; title?: string }> = {
+  bullish: { label: "BULL", glyph: "▲", cls: "rd-dir-bull" },
+  bearish: { label: "BEAR", glyph: "▼", cls: "rd-dir-bear" },
+  neutral: { label: "NEUT", glyph: "◆", cls: "rd-dir-neut" },
+  watch: { label: "NEUT", glyph: "◆", cls: "rd-dir-neut", title: "watch idea" },
+};
+
+// design P-palette hexes for SVG strokes (presentation attrs can't take var())
+const RD_HEX = { bull: "#6fa085", bear: "#cd7e6d", amber: "#bfa05a" };
+
+// ── spark (52×20 path + end dot; SPEC-desktop §2.6.2 cell 11) ────────────────
+/** Drawn from the REAL ~1mo of DAILY closes (SPEC-wiring §2.4 — never seeded
+ * paths); labeled honestly via <title> + the board legend. Color follows the
+ * design rule (§3.6): favored-vs-trigger → bull/amber, else direction color. */
+function RdSpark({ closes, color }: { closes: number[]; color: string }) {
+  if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  const W = 52, H = 20, padY = 3;
+  let min = Math.min(...closes), max = Math.max(...closes);
+  const pad = (max - min) * 0.1 || Math.abs(closes[closes.length - 1]) * 0.01 || 1;
+  min -= pad; max += pad;
+  const xAt = (i: number) => (i / (closes.length - 1)) * W;
+  const yAt = (v: number) => (H - padY) - ((v - min) / (max - min)) * (H - 2 * padY);
+  const d = closes.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
+  return (
+    <svg
+      className="rd-spark" viewBox={`0 0 ${W} ${H}`} width={W} height={H}
+      preserveAspectRatio="none" role="img" aria-label="1-month daily-close sparkline"
+    >
+      <title>1M · DAILY closes</title>
+      <path d={d} fill="none" stroke={color} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r="1.6" fill={color} />
+    </svg>
+  );
+}
+
+// ── Δ→TRIG cell: PAST/TO TRIGGER delta + the rail (pos 4–96%) ────────────────
+/** Delta math + rail pos() ported verbatim from the design source (SPEC-desktop
+ * §3.3; design lines ~803–815). Bull/bear get the favored-side framing; the
+ * design has no neutral/watch delta — those show the honest signed distance
+ * with no PAST/TO label. Pure presentation over live price + stated trigger. */
+function DeltaCell({ live, trig, dir }: { live: number | null; trig: number | null; dir: TradeIdea["direction"] }) {
+  if (live == null || trig == null || trig <= 0) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  const bull = dir === "bullish";
+  const directional = bull || dir === "bearish";
+  let lo = Math.min(live, trig), hi = Math.max(live, trig);
+  const span = (hi - lo) || live * 0.04;
+  lo -= span * 0.6; hi += span * 0.6;
+  const pos = (p: number) => Math.max(4, Math.min(96, ((p - lo) / (hi - lo)) * 100));
+  const livePos = pos(live), trigPos = pos(trig);
+
+  let val: string, label: string | null, cls: string;
+  if (directional) {
+    const favored = bull ? live >= trig : live <= trig;
+    if (favored) {
+      const pastPct = ((live - trig) / trig) * 100;
+      val = (pastPct >= 0 ? "+" : "") + pastPct.toFixed(2) + "%";
+      label = "PAST TRIGGER"; cls = "rd-delta-past";
+    } else {
+      const needPct = bull ? ((trig - live) / live) * 100 : ((live - trig) / live) * 100;
+      val = "+" + Math.abs(needPct).toFixed(2) + "%";
+      label = "TO TRIGGER"; cls = "rd-delta-to";
+    }
+  } else {
+    const pct = ((live - trig) / trig) * 100;
+    val = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+    label = null; cls = "rd-delta-plain";
+  }
+  return (
+    <span className={`rd-delta ${cls}`}>
+      <span className="rd-delta-val">{val}</span>
+      {label && <span className="rd-delta-label">{label}</span>}
+      <span className="rd-rail" aria-hidden="true">
+        <span className="rd-rail-fill" style={{ left: `${Math.min(livePos, trigPos)}%`, width: `${Math.abs(livePos - trigPos)}%` }} />
+        <span className="rd-rail-dot rd-rail-trig" style={{ left: `${trigPos}%` }} />
+        <span className="rd-rail-dot rd-rail-live" style={{ left: `${livePos}%` }} />
+      </span>
+    </span>
+  );
+}
+
+// ── BlotterRow (design grouped-board row; data logic unchanged) ──────────────
 
 function BlotterRow({
   idea, tracked, selected, onSelect,
@@ -501,65 +708,121 @@ function BlotterRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const up = idea.direction === "bullish";
+  const dir = idea.direction;
   const closes = idea.quote?.closes ?? [];
-  const ns = <span className="bl-ns">⌀ n/s</span>;
 
-  // Δ-TRIG: distance from live price to the stated trigger. Tracked ideas use
-  // the tracker's (possibly restated) trigger; untracked fall back to entry.
+  // trigger precedence unchanged: tracked ideas use the tracker's (possibly
+  // restated) trigger; untracked fall back to the idea's stated entry value.
   const trigVal = tracked ? tracked.statedLevels.trigger?.value ?? null : idea.entry?.value ?? null;
   const live = idea.quote?.price ?? null;
-  const dt = trigVal != null && trigVal > 0 && live != null
-    ? `${((live - trigVal) / trigVal) * 100 >= 0 ? "+" : ""}${(((live - trigVal) / trigVal) * 100).toFixed(1)}%`
-    : "—";
-  const dtCls = dt === "—" ? "" : dt.startsWith("+") ? "bl-dlt-pos" : "bl-dlt-neg";
 
-  // P&L — engine rules: signed % since the STATED trigger only when it fired;
-  // thesis-only ideas show price-since-mention (marked with °); ARMED shows none.
+  // P&L — engine rules (the law): signed % since the STATED trigger only when
+  // it fired; thesis-only ideas show price-since-mention marked °; ARMED none.
   const pnl = tracked ? pnlView(tracked) : { kind: "none" as const, reason: "untracked" };
   const pnlText =
     pnl.kind === "since_called" ? fmtPct(pnl.pct)
     : pnl.kind === "since_first_mention" ? `${fmtPct(pnl.pct)}°`
     : "—";
-  const pnlCls = pnl.kind === "none" ? "" : pnl.pct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg";
+  const pnlCls = pnl.kind === "none" ? "" : pnl.pct >= 0 ? "rd-pos" : "rd-neg";
   const pnlTitle =
     pnl.kind === "since_called" ? `since called — vs stated trigger $${fmtPx(pnl.basis)}`
     : pnl.kind === "since_first_mention" ? `° price since first mention (no stated trigger — not trade P&L)`
     : pnl.kind === "none" ? pnl.reason : undefined;
 
-  const entText = idea.entry?.value != null ? `$${fmtPx(idea.entry.value)}` : ns;
-  const invText = idea.invalidation?.value != null ? `$${fmtPx(idea.invalidation.value)}` : ns;
-  const tgtText = idea.targets[0]?.value != null ? `$${fmtPx(idea.targets[0].value)}` : ns;
-  const liveText = live != null ? `$${fmtPx(live)}` : ns;
+  const life = rowLife(idea, tracked);
+  const dirMeta = RD_DIR[dir];
+  const ev = ideaEvKind(idea);
+  const conf = Math.round(idea.confidence * 100);
+
+  // spark color per the design rule (§3.6): levels → favored? bull : amber,
+  // else direction color (bearish → bear, everything else → bull)
+  const favored = trigVal != null && trigVal > 0 && live != null
+    ? (dir === "bullish" ? live >= trigVal : live <= trigVal)
+    : null;
+  const sparkColor = favored != null
+    ? (favored ? RD_HEX.bull : RD_HEX.amber)
+    : dir === "bearish" ? RD_HEX.bear : RD_HEX.bull;
 
   return (
-    <tr className={`bl-row${selected ? " selected" : ""}`} onClick={onSelect}>
-      <td className="bl-c-status">{tracked ? <TrackedBadge t={tracked} /> : <StatusBadge s={deriveStatus(idea)} />}</td>
-      <td className="bl-c-ticker">{idea.ticker}</td>
-      <td className="bl-c-dir">
-        {idea.direction === "bullish" ? <span className="bl-bull-glyph">▲</span>
-          : idea.direction === "bearish" ? <span className="bl-bear-glyph">▼</span>
-          : <span className="bl-neut-glyph">—</span>}
-      </td>
-      <td className="bl-c-tf">{TF_LABEL[idea.timeHorizon] ?? "—"}</td>
-      <td className="bl-c-setup" title={idea.thesis}><span className="bl-setup-clip">{idea.thesis}</span></td>
-      <td className="bl-c-num">{entText}</td>
-      <td className="bl-c-num">{invText}</td>
-      <td className="bl-c-num">{tgtText}</td>
-      <td className="bl-c-live">{liveText}</td>
-      <td className={`bl-c-delta ${dtCls}`}>{dt}</td>
-      <td className={`bl-c-delta ${pnlCls}`} title={pnlTitle}>{pnlText}</td>
-      <td className="bl-c-tf" title={tracked ? "tracked since first mention" : "not tracked"}>
-        {tracked ? ageStr(tracked.createdAt) : "—"}
-      </td>
-      <td className="bl-c-spark"><MiniSpark closes={closes} up={up} /></td>
-      <td className="bl-c-conf">{(idea.confidence * 100).toFixed(0)}%</td>
-      <td className="bl-c-evid">
-        <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`}>
-          {idea.explicitness === "explicit" ? "SRC" : "INF"}
+    <div
+      className={`rd-row ${life.family}${selected ? " sel" : ""}${life.live ? " live" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return; // let the source link keep its keys
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); }
+      }}
+    >
+      <span className="rd-row-accent" aria-hidden="true" />
+      {life.live && <span className="rd-row-wash" aria-hidden="true" />}
+      {selected && <span className="rd-row-selwash" aria-hidden="true" />}
+      {selected && <span className="rd-row-ring" aria-hidden="true" />}
+      <div className="rd-row-grid">
+        <span className="rd-c">
+          <span className={`rd-life ${life.cls}`} title={life.title}>
+            <span className="rd-life-dot" aria-hidden="true" />
+            {life.label}
+            {life.conflict && <span className="rd-life-conflict" title="conflicting stated triggers from this source">!</span>}
+          </span>
         </span>
-      </td>
-    </tr>
+        <span className="rd-c rd-c-ticker">{idea.ticker}</span>
+        <span className={`rd-c rd-c-dir ${dirMeta.cls}`} title={dirMeta.title}>
+          <span className="rd-dir-g" aria-hidden="true">{dirMeta.glyph}</span>
+          {dirMeta.label}
+        </span>
+        <span className="rd-c rd-c-tf">{TF_FULL[idea.timeHorizon] ?? "—"}</span>
+        <span className="rd-c rd-c-thesis" title={idea.thesis}>{idea.thesis}</span>
+        <span className="rd-c rd-c-val"><ValueCell v={idea.entry} explicitness={idea.explicitness} /></span>
+        <span className="rd-c rd-c-val">
+          {trigVal != null
+            ? idea.explicitness === "inferred"
+              ? <InferredCell text={rdPx(trigVal)} />
+              : <QuotedCell text={rdPx(trigVal)} />
+            : <AbsentCell />}
+        </span>
+        <span className="rd-c rd-c-val"><ValueCell v={idea.invalidation} explicitness={idea.explicitness} numeric /></span>
+        <span className="rd-c rd-c-val"><ValueCell v={idea.targets[0]} explicitness={idea.explicitness} numeric /></span>
+        <span className="rd-c rd-c-live">
+          {live != null
+            ? <><span className="rd-live-dot-g" aria-hidden="true">◉</span>{rdPx(live)}</>
+            : <span className="rd-abs-dash" aria-hidden="true">—</span>}
+        </span>
+        <span
+          className="rd-c rd-c-delta"
+          title={live != null && trigVal != null && trigVal > 0 ? `live ${rdPx(live)} vs stated trigger ${rdPx(trigVal)}` : undefined}
+        >
+          <DeltaCell live={live} trig={trigVal != null && trigVal > 0 ? trigVal : null} dir={dir} />
+        </span>
+        <span className={`rd-c rd-c-pnl ${pnlCls}`} title={pnlTitle}>{pnlText}</span>
+        <span className="rd-c rd-c-age" title={tracked ? "tracked since first mention" : "not tracked"}>
+          {tracked ? ageStr(tracked.createdAt) : "—"}
+        </span>
+        <span className="rd-c rd-c-spark"><RdSpark closes={closes} color={sparkColor} /></span>
+        <span className="rd-c rd-c-conf">
+          <span className="rd-conf-bar" aria-hidden="true"><span className="rd-conf-fill" style={{ width: `${conf}%` }} /></span>
+          {conf}%
+        </span>
+        <span className="rd-c rd-c-evid">
+          {ev ? <EvChip kind={ev} /> : <span className="rd-abs-dash" title="explicit idea · no verbatim level text">—</span>}
+        </span>
+        <span className="rd-c rd-c-src">
+          {idea.videoId ? (
+            <a
+              href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
+              target="_blank" rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="open source at timestamp"
+            >
+              ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)} · rank {idea.rankScore.toFixed(2)}
+            </a>
+          ) : (
+            <span>{idea.channelTitle} · rank {idea.rankScore.toFixed(2)}</span>
+          )}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -574,20 +837,80 @@ function effectiveStatus(idea: BlotterIdea, tracked: TrackedIdea | null): Tracke
   return s === "TRIG" ? "TRIGGERED" : s === "INVLD" ? "INVALIDATED" : s === "WATCH" ? "ACTIVE" : s;
 }
 
+// design loading skeleton (SPEC-desktop §2.6.2): 13 bars per row with the
+// design's widths/heights (first bar "auto" → 40px) and stagger delays
+const SKEL_BARS = [
+  { w: 40, h: 13, hi: true }, { w: 34, h: 13, hi: true }, { w: 28, h: 12 }, { w: 46, h: 12 },
+  { w: 50, h: 12 }, { w: 58, h: 12 }, { w: 60, h: 12 }, { w: 52, h: 12 },
+  { w: 58, h: 13, hi: true }, { w: 48, h: 12 }, { w: 44, h: 10 }, { w: 50, h: 12 }, { w: 46, h: 12 },
+];
+const SKEL_DELAYS = [0, 0.07, 0.12, 0.17, 0.22, 0.27, 0.32, 0.37, 0.42, 0.47, 0.52, 0.57, 0.62];
+
+function BoardLoading() {
+  return (
+    <div role="status" aria-label="Syncing sources and extracting ideas">
+      <div className="rd-load-strip">
+        <span className="rd-load-dot" aria-hidden="true" />
+        SYNCING SOURCES · EXTRACTING IDEAS…
+      </div>
+      {[0, 1, 2, 3, 4, 5].map((r) => (
+        <div key={r} className="rd-skelrow" aria-hidden="true">
+          {SKEL_BARS.map((b, i) => (
+            <span
+              key={i}
+              className={`rd-skelbar${b.hi ? " hi" : ""}`}
+              style={{ width: b.w, height: b.h, animationDelay: `${SKEL_DELAYS[i]}s` }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const BOARD_COLS = [
+  "STATUS", "TICKER", "DIR", "TF", "THESIS", "ENTRY", "TRIGGER", "INVALID", "TARGET",
+  "LIVE", "Δ→TRIG", "P&L", "AGE", "SPARK", "CONF", "EVID", "SRC",
+];
+
 function BlotterTable({
-  ideas, trackedByIdeaId, filter, selectedId, onSelect,
+  ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, busy, aiOn, onAddSource, onGenerateBrief,
 }: {
   ideas: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
   filter: BlotterFilter;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** a sync or brief run is in flight — with zero rows, show the design's loading treatment */
+  loading: boolean;
+  busy: string | null;
+  aiOn: boolean;
+  onAddSource: () => void;
+  onGenerateBrief: () => void;
 }) {
   if (ideas.length === 0) {
+    if (loading) return <BoardLoading />;
+    // design EMPTY state, verbatim copy (SPEC-wiring §2.12) — buttons wired to
+    // the real actions: ADD SOURCE opens the SOURCES tab, GENERATE BRIEF runs
+    // the real handler (disabled without ANTHROPIC_API_KEY, same as the header)
     return (
-      <div className="bl-empty">
-        <div className="bl-empty-title">BLOTTER EMPTY</div>
-        <div>Add sources → process transcripts → generate brief.</div>
+      <div className="rd-board-empty">
+        <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+        <div className="rd-empty-title">NO IDEAS ON THE BOARD</div>
+        <p className="rd-empty-copy">
+          No trade ideas have been extracted yet. Add a source or generate tonight&apos;s brief to populate the blotter.
+        </p>
+        <div className="rd-empty-btns">
+          <button type="button" className="rd-btn-lg rd-btn-lg-acc" onClick={onAddSource}>ADD SOURCE</button>
+          <button
+            type="button" className="rd-btn-lg"
+            disabled={busy === "brief" || !aiOn} aria-busy={busy === "brief"}
+            title={!aiOn ? "needs ANTHROPIC_API_KEY" : undefined}
+            onClick={onGenerateBrief}
+          >
+            {busy === "brief" ? "GENERATING…" : "GENERATE BRIEF"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -600,15 +923,17 @@ function BlotterTable({
   });
 
   if (visible.length === 0) {
+    // filter-miss state — no design equivalent; kept with the honest copy,
+    // restyled to the empty-state treatment (SPEC-wiring §2.12 last row)
     return (
-      <div className="bl-empty">
-        <div className="bl-empty-title">NO IDEAS MATCH</div>
-        <div>No ideas in the {filter.toLowerCase()} state right now.</div>
+      <div className="rd-board-empty rd-board-nomatch">
+        <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+        <div className="rd-empty-title">NO IDEAS MATCH</div>
+        <p className="rd-empty-copy">No ideas in the {filter.toLowerCase()} state right now.</p>
       </div>
     );
   }
 
-  const GROUP_ORDER = ["TODAY · TOP IDEAS", "SHORT-TERM · SWING", "LONG-TERM"];
   const groups: Record<string, BlotterIdea[]> = {};
   for (const idea of visible) {
     const g = TF_GROUP[idea.timeHorizon] ?? "LONG-TERM";
@@ -617,39 +942,44 @@ function BlotterTable({
   }
 
   return (
-    <div className="bl-blotter-wrap">
-      <table className="bl-table">
-        <thead className="bl-thead">
-          <tr>
-            <th>STATUS</th><th>TICKER</th><th>DIR</th><th>TF</th><th>SETUP</th>
-            <th>TRIGGER</th><th>INVALID</th><th>TARGET</th><th>LIVE</th>
-            <th>Δ-TRIG</th><th title="signed vs stated trigger; ° = price since first mention">P&amp;L</th><th>AGE</th>
-            <th>SPARK</th><th>CONF</th><th>EVID</th>
-          </tr>
-        </thead>
-        <tbody>
-          {GROUP_ORDER.map((g) => {
-            const rows = groups[g];
-            if (!rows?.length) return null;
-            return (
-              <Fragment key={g}>
-                <tr>
-                  <td colSpan={15} className="bl-section-head">{g.toLowerCase()}</td>
-                </tr>
-                {rows.map((idea) => (
-                  <BlotterRow
-                    key={idea.id}
-                    idea={idea}
-                    tracked={trackedByIdeaId.get(idea.id) ?? null}
-                    selected={selectedId === idea.id}
-                    onSelect={() => onSelect(idea.id)}
-                  />
-                ))}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="rd-board-wrap">
+      <div className="rd-board-min">
+        <div className="rd-colhead">
+          {BOARD_COLS.map((c) => (
+            <span
+              key={c}
+              title={c === "P&L" ? "signed vs stated trigger; ° = price since first mention"
+                : c === "SPARK" ? "~1 month of daily closes" : undefined}
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+        {BOARD_GROUPS.map((g) => {
+          const rows = groups[g.key];
+          if (!rows?.length) return null;
+          return (
+            <Fragment key={g.key}>
+              <div className={`rd-group${g.hero ? " hero" : ""}`}>
+                <span className={`rd-group-tick ${g.tickCls}`} aria-hidden="true" />
+                <span className="rd-group-label">{g.key}</span>
+                <span className="rd-group-sub">{g.sub}</span>
+                <span className="rd-group-hair" aria-hidden="true" />
+                <span className="rd-group-count">{rows.length} IDEA{rows.length !== 1 ? "S" : ""}</span>
+              </div>
+              {rows.map((idea) => (
+                <BlotterRow
+                  key={idea.id}
+                  idea={idea}
+                  tracked={trackedByIdeaId.get(idea.id) ?? null}
+                  selected={selectedId === idea.id}
+                  onSelect={() => onSelect(idea.id)}
+                />
+              ))}
+            </Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1642,6 +1972,9 @@ export default function IntelDashboard() {
   // server-throttled, so polling this is cheap).
   const [trackedList, setTrackedList] = useState<TrackedIdea[]>([]);
   const [blotterFilter, setBlotterFilter] = useState<BlotterFilter>("ALL");
+  // when the overview fetch last failed (ET, with seconds) — the board error
+  // state renders this real timestamp, never the design's sample ERR line
+  const [errAt, setErrAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -1650,6 +1983,8 @@ export default function IntelDashboard() {
       setData(await r.json());
       setStatus("ready");
     } catch {
+      // real ET timestamp for the design's board-error ERR line — never the mock
+      setErrAt(etClockSec());
       setStatus((s) => (s === "ready" ? "ready" : "error"));
     }
   }, []);
@@ -1796,9 +2131,15 @@ export default function IntelDashboard() {
     );
   }
   if (!data) {
+    // design ERROR treatment (SPEC-wiring §2.12) with the REAL failure + real
+    // ET timestamp; RETRY re-runs the real overview load (the failed action)
     return (
-      <div style={{ padding: 24 }}>
-        <div className="istate istate-err">Couldn&apos;t load Market Intel. <button className="ibtn ibtn-sm" onClick={load}>Retry</button></div>
+      <div className="rd-board-error" role="alert">
+        <div className="rd-err-glyph" aria-hidden="true">△</div>
+        <div className="rd-err-title">ANALYSIS FAILED</div>
+        <p className="rd-err-copy">Could not load the Market Intel overview — the data service did not respond.</p>
+        {errAt && <div className="rd-err-line">ERR · OVERVIEW_UNREACHABLE · {errAt} ET</div>}
+        <button type="button" className="rd-btn-retry" onClick={load}>RETRY</button>
       </div>
     );
   }
@@ -1894,37 +2235,40 @@ export default function IntelDashboard() {
               onGoSources={() => setTab("SOURCES")}
             />
             <div className="bl-center">
-              {/* blotter sub-header */}
-              <div className="bl-center-head">
-                <span className="bl-ch-title">TRADE BLOTTER</span>
-                <span className="bl-ch-sep">·</span>
-                <span>{blotter.length} IDEAS</span>
-                <span className="bl-ch-sep">·</span>
-                <span>URGENCY</span>
-                <span className="bl-ch-sep">·</span>
-                <span>AUTO-REFRESH 30s</span>
+              {/* board header (SPEC-desktop §2.6.2) — real count, real cadence */}
+              <div className="rd-bhead">
+                <span className="rd-bhead-title">TRADE BLOTTER</span>
+                <span className="rd-bhead-meta">{blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s</span>
               </div>
-              {/* legend */}
-              <div className="bl-legend">
-                <span className="bl-leg"><span className="bl-leg-dot" style={{ background: "#7fb88a" }} /> live market</span>
-                <span className="bl-leg"><span style={{ fontSize: 9 }}>★</span> quoted from transcript</span>
-                <span className="bl-leg"><span className="bl-leg-ring" /> not stated</span>
-                <span className="bl-leg"><span className="bl-leg-sq" /> direct</span>
-                <span className="bl-leg"><span className="bl-leg-dsq" /> inferred</span>
-                <span className="bl-leg">° price since first mention (not trade P&amp;L)</span>
+              {/* legend — design glyphs; ◇ EXTRACTED is deliberately absent
+                  (never emitted, SPEC-wiring §2.2); spark + ° honesty notes */}
+              <div className="rd-legend">
+                <span className="rd-leg"><span className="rd-leg-g rd-leg-live" aria-hidden="true">◉</span> live market</span>
+                <span className="rd-leg"><span className="rd-leg-g rd-leg-quote" aria-hidden="true">❝</span> quoted from transcript</span>
+                <span className="rd-leg"><span className="rd-leg-g rd-leg-abs" aria-hidden="true">∅</span> not stated</span>
+                <span className="rd-leg-div" aria-hidden="true" />
+                <span className="rd-leg"><span className="rd-leg-g rd-leg-quote" aria-hidden="true">▮</span> direct</span>
+                <span className="rd-leg"><span className="rd-leg-g rd-leg-inf" aria-hidden="true">~</span> inferred</span>
+                <span className="rd-leg-div" aria-hidden="true" />
+                <span className="rd-leg">spark · 1M daily closes</span>
+                <span className="rd-leg">° price since first mention (not trade P&amp;L)</span>
               </div>
-              {/* tracker filter — TRACKED = level-anchored ideas only */}
-              <div className="bl-filter-row" role="group" aria-label="Filter ideas by tracker state">
-                {(["ALL", "TRACKED", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as BlotterFilter[]).map((f) => (
-                  <button
-                    key={f}
-                    className={`bl-filter-chip${blotterFilter === f ? " on" : ""}`}
-                    aria-pressed={blotterFilter === f}
-                    onClick={() => setBlotterFilter(f)}
-                  >
-                    {f}
-                  </button>
-                ))}
+              {/* tracker filter — TRACKED = level-anchored ideas only;
+                  semantics + aria-pressed unchanged, design segmented look */}
+              <div className="rd-filter-row" role="group" aria-label="Filter ideas by tracker state">
+                <div className="rd-filter-seg">
+                  {(["ALL", "TRACKED", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as BlotterFilter[]).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className={`rd-fchip${blotterFilter === f ? " on" : ""}`}
+                      aria-pressed={blotterFilter === f}
+                      onClick={() => setBlotterFilter(f)}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
               <BlotterTable
                 ideas={blotter}
@@ -1932,6 +2276,11 @@ export default function IntelDashboard() {
                 filter={blotterFilter}
                 selectedId={selectedId}
                 onSelect={(id) => setSelectedId((c) => (c === id ? null : id))}
+                loading={busy === "sync" || busy === "brief"}
+                busy={busy}
+                aiOn={config.ai}
+                onAddSource={() => setTab("SOURCES")}
+                onGenerateBrief={generateBrief}
               />
               <OptionsIntelPanel brief={brief} />
             </div>

@@ -357,6 +357,323 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 }
 
 /* ==========================================================================
+   STAGE 2 — THE BOARD (grouped blotter, SPEC-desktop §2.6.2 + SPEC-wiring §2)
+   Presentation only: grouped rows, accent rails, evidence cells/chips, the
+   Δ→TRIG rail, sparks, board states. All values copied from SPEC-desktop;
+   the bl- skin below remains untouched for the not-yet-reskinned surfaces.
+   ========================================================================== */
+
+/* ---- board header ---- */
+.rd-bhead {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 10px 16px 9px;
+}
+.rd-bhead-title {
+  font-family: var(--rd-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.18em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-bhead-meta {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- legend row (§2.6.2 item 1) ---- */
+.rd-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 6px 16px;
+  border-top: 1px solid var(--rd-hair-06); border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-legend-bg);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint);
+}
+.rd-leg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.rd-leg-g { font-size: 9px; }
+.rd-leg-live { color: var(--rd-live); }
+.rd-leg-quote { color: var(--rd-blue); }
+.rd-leg-abs { color: var(--rd-t-disabled); }
+.rd-leg-inf { color: var(--rd-inferred); }
+.rd-leg-div { width: 1px; height: 10px; background: var(--rd-hair-10); flex-shrink: 0; }
+
+/* ---- filter chips (segmented look; ALL/TRACKED/… semantics unchanged) ---- */
+.rd-filter-row {
+  display: flex; padding: 6px 16px;
+  border-bottom: 1px solid var(--rd-hair-06);
+  overflow-x: auto; scrollbar-width: none;
+}
+.rd-filter-row::-webkit-scrollbar { display: none; }
+.rd-filter-seg {
+  display: flex; border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  overflow: hidden; flex-shrink: 0;
+}
+.rd-fchip {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint); background: transparent;
+  border: none; border-right: 1px solid var(--rd-hair-08);
+  padding: 5px 9px; cursor: pointer; white-space: nowrap;
+}
+.rd-fchip:last-child { border-right: none; }
+.rd-fchip:hover { color: var(--rd-t-secondary2); }
+.rd-fchip.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); }
+
+/* ---- board scroll frame: 17 real columns share one template ---- */
+.rd-board-wrap { overflow-x: auto; scrollbar-width: thin; }
+.rd-board-min {
+  /* STATUS TICKER DIR TF THESIS ENTRY TRIGGER INVALID TARGET LIVE Δ→TRIG P&L AGE SPARK CONF EVID SRC */
+  --rd-cols: 56px 46px 44px 50px minmax(140px, 1.6fr) minmax(104px, 1.1fr) 70px 72px 62px 70px 74px 54px 34px 56px 54px 62px minmax(110px, 1fr);
+  min-width: 1290px;
+}
+
+/* ---- column header (§2.6.2 item 2) ---- */
+.rd-colhead {
+  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--rd-hair-08);
+  background: var(--rd-card);
+}
+.rd-colhead span {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); white-space: nowrap; overflow: hidden;
+}
+
+/* ---- horizon group headers (§2.6.2 item 3) ---- */
+.rd-group {
+  display: flex; align-items: center; gap: 9px; padding: 7px 16px;
+  background: var(--rd-bar1-bg);
+  border-top: 1px solid var(--rd-hair-05); border-bottom: 1px solid var(--rd-hair-07);
+}
+.rd-group-tick { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.rd-tick-today { background: var(--rd-live); }
+.rd-group.hero .rd-tick-today { box-shadow: 0 0 7px -1px var(--rd-live); }
+.rd-tick-swing { background: var(--rd-blue); }
+.rd-tick-long { background: var(--rd-t-dim4); }
+.rd-group-label {
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-group.hero .rd-group-label { color: var(--rd-t-chip); }
+.rd-group-sub {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-group-hair { flex: 1; height: 1px; background: var(--rd-hair-05); min-width: 8px; }
+.rd-group-count {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint); white-space: nowrap;
+}
+
+/* ---- idea rows: 4 stacked layers + content grid (§2.6.2 item 4) ---- */
+.rd-row { position: relative; cursor: pointer; }
+.rd-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-row-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+.rd-row.sel .rd-row-accent, .rd-row.live .rd-row-accent { width: 3px; }
+/* accent + badge families share the life color ramp */
+.rd-row.lc-trig .rd-row-accent, .rd-row.lc-tgt .rd-row-accent { background: var(--rd-bull); }
+.rd-row.lc-arm .rd-row-accent { background: var(--rd-amber); }
+.rd-row.lc-act .rd-row-accent { background: var(--rd-blue); }
+.rd-row.lc-inval .rd-row-accent { background: var(--rd-bear); }
+.rd-row.lc-exp .rd-row-accent, .rd-row.lc-watch .rd-row-accent { background: var(--rd-lo); }
+.rd-row-wash { display: none; }
+.cinematic .rd-row-wash {
+  display: block; position: absolute; inset: 0;
+  background: var(--rd-live-wash); pointer-events: none;
+}
+.rd-row-selwash { position: absolute; inset: 0; background: var(--rd-acc-soft06); pointer-events: none; }
+/* selection ring — Cinematic two-part form; single inset ring otherwise (§1.3) */
+.rd-row-ring {
+  position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(95, 176, 173, 0.4);
+}
+.cinematic .rd-row-ring { box-shadow: var(--rd-sel-ring); }
+.rd-row-grid {
+  position: relative;
+  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
+  padding: 8px 16px; /* Standard density rowPad */
+  border-bottom: 1px solid var(--rd-hair-05);
+}
+.rd-row:hover .rd-row-grid { background: rgba(255, 255, 255, 0.02); }
+
+/* ---- cells ---- */
+.rd-c { min-width: 0; }
+.rd-c-ticker {
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-c-dir {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.02em; white-space: nowrap;
+}
+.rd-dir-g { font-size: 7px; }
+.rd-dir-bull { color: var(--rd-bull); }
+.rd-dir-bear { color: var(--rd-bear); }
+.rd-dir-neut { color: var(--rd-amber); }
+.rd-c-tf {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.02em;
+  color: var(--rd-t-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-thesis {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.01em;
+  color: var(--rd-t-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-live {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-brightest); white-space: nowrap;
+}
+.rd-live-dot-g { color: var(--rd-live); font-size: 8.5px; animation: augPulse 2.4s ease-in-out infinite; }
+.rd-c-pnl, .rd-c-age {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-pos { color: var(--rd-bull); }
+.rd-neg { color: var(--rd-bear); }
+.rd-c-conf {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-conf-bar {
+  width: 30px; height: 3px; background: var(--rd-hair-08);
+  border-radius: 2px; overflow: hidden; flex-shrink: 0;
+}
+.rd-conf-fill { display: block; height: 100%; background: var(--rd-acc); }
+.rd-c-src {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-src a { color: var(--rd-acc); text-decoration: none; }
+.rd-c-src a:hover { text-decoration: underline; }
+.rd-c-src > span { color: var(--rd-t-faint); }
+.rd-spark { display: block; overflow: visible; }
+
+/* ---- life/status chips (§2.6.2 cell 1) ---- */
+.rd-life {
+  display: inline-flex; align-items: center; gap: 4px; width: fit-content;
+  font-family: var(--rd-mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 6px; border: 1px solid currentColor; border-radius: 2px;
+  background: transparent; white-space: nowrap;
+}
+.rd-life-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.rd-life-trig { color: var(--rd-bull); background: rgba(116, 176, 138, 0.12); }
+.cinematic .rd-life-trig { box-shadow: var(--rd-status-glow); }
+.rd-life-tgt { color: var(--rd-bull); background: rgba(116, 176, 138, 0.12); }
+.rd-life-arm { color: var(--rd-amber); }
+.rd-life-act { color: var(--rd-blue); }
+.rd-life-inval { color: var(--rd-bear); }
+.rd-life-exp { color: var(--rd-lo); }
+.rd-life-watch { color: var(--rd-lo); }
+.rd-life-conflict { color: var(--rd-amber); font-weight: 700; margin-left: 1px; }
+
+/* ---- evidence chips (§3.4, exact) — .rd-ev-extracted kept for a future
+   third provenance level; it is never emitted today (SPEC-wiring §2.2) ---- */
+.rd-ev {
+  display: inline-flex; align-items: center; gap: 3px; width: fit-content;
+  font-family: var(--rd-mono); font-size: 7px; font-weight: 600; letter-spacing: 0.05em;
+  padding: 1px 5px; border-radius: 2px; white-space: nowrap;
+}
+.rd-ev-g { font-size: 6.5px; }
+.rd-ev-direct { color: var(--rd-blue); border: 1px solid var(--rd-blue); background: rgba(106, 160, 200, 0.14); }
+.rd-ev-extracted { color: var(--rd-teal); border: 1px solid var(--rd-teal); background: transparent; }
+.rd-ev-inferred { color: var(--rd-inferred); border: 1px dashed var(--rd-inferred); background: transparent; }
+
+/* ---- value-cell renderers (§3.4 mkQuoted / mkInferred / mkNarr / ABSENT) ---- */
+.rd-cell {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--rd-mono); font-size: 10.5px; min-width: 0; max-width: 100%;
+}
+.rd-cell-g { font-size: 8.5px; flex-shrink: 0; }
+.rd-g-quote { color: var(--rd-blue); }
+.rd-g-inf { color: var(--rd-inferred); }
+.rd-cell-qv {
+  color: #bcd3e6; text-decoration: underline dotted; text-underline-offset: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-cell-iv { color: #b3a9c4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-cell-nv { color: #9fb6cc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-abs {
+  font-family: var(--rd-sans); font-style: italic; font-size: 10px;
+  color: var(--rd-t-disabled); white-space: nowrap;
+}
+.rd-abs-g { font-style: normal; color: var(--rd-t-absent); }
+.rd-abs-dash { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-absent); }
+
+/* ---- Δ→TRIG cell: value + PAST/TO label + the rail (pos 4–96%) ---- */
+.rd-delta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-delta-val { font-family: var(--rd-mono); font-size: 10.5px; white-space: nowrap; }
+.rd-delta-label { font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.08em; white-space: nowrap; opacity: 0.85; }
+.rd-delta-past { color: var(--rd-bull); }
+.rd-delta-to { color: var(--rd-amber); }
+.rd-delta-plain { color: var(--rd-t-secondary2); }
+.rd-rail {
+  position: relative; display: block; height: 3px; width: 64px; max-width: 100%;
+  background: var(--rd-hair-08); border-radius: 2px; margin-top: 1px;
+}
+.rd-rail-fill { position: absolute; top: 0; bottom: 0; background: currentColor; opacity: 0.4; border-radius: 2px; }
+.rd-rail-dot { position: absolute; top: 50%; width: 5px; height: 5px; border-radius: 50%; transform: translate(-50%, -50%); }
+.rd-rail-trig { background: var(--rd-blue); }
+.rd-rail-live { background: var(--rd-live); }
+
+/* ---- board states (§2.12, verbatim treatments) ---- */
+.rd-board-empty { padding: 64px 22px; text-align: center; border-top: 1px solid var(--rd-hair-06); }
+/* the empty state fills the blotter slot so filtering to zero matches never
+   collapses the column and jumps the OPTIONS INTEL panel (old-skin contract) */
+.bl-center .rd-board-empty { flex: 1; }
+.rd-empty-glyph { font-family: var(--rd-mono); font-size: 30px; color: var(--rd-t-empty); margin-bottom: 14px; }
+.rd-empty-title { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.18em; color: var(--rd-t-dim); margin-bottom: 9px; }
+.rd-empty-copy {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-faint2); max-width: 42ch; margin: 0 auto 18px;
+}
+.rd-board-nomatch .rd-empty-copy { margin-bottom: 0; }
+.rd-empty-btns { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.rd-btn-lg {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-secondary2); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-12); border-radius: 2px;
+  padding: 8px 15px; cursor: pointer;
+}
+.rd-btn-lg:hover { color: var(--rd-t-chip); }
+.rd-btn-lg:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-btn-lg-acc { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+
+.rd-board-error {
+  padding: 56px 22px; text-align: center;
+  border-top: 1px solid rgba(205, 126, 109, 0.18);
+  background: rgba(205, 126, 109, 0.03);
+}
+.rd-err-glyph { font-family: var(--rd-mono); font-size: 26px; color: var(--rd-bear); margin-bottom: 14px; }
+.rd-err-title { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.16em; color: var(--rd-bear); margin-bottom: 9px; }
+.rd-err-copy {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-dim); max-width: 46ch; margin: 0 auto 8px;
+}
+.rd-err-line { font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em; color: var(--rd-t-ghost); margin-bottom: 18px; }
+.rd-btn-retry {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-retry-text); background: rgba(205, 126, 109, 0.1);
+  border: 1px solid rgba(205, 126, 109, 0.4); border-radius: 2px;
+  padding: 8px 15px; cursor: pointer;
+}
+
+.rd-load-strip {
+  display: flex; align-items: center; gap: 9px; padding: 8px 16px;
+  border-top: 1px solid var(--rd-hair-06); border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-legend-bg);
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.14em; color: var(--rd-t-dim);
+}
+.rd-load-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-acc);
+  animation: augPulse 1s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-skelrow {
+  display: flex; align-items: center; gap: 6px; padding: 11px 16px;
+  border-bottom: 1px solid var(--rd-hair-05); overflow: hidden;
+}
+.rd-skelbar {
+  display: inline-block; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  animation: augShimmer 1.4s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-skelbar.hi { background: rgba(255, 255, 255, 0.07); }
+
+/* ==========================================================================
    MOBILE (<700px) — keep every real action reachable; the fkeys strip is the
    tab navigation, so it tiles full-width with 44px touch targets (same
    contract the old .bl-head-tab strip honored)
@@ -374,4 +691,31 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   .rd-bar2-right { flex-wrap: wrap; width: 100%; }
   .rd-bar2-div { display: none; }
   .rd-bar2-right .rd-btn { min-height: 44px; flex: 1; }
+
+  /* ---- STAGE 2: mobile board = cards, fully scrollable, NO horizontal
+     scroll (memory rule) — the rd- equivalent of the old bl- card collapse.
+     The grid template is dropped; cells flow as a wrapped card with the
+     thesis and source cite on their own lines. ---- */
+  .rd-board-wrap { overflow: visible; }
+  .rd-board-min { min-width: 0; }
+  .rd-colhead { display: none; }
+  .rd-row-grid {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 4px 10px; padding: 10px 12px; min-height: 44px;
+  }
+  .rd-c-thesis {
+    flex-basis: 100%; white-space: normal;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; line-height: 1.35;
+  }
+  .rd-c-src { flex-basis: 100%; }
+  .rd-delta { flex-direction: row; align-items: center; gap: 6px; }
+  .rd-rail { width: 56px; }
+  .rd-group { padding: 7px 12px; }
+  .rd-bhead, .rd-legend, .rd-filter-row { padding-left: 12px; padding-right: 12px; }
+
+  /* tracker filter chips are primary mobile controls — real tap targets */
+  .rd-fchip { min-height: 44px; padding: 3px 12px; }
+  /* board-state buttons need real tap areas too */
+  .rd-btn-lg, .rd-btn-retry { min-height: 44px; }
 }
