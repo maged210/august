@@ -614,7 +614,7 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 .rd-board-empty { padding: 64px 22px; text-align: center; border-top: 1px solid var(--rd-hair-06); }
 /* the empty state fills the blotter slot so filtering to zero matches never
    collapses the column and jumps the OPTIONS INTEL panel (old-skin contract) */
-.bl-center .rd-board-empty { flex: 1; }
+.rd-center .rd-board-empty { flex: 1; }
 .rd-empty-glyph { font-family: var(--rd-mono); font-size: 30px; color: var(--rd-t-empty); margin-bottom: 14px; }
 .rd-empty-title { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.18em; color: var(--rd-t-dim); margin-bottom: 9px; }
 .rd-empty-copy {
@@ -727,9 +727,8 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
    <1100px by the old skin's rule, which stays in force.
    ========================================================================== */
 
-/* the inspector column keeps its slot/scroll behavior; its contents now carry
-   the design's own header/body paddings, so the container padding collapses */
-.intel-root .bl-right { padding: 0 0 60px; }
+/* the inspector column keeps its slot/scroll behavior; its contents carry the
+   design's own header/body paddings (column shell lives in the stage-4 grid) */
 
 .rd-insp { min-width: 0; }
 .rd-insp-head {
@@ -1005,4 +1004,532 @@ a.rd-insp-src:hover { text-decoration: underline; }
 .rd-shim {
   height: 10px; background: rgba(255, 255, 255, 0.06); border-radius: 2px;
   animation: augShimmer 1.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   STAGE 4 — LEFT RAIL + BRIEF/SOURCES/ASK RETHEME
+   Left rail per SPEC-desktop §2.6 (main grid 252/fluid/384, sections at the
+   Standard secPad 12px 16px) + §2.6.1/§2.6.2-item-6 treatments. The tab
+   bodies (BRIEF/SOURCES/drawer) have no desktop design — they are restyled
+   by APPLYING THE TOKEN SYSTEM only: mono/sans stacks, the text ramp,
+   hairlines, 2–3px radii, the design's card/row/button/input treatments.
+   ========================================================================== */
+
+/* ---- main grid (§2.6): LEFT RAIL 252 · BOARD fluid · INSPECTOR 384 ---- */
+.rd-main {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr) 384px;
+  gap: 0;
+  min-height: calc(100vh - 120px);
+}
+.rd-lrail {
+  border-right: 1px solid var(--rd-hair-07);
+  overflow-y: auto; padding: 0 0 60px; min-width: 0;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+.rd-center {
+  overflow: hidden; display: flex; flex-direction: column; min-width: 0;
+  border-right: 1px solid var(--rd-hair-07);
+}
+.rd-inspcol {
+  overflow-y: auto; padding: 0 0 60px; min-width: 0;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+@media (max-width: 1100px) {
+  .rd-main { grid-template-columns: 240px minmax(0, 1fr); }
+  .rd-inspcol { display: none; }
+  .rd-center { border-right: none; }
+}
+
+/* ---- rail sections (§2.6.1: secPad 12px 16px, hairline-07 dividers) ---- */
+.rd-lsec { padding: 12px 16px; border-bottom: 1px solid var(--rd-hair-07); }
+.rd-lsec:last-child { border-bottom: none; }
+.rd-lsec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+.rd-lsec-h {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+
+/* ---- quick actions (kept real controls, design button treatment) ---- */
+.rd-lp-actions { display: flex; gap: 7px; }
+.rd-lp-btn { flex: 1; padding: 7px 4px; }
+.rd-lp-age {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); margin-top: 8px;
+}
+
+/* ---- TOP STOCKS card (§2.6.2 item 6, adapted to the 252px rail) ---- */
+.rd-ts-card {
+  background: var(--rd-card); border: 1px solid var(--rd-hair-07);
+  border-radius: 3px; padding: 12px 13px;
+}
+.rd-ts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rd-ts-title {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.16em;
+  color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-ts-hair { flex: 1; height: 1px; background: var(--rd-hair-05); min-width: 6px; }
+.rd-ts-note {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-ts-row {
+  display: grid; grid-template-columns: 14px 42px 1fr 14px auto 10px;
+  gap: 7px; align-items: center; width: 100%;
+  padding: 6px 5px; border: none; border-top: 1px solid var(--rd-hair-05);
+  background: none; cursor: pointer; text-align: left; border-radius: 0;
+}
+.rd-ts-row:hover { background: rgba(255, 255, 255, 0.03); }
+.rd-ts-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-ts-rank { font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-ghost); }
+.rd-ts-life {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 600;
+  letter-spacing: 0.04em; white-space: nowrap; min-width: 0; overflow: hidden;
+}
+/* borderless life chip takes the accent-family color ramp (rowLife.family) */
+.rd-ts-life.lc-trig, .rd-ts-life.lc-tgt { color: var(--rd-bull); }
+.rd-ts-life.lc-arm { color: var(--rd-amber); }
+.rd-ts-life.lc-act { color: var(--rd-blue); }
+.rd-ts-life.lc-inval { color: var(--rd-bear); }
+.rd-ts-life.lc-exp, .rd-ts-life.lc-watch { color: var(--rd-lo); }
+.rd-ts-tkr {
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-ts-dirg { font-family: var(--rd-mono); font-size: 9px; text-align: center; }
+.rd-ts-px {
+  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-brightest);
+  text-align: right; white-space: nowrap;
+}
+.rd-ts-go { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-ghost); text-align: right; }
+
+/* ---- TONIGHT'S BRIEF digest (§2.6.1 first section, real fields) ---- */
+.rd-digest-p {
+  font-family: var(--rd-sans); font-size: 12px; line-height: 1.5;
+  color: var(--rd-t-secondary); margin: 0 0 11px;
+}
+.rd-digest-dl { margin: 0; }
+.rd-digest-f {
+  display: grid; grid-template-columns: 76px 1fr; gap: 6px;
+  padding: 5px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-digest-f dt {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--rd-t-ghost); padding-top: 1px;
+}
+.rd-digest-f dd {
+  margin: 0; font-family: var(--rd-sans); font-size: 11px;
+  line-height: 1.4; color: var(--rd-t-body);
+}
+.rd-digest-bb { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
+.rd-digest-bb .rd-bb-p, .rd-digest-bb p { font-size: 11px; line-height: 1.45; margin: 0; }
+
+/* BULL/BEAR block — token translation (no desktop design for this element) */
+.rd-bb { min-width: 0; padding-left: 8px; }
+.rd-bb-bull { border-left: 2px solid var(--rd-bull); }
+.rd-bb-bear { border-left: 2px solid var(--rd-bear); }
+.rd-bb-h {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+.rd-bb-bull .rd-bb-h { color: var(--rd-bull); }
+.rd-bb-bear .rd-bb-h { color: var(--rd-bear); }
+.rd-bb p, .rd-bb-p {
+  font-family: var(--rd-sans); font-size: 12.5px; line-height: 1.5;
+  color: var(--rd-t-body); margin: 0;
+}
+
+/* ---- AT THE OPEN (design rows: 38px 1fr auto, hairline-06 tops) ---- */
+.rd-open-label {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.14em;
+  color: var(--rd-t-faint3); margin: 12px 0 7px;
+}
+.rd-open-row {
+  display: grid; grid-template-columns: 38px 1fr auto; gap: 7px;
+  align-items: center; padding: 5px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-open-tkr { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-tape-sym); }
+.rd-open-cond { font-family: var(--rd-sans); font-size: 10.5px; color: var(--rd-t-dim4); min-width: 0; }
+.rd-open-cond b {
+  font-family: var(--rd-mono); font-weight: 400; color: #a9c1d4; margin-left: 4px;
+}
+.rd-open-st { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em; white-space: nowrap; }
+.rd-open-ok { color: var(--rd-bull); font-weight: 600; }
+.rd-open-broken { color: var(--rd-bear); font-weight: 600; }
+.rd-open-wait { color: var(--rd-amber); }
+.rd-open-ns { color: var(--rd-t-absent); }
+
+/* ---- CAPTURE ---- */
+.rd-cap-add { width: 100%; }
+.rd-cap-body { margin-top: 8px; }
+.rd-cap-hint {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.04em;
+  color: var(--rd-acc); opacity: 0.85; margin-top: 6px;
+}
+.rd-cap-srcline {
+  display: block; width: 100%; margin-top: 12px; padding: 8px 0 2px;
+  background: none; border: none; border-top: 1px solid var(--rd-hair-06);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint); cursor: pointer; text-align: left;
+}
+.rd-cap-srcline:hover { color: var(--rd-t-chip); }
+
+/* ==========================================================================
+   STAGE 4 — token-system components for the BRIEF / SOURCES / ASK bodies
+   ========================================================================== */
+
+/* ---- button variants over the stage-1 .rd-btn base ---- */
+.rd-btn-sm { padding: 4px 9px; font-size: 9.5px; }
+.rd-btn-ghost { background: transparent; border-color: transparent; color: var(--rd-t-dim); }
+.rd-btn-ghost:hover { color: var(--rd-t-chip); }
+
+/* ---- cards (design card shell: #0b0d10, hairline-07, radius 3px) ---- */
+.rd-card {
+  background: var(--rd-card); border: 1px solid var(--rd-hair-07);
+  border-radius: 3px; padding: 14px 16px; margin-bottom: 12px;
+}
+.rd-card-acc { border-color: var(--rd-acc-soft25); }
+.rd-card-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 0 0 10px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--rd-t-muted);
+}
+
+/* ---- states / notes / banners ---- */
+.rd-state { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-faint); padding: 12px 0; }
+.rd-state-err { color: var(--rd-bear); }
+.rd-warn { color: var(--rd-val-amber); }
+.rd-note { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-ghost); }
+.rd-banner {
+  margin: 6px 16px; font-family: var(--rd-mono); font-size: 10.5px;
+  letter-spacing: 0.02em; color: var(--rd-t-secondary2);
+}
+
+/* ---- inputs (design input shell: #070809, hairline-10, radius 2px) ---- */
+.rd-input {
+  width: 100%; background: var(--rd-bar3-bg);
+  border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  color: var(--rd-t-body); font-family: var(--rd-mono);
+  font-size: 12px; line-height: 1.5; padding: 8px 10px;
+}
+.rd-input::placeholder { color: var(--rd-t-ghost); }
+.rd-input:focus { outline: none; border-color: var(--rd-acc-soft40); }
+.rd-input:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+textarea.rd-input { resize: vertical; min-height: 110px; }
+.rd-add-ta { min-height: 68px; resize: none; }
+.rd-add-ta-sm { font-size: 10.5px; min-height: 48px; }
+.rd-add-results { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.rd-add-result {
+  font-family: var(--rd-mono); font-size: 10px; padding: 4px 8px;
+  border-radius: 2px; background: var(--rd-inset);
+  border: 1px solid var(--rd-hair-06);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-add-ok { color: var(--rd-bull); }
+.rd-add-exist { color: var(--rd-t-faint); }
+.rd-add-err { color: var(--rd-bear); }
+
+/* ---- mini chips (token mini-chip; dashed inf mirrors the INFERRED chip) ---- */
+.rd-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; padding: 1px 5px;
+  border: 1px solid currentColor; border-radius: 2px;
+  white-space: nowrap; vertical-align: middle;
+}
+.rd-chip-ok { color: var(--rd-bull); }
+.rd-chip-err { color: var(--rd-bear); }
+.rd-chip-warn { color: var(--rd-amber); }
+.rd-chip-info { color: var(--rd-blue); }
+.rd-chip-dim { color: var(--rd-t-faint); }
+.rd-chip-inf { color: var(--rd-inferred); border-style: dashed; }
+.rd-chip-fav { color: var(--rd-val-amber); background: rgba(191, 160, 90, 0.08); }
+
+/* ---- source/video rows (design SOURCE MONITOR row treatment §2.6.1) ---- */
+.rd-irow {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px;
+  align-items: center; padding: 8px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-irow-thumb {
+  width: 44px; height: 30px; border-radius: 2px; object-fit: cover;
+  background: linear-gradient(135deg, #16202b, #0c1116);
+  border: 1px solid var(--rd-hair-10); display: block;
+}
+.rd-irow-main { min-width: 0; }
+.rd-irow-title {
+  font-family: var(--rd-sans); font-size: 11.5px; font-weight: 500;
+  color: var(--rd-t-body); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-irow-meta {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint2); margin-top: 4px;
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.rd-irow-actions { display: flex; gap: 6px; }
+.rd-irow.clickable { cursor: pointer; }
+.rd-irow.clickable:hover { background: rgba(255, 255, 255, 0.03); }
+
+/* ---- idea cards (BRIEF/drawer bodies — inset card + token type ramp) ---- */
+.rd-idea {
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 10px 12px; margin-bottom: 8px;
+}
+.rd-idea-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rd-idea-tkr {
+  font-family: var(--rd-mono); font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary);
+}
+.rd-idea-name { font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim); }
+.rd-idea-thesis {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.5;
+  color: var(--rd-t-body); margin: 8px 0;
+}
+.rd-idea-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 14px; margin-top: 8px;
+}
+.rd-idea-f { font-size: 11.5px; min-width: 0; }
+.rd-idea-f > span:first-child {
+  display: block; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--rd-t-ghost); margin-bottom: 2px;
+}
+.rd-idea-f b { font-family: var(--rd-sans); font-weight: 500; color: var(--rd-t-body); }
+.rd-opt-contract {
+  font-family: var(--rd-mono); font-size: 11px; letter-spacing: 0.02em;
+  color: var(--rd-t-secondary2); margin: 6px 0;
+}
+.rd-cite {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  color: var(--rd-acc); text-decoration: none;
+  display: inline-flex; gap: 5px; align-items: center;
+}
+a.rd-cite:hover { text-decoration: underline; }
+.rd-idea .rd-cite { margin-top: 8px; }
+.rd-body-p {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-body); margin: 0;
+}
+
+/* ---- brief card internals ---- */
+.rd-read60 {
+  font-family: var(--rd-sans); font-size: 14px; line-height: 1.55;
+  color: var(--rd-t-primary); margin: 0 0 12px;
+}
+.rd-briefrow {
+  display: grid; grid-template-columns: 110px 1fr; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-briefrow dt {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--rd-t-ghost); padding-top: 2px;
+}
+.rd-briefrow dd {
+  margin: 0; font-family: var(--rd-sans); font-size: 13px;
+  line-height: 1.5; color: var(--rd-t-body);
+}
+.rd-bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 640px) { .rd-bullbear { grid-template-columns: 1fr; } }
+
+/* ---- levels / catalysts / consensus rows ---- */
+.rd-lvlrow {
+  display: grid; grid-template-columns: 56px auto 1fr auto; gap: 10px;
+  padding: 6px 0; border-top: 1px solid var(--rd-hair-06);
+  align-items: center; font-size: 12px;
+}
+.rd-lvlrow-tkr { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-tape-sym); }
+.rd-lvlrow-val {
+  font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim);
+  min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.rd-lvlrow-val b { font-family: var(--rd-mono); font-weight: 500; color: var(--rd-t-body); }
+.rd-catrow { padding: 7px 0; border-top: 1px solid var(--rd-hair-06); font-family: var(--rd-sans); font-size: 12px; color: var(--rd-t-dim); }
+.rd-catrow b { color: var(--rd-t-primary); font-weight: 500; }
+.rd-catrow-time { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-ghost); margin-left: 6px; }
+.rd-catrow-tkrs { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-faint); }
+.rd-consrow {
+  display: grid; grid-template-columns: 56px 1fr auto; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--rd-hair-06);
+  align-items: center; font-size: 12px;
+}
+.rd-consrow-tkr { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-tape-sym); }
+.rd-consrow-srcs { font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim); min-width: 0; }
+
+/* ---- brief history bar ---- */
+.rd-hist-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--rd-hair-08);
+}
+.rd-hist-today { flex-shrink: 0; }
+.rd-hist-label {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--rd-t-ghost); flex-shrink: 0;
+}
+.rd-hist-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.rd-datepill {
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  padding: 4px 10px; border-radius: 2px;
+  border: 1px solid var(--rd-hair-10); background: transparent;
+  color: var(--rd-t-dim); cursor: pointer;
+}
+.rd-datepill:hover { color: var(--rd-t-chip); border-color: var(--rd-hair-14); }
+.rd-datepill.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+.rd-hist-empty { font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-ghost); }
+
+/* ---- SOURCES workflow hub ---- */
+.rd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.rd-step { display: flex; align-items: center; gap: 10px; font-family: var(--rd-sans); font-size: 12.5px; color: var(--rd-t-body); }
+.rd-step-n {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 700;
+  width: 20px; height: 20px; border-radius: 2px;
+  border: 1px solid var(--rd-acc-soft40); color: var(--rd-acc);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* ---- tab view container ---- */
+.rd-tabview { max-width: 1000px; margin: 0 auto; padding: 20px 16px 80px; width: 100%; }
+
+/* ---- video drawer ---- */
+.rd-drawer-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 40; }
+.rd-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 96vw);
+  background: var(--rd-frame); border-left: 1px solid var(--rd-hair-10);
+  z-index: 41; overflow-y: auto; padding: 18px 16px;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+.rd-drawer-x {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; color: var(--rd-t-dim);
+  font-size: 16px; cursor: pointer; padding: 8px;
+}
+.rd-drawer-x:hover { color: var(--rd-t-primary); }
+.rd-drawer-kicker { font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.16em; color: var(--rd-t-ghost); }
+.rd-drawer-title {
+  margin: 4px 0 6px; font-family: var(--rd-sans); font-size: 16px;
+  font-weight: 600; color: var(--rd-t-primary); line-height: 1.3;
+}
+.rd-shim-block { display: block; margin: 10px 0; }
+
+/* transcript capture card (STEP 1 semantics kept, accent treatment) */
+.rd-tx { border-color: var(--rd-acc-soft25); background: rgba(95, 176, 173, 0.04); }
+.rd-tx-step {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--rd-acc); margin-bottom: 8px;
+}
+.rd-tx-how {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.03em;
+  color: var(--rd-t-faint); margin-bottom: 10px;
+}
+.rd-tx-ta { min-height: 90px; }
+.rd-tx-btn { font-size: 11px; padding: 8px 18px; }
+
+/* chapters */
+.rd-chap {
+  display: flex; gap: 10px; padding: 6px 4px; align-items: baseline;
+  font-family: var(--rd-sans); font-size: 12px; color: var(--rd-t-secondary);
+  border-top: 1px solid var(--rd-hair-06); cursor: pointer;
+}
+.rd-chap:hover { color: var(--rd-t-primary); }
+.rd-chap:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-chap.active {
+  background: var(--rd-acc-soft06);
+  box-shadow: inset 0 0 0 1px var(--rd-acc-soft25);
+  border-radius: 2px;
+}
+.rd-chap-t { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-acc); min-width: 52px; text-decoration: none; }
+.rd-chap-t:hover { text-decoration: underline; }
+.rd-chap-hi { color: var(--rd-val-amber); }
+.rd-chap-cat {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--rd-t-ghost);
+  margin-left: auto; white-space: nowrap;
+}
+.rd-chap-filter {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim);
+}
+.rd-chap-filter b { color: var(--rd-t-primary); font-weight: 500; }
+
+/* ---- ASK AUGUST band (§2.7 treatments on the pinned bar) ---- */
+.rd-askbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  padding: 10px 16px;
+  background: rgba(7, 8, 9, 0.92);
+  border-top: 1px solid var(--rd-hair-08);
+  backdrop-filter: blur(8px);
+  display: flex; gap: 13px; align-items: center;
+}
+.rd-askbar-label {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); flex-shrink: 0;
+}
+.rd-askbar-shell {
+  flex: 1; display: flex; align-items: center; gap: 9px; min-width: 0;
+  border: 1px solid var(--rd-acc-soft25); border-radius: 2px;
+  background: var(--rd-inset); padding: 0 12px;
+}
+.rd-askbar-shell:focus-within { border-color: var(--rd-acc-soft40); }
+.rd-askbar-prompt { font-family: var(--rd-mono); font-size: 13px; color: var(--rd-acc); flex-shrink: 0; }
+.rd-askbar-input {
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
+  font-family: var(--rd-mono); font-size: 11.5px; color: var(--rd-t-body);
+  padding: 9px 0;
+}
+.rd-askbar-input::placeholder { color: var(--rd-t-ghost); }
+.rd-askbar-input:disabled { color: var(--rd-t-faint); }
+.rd-ask-btn {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-accbtn-text); background: var(--rd-acc-soft12);
+  border: 1px solid var(--rd-acc-soft40); border-radius: 2px;
+  padding: 8px 17px; cursor: pointer; flex-shrink: 0;
+}
+.rd-ask-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-askbar-ans {
+  position: absolute; bottom: calc(100% + 4px); left: 16px; right: 16px;
+  background: var(--rd-frame); border: 1px solid var(--rd-hair-12);
+  border-radius: 2px; padding: 14px 16px;
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.6;
+  color: var(--rd-t-body); max-height: 280px; overflow-y: auto;
+}
+.rd-askbar-ans .rd-state { padding: 0; }
+
+/* ---- disclaimer (§2.8 treatment; honest copy kept from the old skin) ---- */
+.rd-disc {
+  padding: 8px 16px; border-top: 1px solid var(--rd-hair-06);
+  background: var(--rd-frame);
+  font-family: var(--rd-mono); font-size: 8.5px; line-height: 1.6;
+  letter-spacing: 0.03em; color: var(--rd-t-disabled); text-align: center;
+  margin-top: 24px;
+}
+
+/* ==========================================================================
+   STAGE 4 — MOBILE (<700px): rail hidden (rule of record — mobile paths are
+   header row2 + the SOURCES tab), 44px targets on every reachable control
+   (the .ibtn selector keeps the OPTIONS tab's old-skin buttons covered)
+   ========================================================================== */
+
+@media (max-width: 700px) {
+  .rd-main { grid-template-columns: 1fr; }
+  .rd-lrail { display: none; }
+  .rd-center { border-right: none; }
+
+  .rd-tabview .rd-btn, .rd-tabview .ibtn,
+  .rd-drawer .rd-btn { min-height: 44px; }
+  .rd-hist-pills .rd-datepill, .rd-hist-today { min-height: 44px; }
+  .rd-drawer-x { min-width: 44px; min-height: 44px; }
+
+  .rd-askbar { gap: 8px; }
+  /* keep the accessible name; reclaim the row for the input on phones */
+  .rd-askbar-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  .rd-askbar-shell { min-height: 44px; }
+  .rd-ask-btn { min-height: 44px; }
 }

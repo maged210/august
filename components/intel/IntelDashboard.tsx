@@ -144,36 +144,42 @@ function buildBlotter(brief: DailyBrief | null, quotes: QuoteMap): BlotterIdea[]
     .map((idea) => ({ ...idea, __fav: favIds.has(idea.id), quote: quotes[idea.ticker.toUpperCase()] ?? null }));
 }
 
+// AT-THE-OPEN gate states, design palette (SPEC-desktop §2.6.1): CLEARED green,
+// BROKEN red, and a not-yet-tripped distance shown in the design's amber
+// "pending" treatment (the sign stays in the label — no green/red guessing).
 function atOpenState(l: IntelLevel, quotes: QuoteMap): { label: string; cls: string } {
   const q = quotes[l.instrument.toUpperCase()];
   if (!q || l.level == null) return { label: "—", cls: "" };
   const { price } = q;
   const pct = ((price - l.level) / l.level) * 100;
   if (l.type === "resistance" || l.type === "breakout") {
-    if (price > l.level) return { label: "CLEARED", cls: "bl-cleared" };
+    if (price > l.level) return { label: "CLEARED", cls: "rd-open-ok" };
   }
   if (l.type === "support" || l.type === "breakdown") {
-    if (price < l.level) return { label: "BROKEN", cls: "bl-broken" };
+    if (price < l.level) return { label: "BROKEN", cls: "rd-open-broken" };
   }
-  return { label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%", cls: pct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg" };
+  return { label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%", cls: "rd-open-wait" };
 }
 
 function val(v: { value: number | null; text: string }) {
   if (v.value === null && (!v.text || /not specified/i.test(v.text)))
-    return <span className="notspec">⌀ n/s</span>;
+    return <AbsentCell />; // REUSED design absent treatment (∅ n/s)
   return <b>{v.text || (v.value !== null ? String(v.value) : "—")}</b>;
 }
 
 // ── micro components ─────────────────────────────────────────────────────────
+// rd-chip is the token-system mini-chip for the BRIEF/SOURCES/drawer bodies
+// (mono 7.5px, 2px radius, currentColor border) — copy unchanged, colors map
+// onto the P palette; the dashed-inf variant mirrors the INFERRED evidence chip.
 
 function DirBadge({ d }: { d: TradeIdea["direction"] }) {
-  const cls = d === "bullish" ? "b-bull" : d === "bearish" ? "b-bear" : d === "watch" ? "b-watch" : "b-neutral";
-  return <span className={`badge ${cls}`}>{d}</span>;
+  const cls = d === "bullish" ? "rd-chip-ok" : d === "bearish" ? "rd-chip-err" : d === "watch" ? "rd-chip-warn" : "rd-chip-dim";
+  return <span className={`rd-chip ${cls}`}>{d}</span>;
 }
 
 function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
   return (
-    <span className={`badge ${e === "explicit" ? "b-explicit" : "b-inferred"}`}>
+    <span className={`rd-chip ${e === "explicit" ? "rd-chip-info" : "rd-chip-inf"}`}>
       {e === "explicit" ? "Direct source" : "Inference"}
     </span>
   );
@@ -1507,12 +1513,62 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
   );
 }
 
-// ── LeftPanel ────────────────────────────────────────────────────────────────
+// ── LeftPanel (design left rail — SPEC-desktop §2.6.1, SPEC-wiring §2.11) ────
+
+/** TOP STOCKS — pure client derivation (SPEC-wiring §2.11): the blotter
+ * sorted by rankScore desc, top 5. Row spec from the design's TOP STOCKS
+ * TODAY card (SPEC-desktop §2.6.2 item 6), adapted to the 252px rail: rank ·
+ * life chip (borderless variant) · ticker · dir glyph · live px · ›. The life
+ * chip reuses rowLife so the rail can never disagree with the board; clicking
+ * a row selects that idea on the board. Zero ideas → the section is absent. */
+function TopStocksPanel({ blotter, trackedByIdeaId, onSelectIdea }: {
+  blotter: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  onSelectIdea: (id: string) => void;
+}) {
+  const top = [...blotter].sort((a, b) => b.rankScore - a.rankScore).slice(0, 5);
+  if (top.length === 0) return null;
+  return (
+    <section className="rd-lsec">
+      <div className="rd-ts-card">
+        <div className="rd-ts-head">
+          <span className="rd-ts-title">TOP STOCKS TODAY</span>
+          <span className="rd-ts-hair" aria-hidden="true" />
+          <span className="rd-ts-note">click → plan</span>
+        </div>
+        {top.map((idea, i) => {
+          const life = rowLife(idea, trackedByIdeaId.get(idea.id) ?? null);
+          const dirMeta = RD_DIR[idea.direction];
+          return (
+            <button
+              key={idea.id}
+              type="button"
+              className="rd-ts-row"
+              onClick={() => onSelectIdea(idea.id)}
+              title={`${idea.ticker} · ${RD_DIR_LABEL[idea.direction]} · rank ${idea.rankScore.toFixed(2)} — open on the board`}
+            >
+              <span className="rd-ts-rank">{i + 1}</span>
+              <span className={`rd-ts-life ${life.family}`} title={life.title}>
+                <span className="rd-life-dot" aria-hidden="true" />
+                {life.label}
+              </span>
+              <span className="rd-ts-tkr">{idea.ticker}</span>
+              <span className={`rd-ts-dirg ${dirMeta.cls}`} aria-hidden="true">{dirMeta.glyph}</span>
+              <span className="rd-ts-px">{idea.quote ? rdPx(idea.quote.price) : "—"}</span>
+              <span className="rd-ts-go" aria-hidden="true">›</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function LeftPanel({
   brief, quotes, onReload,
   onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
   sourceCount, videoCount, onGoSources,
+  blotter, trackedByIdeaId, onSelectIdea,
 }: {
   brief: DailyBrief | null;
   onReload: () => Promise<void>;
@@ -1525,81 +1581,93 @@ function LeftPanel({
   sourceCount: number;
   videoCount: number;
   onGoSources: () => void;
+  blotter: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  onSelectIdea: (id: string) => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   return (
-    <div className="bl-left">
-      <div className="bl-lp-actions">
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
-          {busy === "sync" ? "Syncing…" : "SYNC"}
-        </button>
-        <button className="ibtn ibtn-primary bl-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
-          {busy === "brief" ? "Generating…" : "BRIEF"}
-        </button>
-      </div>
-      {lastBriefAt > 0 && (
-        <div className="bl-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
-      )}
+    <div className="rd-lrail">
+      {/* quick actions — per-op aria-busy + both-disabled-while-busy semantics
+          and the ai gating on BRIEF preserved exactly */}
+      <section className="rd-lsec">
+        <div className="rd-lp-actions">
+          <button type="button" className="rd-btn rd-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
+            {busy === "sync" ? "Syncing…" : "SYNC"}
+          </button>
+          <button type="button" className="rd-btn rd-btn-acc rd-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
+            {busy === "brief" ? "Generating…" : "BRIEF"}
+          </button>
+        </div>
+        {lastBriefAt > 0 && (
+          <div className="rd-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
+        )}
+      </section>
+
+      {/* TOP STOCKS — derived, absent until the blotter has ideas.
+          (Fold-in chips/strip/line and the map panel are stages 5–6 — no
+          placeholder sections; they are simply absent until built.) */}
+      <TopStocksPanel blotter={blotter} trackedByIdeaId={trackedByIdeaId} onSelectIdea={onSelectIdea} />
+
+      {/* TONIGHT'S BRIEF digest + AT THE OPEN (one section, per the design) */}
       {brief && (
-        <>
-          <div className="bl-ph">Tonight&apos;s Brief</div>
-          {brief.posture && <p className="bl-brief-posture">{brief.posture}</p>}
-          <dl style={{ margin: 0 }}>
+        <section className="rd-lsec">
+          <div className="rd-lsec-head"><span className="rd-lsec-h">TONIGHT&apos;S BRIEF</span></div>
+          {brief.posture && <p className="rd-digest-p">{brief.posture}</p>}
+          <dl className="rd-digest-dl">
             {brief.watchAtOpen && (
-              <div className="bl-brief-field"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
+              <div className="rd-digest-f"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
             )}
             {brief.whatMattersTomorrow && (
-              <div className="bl-brief-field"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>
+              <div className="rd-digest-f"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>
             )}
             {brief.invalidation && (
-              <div className="bl-brief-field"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>
+              <div className="rd-digest-f"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>
             )}
           </dl>
           {(brief.bullCase || brief.bearCase) && (
-            <div className="bl-bullbear" style={{ marginTop: 8 }}>
-              <div className="bl-bull"><div className="bl-bull-h">BULL</div><p>{brief.bullCase || "—"}</p></div>
-              <div className="bl-bear"><div className="bl-bear-h">BEAR</div><p>{brief.bearCase || "—"}</p></div>
+            <div className="rd-digest-bb">
+              <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL</div><p>{brief.bullCase || "—"}</p></div>
+              <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR</div><p>{brief.bearCase || "—"}</p></div>
             </div>
           )}
-        </>
-      )}
-
-      {/* AT THE OPEN */}
-      {brief && brief.levels.length > 0 && (
-        <>
-          <div className="bl-ph">AT THE OPEN</div>
-          {brief.levels.slice(0, 10).map((l) => {
-            const { label, cls } = atOpenState(l, quotes);
-            return (
-              <div key={l.id} className="bl-atopen-row">
-                <span className="bl-atopen-inst">{l.instrument}</span>
-                <span style={{ fontSize: 10, color: "var(--ash)", opacity: 0.7 }}>
-                  {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
-                  {l.level != null && <b style={{ marginLeft: 4, color: "var(--bone)", fontFamily: "var(--font-mono), monospace" }}>${l.level}</b>}
-                </span>
-                <span className={cls || "bl-ns"}>{label}</span>
-              </div>
-            );
-          })}
-        </>
+          {brief.levels.length > 0 && (
+            <>
+              <div className="rd-open-label">AT THE OPEN</div>
+              {brief.levels.slice(0, 10).map((l) => {
+                const { label, cls } = atOpenState(l, quotes);
+                return (
+                  <div key={l.id} className="rd-open-row">
+                    <span className="rd-open-tkr">{l.instrument}</span>
+                    <span className="rd-open-cond">
+                      {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
+                      {l.level != null && <b>${l.level}</b>}
+                    </span>
+                    <span className={`rd-open-st ${cls || "rd-open-ns"}`}>{label}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </section>
       )}
 
       {/* CAPTURE — one lightweight add action; management lives in SOURCES (F3) */}
-      <div className="bl-ph">Capture</div>
-      <button className="ibtn ibtn-sm bl-lp-addbtn" onClick={() => setAddOpen((o) => !o)}>
-        {addOpen ? "− CLOSE" : "+ ADD SOURCE"}
-      </button>
-      {addOpen && (
-        <div style={{ marginTop: 8 }}>
-          <AddSource onReload={onReload} compact />
-          <div className="bl-lp-hint" style={{ display: "block", marginTop: 6 }}>
-            processing continues in SOURCES
+      <section className="rd-lsec">
+        <div className="rd-lsec-head"><span className="rd-lsec-h">CAPTURE</span></div>
+        <button type="button" className="rd-btn rd-cap-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
+          {addOpen ? "− CLOSE" : "+ ADD SOURCE"}
+        </button>
+        {addOpen && (
+          <div className="rd-cap-body">
+            <AddSource onReload={onReload} compact />
+            <div className="rd-cap-hint">processing continues in SOURCES</div>
           </div>
-        </div>
-      )}
-      <button className="bl-lp-srcline" onClick={onGoSources}>
-        {sourceCount} SOURCE{sourceCount !== 1 ? "S" : ""} · {videoCount} VIDEO{videoCount !== 1 ? "S" : ""} → F3 SOURCES
-      </button>
+        )}
+        <button type="button" className="rd-cap-srcline" onClick={onGoSources}>
+          {sourceCount} SOURCE{sourceCount !== 1 ? "S" : ""} · {videoCount} VIDEO{videoCount !== 1 ? "S" : ""} → F3 SOURCES
+        </button>
+      </section>
     </div>
   );
 }
@@ -1633,34 +1701,43 @@ function AskBar({ ai }: { ai: boolean }) {
     finally { setBusy(false); }
   };
 
+  // design ASK AUGUST band (SPEC-desktop §2.7) on the existing pinned bar:
+  // label + › prompt + accent-hairline input shell + accent Ask button. Error
+  // state + dismiss + the ANTHROPIC_API_KEY gating are unchanged; the design's
+  // fake block caret is not shipped (a real input has a real caret).
   return (
-    <div className="bl-askbar">
+    <div className="rd-askbar">
       {askErr && !res && (
-        <div className="bl-askbar-ans">
-          <span className="istate istate-err">ASK failed — try again.</span>
-          <button className="ibtn ibtn-sm ibtn-ghost" style={{ marginLeft: 10 }} onClick={() => setAskErr(false)}>Dismiss</button>
+        <div className="rd-askbar-ans">
+          <span className="rd-state rd-state-err">ASK failed — try again.</span>
+          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginLeft: 10 }} onClick={() => setAskErr(false)}>Dismiss</button>
         </div>
       )}
       {res && (
-        <div className="bl-askbar-ans">
+        <div className="rd-askbar-ans">
           <div style={{ marginBottom: 8 }}>{res.answer}</div>
           {res.citations.map((c, i) => (
-            <a key={i} className="idea-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
+            <a key={i} className="rd-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
               ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
             </a>
           ))}
-          <button className="ibtn ibtn-sm ibtn-ghost" style={{ marginTop: 8 }} onClick={() => setRes(null)}>Dismiss</button>
+          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginTop: 8 }} onClick={() => setRes(null)}>Dismiss</button>
         </div>
       )}
-      <input
-        className="bl-askbar-input"
-        placeholder={ai ? "> what did the source say about QQQ, and which ideas have no stated invalidation?" : "> ask AUGUST (needs ANTHROPIC_API_KEY)"}
-        value={q}
-        disabled={!ai}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-      />
-      <button className="ibtn ibtn-primary" disabled={busy || !ai || q.trim().length < 3} onClick={ask}>
+      <label className="rd-askbar-label" htmlFor="rd-ask-input">ASK AUGUST</label>
+      <div className="rd-askbar-shell">
+        <span className="rd-askbar-prompt" aria-hidden="true">›</span>
+        <input
+          id="rd-ask-input"
+          className="rd-askbar-input"
+          placeholder={ai ? "what did the source say about QQQ, and which ideas have no stated invalidation?" : "ask AUGUST (needs ANTHROPIC_API_KEY)"}
+          value={q}
+          disabled={!ai}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+        />
+      </div>
+      <button type="button" className="rd-ask-btn" disabled={busy || !ai || q.trim().length < 3} onClick={ask}>
         {busy ? "…" : "ASK"}
       </button>
     </div>
@@ -1672,29 +1749,29 @@ function AskBar({ ai }: { ai: boolean }) {
 function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea; favorite?: boolean; onOpenVideo?: (id: string) => void }) {
   const b = idea as BriefIdea;
   return (
-    <div className="idea">
-      <div className="idea-top">
-        <span className="idea-tkr">{idea.ticker}</span>
-        {idea.assetName && <span className="idea-name">{idea.assetName}</span>}
+    <div className="rd-idea">
+      <div className="rd-idea-top">
+        <span className="rd-idea-tkr">{idea.ticker}</span>
+        {idea.assetName && <span className="rd-idea-name">{idea.assetName}</span>}
         <DirBadge d={idea.direction} />
-        <span className="badge b-neutral">{idea.timeHorizon.replace("_", " ")}</span>
+        <span className="rd-chip rd-chip-dim">{idea.timeHorizon.replace("_", " ")}</span>
         <ExpBadge e={idea.explicitness} />
-        {favorite && <span className="badge b-fav">Creator favorite</span>}
-        {idea.creatorDesignation.isPrediction && <span className="badge b-pred">Prediction</span>}
-        {idea.enriched?.triggered && <span className="badge b-triggered">Triggered</span>}
-        {idea.enriched?.invalidated && <span className="badge b-invalid">Invalidated</span>}
+        {favorite && <span className="rd-chip rd-chip-fav">Creator favorite</span>}
+        {idea.creatorDesignation.isPrediction && <span className="rd-chip rd-chip-info">Prediction</span>}
+        {idea.enriched?.triggered && <span className="rd-chip rd-chip-ok">Triggered</span>}
+        {idea.enriched?.invalidated && <span className="rd-chip rd-chip-err">Invalidated</span>}
       </div>
-      <div className="idea-thesis">{idea.thesis}</div>
-      <div className="idea-grid">
-        <div className="idea-f"><span>Entry</span>{val(idea.entry)}</div>
-        <div className="idea-f"><span>Invalidation</span>{val(idea.invalidation)}</div>
-        <div className="idea-f"><span>Target</span>{idea.targets[0] ? val(idea.targets[0]) : <span className="notspec">⌀ n/s</span>}</div>
-        <div className="idea-f"><span>Catalyst</span><b>{idea.catalysts[0] ?? "—"}</b></div>
-        {idea.enriched?.price != null && <div className="idea-f"><span>Live price</span><b>${idea.enriched.price.toFixed(2)}</b></div>}
-        <div className="idea-f"><span>Confidence</span><b>{(idea.confidence * 100).toFixed(0)}%</b></div>
+      <div className="rd-idea-thesis">{idea.thesis}</div>
+      <div className="rd-idea-grid">
+        <div className="rd-idea-f"><span>Entry</span>{val(idea.entry)}</div>
+        <div className="rd-idea-f"><span>Invalidation</span>{val(idea.invalidation)}</div>
+        <div className="rd-idea-f"><span>Target</span>{idea.targets[0] ? val(idea.targets[0]) : <AbsentCell />}</div>
+        <div className="rd-idea-f"><span>Catalyst</span><b>{idea.catalysts[0] ?? "—"}</b></div>
+        {idea.enriched?.price != null && <div className="rd-idea-f"><span>Live price</span><b>${idea.enriched.price.toFixed(2)}</b></div>}
+        <div className="rd-idea-f"><span>Confidence</span><b>{(idea.confidence * 100).toFixed(0)}%</b></div>
       </div>
       {idea.videoId && (
-        <a className="idea-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
+        <a className="rd-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
           ▸ {b.channelTitle ?? "source"} @ {mmss(idea.sourceStartSeconds)}
           {b.rankScore !== undefined ? ` · rank ${b.rankScore}` : ""}
         </a>
@@ -1705,66 +1782,69 @@ function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea
 
 function LevelRow({ l }: { l: IntelLevel }) {
   return (
-    <div className="lvl-row">
-      <span className="intel-mono" style={{ color: "var(--bone)" }}>{l.instrument}</span>
-      <span className="badge b-neutral">{l.type}</span>
-      <span style={{ color: "var(--ash)", fontSize: 11 }}>
-        {l.level !== null ? l.level : <span className="notspec">{l.levelText || "⌀ n/s"}</span>}
-        {l.crossed ? <span className="badge b-triggered">crossed</span> : null}
+    <div className="rd-lvlrow">
+      <span className="rd-lvlrow-tkr">{l.instrument}</span>
+      <span className="rd-chip rd-chip-dim">{l.type}</span>
+      <span className="rd-lvlrow-val">
+        {/* level text is the creator's verbatim qualitative wording → the
+            design's narrative-cell treatment (REUSED NarrCell) */}
+        {l.level !== null ? <b>{l.level}</b> : l.levelText ? <NarrCell text={l.levelText} /> : <AbsentCell />}
+        {l.crossed ? <span className="rd-chip rd-chip-ok" style={{ marginLeft: 6 }}>crossed</span> : null}
       </span>
       {l.videoId
-        ? <a className="idea-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
-        : <span className="idea-cite">@{mmss(l.sourceStartSeconds)}</span>}
+        ? <a className="rd-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
+        : <span className="rd-cite">@{mmss(l.sourceStartSeconds)}</span>}
     </div>
   );
 }
 
 function CatalystRow({ c }: { c: IntelCatalyst }) {
   return (
-    <div className="cat-row">
-      <b style={{ color: "var(--bone)" }}>{c.name}</b>{" "}
-      <span className={`badge ${c.importance === "high" ? "b-bear" : c.importance === "medium" ? "b-watch" : "b-neutral"}`}>{c.importance}</span>{" "}
-      <span className={`badge ${c.externallyVerified ? "b-verified" : "b-inferred"}`}>{c.externallyVerified ? "Verified" : "Creator claim"}</span>
-      {c.eventTime && <span className="intel-mono" style={{ color: "var(--ash)", fontSize: 10, marginLeft: 6 }}>{c.eventTime}</span>}
-      {c.affectedTickers.length > 0 && <span style={{ color: "var(--steel)", fontSize: 11 }}> · {c.affectedTickers.join(" ")}</span>}
+    <div className="rd-catrow">
+      <b>{c.name}</b>{" "}
+      <span className={`rd-chip ${c.importance === "high" ? "rd-chip-err" : c.importance === "medium" ? "rd-chip-warn" : "rd-chip-dim"}`}>{c.importance}</span>{" "}
+      <span className={`rd-chip ${c.externallyVerified ? "rd-chip-ok" : "rd-chip-inf"}`}>{c.externallyVerified ? "Verified" : "Creator claim"}</span>
+      {c.eventTime && <span className="rd-catrow-time">{c.eventTime}</span>}
+      {c.affectedTickers.length > 0 && <span className="rd-catrow-tkrs"> · {c.affectedTickers.join(" ")}</span>}
     </div>
   );
 }
 
 function DrawerOptionRow({ o }: { o: OptionIdea }) {
   const origin =
-    o.origin === "creator_explicit" ? <span className="badge b-explicit">Creator play</span>
-    : o.origin === "august_candidate" ? <span className="badge b-inferred">AUGUST candidate</span>
-    : <span className="badge b-watch">Directional only</span>;
+    o.origin === "creator_explicit" ? <span className="rd-chip rd-chip-info">Creator play</span>
+    : o.origin === "august_candidate" ? <span className="rd-chip rd-chip-inf">AUGUST candidate</span>
+    : <span className="rd-chip rd-chip-warn">Directional only</span>;
   const contract = o.legs.length
     ? o.legs.map((l) => `${l.action} ${l.strike ?? "?"}${l.optionType === "call" ? "C" : "P"}${l.expiration ? ` ${l.expiration}` : ""}`).join(" / ")
     : "no contract specified";
   return (
-    <div className="optidea">
-      <div className="optidea-top">
-        <span className="idea-tkr">{o.underlyingSymbol}</span>
-        <span className={`badge ${o.direction === "bullish" ? "b-bull" : o.direction === "bearish" ? "b-bear" : "b-neutral"}`}>{o.direction}</span>
-        <span className="badge b-neutral">{o.strategyType.replace(/_/g, " ")}</span>
+    <div className="rd-idea">
+      <div className="rd-idea-top">
+        <span className="rd-idea-tkr">{o.underlyingSymbol}</span>
+        <span className={`rd-chip ${o.direction === "bullish" ? "rd-chip-ok" : o.direction === "bearish" ? "rd-chip-err" : "rd-chip-dim"}`}>{o.direction}</span>
+        <span className="rd-chip rd-chip-dim">{o.strategyType.replace(/_/g, " ")}</span>
         {origin}
       </div>
-      <div className="optidea-contract">{contract}</div>
-      <div className="idea-grid">
-        <div className="idea-f"><span>Expiration</span>{o.expirationText?.resolved ? <b>{o.expirationText.resolved}</b> : o.expirationText?.text ? <span className="notspec">{o.expirationText.text}</span> : <span className="notspec">⌀ n/s</span>}</div>
-        <div className="idea-f"><span>Creator premium</span>{o.quotedPremium !== null ? <b>${o.quotedPremium}</b> : <span className="notspec">⌀ n/s</span>}</div>
-        <div className="idea-f"><span>Breakeven</span>{o.breakevens.length ? <b>{o.breakevens.join(", ")}</b> : <span className="notspec">Not computable</span>}</div>
+      <div className="rd-opt-contract">{contract}</div>
+      <div className="rd-idea-grid">
+        {/* relative expiry wording is verbatim creator phrasing → NarrCell */}
+        <div className="rd-idea-f"><span>Expiration</span>{o.expirationText?.resolved ? <b>{o.expirationText.resolved}</b> : o.expirationText?.text ? <NarrCell text={o.expirationText.text} /> : <AbsentCell />}</div>
+        <div className="rd-idea-f"><span>Creator premium</span>{o.quotedPremium !== null ? <b>${o.quotedPremium}</b> : <AbsentCell />}</div>
+        <div className="rd-idea-f"><span>Breakeven</span>{o.breakevens.length ? <b>{o.breakevens.join(", ")}</b> : <AbsentCell text="Not computable" />}</div>
       </div>
-      {o.videoId && <a className="idea-cite" href={watchUrl(o.videoId, o.sourceStartSeconds)} target="_blank" rel="noreferrer">▸ source @ {mmss(o.sourceStartSeconds)}</a>}
+      {o.videoId && <a className="rd-cite" href={watchUrl(o.videoId, o.sourceStartSeconds)} target="_blank" rel="noreferrer">▸ source @ {mmss(o.sourceStartSeconds)}</a>}
     </div>
   );
 }
 
 function ConsensusRow({ c }: { c: ConsensusItem }) {
-  const cls = c.agreement === "conflict" ? "b-conflict" : c.agreement === "agree" ? "b-triggered" : "b-neutral";
+  const cls = c.agreement === "conflict" ? "rd-chip-err" : c.agreement === "agree" ? "rd-chip-ok" : "rd-chip-dim";
   return (
-    <div className="consensus-row">
-      <span className="intel-mono" style={{ color: "var(--bone)" }}>{c.ticker}</span>
-      <span style={{ fontSize: 11, color: "var(--ash)" }}>{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
-      <span className={`badge ${cls}`}>{c.agreement}</span>
+    <div className="rd-consrow">
+      <span className="rd-consrow-tkr">{c.ticker}</span>
+      <span className="rd-consrow-srcs">{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
+      <span className={`rd-chip ${cls}`}>{c.agreement}</span>
     </div>
   );
 }
@@ -1803,23 +1883,22 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
     return (
       <div>
         <textarea
-          className="iinput iadd-ta"
-          style={{ fontSize: 10.5, minHeight: 48 }}
+          className="rd-input rd-add-ta rd-add-ta-sm"
           placeholder={"Paste URL · @handle · video\n(newline or comma-separated)"}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
         />
         <div style={{ marginTop: 5, display: "flex", gap: 6, alignItems: "center" }}>
-          <button className="ibtn ibtn-sm ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
+          <button type="button" className="rd-btn rd-btn-sm rd-btn-acc" disabled={busy || !text.trim()} onClick={submit}>
             {busy ? "Adding…" : "Add"}
           </button>
-          <span className="inote" style={{ fontSize: 9 }}>Ctrl+Enter</span>
+          <span className="rd-note" style={{ fontSize: 9 }}>Ctrl+Enter</span>
         </div>
         {results.length > 0 && (
-          <div className="iadd-results">
+          <div className="rd-add-results">
             {results.map((r, i) => (
-              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 9.5 }}>
+              <div key={i} className={`rd-add-result ${r.status === "ok" ? "rd-add-ok" : r.status === "exists" ? "rd-add-exist" : "rd-add-err"}`} style={{ fontSize: 9.5 }}>
                 {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
               </div>
             ))}
@@ -1830,54 +1909,54 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
   }
 
   return (
-    <div className="icard">
-      <div className="icard-h">Add sources</div>
+    <div className="rd-card">
+      <div className="rd-card-h">Add sources</div>
       <textarea
-        className="iinput iadd-ta"
+        className="rd-input rd-add-ta"
         placeholder={"Paste one or more URLs (newline- or comma-separated):\nchannel URL · @handle · video URL"}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
       />
       <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-        <button className="ibtn ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
+        <button type="button" className="rd-btn rd-btn-acc" disabled={busy || !text.trim()} onClick={submit}>
           {busy ? "Adding…" : "Add"}
         </button>
-        <span className="inote">Ctrl+Enter to submit</span>
+        <span className="rd-note">Ctrl+Enter to submit</span>
       </div>
       {results.length > 0 && (
-        <div className="iadd-results">
+        <div className="rd-add-results">
           {results.map((r, i) => (
-            <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`}>
+            <div key={i} className={`rd-add-result ${r.status === "ok" ? "rd-add-ok" : r.status === "exists" ? "rd-add-exist" : "rd-add-err"}`}>
               {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
             </div>
           ))}
         </div>
       )}
-      <div className="inote">Seeds: paste a Stock Market Live or StockedUp video URL to start, or a channel to monitor.</div>
+      <div className="rd-note" style={{ marginTop: 8 }}>Seeds: paste a Stock Market Live or StockedUp video URL to start, or a channel to monitor.</div>
     </div>
   );
 }
 
 function SourceMonitor({ sources, onRemove }: { sources: IntelSource[]; onRemove: (id: string) => void }) {
   return (
-    <div className="icard">
-      <div className="icard-h">Source Monitor · {sources.length}</div>
-      {sources.length === 0 ? <div className="istate">No sources yet.</div> : sources.map((s) => (
-        <div key={s.id} className="irow">
-          {s.thumbnail ? <img className="irow-thumb" src={s.thumbnail} alt="" /> : <span className="irow-thumb" />}
-          <div className="irow-main">
-            <div className="irow-title">{s.title}</div>
-            <div className="irow-meta">
+    <div className="rd-card">
+      <div className="rd-card-h">Source Monitor · {sources.length}</div>
+      {sources.length === 0 ? <div className="rd-state">No sources yet.</div> : sources.map((s) => (
+        <div key={s.id} className="rd-irow">
+          {s.thumbnail ? <img className="rd-irow-thumb" src={s.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
+          <div className="rd-irow-main">
+            <div className="rd-irow-title">{s.title}</div>
+            <div className="rd-irow-meta">
               <span>{s.type}</span>
-              <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`}>{s.status}</span>
+              <span className={`rd-chip ${s.status === "active" ? "rd-chip-ok" : "rd-chip-warn"}`}>{s.status}</span>
               <span>checked {ago(s.lastChecked)}</span>
-              {s.error && <span className="iwarn">{s.error}</span>}
+              {s.error && <span className="rd-warn">{s.error}</span>}
             </div>
           </div>
-          <div className="irow-actions">
-            <a className="ibtn ibtn-sm ibtn-ghost" href={s.url} target="_blank" rel="noreferrer">View</a>
-            <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => onRemove(s.id)}>Remove</button>
+          <div className="rd-irow-actions">
+            <a className="rd-btn rd-btn-sm rd-btn-ghost" href={s.url} target="_blank" rel="noreferrer">View</a>
+            <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => onRemove(s.id)}>Remove</button>
           </div>
         </div>
       ))}
@@ -1886,32 +1965,32 @@ function SourceMonitor({ sources, onRemove }: { sources: IntelSource[]; onRemove
 }
 
 function statusBadge(v: IntelVideo) {
-  if (v.liveState === "live") return <span className="badge b-live">Live</span>;
-  if (v.status === "analyzing") return <span className="badge b-proc">Processing</span>;
-  if (v.status === "preliminary") return <span className="badge b-proc">Preliminary</span>;
-  if (v.status === "analyzed") return <span className="badge b-verified">Analyzed</span>;
+  if (v.liveState === "live") return <span className="rd-chip rd-chip-err">Live</span>;
+  if (v.status === "analyzing") return <span className="rd-chip rd-chip-warn">Processing</span>;
+  if (v.status === "preliminary") return <span className="rd-chip rd-chip-warn">Preliminary</span>;
+  if (v.status === "analyzed") return <span className="rd-chip rd-chip-ok">Analyzed</span>;
   if (v.transcriptStatus === "pending" || v.transcriptStatus === "unavailable")
-    return <span className="badge b-pending">Transcript {v.transcriptStatus}</span>;
-  return <span className="badge b-pending">{v.status}</span>;
+    return <span className="rd-chip rd-chip-dim">Transcript {v.transcriptStatus}</span>;
+  return <span className="rd-chip rd-chip-dim">{v.status}</span>;
 }
 
 function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: string) => void }) {
   return (
-    <div className="icard">
-      <div className="icard-h">Video Library · {videos.length}</div>
-      {videos.length === 0 ? <div className="istate">No videos yet — add a video source above.</div> : videos.slice(0, 20).map((v) => (
-        <div key={v.videoId} className="irow clickable" onClick={() => onOpen(v.videoId)}>
-          {v.thumbnail ? <img className="irow-thumb" src={v.thumbnail} alt="" /> : <span className="irow-thumb" />}
-          <div className="irow-main">
-            <div className="irow-title">{v.title}</div>
-            <div className="irow-meta">
+    <div className="rd-card">
+      <div className="rd-card-h">Video Library · {videos.length}</div>
+      {videos.length === 0 ? <div className="rd-state">No videos yet — add a video source above.</div> : videos.slice(0, 20).map((v) => (
+        <div key={v.videoId} className="rd-irow clickable" onClick={() => onOpen(v.videoId)}>
+          {v.thumbnail ? <img className="rd-irow-thumb" src={v.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
+          <div className="rd-irow-main">
+            <div className="rd-irow-title">{v.title}</div>
+            <div className="rd-irow-meta">
               <span>{v.channelTitle ?? ""}</span>
               {statusBadge(v)}
-              {v.stale && <span className="badge b-stale">Stale</span>}
+              {v.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
               {typeof v.ideaCount === "number" && <span>{v.ideaCount} ideas{v.optionCount ? ` · ${v.optionCount} options` : ""} · {v.levelCount ?? 0} levels</span>}
             </div>
           </div>
-          <div className="irow-actions"><span className="ibtn ibtn-sm ibtn-ghost">Open</span></div>
+          <div className="rd-irow-actions"><span className="rd-btn rd-btn-sm rd-btn-ghost">Open</span></div>
         </div>
       ))}
     </div>
@@ -1958,83 +2037,83 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
 
   return (
     <>
-      <div className="idrawer-scrim" onClick={onClose} />
-      <div className="idrawer">
-        <button className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
+      <div className="rd-drawer-scrim" onClick={onClose} />
+      <div className="rd-drawer">
+        <button type="button" className="rd-drawer-x" onClick={onClose} aria-label="Close">✕</button>
         {!bundle && loadErr ? (
-          <div className="istate istate-err" style={{ marginTop: 32 }}>
-            Couldn&apos;t load this video. <button className="ibtn ibtn-sm" onClick={load}>Retry</button>
+          <div className="rd-state rd-state-err" style={{ marginTop: 32 }}>
+            Couldn&apos;t load this video. <button type="button" className="rd-btn rd-btn-sm" onClick={load}>Retry</button>
           </div>
         ) : !bundle ? (
           <>
-            <div className="iskel" style={{ height: 22, width: "70%" }} />
-            <div className="iskel" style={{ height: 14, width: "45%" }} />
-            <div className="iskel" style={{ height: 120 }} />
+            <div className="rd-shim rd-shim-block" style={{ height: 22, width: "70%" }} />
+            <div className="rd-shim rd-shim-block" style={{ height: 14, width: "45%" }} />
+            <div className="rd-shim rd-shim-block" style={{ height: 120 }} />
           </>
         ) : (
           <>
-            <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>VIDEO</div>
-            <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>{v?.title}</h3>
-            <div className="irow-meta" style={{ marginBottom: 12 }}>
+            <div className="rd-drawer-kicker">VIDEO</div>
+            <h3 className="rd-drawer-title">{v?.title}</h3>
+            <div className="rd-irow-meta" style={{ marginBottom: 12 }}>
               <span>{v?.channelTitle}</span>
               {v && statusBadge(v)}
-              {v?.stale && <span className="badge b-stale">Stale</span>}
-              <a className="idea-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
+              {v?.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
+              <a className="rd-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
             {v?.status !== "analyzed" && (
-              <div className="icard bl-txcard" style={{ marginTop: 12 }}>
-                <div className="bl-txcard-step">
+              <div className="rd-card rd-tx" style={{ marginTop: 12 }}>
+                <div className="rd-tx-step">
                   {a?.pass === "preliminary" ? "STEP 1 CONT. · PASTE FULL TRANSCRIPT" : "STEP 1 · PASTE TRANSCRIPT"}
                 </div>
                 {a?.pass === "preliminary" && (
-                  <div className="inote" style={{ marginBottom: 10, fontSize: 10.5 }}>
+                  <div className="rd-note" style={{ marginBottom: 10, fontSize: 10.5 }}>
                     Preliminary pass done — paste the full transcript for the complete analysis.
                   </div>
                 )}
-                <div className="bl-txcard-how">
+                <div className="rd-tx-how">
                   YouTube → ··· (below video) → Show transcript → copy all → paste here
                 </div>
                 <textarea
-                  className="iinput bl-txcard-ta"
+                  className="rd-input rd-tx-ta"
                   aria-label="Paste video transcript"
                   placeholder={"Paste transcript here. Timestamps included when present.\n\n(YouTube → below video → ··· → Show transcript → copy)"}
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
                 />
                 <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
-                  <button className="ibtn ibtn-primary bl-txcard-btn" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>
+                  <button type="button" className="rd-btn rd-btn-acc rd-tx-btn" disabled={busy || !aiOn || transcript.trim().length < 40} onClick={process}>
                     {busy ? "Analyzing…" : "Analyze →"}
                   </button>
-                  {!aiOn && <span className="inote iwarn">Needs ANTHROPIC_API_KEY.</span>}
-                  {err && <span className="inote istate-err">{err}</span>}
+                  {!aiOn && <span className="rd-note rd-warn">Needs ANTHROPIC_API_KEY.</span>}
+                  {err && <span className="rd-note rd-state-err">{err}</span>}
                 </div>
               </div>
             )}
-            {a?.warnings?.length ? <div className="inote iwarn" style={{ marginBottom: 8 }}>{a.warnings.join(" · ")}</div> : null}
+            {a?.warnings?.length ? <div className="rd-note rd-warn" style={{ marginBottom: 8 }}>{a.warnings.join(" · ")}</div> : null}
             {chapters.length > 0 && (
-              <div className="icard">
-                <div className="icard-h">Chapters {selectedChapter && <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear filter</button>}</div>
+              <div className="rd-card">
+                <div className="rd-card-h">Chapters {selectedChapter && <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear filter</button>}</div>
                 {chapters.map((ch) => (
-                  <div key={ch.startSeconds} className={`chap${selectedChapterSec === ch.startSeconds ? " active" : ""}`} role="button" tabIndex={0}
+                  <div key={ch.startSeconds} className={`rd-chap${selectedChapterSec === ch.startSeconds ? " active" : ""}`} role="button" tabIndex={0}
                     onClick={() => setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedChapterSec(selectedChapterSec === ch.startSeconds ? null : ch.startSeconds); }}>
-                    <a className="chap-t" href={watchUrl(videoId, ch.startSeconds)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{mmss(ch.startSeconds)}</a>
-                    <span className={ch.priority === "high" ? "chap-hi" : ""}>{ch.title}</span>
-                    {!ch.creatorDefined && <span className="badge b-inferred" style={{ fontSize: 8.5 }}>AUGUST</span>}
-                    <span className="chap-cat">{CAT_LABEL[ch.normalizedCategory] ?? ch.normalizedCategory}</span>
+                    <a className="rd-chap-t" href={watchUrl(videoId, ch.startSeconds)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{mmss(ch.startSeconds)}</a>
+                    <span className={ch.priority === "high" ? "rd-chap-hi" : ""}>{ch.title}</span>
+                    {!ch.creatorDefined && <span className="rd-chip rd-chip-inf">AUGUST</span>}
+                    <span className="rd-chap-cat">{CAT_LABEL[ch.normalizedCategory] ?? ch.normalizedCategory}</span>
                   </div>
                 ))}
               </div>
             )}
             {a && (
               <>
-                {a.overallSummary && <div className="icard"><div className="icard-h">Summary {a.pass === "preliminary" && <span className="badge b-proc">Preliminary</span>}</div><p style={{ fontSize: 13, lineHeight: 1.55 }}>{a.overallSummary}</p></div>}
-                {selectedChapter && <div className="chap-filter-bar"><span>Filtering:</span><b style={{ color: "var(--bone)" }}>{selectedChapter.title}</b><button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button></div>}
-                {visibleIdeas.length > 0 && <div className="icard"><div className="icard-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
-                {visibleOptions.length > 0 && <div className="icard"><div className="icard-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
-                {visibleLevels.length > 0 && <div className="icard"><div className="icard-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
-                {a.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-                <button className="ibtn ibtn-sm ibtn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
+                {a.overallSummary && <div className="rd-card"><div className="rd-card-h">Summary {a.pass === "preliminary" && <span className="rd-chip rd-chip-warn">Preliminary</span>}</div><p className="rd-body-p">{a.overallSummary}</p></div>}
+                {selectedChapter && <div className="rd-chap-filter"><span>Filtering:</span><b>{selectedChapter.title}</b><button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button></div>}
+                {visibleIdeas.length > 0 && <div className="rd-card"><div className="rd-card-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
+                {visibleOptions.length > 0 && <div className="rd-card"><div className="rd-card-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
+                {visibleLevels.length > 0 && <div className="rd-card"><div className="rd-card-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
+                {a.catalysts.length > 0 && <div className="rd-card"><div className="rd-card-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
+                <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
               </>
             )}
           </>
@@ -2048,40 +2127,40 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
   const [read60, setRead60] = useState(false);
   if (!brief) {
     return (
-      <div className="icard">
-        <div className="icard-h">{historical ? "No brief for this date" : "Tonight's Brief"}</div>
-        <div className="istate">{historical ? "No brief was stored for this date." : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}</div>
+      <div className="rd-card">
+        <div className="rd-card-h">{historical ? "No brief for this date" : "Tonight's Brief"}</div>
+        <div className="rd-state">{historical ? "No brief was stored for this date." : <>No brief generated yet. Add a source, process a transcript, then press <b>Generate Brief</b>{!ai ? " (needs ANTHROPIC_API_KEY)" : ""}.</>}</div>
       </div>
     );
   }
   return (
     <>
-      <div className="icard">
-        <div className="icard-h">
+      <div className="rd-card">
+        <div className="rd-card-h">
           {historical ? `Brief · ${brief.date}` : `Tonight's Brief · ${brief.date}`}
-          <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
+          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
         </div>
-        {brief.read60 && read60 && <p className="brief-read60">{brief.read60}</p>}
-        {!brief.grounded && <div className="inote iwarn">AI narrative offline — structured intel only.</div>}
+        {brief.read60 && read60 && <p className="rd-read60">{brief.read60}</p>}
+        {!brief.grounded && <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>}
         {!read60 && <dl style={{ margin: 0 }}>
-          {brief.posture && <div className="brief-row"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
-          {brief.whatChanged && <div className="brief-row"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
-          {brief.whatMattersTomorrow && <div className="brief-row"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
-          {brief.watchAtOpen && <div className="brief-row"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
-          {brief.invalidation && <div className="brief-row"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
+          {brief.posture && <div className="rd-briefrow"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
+          {brief.whatChanged && <div className="rd-briefrow"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
+          {brief.whatMattersTomorrow && <div className="rd-briefrow"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
+          {brief.watchAtOpen && <div className="rd-briefrow"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
+          {brief.invalidation && <div className="rd-briefrow"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
         </dl>}
         {!read60 && (brief.bullCase || brief.bearCase) && (
-          <div className="bullbear">
-            <div className="bull"><h4>BULL CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bullCase || "—"}</div></div>
-            <div className="bear"><h4>BEAR CASE</h4><div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{brief.bearCase || "—"}</div></div>
+          <div className="rd-bullbear">
+            <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL CASE</div><div className="rd-bb-p">{brief.bullCase || "—"}</div></div>
+            <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR CASE</div><div className="rd-bb-p">{brief.bearCase || "—"}</div></div>
           </div>
         )}
       </div>
-      {brief.creatorFavorites.length > 0 && <div className="icard"><div className="icard-h">Creator Favorites</div>{brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}</div>}
-      <div className="icard"><div className="icard-h">Top Trade Ideas</div>{brief.topIdeas.length === 0 ? <div className="istate">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}</div>
-      {brief.levels.length > 0 && <div className="icard"><div className="icard-h">Levels &amp; Triggers</div>{brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}</div>}
-      {brief.catalysts.length > 0 && <div className="icard"><div className="icard-h">Catalyst Map</div>{brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-      {brief.consensus.length > 0 && <div className="icard"><div className="icard-h">Consensus &amp; Conflicts</div>{brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}</div>}
+      {brief.creatorFavorites.length > 0 && <div className="rd-card"><div className="rd-card-h">Creator Favorites</div>{brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}</div>}
+      <div className="rd-card"><div className="rd-card-h">Top Trade Ideas</div>{brief.topIdeas.length === 0 ? <div className="rd-state">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}</div>
+      {brief.levels.length > 0 && <div className="rd-card"><div className="rd-card-h">Levels &amp; Triggers</div>{brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}</div>}
+      {brief.catalysts.length > 0 && <div className="rd-card"><div className="rd-card-h">Catalyst Map</div>{brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
+      {brief.consensus.length > 0 && <div className="rd-card"><div className="rd-card-h">Consensus &amp; Conflicts</div>{brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}</div>}
     </>
   );
 }
@@ -2362,19 +2441,19 @@ export default function IntelDashboard() {
         <LiveTape tape={fullTape} />
 
         {msg && (
-          <div className="istate" style={{ margin: "6px 16px", color: "var(--steel)", fontSize: 11.5 }}>
-            {msg} <button className="ibtn ibtn-sm ibtn-ghost" onClick={() => setMsg(null)}>✕</button>
+          <div className="rd-banner">
+            {msg} <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setMsg(null)}>✕</button>
           </div>
         )}
         {!config.storage && (
-          <div className="istate iwarn" style={{ margin: "4px 16px", fontSize: 11.5 }}>
+          <div className="rd-banner rd-warn">
             Upstash not configured — UPSTASH_REDIS_REST_URL/TOKEN needed.
           </div>
         )}
 
         {/* ── BOARD ── */}
         {tab === "BOARD" && (
-          <div className="bl-layout" style={{ flex: 1 }}>
+          <div className="rd-main" style={{ flex: 1 }}>
             <LeftPanel
               brief={brief}
               onReload={load}
@@ -2387,8 +2466,11 @@ export default function IntelDashboard() {
               sourceCount={sources.length}
               videoCount={videos.length}
               onGoSources={() => setTab("SOURCES")}
+              blotter={blotter}
+              trackedByIdeaId={trackedByIdeaId}
+              onSelectIdea={setSelectedId}
             />
-            <div className="bl-center">
+            <div className="rd-center">
               {/* board header (SPEC-desktop §2.6.2) — real count, real cadence */}
               <div className="rd-bhead">
                 <span className="rd-bhead-title">TRADE BLOTTER</span>
@@ -2438,7 +2520,7 @@ export default function IntelDashboard() {
               />
               <OptionsIntelPanel brief={brief} />
             </div>
-            <div className="bl-right">
+            <div className="rd-inspcol">
               <Inspector
                 idea={selectedIdea}
                 tracked={selectedTracked}
@@ -2452,32 +2534,33 @@ export default function IntelDashboard() {
 
         {/* ── BRIEF ── */}
         {tab === "BRIEF" && (
-          <div className="bl-tabview">
-            <div className="bl-hist-bar">
+          <div className="rd-tabview">
+            <div className="rd-hist-bar">
               {selectedDate && (
                 <button
-                  className="ibtn ibtn-primary bl-hist-today"
+                  type="button"
+                  className="rd-btn rd-btn-acc rd-hist-today"
                   onClick={() => { setSelectedDate(null); setHistoryBrief(null); }}
                 >
                   ← TODAY&apos;S BRIEF
                 </button>
               )}
-              <span className="bl-hist-label">BRIEF HISTORY</span>
-              <div className="bl-hist-pills">
+              <span className="rd-hist-label">BRIEF HISTORY</span>
+              <div className="rd-hist-pills">
                 {historyDates.length === 0
-                  ? <span className="bl-hist-empty">No prior briefs stored.</span>
+                  ? <span className="rd-hist-empty">No prior briefs stored.</span>
                   : historyDates.map((d) => (
-                    <button key={d} className={`idate-pill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
+                    <button key={d} type="button" className={`rd-datepill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
                   ))}
               </div>
             </div>
             {historyLoading
-              ? <div className="icard"><div className="icard-h">Loading…</div><div className="iskel" /></div>
+              ? <div className="rd-card"><div className="rd-card-h">Loading…</div><div className="rd-shim rd-shim-block" style={{ height: 14 }} /></div>
               : histErr && selectedDate
               ? (
-                <div className="istate istate-err">
+                <div className="rd-state rd-state-err">
                   Couldn&apos;t load the {selectedDate} brief.{" "}
-                  <button className="ibtn ibtn-sm" onClick={() => loadDate(selectedDate, true)}>Retry</button>
+                  <button type="button" className="rd-btn rd-btn-sm" onClick={() => loadDate(selectedDate, true)}>Retry</button>
                 </div>
               )
               : <BriefCard brief={displayBrief} ai={config.ai} onOpenVideo={setOpenVideo} historical={!!selectedDate} />}
@@ -2486,32 +2569,32 @@ export default function IntelDashboard() {
 
         {/* ── SOURCES ── */}
         {tab === "SOURCES" && (
-          <div className="bl-tabview">
-            <div className="icard bl-src-hub">
-              <div className="icard-h">WORKFLOW</div>
-              <ol className="bl-src-steps">
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">1</span><span>Add a channel or video URL in the box below</span></li>
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">2</span><span>Click any video → paste its transcript → Analyze</span></li>
-                <li className="bl-src-step"><span className="bl-src-stepn" aria-hidden="true">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></li>
+          <div className="rd-tabview">
+            <div className="rd-card rd-card-acc">
+              <div className="rd-card-h">WORKFLOW</div>
+              <ol className="rd-steps">
+                <li className="rd-step"><span className="rd-step-n" aria-hidden="true">1</span><span>Add a channel or video URL in the box below</span></li>
+                <li className="rd-step"><span className="rd-step-n" aria-hidden="true">2</span><span>Click any video → paste its transcript → Analyze</span></li>
+                <li className="rd-step"><span className="rd-step-n" aria-hidden="true">3</span><span>Hit Generate Brief to synthesize all sources into today&apos;s brief</span></li>
               </ol>
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={sync}>
+                <button type="button" className="rd-btn rd-btn-acc" style={{ flex: 1 }} disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={sync}>
                   {busy === "sync" ? "Syncing…" : "SYNC CHANNELS"}
                 </button>
-                <button className="ibtn ibtn-primary" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} aria-busy={busy === "brief"} onClick={generateBrief}>
+                <button type="button" className="rd-btn rd-btn-acc" style={{ flex: 1 }} disabled={busy === "brief" || !config.ai} aria-busy={busy === "brief"} onClick={generateBrief}>
                   {busy === "brief" ? "Generating…" : "GENERATE BRIEF"}
                 </button>
               </div>
               {data.lastBriefAt > 0 && (
-                <div className="bl-lp-age" style={{ marginTop: 8 }}>
+                <div className="rd-lp-age" style={{ marginTop: 8 }}>
                   last brief {ago(data.lastBriefAt)}{!config.ai ? " · needs ANTHROPIC_API_KEY" : ""}
                 </div>
               )}
               {!config.ai && data.lastBriefAt === 0 && (
-                <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
+                <div className="rd-note rd-warn" style={{ marginTop: 8 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
               )}
               {!config.youtube && (
-                <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>
+                <div className="rd-note rd-warn" style={{ marginTop: 8 }}>
                   YOUTUBE_API_KEY unset — channel auto-discovery off; add videos by URL and paste transcripts manually.
                 </div>
               )}
@@ -2524,23 +2607,23 @@ export default function IntelDashboard() {
 
         {/* ── OPTIONS ── */}
         {tab === "OPTIONS" && (
-          <div className="bl-tabview">
+          <div className="rd-tabview">
             <OptionsWorkspace brief={brief} levels={brief?.levels ?? []} />
           </div>
         )}
 
         {/* ── ASK ── */}
         {tab === "ASK" && (
-          <div className="bl-tabview" style={{ paddingBottom: 120 }}>
-            <div className="icard">
-              <div className="icard-h">Ask AUGUST</div>
-              <p className="inote">Use the bar below — AUGUST answers from your processed video transcripts.</p>
-              {!config.ai && <div className="istate iwarn">Needs ANTHROPIC_API_KEY.</div>}
+          <div className="rd-tabview" style={{ paddingBottom: 120 }}>
+            <div className="rd-card">
+              <div className="rd-card-h">Ask AUGUST</div>
+              <p className="rd-note" style={{ margin: 0 }}>Use the bar below — AUGUST answers from your processed video transcripts.</p>
+              {!config.ai && <div className="rd-state rd-warn">Needs ANTHROPIC_API_KEY.</div>}
             </div>
           </div>
         )}
 
-        <div className="idisc" style={{ paddingBottom: 64 }}>
+        <div className="rd-disc" style={{ paddingBottom: 64 }}>
           AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>
 
