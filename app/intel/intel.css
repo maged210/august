@@ -11,8 +11,10 @@
 /* SCROLL FIX: globals.css sets body{overflow:hidden} for the fixed-screen orb surfaces.
    /intel is the one exception — it holds unbounded, growing content and must scroll.
    :has() is supported in all evergreen browsers; it lets us opt this route back in
-   without touching any other surface. */
-body:has(.intel-root) {
+   without touching any other surface. The :not(.intel-embedded) guard keeps the
+   HOME deck's embedded copy (components/surfaces/IntelDeckSurface.tsx) from
+   unlocking body scroll — the embed scrolls inside its own panel. */
+body:has(.intel-root:not(.intel-embedded)) {
   overflow-y: auto;
   overscroll-behavior-y: auto;
 }

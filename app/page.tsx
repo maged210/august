@@ -6,7 +6,7 @@ import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import PresenceTelemetry from "@/components/PresenceTelemetry";
-import MarketsSurface from "@/components/surfaces/MarketsSurface";
+import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
 import type { AugustState, Theme } from "@/components/Presence3D";
@@ -1232,30 +1232,6 @@ export default function Home() {
 
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
-      {/* Market Intel — a top-level destination. Inline-styled so it needs no shared
-          CSS and can't disturb the orb page. */}
-      <a
-        href="/intel"
-        style={{
-          position: "fixed",
-          top: 14,
-          right: 16,
-          zIndex: 30,
-          fontFamily: "var(--font-mono), ui-monospace, monospace",
-          fontSize: 10,
-          letterSpacing: "0.16em",
-          // theme tokens (same language as the adjacent brief-summon pill) so
-          // the link survives light theme and shares the pill shape
-          color: "var(--ash)",
-          textDecoration: "none",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r-full)",
-          padding: "6px 12px",
-          background: "var(--glass)",
-        }}
-      >
-        INTEL →
-      </a>
       <BootHud />
       <FrameTicks />
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1294,7 +1270,9 @@ export default function Home() {
               />
             ) : null}
           </div>,
-          <MarketsSurface key="markets" />,
+          // MarketsSurface was replaced by the embedded intel desk (user decision:
+          // intel is a full deck surface, not a corner pill; the file stays).
+          <IntelDeckSurface key="markets" active={activeScreen === screenIndex("markets")} />,
           <CommandGlobe
             key="world"
             active={activeScreen === screenIndex("world")}

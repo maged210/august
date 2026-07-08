@@ -2145,3 +2145,61 @@ a.rd-cite:hover { text-decoration: underline; }
     letter-spacing: 0.03em; color: #42474e;
   }
 }
+
+/* ==========================================================================
+   EMBEDDED DESK — the home deck's second surface renders this same dashboard
+   inside a panel (components/surfaces/IntelDeckSurface.tsx). Two rules here
+   deliberately sit OUTSIDE the .intel-root scope (the frame + its idle label
+   wrap/precede the root): everything else stays .intel-embedded-scoped so the
+   standalone /intel route is pixel-untouched.
+   ========================================================================== */
+
+/* The frame's transform makes it the CONTAINING BLOCK for every
+   position:fixed layer inside the embed (video drawer + scrim, workspace
+   drawer) — they pin to the panel, never to the viewport, so nothing bleeds
+   over Presence/World/Comms or the home shell's chrome. */
+.intel-embed-frame {
+  position: relative;
+  height: 100%;
+  transform: translateZ(0);
+  background: #050608; /* rd-stage literal — tokens live on .intel-root below */
+}
+
+/* the embedded root scrolls internally; the deck page's body stays locked
+   (see the :not(.intel-embedded) guard on the scroll fix in intel.css) */
+.intel-root.intel-embedded {
+  /* clearance for the home shell's bottom dock (composer cluster) — the
+     sticky askbar pins this far above the panel's bottom edge (measured live:
+     the composer row tops out ~102px above the viewport bottom at 1280×800) */
+  --rd-embed-dock: 112px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
+}
+
+/* pre-visit placeholder: stage color + a mono label — no data, no spinner */
+.intel-embedded .intel-embed-idle {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--rd-mono);
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--rd-t-faint);
+}
+
+/* ASK band: fixed → sticky inside the panel scroller. It stays pinned while
+   the desk scrolls but lifts clear of the home dock; the matching
+   margin-bottom makes its end-of-scroll resting spot coincide with the pin
+   line, so it never covers the disclaimer. left/right offsets are inert on
+   sticky; the flex column stretches it full-width. */
+.intel-embedded .rd-askbar {
+  position: sticky;
+  bottom: var(--rd-embed-dock);
+  margin-bottom: var(--rd-embed-dock);
+}

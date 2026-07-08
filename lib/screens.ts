@@ -6,7 +6,9 @@ export type ScreenId = (typeof SCREENS)[number];
 
 export const SCREEN_LABELS: Record<ScreenId, string> = {
   presence: "Presence",
-  markets: "Markets",
+  // the second surface now embeds the full /intel desk (id stays "markets" so
+  // go_to_screen, watcher deep links, and saved "?screen=markets" URLs keep working)
+  markets: "Intel",
   world: "World",
   comms: "Comms",
 };
