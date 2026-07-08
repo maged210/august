@@ -135,14 +135,6 @@ function deriveStatus(idea: BlotterIdea): IdeaStatus {
   return "ACTIVE";
 }
 
-function deltaTrig(idea: BlotterIdea): string {
-  const q = idea.quote;
-  const ent = idea.entry?.value;
-  if (!q || ent == null || ent <= 0) return "—";
-  const pct = ((q.price - ent) / ent) * 100;
-  return (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
-}
-
 function buildBlotter(brief: DailyBrief | null, quotes: QuoteMap): BlotterIdea[] {
   if (!brief) return [];
   const seen = new Set<string>();
@@ -187,59 +179,70 @@ function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
   );
 }
 
-function StatusBadge({ s }: { s: IdeaStatus }) {
-  const cls: Record<IdeaStatus, string> = {
-    TRIG: "bl-st-trig", ARMED: "bl-st-arm", ACTIVE: "bl-st-active",
-    WATCH: "bl-st-watch", INVLD: "bl-st-invld",
-  };
-  return <span className={`bl-st ${cls[s]}`}>{s}</span>;
-}
-
-/** Tracker-driven badge — states come from the lifecycle engine, never derived
- * client-side. Falls back to StatusBadge for untracked rows. */
-const TRACKED_BADGE: Record<TrackedStatus, { label: string; cls: string }> = {
-  ARMED: { label: "ARMED", cls: "bl-st-arm" },
-  TRIGGERED: { label: "TRIG", cls: "bl-st-trig" },
-  TARGET_HIT: { label: "TGT ✓", cls: "bl-st-tgt" },
-  INVALIDATED: { label: "INVLD", cls: "bl-st-invld" },
-  ACTIVE: { label: "ACTIVE", cls: "bl-st-active" },
-  CLOSED: { label: "CLOSED", cls: "bl-st-closed" },
+// hex → rgba at a given alpha (design hexA — SVG presentation attrs can't take var())
+const hexA = (h: string, a: number) => {
+  const m = h.replace("#", "");
+  return `rgba(${parseInt(m.slice(0, 2), 16)},${parseInt(m.slice(2, 4), 16)},${parseInt(m.slice(4, 6), 16)},${a})`;
 };
-function TrackedBadge({ t }: { t: TrackedIdea }) {
-  const b = TRACKED_BADGE[t.status];
-  return (
-    <span className={`bl-st ${b.cls}`} title={t.statusHistory.at(-1)?.reason}>
-      {b.label}
-      {t.conflictKey && <span className="bl-st-conflict" title="conflicting stated triggers from this source">!</span>}
-    </span>
-  );
-}
 
-function InspChart({ closes, entry, up }: { closes: number[]; entry: number | null; up: boolean }) {
-  if (!closes || closes.length < 2) return null;
-  const W = 240, H = 64;
-  const all = entry != null ? [...closes, entry] : closes;
-  const min = Math.min(...all), max = Math.max(...all), range = max - min || 1;
-  const toY = (v: number) => H - ((v - min) / range) * (H - 4) - 2;
-  const pts = closes.map((v, i) =>
-    `${((i / (closes.length - 1)) * W).toFixed(1)},${toY(v).toFixed(1)}`
-  ).join(" ");
-  const lastX = W, lastY = toY(closes[closes.length - 1]);
-  const entY = entry != null ? toY(entry) : null;
-  return (
-    <div className="bl-insp-chart">
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-        {entY != null && (
-          <line x1={0} y1={entY} x2={W} y2={entY} stroke="#cbb274" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
-        )}
-        <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.5" />
-        <circle cx={lastX} cy={lastY} r={2.5} fill={up ? "#7fb88a" : "#d98b8b"} />
-      </svg>
-      <div className="bl-insp-chart-labels">
-        <span>{fmtPx(min)}</span>
-        {entry != null && <span style={{ color: "#cbb274" }}>entry {fmtPx(entry)}</span>}
-        <span>{fmtPx(max)}</span>
+/** Inspector chart — design 352×92 area chart (SPEC-desktop §2.6.3 item 7,
+ * scaling math ported from the design's buildChart) drawn from the REAL ~1mo
+ * of DAILY closes (SPEC-wiring §2.4; the design's seeded intraday series must
+ * not ship — the honest `1M · DAILY` axis label lives in the PRICE ACTION sub).
+ * The series ends at the live quote (design contract: last point = live), the
+ * dashed line is the stated trigger, H/L labels read the closes array only. */
+function InspChart({ closes, live, trigger, lineColor }: {
+  closes: number[];
+  live: number;
+  trigger: number | null;
+  lineColor: string;
+}) {
+  if (!closes || closes.length < 2) {
+    // the design specifies no no-series treatment — small honest absent line
+    return (
+      <div className="rd-chart rd-chart-noseries">
+        <span className="rd-abs"><span className="rd-abs-g" aria-hidden="true">∅</span> NO SERIES</span>
       </div>
+    );
+  }
+  const W = 352, H = 92, padX = 3, padT = 11, padB = 11;
+  const series = [...closes, live];
+  const n = series.length;
+  const vals = trigger != null ? [...series, trigger] : series;
+  let ymin = Math.min(...vals), ymax = Math.max(...vals);
+  const pad = (ymax - ymin) * 0.16 || live * 0.02 || 1;
+  ymin -= pad; ymax += pad;
+  const xAt = (i: number) => padX + (i / (n - 1)) * (W - 2 * padX);
+  const yAt = (v: number) => (H - padB) - ((v - ymin) / (ymax - ymin)) * (H - padT - padB);
+  let lp = `M ${xAt(0).toFixed(1)},${yAt(series[0]).toFixed(1)}`;
+  for (let i = 1; i < n; i++) lp += ` L ${xAt(i).toFixed(1)},${yAt(series[i]).toFixed(1)}`;
+  const ap = `${lp} L ${xAt(n - 1).toFixed(1)},${H} L ${xAt(0).toFixed(1)},${H} Z`;
+  const trigY = trigger != null ? yAt(trigger) : null;
+  const liveX = xAt(n - 1), liveY = yAt(live);
+  return (
+    <div className="rd-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="1-month daily-close price chart">
+        <title>{`1M · DAILY closes${trigger != null ? ` · trigger ${rdPx(trigger)}` : ""}`}</title>
+        <line x1={0} y1={23} x2={W} y2={23} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
+        <line x1={0} y1={46} x2={W} y2={46} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
+        <line x1={0} y1={69} x2={W} y2={69} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
+        <path d={ap} fill={hexA(lineColor, 0.1)} />
+        {trigY != null && (
+          <line x1={0} y1={trigY} x2={W} y2={trigY} stroke="rgba(106,160,200,0.55)" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        )}
+        <path d={lp} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <circle cx={liveX} cy={liveY} r={6} fill="none" stroke={lineColor} strokeWidth={1} opacity={0.35} />
+        <circle cx={liveX} cy={liveY} r={3.2} fill={lineColor} />
+      </svg>
+      <span className="rd-chart-h">H {rdPx(Math.max(...closes))}</span>
+      <span className="rd-chart-l">L {rdPx(Math.min(...closes))}</span>
+      {trigger != null && trigY != null && (
+        <span className="rd-chart-trig" style={{ top: trigY }}>❝ TRIG {rdPx(trigger)}</span>
+      )}
+      <span className="rd-chart-live" style={{ top: liveY }}>
+        <span className="rd-chart-live-dot" aria-hidden="true">◉</span>
+        {rdPx(live)}
+      </span>
     </div>
   );
 }
@@ -559,11 +562,15 @@ function AbsentCell({ text = "n/s" }: { text?: string }) {
 /** ValueField → designed cell, exactly per SPEC-wiring §2.2 last paragraph:
  * inferred idea → mkInferred; value != null → mkQuoted (verbatim text
  * preferred; `numeric` forces the $ figure for level columns); text-only
- * condition → mkNarr; nothing stated → ABSENT. */
-function ValueCell({ v, explicitness, numeric }: { v: ValueField | undefined; explicitness: Explicitness; numeric?: boolean }) {
+ * condition → mkNarr; nothing stated → ABSENT (`absentText` picks the
+ * design's context copy — rows say "n/s", inspector levels say
+ * "Not stated by source"). */
+function ValueCell({ v, explicitness, numeric, absentText }: {
+  v: ValueField | undefined; explicitness: Explicitness; numeric?: boolean; absentText?: string;
+}) {
   const text = hasVerbatim(v) ? v!.text : null;
   const val = v?.value ?? null;
-  if (val == null && !text) return <AbsentCell />;
+  if (val == null && !text) return <AbsentCell text={absentText} />;
   const shown = numeric ? (val != null ? rdPx(val) : text!) : (text ?? rdPx(val!));
   if (explicitness === "inferred") return <InferredCell text={shown} />;
   if (val != null) return <QuotedCell text={shown} />;
@@ -654,37 +661,37 @@ function RdSpark({ closes, color }: { closes: number[]; color: string }) {
 }
 
 // ── Δ→TRIG cell: PAST/TO TRIGGER delta + the rail (pos 4–96%) ────────────────
-/** Delta math + rail pos() ported verbatim from the design source (SPEC-desktop
- * §3.3; design lines ~803–815). Bull/bear get the favored-side framing; the
- * design has no neutral/watch delta — those show the honest signed distance
- * with no PAST/TO label. Pure presentation over live price + stated trigger. */
+/** Delta math ported verbatim from the design source (SPEC-desktop §3.3;
+ * design lines ~803–815). Bull/bear get the favored-side framing; the design
+ * has no neutral/watch delta — those show the honest signed distance with no
+ * PAST/TO label. Shared by the row cell and the inspector Δ → TRIGGER block. */
+function deltaView(live: number, trig: number, dir: TradeIdea["direction"]): {
+  val: string; label: "PAST TRIGGER" | "TO TRIGGER" | null; cls: string;
+} {
+  const bull = dir === "bullish";
+  if (bull || dir === "bearish") {
+    const favored = bull ? live >= trig : live <= trig;
+    if (favored) {
+      const pastPct = ((live - trig) / trig) * 100;
+      return { val: (pastPct >= 0 ? "+" : "") + pastPct.toFixed(2) + "%", label: "PAST TRIGGER", cls: "rd-delta-past" };
+    }
+    const needPct = bull ? ((trig - live) / live) * 100 : ((live - trig) / live) * 100;
+    return { val: "+" + Math.abs(needPct).toFixed(2) + "%", label: "TO TRIGGER", cls: "rd-delta-to" };
+  }
+  const pct = ((live - trig) / trig) * 100;
+  return { val: (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%", label: null, cls: "rd-delta-plain" };
+}
+
+/** rail pos() 4–96% + the deltaView value — pure presentation over live price
+ * + stated trigger. */
 function DeltaCell({ live, trig, dir }: { live: number | null; trig: number | null; dir: TradeIdea["direction"] }) {
   if (live == null || trig == null || trig <= 0) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
-  const bull = dir === "bullish";
-  const directional = bull || dir === "bearish";
   let lo = Math.min(live, trig), hi = Math.max(live, trig);
   const span = (hi - lo) || live * 0.04;
   lo -= span * 0.6; hi += span * 0.6;
   const pos = (p: number) => Math.max(4, Math.min(96, ((p - lo) / (hi - lo)) * 100));
   const livePos = pos(live), trigPos = pos(trig);
-
-  let val: string, label: string | null, cls: string;
-  if (directional) {
-    const favored = bull ? live >= trig : live <= trig;
-    if (favored) {
-      const pastPct = ((live - trig) / trig) * 100;
-      val = (pastPct >= 0 ? "+" : "") + pastPct.toFixed(2) + "%";
-      label = "PAST TRIGGER"; cls = "rd-delta-past";
-    } else {
-      const needPct = bull ? ((trig - live) / live) * 100 : ((live - trig) / live) * 100;
-      val = "+" + Math.abs(needPct).toFixed(2) + "%";
-      label = "TO TRIGGER"; cls = "rd-delta-to";
-    }
-  } else {
-    const pct = ((live - trig) / trig) * 100;
-    val = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
-    label = null; cls = "rd-delta-plain";
-  }
+  const { val, label, cls } = deltaView(live, trig, dir);
   return (
     <span className={`rd-delta ${cls}`}>
       <span className="rd-delta-val">{val}</span>
@@ -837,6 +844,18 @@ function effectiveStatus(idea: BlotterIdea, tracked: TrackedIdea | null): Tracke
   return s === "TRIG" ? "TRIGGERED" : s === "INVLD" ? "INVALIDATED" : s === "WATCH" ? "ACTIVE" : s;
 }
 
+/** the rows the current filter admits — single source of truth shared by the
+ * board and the inspector breadcrumb's DERIVED n/{visible} denominator
+ * (SPEC-wiring §2.11: the design's /6 was hardcoded) */
+function visibleBlotter(ideas: BlotterIdea[], trackedByIdeaId: Map<string, TrackedIdea>, filter: BlotterFilter): BlotterIdea[] {
+  return ideas.filter((idea) => {
+    const t = trackedByIdeaId.get(idea.id) ?? null;
+    if (filter === "ALL") return true;
+    if (filter === "TRACKED") return t !== null && t.statedLevels.trigger?.value != null; // level-anchored only
+    return effectiveStatus(idea, t) === filter;
+  });
+}
+
 // design loading skeleton (SPEC-desktop §2.6.2): 13 bars per row with the
 // design's widths/heights (first bar "auto" → 40px) and stagger delays
 const SKEL_BARS = [
@@ -915,12 +934,7 @@ function BlotterTable({
     );
   }
 
-  const visible = ideas.filter((idea) => {
-    const t = trackedByIdeaId.get(idea.id) ?? null;
-    if (filter === "ALL") return true;
-    if (filter === "TRACKED") return t !== null && t.statedLevels.trigger?.value != null; // level-anchored only
-    return effectiveStatus(idea, t) === filter;
-  });
+  const visible = visibleBlotter(ideas, trackedByIdeaId, filter);
 
   if (visible.length === 0) {
     // filter-miss state — no design equivalent; kept with the honest copy,
@@ -1091,7 +1105,8 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
 // ── Inspector ────────────────────────────────────────────────────────────────
 
 /** LIFECYCLE panel — everything here is read straight off the tracked record:
- * real transition history, real snapshot ring, MFE/MAE from the engine. */
+ * real transition history, real snapshot ring, MFE/MAE from the engine. The
+ * design has no lifecycle surface — this is a kept real panel in the rd- skin. */
 function LifecyclePanel({ t, variants }: { t: TrackedIdea; variants: TrackedIdea[] }) {
   const pnl = pnlView(t);
   const mm = mfeMaeView(t);
@@ -1100,58 +1115,65 @@ function LifecyclePanel({ t, variants }: { t: TrackedIdea; variants: TrackedIdea
     new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
-    <div className="bl-life">
-      <div className="bl-lev-section-head">
+    <div className="rd-lifec">
+      <div className="rd-insp-seclabel rd-lifec-head">
         LIFECYCLE · TRACKED {ageStr(t.createdAt)}
-        {t.stale && <span className="bl-life-stale">STALE</span>}
+        {t.stale && <span className="rd-lifec-stale" title="no recent mentions">STALE</span>}
       </div>
 
       {/* state timeline — times + prices, honest reasons on hover */}
-      <div className="bl-life-timeline">
+      <div className="rd-tl">
         {t.statusHistory.map((h, i) => (
-          <div key={i} className="bl-life-step" title={h.reason}>
-            <span className={`bl-st ${TRACKED_BADGE[h.state].cls}`} style={{ fontSize: 7 }}>{TRACKED_BADGE[h.state].label}</span>
-            <span className="bl-life-when">{fmtT(h.at)}</span>
-            {h.price != null && <span className="bl-life-px">${fmtPx(h.price)}</span>}
+          <div key={i} className="rd-tl-step" title={h.reason}>
+            <span className={`rd-life rd-life-sm ${RD_LIFE[h.state].cls}`}>
+              <span className="rd-life-dot" aria-hidden="true" />
+              {RD_LIFE[h.state].label}
+            </span>
+            <span className="rd-tl-when">{fmtT(h.at)}</span>
+            {h.price != null && <span className="rd-tl-px">{rdPx(h.price)}</span>}
           </div>
         ))}
       </div>
 
-      {/* P&L + MFE/MAE — labeled by basis, per the law */}
-      <div className="bl-life-nums">
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">{pnl.kind === "since_first_mention" ? "SINCE 1st MENTION" : "P&L SINCE CALLED"}</div>
-          <div className={`bl-insp-meta-val ${pnl.kind !== "none" && pnl.pct >= 0 ? "bl-dlt-pos" : pnl.kind !== "none" ? "bl-dlt-neg" : ""}`}>
-            {pnl.kind === "none" ? "—" : fmtPct(pnl.pct)}
+      {/* P&L + MFE/MAE — labeled by basis, per the law; ° marks the
+          price-since-first-mention basis (never trade P&L) */}
+      <div className="rd-lifec-nums">
+        <div className="rd-lifec-num" title={pnl.kind !== "none" ? `basis ${rdPx(pnl.basis)}` : undefined}>
+          <div className="rd-insp-stat-label">{pnl.kind === "since_first_mention" ? "SINCE 1st MENTION" : "P&L SINCE CALLED"}</div>
+          <div className={`rd-insp-stat-val ${pnl.kind !== "none" && pnl.pct >= 0 ? "rd-pos" : pnl.kind !== "none" ? "rd-neg" : ""}`}>
+            {pnl.kind === "none" ? "—" : pnl.kind === "since_first_mention" ? `${fmtPct(pnl.pct)}°` : fmtPct(pnl.pct)}
           </div>
         </div>
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">MFE / MAE</div>
-          <div className="bl-insp-meta-val">
-            {mm ? <><span className="bl-dlt-pos">{fmtPct(mm.mfePct)}</span> / <span className="bl-dlt-neg">{fmtPct(mm.maePct)}</span></> : "—"}
+        <div className="rd-lifec-num" title={mm ? `measured from basis ${rdPx(mm.basis)}` : undefined}>
+          <div className="rd-insp-stat-label">MFE / MAE</div>
+          <div className="rd-insp-stat-val">
+            {mm ? <><span className="rd-pos">{fmtPct(mm.mfePct)}</span> / <span className="rd-neg">{fmtPct(mm.maePct)}</span></> : "—"}
           </div>
         </div>
       </div>
       {pnl.kind === "since_first_mention" && (
-        <div className="bl-life-note">° no stated trigger — price move since first mention, not trade P&amp;L</div>
+        <div className="rd-lifec-note">° no stated trigger — price move since first mention, not trade P&amp;L</div>
       )}
 
-      {/* snapshot sparkline from the recorded ring buffer */}
+      {/* snapshot sparkline from the recorded ring buffer (tracker's own data) */}
       {snaps.length >= 2 && (
-        <div className="bl-life-spark">
+        <div className="rd-lifec-spark">
           <MiniSparkWide snaps={snaps} basis={t.basisPrice} up={t.direction !== "bearish"} />
-          <div className="bl-life-sparklabel">{snaps.length} snapshots · cap {128}</div>
+          <div className="rd-lifec-sparkmeta">{snaps.length} snapshots · cap {128} · tracker observations</div>
         </div>
       )}
 
       {/* conflict variants — both stated triggers stay visible, never merged */}
       {variants.length > 0 && (
-        <div className="bl-life-variants">
-          <div className="bl-insp-meta-label" style={{ marginBottom: 3 }}>⚠ CONFLICTING STATED TRIGGERS (SAME SOURCE)</div>
+        <div className="rd-lifec-vars">
+          <div className="rd-lifec-varhead">⚠ CONFLICTING STATED TRIGGERS (SAME SOURCE)</div>
           {variants.map((v) => (
-            <div key={v.id} className="bl-life-variant">
-              <span className={`bl-st ${TRACKED_BADGE[v.status].cls}`} style={{ fontSize: 7 }}>{TRACKED_BADGE[v.status].label}</span>
-              <span>trigger {v.statedLevels.trigger?.value != null ? `$${fmtPx(v.statedLevels.trigger.value)}` : v.statedLevels.trigger?.text ?? "⌀"}</span>
+            <div key={v.id} className="rd-lifec-var">
+              <span className={`rd-life rd-life-sm ${RD_LIFE[v.status].cls}`}>
+                <span className="rd-life-dot" aria-hidden="true" />
+                {RD_LIFE[v.status].label}
+              </span>
+              <span>trigger {v.statedLevels.trigger?.value != null ? rdPx(v.statedLevels.trigger.value) : v.statedLevels.trigger?.text ?? "∅"}</span>
             </div>
           ))}
         </div>
@@ -1160,7 +1182,8 @@ function LifecyclePanel({ t, variants }: { t: TrackedIdea; variants: TrackedIdea
   );
 }
 
-/** wider sparkline over the tracker's own snapshots (not Yahoo closes) */
+/** wider sparkline over the tracker's own snapshots (not Yahoo closes) — the
+ * basis line takes the design's dashed trigger-blue treatment */
 function MiniSparkWide({ snaps, basis, up }: { snaps: { at: number; price: number }[]; basis: number | null; up: boolean }) {
   const W = 240, H = 40;
   const px = snaps.map((s) => s.price);
@@ -1169,194 +1192,316 @@ function MiniSparkWide({ snaps, basis, up }: { snaps: { at: number; price: numbe
   const toY = (v: number) => H - ((v - min) / range) * (H - 4) - 2;
   const pts = px.map((v, i) => `${((i / (px.length - 1)) * W).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
   return (
-    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="tracker snapshot sparkline">
       {basis != null && (
-        <line x1={0} y1={toY(basis)} x2={W} y2={toY(basis)} stroke="#cbb274" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
+        <line x1={0} y1={toY(basis)} x2={W} y2={toY(basis)} stroke="rgba(106,160,200,0.55)" strokeWidth="1" strokeDasharray="3 3" />
       )}
-      <polyline points={pts} fill="none" stroke={up ? "#7fb88a" : "#d98b8b"} strokeWidth="1.3" />
+      <polyline points={pts} fill="none" stroke={up ? RD_HEX.bull : RD_HEX.bear} strokeWidth="1.3" />
     </svg>
   );
 }
 
-function Inspector({ idea, tracked, variants }: { idea: BlotterIdea | null; tracked: TrackedIdea | null; variants: TrackedIdea[] }) {
-  if (!idea) {
-    return (
-      <div className="bl-insp-empty">
-        <div>SELECT A ROW</div>
-        <div style={{ fontSize: 9.5 }}>to inspect the trade setup</div>
-      </div>
-    );
-  }
+/** design dirLabel for the posture chip (SPEC-desktop §3.3); watch is a real
+ * state with no design equivalent — labeled honestly in the NEUT styling */
+const RD_DIR_LABEL: Record<TradeIdea["direction"], string> = {
+  bullish: "BULLISH", bearish: "BEARISH", neutral: "NEUTRAL", watch: "WATCH",
+};
+// stat-strip TIMEFRAME short forms (design: NEXT/SWING/LONG; the real horizons
+// add INTRA for intraday — honest, no design equivalent)
+const RD_TF_SHORT: Record<string, string> = {
+  intraday: "INTRA", next_session: "NEXT", swing: "SWING", long_term: "LONG", unspecified: "—",
+};
 
-  const status = deriveStatus(idea);
-  const up = idea.direction === "bullish";
-  const entVal = idea.entry?.value ?? null;
-  const invVal = idea.invalidation?.value ?? null;
+/** per-field evidence chip — ONLY when honest (SPEC-wiring §2.2): the idea's
+ * explicitness gates the kind, and DIRECT additionally requires the field's
+ * own verbatim source text. No content → no chip; explicit idea without
+ * verbatim text on this field → no chip. Never the design's decorative
+ * hardcoded DIRECT. */
+function fieldEvKind(
+  v: { value: number | null; text: string } | undefined | null,
+  explicitness: Explicitness,
+): EvKind | null {
+  const has = !!v && (v.value != null || hasVerbatim(v));
+  if (!has) return null;
+  if (explicitness === "inferred") return "INFERRED";
+  return hasVerbatim(v) ? "DIRECT" : null;
+}
+
+/** idea-mode inspector body — design §2.6.3, every value wired to the real
+ * idea/tracker/quote (quote is guaranteed by the caller: no quote → the
+ * AWAITING ANALYSIS state renders instead) */
+function InspectorIdea({ idea, quote, tracked, variants }: {
+  idea: BlotterIdea;
+  quote: NonNullable<BlotterIdea["quote"]>;
+  tracked: TrackedIdea | null;
+  variants: TrackedIdea[];
+}) {
+  const live = quote.price;
+  const life = rowLife(idea, tracked);
+  const dirMeta = RD_DIR[idea.direction];
+  const ev = ideaEvKind(idea);
+  const conf = Math.round(idea.confidence * 100);
+
+  // trigger precedence unchanged (same as the board row): tracked ideas use
+  // the tracker's stated trigger; untracked fall back to the stated entry value
+  const trigVal = tracked ? tracked.statedLevels.trigger?.value ?? null : idea.entry?.value ?? null;
+  const trigSrc = tracked ? tracked.statedLevels.trigger : idea.entry;
+  const delta = trigVal != null && trigVal > 0 ? deltaView(live, trigVal, idea.direction) : null;
+
+  // chart line follows the design rule (§3.6, same as the board sparks):
+  // with a stated trigger the favored side paints bull/amber; otherwise the
+  // direction color
+  const favored = trigVal != null && trigVal > 0
+    ? (idea.direction === "bullish" ? live >= trigVal : live <= trigVal)
+    : null;
+  const lineColor = favored != null
+    ? (favored ? RD_HEX.bull : RD_HEX.amber)
+    : idea.direction === "bearish" ? RD_HEX.bear : RD_HEX.bull;
+
+  // TRADE PLAN cells — ValueField-driven, no invented wording (the design's
+  // "Break $X" fallback is dropped: a bare level is shown, never a direction
+  // verb AUGUST didn't hear)
   const tgt = idea.targets[0];
-  const conf = (idea.confidence * 100).toFixed(0);
+  const planEntry = hasVerbatim(idea.entry) ? idea.entry.text : trigVal != null ? rdPx(trigVal) : null;
+  const planExit = hasVerbatim(idea.invalidation)
+    ? idea.invalidation.text
+    : idea.invalidation?.value != null ? rdPx(idea.invalidation.value) : null;
+  const planTp = tgt ? (hasVerbatim(tgt) ? tgt.text : tgt.value != null ? rdPx(tgt.value) : null) : null;
 
-  const hasEntry = entVal != null && entVal > 0;
-  const priceActionNote = !hasEntry
-    ? "← NO PRICE TRIGGER · THESIS-DRIVEN — read catalyst + invalidation"
-    : status === "TRIG" ? `← TRIGGERED at $${fmtPx(entVal!)}`
-    : status === "ARMED" ? `← APPROACHING ENTRY $${fmtPx(entVal!)} (${deltaTrig(idea)})`
-    : `← ENTRY $${fmtPx(entVal!)} · ${deltaTrig(idea)} from trigger`;
+  // LEVELS fields — REUSED cell renderers + honest per-field chips (§2.2)
+  const catalyst = idea.catalysts[0] ?? null;
+  const insFields = [
+    {
+      key: "ENTRY", cls: "rd-lev-entry",
+      ev: fieldEvKind(idea.entry, idea.explicitness),
+      cell: <ValueCell v={idea.entry} explicitness={idea.explicitness} absentText="Not stated by source" />,
+    },
+    {
+      key: "TRIGGER", cls: "rd-lev-trigger",
+      ev: trigVal != null
+        ? (idea.explicitness === "inferred" ? "INFERRED" as const : hasVerbatim(trigSrc) ? "DIRECT" as const : null)
+        : null,
+      cell: trigVal != null
+        ? (idea.explicitness === "inferred" ? <InferredCell text={rdPx(trigVal)} /> : <QuotedCell text={rdPx(trigVal)} />)
+        : <AbsentCell text="Not stated by source" />,
+    },
+    {
+      key: "INVALIDATION", cls: "rd-lev-inval",
+      ev: fieldEvKind(idea.invalidation, idea.explicitness),
+      cell: <ValueCell v={idea.invalidation} explicitness={idea.explicitness} numeric absentText="Not stated by source" />,
+    },
+    {
+      key: "TARGET", cls: "rd-lev-target",
+      ev: fieldEvKind(tgt, idea.explicitness),
+      cell: <ValueCell v={tgt} explicitness={idea.explicitness} numeric absentText="Not stated by source" />,
+    },
+    {
+      // the catalyst string IS the field's extracted source text — chip kind
+      // from the idea's explicitness, only when a catalyst exists
+      key: "CATALYST", cls: "rd-lev-cat",
+      ev: catalyst ? (idea.explicitness === "inferred" ? "INFERRED" as const : "DIRECT" as const) : null,
+      cell: catalyst ? <span className="rd-lev-plain">{catalyst}</span> : <AbsentCell text="Not stated by source" />,
+    },
+  ];
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <div className="bl-insp-ticker">{idea.ticker}</div>
-        {tracked ? <TrackedBadge t={tracked} /> : <StatusBadge s={status} />}
-        {idea.__fav && <span className="badge b-fav" style={{ fontSize: 8 }}>FAV</span>}
-      </div>
-      {idea.assetName && (
-        <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--ash)", opacity: 0.6, marginBottom: 6 }}>
-          {idea.assetName}
-        </div>
-      )}
-
-      {/* Live price block */}
-      {idea.quote && (
-        <div className="bl-insp-price-block">
-          <div className="bl-insp-price-live">LIVE · REAL-TIME</div>
-          <span className="bl-insp-price">${fmtPx(idea.quote.price)}</span>
-          <span className={`bl-insp-price-chg ${idea.quote.chgPct >= 0 ? "bl-dlt-pos" : "bl-dlt-neg"}`}>
-            {fmtPct(idea.quote.chgPct)}
+    <div className="rd-insp-body">
+      {/* title row: ticker + tracker-driven life chip + live block */}
+      <div className="rd-insp-top">
+        <div className="rd-insp-idrow">
+          <span className="rd-insp-ticker" title={idea.assetName || undefined}>{idea.ticker}</span>
+          <span className={`rd-life rd-life-lg ${life.cls}`} title={life.title}>
+            <span className="rd-life-dot" aria-hidden="true" />
+            {life.label}
+            {life.conflict && <span className="rd-life-conflict" title="conflicting stated triggers from this source">!</span>}
           </span>
         </div>
-      )}
-
-      {/* Meta grid: DIR / TF / CONF / RANK */}
-      <div className="bl-insp-meta-grid">
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">DIR</div>
-          <div className={`bl-insp-meta-val ${up ? "bl-dlt-pos" : idea.direction === "bearish" ? "bl-dlt-neg" : ""}`}>
-            {up ? "BULL" : idea.direction === "bearish" ? "BEAR" : "NEUT"}
-          </div>
-        </div>
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">TIMEFRAME</div>
-          <div className="bl-insp-meta-val">{TF_FULL[idea.timeHorizon] ?? idea.timeHorizon}</div>
-        </div>
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">CONF</div>
-          <div className="bl-insp-meta-val">{conf}%</div>
-        </div>
-        <div className="bl-insp-meta-cell">
-          <div className="bl-insp-meta-label">RANK</div>
-          <div className="bl-insp-meta-val">{idea.rankScore.toFixed(2)}</div>
-        </div>
-      </div>
-
-      {/* Direction + evidence badges */}
-      <div className="bl-insp-badges">
-        <DirBadge d={idea.direction} />
-        <ExpBadge e={idea.explicitness} />
-        {idea.creatorDesignation.isPrediction && <span className="badge b-pred">Prediction</span>}
-      </div>
-
-      {/* Thesis */}
-      <p className="bl-insp-thesis">{idea.thesis}</p>
-
-      {/* Sparkline chart */}
-      {idea.quote && (
-        <InspChart closes={idea.quote.closes} entry={entVal} up={up} />
-      )}
-
-      {/* Price action note */}
-      <div className="bl-pa-section">
-        <div className="bl-pa-label">PRICE ACTION</div>
-        <div className="bl-pa-note">{priceActionNote}</div>
-      </div>
-
-      {/* Tracker lifecycle — real transition history + excursions */}
-      {tracked && (
-        <>
-          <hr className="bl-insp-sep" />
-          <LifecyclePanel t={tracked} variants={variants} />
-        </>
-      )}
-
-      <hr className="bl-insp-sep" />
-
-      {/* Levels */}
-      <div className="bl-lev-section">
-        <div className="bl-lev-section-head">LEVELS · EACH TAGGED BY EVIDENCE</div>
-        <div className="bl-lev-grid2">
-          <div className="bl-lev-cell">
-            <div className="bl-lev-cell-label">ENTRY</div>
-            <div className="bl-lev-cell-val">
-              {entVal != null ? <b>${fmtPx(entVal)}</b> : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
-            </div>
-          </div>
-          <div className="bl-lev-cell">
-            <div className="bl-lev-cell-label">TRIGGER</div>
-            <div className="bl-lev-cell-val">
-              {idea.entry?.text && !/not specified/i.test(idea.entry.text)
-                ? <b>{idea.entry.text}</b>
-                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
-            </div>
-          </div>
-          <div className="bl-lev-cell">
-            <div className="bl-lev-cell-label">
-              INVALIDATION
-              {invVal != null && <span className="bl-ev bl-ev-direct" style={{ marginLeft: 5 }}>DIRECT</span>}
-            </div>
-            <div className="bl-lev-cell-val">
-              {invVal != null
-                ? <b>${fmtPx(invVal)}</b>
-                : idea.invalidation?.text && !/not specified/i.test(idea.invalidation.text)
-                ? <span style={{ color: "var(--bone)", fontSize: 11 }}>{idea.invalidation.text}</span>
-                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
-            </div>
-          </div>
-          <div className="bl-lev-cell">
-            <div className="bl-lev-cell-label">TARGET</div>
-            <div className="bl-lev-cell-val">
-              {tgt?.value != null
-                ? <b>${fmtPx(tgt.value)}</b>
-                : tgt?.text && !/not specified/i.test(tgt.text)
-                ? <span style={{ color: "var(--bone)", fontSize: 11 }}>{tgt.text}</span>
-                : <span className="bl-lev-cell-ns">⌀ Not stated by source</span>}
-            </div>
+        <div className="rd-insp-liveblk">
+          <div className="rd-insp-livelabel">LIVE · REAL-TIME</div>
+          <div className="rd-insp-liveprice">
+            <span className="rd-live-dot-g" aria-hidden="true">◉</span>
+            {rdPx(live)}
           </div>
         </div>
       </div>
 
-      {/* Catalyst */}
-      {idea.catalysts.length > 0 && (
-        <>
-          <hr className="bl-insp-sep" />
-          <div className="bl-lev-cell-label" style={{ marginBottom: 4 }}>
-            CATALYST
-            <span className={`bl-ev ${idea.explicitness === "explicit" ? "bl-ev-direct" : "bl-ev-inferred"}`} style={{ marginLeft: 6 }}>
-              {idea.explicitness === "explicit" ? "DIRECT" : "INFERRED"}
+      {/* stat strip: DIR / TIMEFRAME / CONF / RANK — all real (the design's
+          fifth EVID:DIRECT cell was hardcoded mock; the honest idea-level
+          chip lives in the posture row below) */}
+      <div className="rd-insp-stats">
+        <div className="rd-insp-stat">
+          <div className="rd-insp-stat-label">DIR</div>
+          <div className={`rd-insp-stat-val ${dirMeta.cls}`} title={dirMeta.title}>{dirMeta.label}</div>
+        </div>
+        <div className="rd-insp-stat">
+          <div className="rd-insp-stat-label">TIMEFRAME</div>
+          <div className="rd-insp-stat-val">{RD_TF_SHORT[idea.timeHorizon] ?? "—"}</div>
+        </div>
+        <div className="rd-insp-stat">
+          <div className="rd-insp-stat-label">CONF</div>
+          <div className="rd-insp-stat-val">{conf}%</div>
+        </div>
+        <div className="rd-insp-stat">
+          <div className="rd-insp-stat-label">RANK</div>
+          <div className="rd-insp-stat-val">{idea.rankScore.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* posture chips: direction + honest idea-level evidence; FAV and
+          PREDICTION are real facts with no design chip — kept, low emphasis */}
+      <div className="rd-insp-chips">
+        <span className={`rd-pchip ${dirMeta.cls}`} title={dirMeta.title}>{RD_DIR_LABEL[idea.direction]}</span>
+        {ev && (
+          <span className={`rd-ev rd-ev-lg ${ev === "DIRECT" ? "rd-ev-direct" : "rd-ev-inferred"}`}>
+            <span className="rd-ev-g" aria-hidden="true">{ev === "DIRECT" ? "▮" : "~"}</span>
+            {ev} SOURCE
+          </span>
+        )}
+        {idea.__fav && <span className="rd-pchip rd-pchip-fact" title="creator favorite">FAV</span>}
+        {idea.creatorDesignation.isPrediction && <span className="rd-pchip rd-pchip-fact">PREDICTION</span>}
+      </div>
+
+      {/* thesis */}
+      <p className="rd-insp-thesis">{idea.thesis}</p>
+
+      {/* TRADE PLAN */}
+      <div className="rd-insp-seclabel rd-plan-head">TRADE PLAN</div>
+      <div className="rd-plan">
+        <div className="rd-plan-box rd-plan-entry">
+          <div className="rd-plan-lab">ENTRY</div>
+          {planEntry ? <div className="rd-plan-val">{planEntry}</div> : <AbsentCell />}
+        </div>
+        <div className="rd-plan-box rd-plan-exit">
+          <div className="rd-plan-lab">EXIT / STOP</div>
+          {planExit ? <div className="rd-plan-val">{planExit}</div> : <AbsentCell />}
+        </div>
+        <div className="rd-plan-box rd-plan-tp">
+          <div className="rd-plan-lab">TAKE-PROFIT</div>
+          {planTp ? <div className="rd-plan-val">{planTp}</div> : <AbsentCell text="n/s — thesis-driven" />}
+        </div>
+      </div>
+
+      {/* PRICE ACTION header — honest 1M · DAILY axis label (SPEC-wiring §2.4
+          replaces the design's `5D · 15m · illustrative`) + real Δ → TRIGGER */}
+      <div className="rd-pa-row">
+        <div>
+          <div className="rd-insp-seclabel">PRICE ACTION</div>
+          <div className="rd-pa-sub">1M · DAILY</div>
+        </div>
+        <div className="rd-pa-right">
+          {delta ? (
+            <>
+              <div className="rd-pa-deltalabel">Δ → TRIGGER</div>
+              <div
+                className={`rd-pa-deltaval ${delta.cls}`}
+                title={trigVal != null ? `live ${rdPx(live)} vs stated trigger ${rdPx(trigVal)}` : undefined}
+              >
+                {delta.val}{delta.label && <span className="rd-pa-deltatag"> {delta.label}</span>}
+              </div>
+            </>
+          ) : (
+            <span className="rd-notrig">
+              <span className="rd-notrig-g" aria-hidden="true">~</span>
+              NO TRIGGER · THESIS-DRIVEN
             </span>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--bone)", lineHeight: 1.4 }}>{idea.catalysts[0]}</div>
-        </>
-      )}
-
-      {/* Confidence bar */}
-      <div className="bl-conf-row">
-        <span className="bl-conf-pct">CONF</span>
-        <div className="bl-conf-bar-wrap">
-          <div className="bl-conf-bar-fill" style={{ width: `${conf}%` }} />
+          )}
         </div>
-        <span className="bl-conf-pct">{conf}%</span>
+      </div>
+      <InspChart
+        closes={quote.closes}
+        live={live}
+        trigger={trigVal != null && trigVal > 0 ? trigVal : null}
+        lineColor={lineColor}
+      />
+
+      {/* tracker lifecycle — real transition history + excursions */}
+      {tracked && <LifecyclePanel t={tracked} variants={variants} />}
+
+      {/* LEVELS */}
+      <div className="rd-insp-seclabel rd-lev-head">LEVELS · EACH TAGGED BY EVIDENCE</div>
+      <div className="rd-lev-grid">
+        {insFields.map((f) => (
+          <div key={f.key} className={`rd-lev-f ${f.cls}`}>
+            <div className="rd-lev-lab">
+              <span className="rd-lev-lab-t">{f.key}</span>
+              {f.ev && <EvChip kind={f.ev} />}
+            </div>
+            {f.cell}
+          </div>
+        ))}
       </div>
 
-      {/* Cite */}
-      {idea.videoId && (
-        <div className="bl-insp-cite2">
-          · {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
-          {idea.rankScore !== undefined ? ` · rank ${idea.rankScore.toFixed(2)}` : ""}
+      {/* footer: confidence + source cite (deep link at timestamp) */}
+      <div className="rd-insp-foot">
+        <div className="rd-insp-conf">
+          CONF
+          <span className="rd-insp-conf-bar" aria-hidden="true">
+            <span className="rd-insp-conf-fill" style={{ width: `${conf}%` }} />
+          </span>
+          <span className="rd-insp-conf-pct">{conf}%</span>
         </div>
-      )}
-      {idea.videoId && (
-        <a className="bl-insp-cite" href={watchUrl(idea.videoId, idea.sourceStartSeconds)} target="_blank" rel="noreferrer">
-          ▸ open source
-        </a>
+        {idea.videoId ? (
+          <a
+            className="rd-insp-src"
+            href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
+            target="_blank" rel="noreferrer"
+            title="open source at timestamp"
+          >
+            ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)} · rank {idea.rankScore.toFixed(2)}
+          </a>
+        ) : (
+          <span className="rd-insp-src">▸ {idea.channelTitle} · rank {idea.rankScore.toFixed(2)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Inspector({ idea, tracked, variants, rowNo, rowCount }: {
+  idea: BlotterIdea | null;
+  tracked: TrackedIdea | null;
+  variants: TrackedIdea[];
+  /** 1-based position of the selected row among the visible rows in display
+   * order — null when the selection is filtered out of view */
+  rowNo: number | null;
+  rowCount: number;
+}) {
+  // breadcrumb (§2.11): ticker · setup word · n/{visible}. The setup word is
+  // CAT_LABEL of the idea's chapter category when present, else omitted —
+  // never an invented classifier (SPEC-wiring §2.1). Denominator DERIVED.
+  const setup = idea?.chapter ? CAT_LABEL[idea.chapter.normalizedCategory] : undefined;
+  const crumb = idea
+    ? [idea.ticker, setup, rowNo != null ? `${rowNo}/${rowCount}` : null].filter(Boolean).join(" · ")
+    : null;
+
+  return (
+    <div className="rd-insp">
+      <div className="rd-insp-head">
+        <span className="rd-insp-title">INSPECTOR</span>
+        {crumb && <span className="rd-insp-crumb" title={crumb}>▸ {crumb}</span>}
+      </div>
+      {!idea ? (
+        /* design EMPTY state, verbatim copy (§2.12) — replaces SELECT A ROW */
+        <div className="rd-insp-state">
+          <div className="rd-insp-state-glyph" aria-hidden="true">∅</div>
+          <div className="rd-insp-state-title">NOTHING SELECTED</div>
+          <p className="rd-insp-state-copy">Populate the board, then select a row to inspect its thesis and evidence.</p>
+        </div>
+      ) : !idea.quote ? (
+        /* design LOADING state (§2.12), used honestly: a row is selected but
+           its quote hasn't landed yet (quotes map miss) */
+        <div className="rd-insp-state rd-insp-loading" role="status">
+          <span className="rd-insp-pulse" aria-hidden="true" />
+          <div className="rd-insp-state-title">AWAITING ANALYSIS</div>
+          <span className="sr-only">Awaiting market data for {idea.ticker}</span>
+          <div className="rd-insp-shimmers" aria-hidden="true">
+            <span className="rd-shim" />
+            <span className="rd-shim" style={{ width: "70%", animationDelay: "0.2s" }} />
+            <span className="rd-shim" style={{ width: "84%", animationDelay: "0.4s" }} />
+          </div>
+        </div>
+      ) : (
+        <InspectorIdea idea={idea} quote={idea.quote} tracked={tracked} variants={variants} />
       )}
     </div>
   );
@@ -2157,6 +2302,15 @@ export default function IntelDashboard() {
     ? trackedList.filter((t) => t.conflictKey === selectedTracked.conflictKey && t.id !== selectedTracked.id)
     : [];
 
+  // inspector breadcrumb position — the selected row's 1-based index among the
+  // currently visible rows in DISPLAY order (horizon groups), and the derived
+  // denominator (SPEC-wiring §2.11: the design's /6 was hardcoded)
+  const visibleRows = visibleBlotter(blotter, trackedByIdeaId, blotterFilter);
+  const displayRows = BOARD_GROUPS.flatMap((g) =>
+    visibleRows.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g.key),
+  );
+  const selRowIdx = selectedIdea ? displayRows.findIndex((r) => r.id === selectedIdea.id) : -1;
+
   // compose watchlist tape items from blotter — one chip per symbol. Multiple
   // ideas can share a ticker (e.g. two stated FCEL triggers); the quote is
   // per-symbol, so show the symbol once with its most urgent derived status.
@@ -2285,7 +2439,13 @@ export default function IntelDashboard() {
               <OptionsIntelPanel brief={brief} />
             </div>
             <div className="bl-right">
-              <Inspector idea={selectedIdea} tracked={selectedTracked} variants={conflictVariants} />
+              <Inspector
+                idea={selectedIdea}
+                tracked={selectedTracked}
+                variants={conflictVariants}
+                rowNo={selRowIdx >= 0 ? selRowIdx + 1 : null}
+                rowCount={displayRows.length}
+              />
             </div>
           </div>
         )}

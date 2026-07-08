@@ -719,3 +719,290 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   /* board-state buttons need real tap areas too */
   .rd-btn-lg, .rd-btn-retry { min-height: 44px; }
 }
+
+/* ==========================================================================
+   STAGE 3 — THE INSPECTOR (SPEC-desktop §2.6.3 idea mode + §2.12 states,
+   exact values re-read from the design file). Presentation only: the data
+   stays idea/tracker/quote-driven. Desktop-only column — .bl-right is hidden
+   <1100px by the old skin's rule, which stays in force.
+   ========================================================================== */
+
+/* the inspector column keeps its slot/scroll behavior; its contents now carry
+   the design's own header/body paddings, so the container padding collapses */
+.intel-root .bl-right { padding: 0 0 60px; }
+
+.rd-insp { min-width: 0; }
+.rd-insp-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 16px 9px;
+  border-bottom: 1px solid var(--rd-hair-06);
+}
+.rd-insp-title {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-insp-crumb {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.rd-insp-body { padding: 14px 16px 16px; }
+
+/* ---- title row ---- */
+.rd-insp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rd-insp-idrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+.rd-insp-ticker {
+  font-family: var(--rd-mono); font-weight: 600; font-size: 21px;
+  letter-spacing: 0.04em; color: var(--rd-t-primary);
+}
+/* life-chip size variants over the stage-2 base: title row (lg) + timeline (sm) */
+.rd-life-lg { font-size: 9px; letter-spacing: 0.12em; padding: 3px 8px; gap: 6px; }
+.rd-life-lg .rd-life-dot { width: 5px; height: 5px; }
+.rd-life-sm { font-size: 7px; letter-spacing: 0.05em; padding: 1px 5px; }
+.rd-insp-liveblk { text-align: right; flex-shrink: 0; }
+.rd-insp-livelabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-insp-liveprice {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 1px;
+  font-family: var(--rd-mono); font-size: 17px; color: var(--rd-t-brightest);
+  white-space: nowrap;
+}
+.rd-insp-liveprice .rd-live-dot-g { font-size: 11px; }
+
+/* ---- stat strip ---- */
+.rd-insp-stats {
+  display: flex; align-items: stretch; margin-top: 11px;
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); overflow: hidden;
+}
+.rd-insp-stat { flex: 1; min-width: 0; padding: 6px 9px; border-right: 1px solid var(--rd-hair-05); }
+.rd-insp-stat:last-child { border-right: none; }
+.rd-insp-stat-label {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); margin-bottom: 2px; white-space: nowrap;
+}
+.rd-insp-stat-val {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-secondary2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* DIR stat takes the direction color (two-class so it outranks the base) */
+.rd-insp-stat-val.rd-dir-bull { color: var(--rd-bull); }
+.rd-insp-stat-val.rd-dir-bear { color: var(--rd-bear); }
+.rd-insp-stat-val.rd-dir-neut { color: var(--rd-amber); }
+
+/* ---- posture chips ---- */
+.rd-insp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.rd-pchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em;
+  padding: 3px 8px; border: 1px solid currentColor; border-radius: 2px; white-space: nowrap;
+}
+.rd-pchip-fact { color: var(--rd-t-dim4); border-color: var(--rd-hair-12); }
+/* evidence-chip posture variant over the stage-2 base */
+.rd-ev-lg { font-size: 9px; font-weight: 500; letter-spacing: 0.1em; padding: 3px 8px; gap: 5px; }
+.rd-ev-lg .rd-ev-g { font-size: 8px; }
+
+/* ---- thesis ---- */
+.rd-insp-thesis {
+  margin: 12px 0 0; font-family: var(--rd-sans); font-size: 13px;
+  line-height: 1.5; color: var(--rd-t-body);
+}
+
+/* ---- section micro-labels ---- */
+.rd-insp-seclabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em;
+  color: var(--rd-t-ghost);
+}
+.rd-plan-head { margin: 14px 0 7px; }
+.rd-lev-head { margin: 16px 0 0; }
+
+/* ---- trade plan ---- */
+.rd-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+.rd-plan-box { border: 1px solid; border-radius: 2px; padding: 8px 10px; min-width: 0; }
+.rd-plan-entry { border-color: rgba(111, 160, 133, 0.28); background: rgba(111, 160, 133, 0.05); }
+.rd-plan-exit { border-color: rgba(205, 126, 109, 0.28); background: rgba(205, 126, 109, 0.05); }
+.rd-plan-tp { border-color: rgba(106, 160, 200, 0.28); background: rgba(106, 160, 200, 0.05); }
+.rd-plan-lab {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em;
+  margin-bottom: 4px; white-space: nowrap;
+}
+.rd-plan-entry .rd-plan-lab { color: var(--rd-bull); }
+.rd-plan-exit .rd-plan-lab { color: var(--rd-bear); }
+.rd-plan-tp .rd-plan-lab { color: var(--rd-blue); }
+.rd-plan-val { font-family: var(--rd-mono); font-size: 11.5px; overflow-wrap: break-word; }
+.rd-plan-entry .rd-plan-val { color: #c9e0d3; }
+.rd-plan-exit .rd-plan-val { color: #e7c2b8; }
+.rd-plan-tp .rd-plan-val { color: #bcd3e6; }
+/* plan-box absent cells run at the design's 11px (base .rd-abs is 10px) */
+.rd-plan-box .rd-abs { font-size: 11px; }
+
+/* ---- price action header ---- */
+.rd-pa-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; margin: 15px 0 0;
+}
+.rd-pa-sub {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.03em;
+  color: var(--rd-t-faint); margin-top: 2px; white-space: nowrap;
+}
+.rd-pa-right { text-align: right; }
+.rd-pa-deltalabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-pa-deltaval { font-family: var(--rd-mono); font-size: 16px; margin-top: 1px; white-space: nowrap; }
+.rd-pa-deltatag { font-size: 7.5px; letter-spacing: 0.08em; }
+.rd-notrig {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.05em;
+  color: var(--rd-t-faint2); padding: 5px 9px;
+  border: 1px dashed var(--rd-hair-13); border-radius: 2px; white-space: nowrap;
+}
+.rd-notrig-g { color: var(--rd-inferred); }
+
+/* ---- chart (352×92) ---- */
+.rd-chart {
+  position: relative; margin-top: 8px;
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); overflow: hidden;
+}
+.rd-chart svg { display: block; width: 100%; height: 92px; }
+.rd-chart-h, .rd-chart-l {
+  position: absolute; left: 6px;
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint2); background: rgba(10, 12, 15, 0.72);
+  padding: 0 2px; white-space: nowrap;
+}
+.rd-chart-h { top: 4px; }
+.rd-chart-l { bottom: 4px; }
+.rd-chart-trig {
+  position: absolute; left: 50%; transform: translateX(-50%) translateY(-50%);
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.03em;
+  color: #8aa6c4; background: rgba(10, 12, 15, 0.85); padding: 0 3px; white-space: nowrap;
+}
+.rd-chart-live {
+  position: absolute; right: 6px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-brightest);
+  background: rgba(10, 12, 15, 0.9); padding: 1px 5px;
+  border: 1px solid var(--rd-hair-12); border-radius: 2px; white-space: nowrap;
+}
+.rd-chart-live-dot { color: var(--rd-live); font-size: 7px; }
+.rd-chart-noseries { height: 92px; display: flex; align-items: center; justify-content: center; }
+
+/* ---- LEVELS grid ---- */
+.rd-lev-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px;
+  margin-top: 9px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-lev-f { min-width: 0; }
+.rd-lev-lab { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rd-lev-lab-t {
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 500;
+  letter-spacing: 0.11em; white-space: nowrap;
+}
+.rd-lev-entry .rd-lev-lab-t, .rd-lev-cat .rd-lev-lab-t { color: #5f86a3; }
+.rd-lev-trigger .rd-lev-lab-t { color: #7e858d; }
+.rd-lev-inval .rd-lev-lab-t { color: #9c6457; }
+.rd-lev-target .rd-lev-lab-t { color: #5f8a72; }
+/* inspector-scale variants of the shared cell renderers (§3.4: 12px/10px
+   glyphed, 11.5px absent, chips at ls .07em / 7px glyph) — values may wrap */
+.rd-lev-f .rd-cell { font-size: 12px; }
+.rd-lev-f .rd-cell-g { font-size: 10px; }
+.rd-lev-f .rd-cell-qv, .rd-lev-f .rd-cell-iv, .rd-lev-f .rd-cell-nv {
+  white-space: normal; overflow: visible; text-overflow: clip;
+}
+.rd-lev-f .rd-abs { font-size: 11.5px; white-space: normal; }
+.rd-lev-f .rd-ev { letter-spacing: 0.07em; }
+.rd-lev-f .rd-ev-g { font-size: 7px; }
+.rd-lev-plain { font-family: var(--rd-sans); font-size: 12px; line-height: 1.4; color: var(--rd-t-body); }
+
+/* ---- footer: confidence + source cite ---- */
+.rd-insp-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-insp-conf {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.13em;
+  color: var(--rd-t-faint2);
+}
+.rd-insp-conf-bar {
+  width: 70px; height: 4px; background: var(--rd-hair-08);
+  border-radius: 2px; overflow: hidden;
+}
+.rd-insp-conf-fill { display: block; height: 100%; background: var(--rd-acc); }
+.rd-insp-conf-pct { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-muted); letter-spacing: normal; }
+.rd-insp-src {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  color: var(--rd-acc); text-decoration: none; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.rd-insp-src:hover { text-decoration: underline; }
+
+/* ---- LIFECYCLE (kept real panel, rd- skin) ---- */
+.rd-lifec { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06); }
+.rd-lifec-head { display: flex; align-items: center; gap: 6px; }
+.rd-lifec-stale {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-amber); border: 1px solid rgba(191, 160, 90, 0.35);
+  border-radius: 2px; padding: 1px 5px;
+}
+.rd-tl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; }
+.rd-tl-step {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim);
+}
+.rd-tl-when { color: var(--rd-t-ghost); }
+.rd-tl-px { color: var(--rd-t-secondary2); }
+.rd-lifec-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+.rd-lifec-num {
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 6px 9px; min-width: 0;
+}
+.rd-lifec-note {
+  font-family: var(--rd-mono); font-size: 8px; line-height: 1.5;
+  color: var(--rd-t-faint2); margin-top: 6px;
+}
+.rd-lifec-spark { margin-top: 10px; }
+.rd-lifec-spark svg { display: block; width: 100%; }
+.rd-lifec-sparkmeta {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.05em;
+  color: var(--rd-t-ghost); margin-top: 3px;
+}
+.rd-lifec-vars { margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(191, 160, 90, 0.25); }
+.rd-lifec-varhead {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-amber); margin-bottom: 4px;
+}
+.rd-lifec-var {
+  display: flex; align-items: center; gap: 7px; padding: 2px 0;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim);
+}
+
+/* ---- inspector states (§2.12, design values verbatim) ---- */
+.rd-insp-state { padding: 60px 16px; text-align: center; }
+.rd-insp-state-glyph {
+  font-family: var(--rd-mono); font-size: 24px; color: var(--rd-t-empty);
+  margin-bottom: 12px;
+}
+.rd-insp-state-title {
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.14em;
+  color: var(--rd-t-faint);
+}
+.rd-insp-state-copy {
+  font-family: var(--rd-sans); font-size: 11.5px; color: var(--rd-t-ghost);
+  margin: 8px auto 0; max-width: 30ch;
+}
+.rd-insp-pulse {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--rd-acc); animation: augPulse 1s ease-in-out infinite;
+}
+.rd-insp-loading .rd-insp-state-title { margin-top: 12px; }
+.rd-insp-shimmers { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.rd-shim {
+  height: 10px; background: rgba(255, 255, 255, 0.06); border-radius: 2px;
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
