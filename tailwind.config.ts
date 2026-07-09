@@ -9,8 +9,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Monochrome stage — ash, bone, graphite — over near-black charcoal.
-        charcoal: "#08080B",
+        // Monochrome stage — ash, bone, graphite — over soft-graphite charcoal.
+        charcoal: "#13151A",
         graphite: "#3a3a40",
         ash: "#9a9a9f",
         bone: "#e8e6e1",

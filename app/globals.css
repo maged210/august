@@ -9,8 +9,8 @@
    token; surfaces inherit, never reinvent.
    ============================================================================ */
 :root {
-  /* — Palette — near-black stage, monochrome ink, one restrained accent ----- */
-  --charcoal: #08080b; /* the stage */
+  /* — Palette — graphite stage, monochrome ink, one restrained accent ------- */
+  --charcoal: #13151a; /* the stage — THE tunable dark-stage value; lift/lower dark mode here */
   --charcoal-2: #0c0d11; /* a half-step up — raised surface base */
   --bone: #e8e6e1; /* primary text */
   --ash: #9a9a9f; /* secondary text */
@@ -22,6 +22,9 @@
   --pos-rgb: 127 176 163;
   --neg: #bb7d72; /* down / loss */
   --neg-rgb: 187 125 114;
+  --amber: #c9a24a; /* catalyst / caution — semantic, never mood-tinted */
+  --amber-rgb: 201 162 74;
+  --gauge-green: #9bbf8a; /* the gauge scale's one extra step between --ash and --pos */
 
   /* — Hairlines, panels, glass --------------------------------------------- */
   --wash-rgb: 255 255 255; /* neutral wash (hairlines/fills/edges); flips in light */
@@ -110,6 +113,9 @@
   --pos-rgb: 60 111 94;
   --neg: #a8584c;
   --neg-rgb: 168 88 76;
+  --amber: #7e6119; /* catalyst amber as ink — #c9a24a is ~2.1:1 on the off-white stage */
+  --amber-rgb: 126 97 25;
+  --gauge-green: #557a48;
 
   --wash-rgb: 22 24 30; /* near-black wash on the off-white stage */
   --line: rgba(0, 0, 0, 0.1);
@@ -427,7 +433,7 @@ body::after {
   height: 34px;
   border-radius: 9999px;
   border: 1px solid rgb(var(--wash-rgb) / 0.14);
-  background: rgba(8, 8, 11, 0.55);
+  background: rgba(19, 21, 26, 0.55);
   color: var(--ash);
   cursor: pointer;
   backdrop-filter: blur(4px);
@@ -454,7 +460,7 @@ body::after {
   font-size: 9.5px;
   color: var(--bone);
   white-space: nowrap;
-  background: rgba(8, 8, 11, 0.78);
+  background: rgba(19, 21, 26, 0.78);
   border: 1px solid rgb(var(--steel-rgb) / 0.5);
   border-radius: 3px;
   box-shadow: 0 0 18px rgb(var(--steel-rgb) / 0.22);
@@ -488,7 +494,7 @@ body::after {
 
 /* keep MapLibre attribution legible + unobtrusive on the dark stage */
 .globe-overlay .maplibregl-ctrl-attrib {
-  background: rgba(8, 8, 11, 0.5);
+  background: rgba(19, 21, 26, 0.5);
 }
 .globe-overlay .maplibregl-ctrl-attrib a {
   color: var(--ash);
@@ -571,6 +577,30 @@ body::after {
   background: var(--steel);
   box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.85);
   transform: scale(1.45);
+}
+/* Unseen — something new landed on that surface since it was last visited: a
+   quiet steel halo + slow breathing on the mark, no size change, no badge.
+   Never co-exists with .active; the page clears it the moment the surface
+   becomes the current slide. */
+.deck-dot.fresh .deck-dot-mark {
+  opacity: 0.75;
+  background: var(--steel);
+  box-shadow: 0 0 7px rgb(var(--steel-rgb) / 0.5);
+  animation: dot-fresh 3.4s var(--ease) infinite;
+}
+@keyframes dot-fresh {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck-dot.fresh .deck-dot-mark {
+    animation: none; /* the brighter halo alone carries the signal */
+  }
 }
 .deck-dot-label {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -859,7 +889,7 @@ body::after {
   color: var(--steel);
 }
 .mb-stop {
-  color: #c9a24a;
+  color: var(--amber); /* dark value is the old literal #c9a24a; light gets the ink variant */
 }
 .mb-meta {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -874,7 +904,7 @@ body::after {
   font-size: 8.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #bb7d72;
+  color: var(--neg); /* dark value is the old literal #bb7d72; light gets the ink variant */
   opacity: 0.85;
 }
 
@@ -1184,6 +1214,33 @@ body::after {
   letter-spacing: 0.1em;
   color: var(--ash);
   opacity: 0.45;
+}
+/* one mono foot row under a wire headline: time left, fly affordance right */
+.feed-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+/* the ◎ fly affordance — only on headlines the synthesis grounded to a place;
+   it flies the globe there (the headline text itself still opens the link) */
+.feed-fly {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--steel);
+  opacity: 0.7;
+  transition: opacity var(--dur-fast) var(--ease-snappy);
+}
+.feed-fly:hover,
+.feed-fly:focus-visible {
+  opacity: 1;
 }
 .globe-hint {
   font-size: 13px;
@@ -1523,7 +1580,9 @@ body::after {
 }
 .comms-connect-btn:hover {
   background: var(--steel);
-  color: var(--bg, #08080b);
+  /* --bg was never defined (dark-on-dark on the light stage); --charcoal is the
+     real stage token — dark keeps the identical #13151a, light flips to ink-safe */
+  color: var(--charcoal, #13151a);
 }
 
 @media (max-width: 720px) {
@@ -1956,7 +2015,10 @@ body::after {
 }
 .desk-compile-btn:hover:not(:disabled) {
   background: var(--steel);
-  color: var(--bg, #08080b);
+  /* Stage token, not a literal: light theme's steel is dark, so the hover text
+     must flip light with the stage (--bg was never defined — it always fell
+     back to the stage literal, which went dark-on-dark on the light stage). */
+  color: var(--charcoal, #13151a);
 }
 .desk-compile-btn:disabled {
   opacity: 0.55;
@@ -2423,7 +2485,7 @@ body::after {
   --ash: #9a9a9f;
   --ink-mute: #6b6b72;
   --graphite: #3a3a40;
-  --charcoal: #08080b;
+  --charcoal: #13151a; /* keep in lock-step with the :root dark stage */
   --steel: #6e8ca8;
   --steel-rgb: 110 140 168;
   --wash-rgb: 255 255 255;
@@ -2484,7 +2546,7 @@ body::after {
   align-items: center;
   gap: 10px;
   padding: 7px 16px;
-  background: rgba(8, 8, 11, 0.55);
+  background: rgba(19, 21, 26, 0.55);
   border: 1px solid var(--line);
   border-radius: 6px;
   backdrop-filter: blur(6px);
@@ -2507,7 +2569,7 @@ body::after {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  background: rgba(8, 8, 11, 0.5);
+  background: rgba(19, 21, 26, 0.5);
   border: 1px solid var(--line);
   border-radius: 8px;
   backdrop-filter: blur(6px);
@@ -2599,7 +2661,7 @@ body::after {
   display: flex;
   flex-direction: column;
   max-height: min(72vh, 560px);
-  background: rgba(8, 8, 11, 0.5);
+  background: rgba(19, 21, 26, 0.5);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   backdrop-filter: blur(8px);
@@ -2681,7 +2743,7 @@ body::after {
 }
 
 .command-surface .maplibregl-ctrl-attrib {
-  background: rgba(8, 8, 11, 0.5);
+  background: rgba(19, 21, 26, 0.5);
 }
 .command-surface .maplibregl-ctrl-attrib a {
   color: var(--ash);
@@ -3120,6 +3182,12 @@ body {
   text-transform: uppercase;
   color: var(--ash);
   opacity: 0.75;
+}
+/* while the sub line carries a "something new on World" signal — same type,
+   accent ink only; clears with the signal the moment World is visited */
+.readout-sub-hot {
+  color: var(--steel);
+  opacity: 0.9;
 }
 
 /* Navigable readouts — clickable hub controls: glow on the label, brighten the

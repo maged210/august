@@ -80,15 +80,18 @@ const BRIEF_REFRESH_MS = 60_000;
 
 const TAPE_MACRO = ["SPY", "QQQ", "IWM", "^VIX", "GC=F", "CL=F", "BTC-USD", "ETH-USD"];
 
-// Design-system colors (globals.css :root) — POS/NEG match the --pos/--neg
-// tokens (the same convention as components/markets/Sparkline.tsx), AMBER is
-// the system's caution accent, ASH the secondary ink. GREEN is the one extra
-// scale step the 5-zone fear/greed gauge needs between ASH and POS.
-const POS = "#7fb0a3";
-const NEG = "#bb7d72";
-const ASH = "#9a9a9f";
-const AMBER = "#c9a24a";
-const GREEN = "#9bbf8a";
+// Design-system colors as CSS custom-property references (globals.css :root),
+// so the inline-SVG charts + gauges re-theme with [data-theme] — applied via
+// `style` (SVG presentation attributes don't resolve var()); the fallbacks are
+// the dark-stage values, so dark rendering is unchanged. POS/NEG match the
+// --pos/--neg tokens, AMBER is the system's caution accent, ASH the secondary
+// ink. GREEN is the one extra scale step the 5-zone fear/greed gauge needs
+// between ASH and POS.
+const POS = "var(--pos, #7fb0a3)";
+const NEG = "var(--neg, #bb7d72)";
+const ASH = "var(--ash, #9a9a9f)";
+const AMBER = "var(--amber, #c9a24a)";
+const GREEN = "var(--gauge-green, #9bbf8a)";
 
 const TF_LABEL: Record<string, string> = {
   intraday: "ID", next_session: "NS", swing: "SW", long_term: "LT", unspecified: "—",
@@ -235,7 +238,7 @@ function MiniSpark({ closes, up }: { closes: number[]; up: boolean }) {
   ).join(" ");
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="bl-spark">
-      <polyline points={points} fill="none" stroke={up ? POS : NEG} strokeWidth="1.2" />
+      <polyline points={points} fill="none" style={{ stroke: up ? POS : NEG }} strokeWidth="1.2" />
     </svg>
   );
 }
@@ -255,10 +258,10 @@ function InspChart({ closes, entry, up }: { closes: number[]; entry: number | nu
     <div className="bl-insp-chart">
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {entY != null && (
-          <line x1={0} y1={entY} x2={W} y2={entY} stroke={AMBER} strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
+          <line x1={0} y1={entY} x2={W} y2={entY} style={{ stroke: AMBER }} strokeWidth="0.8" strokeDasharray="3 3" opacity="0.65" />
         )}
-        <polyline points={pts} fill="none" stroke={up ? POS : NEG} strokeWidth="1.5" />
-        <circle cx={lastX} cy={lastY} r={2.5} fill={up ? POS : NEG} />
+        <polyline points={pts} fill="none" style={{ stroke: up ? POS : NEG }} strokeWidth="1.5" />
+        <circle cx={lastX} cy={lastY} r={2.5} style={{ fill: up ? POS : NEG }} />
       </svg>
       <div className="bl-insp-chart-labels">
         <span>{fmtPx(min)}</span>
@@ -957,7 +960,7 @@ function LeftPanel({
       {!ownerView ? (
         <>
           <div className="bl-ph">Sources &amp; Videos</div>
-          <div className="bl-lp-age">owner only — the source roster stays private</div>
+          <div className="bl-lp-age">owner only — the source roster stays private (set INTEL_OWNER_VIEW=true in .env.local)</div>
         </>
       ) : (
         <>
@@ -2149,7 +2152,7 @@ export default function IntelDashboard() {
                     <VideoLibrary videos={videos} onOpen={setOpenVideo} />
                   </>
                 ) : (
-                  <div className="inote" style={{ marginTop: 12 }}>owner only — the source roster and video library stay private</div>
+                  <div className="inote" style={{ marginTop: 12 }}>owner only — the source roster and video library stay private (set INTEL_OWNER_VIEW=true in .env.local)</div>
                 )}
                 {disclaimer}
               </div>

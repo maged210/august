@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Intel } from "@/lib/intel";
+import type { ArticleGeo, Intel } from "@/lib/intel";
 import WidgetState from "@/components/WidgetState";
 
 const REFRESH_MS = 5 * 60_000;
@@ -14,7 +14,15 @@ const fmtTime = (ms: number) =>
 // /api/intel the Morning Brief consumes — this is a surface merge, not a new data
 // path. Pointer-events live on this box only so the globe keeps its drag/zoom
 // everywhere else; it reports its live-wire count up for the World HUD.
-export default function IntelPanel({ onCount }: { onCount?: (n: number) => void }) {
+// onFly: a geolocated headline's ◎ affordance hands its target up to the globe
+// (this panel stays map-free — the parent owns the one flyTo path).
+export default function IntelPanel({
+  onCount,
+  onFly,
+}: {
+  onCount?: (n: number) => void;
+  onFly?: (geo: ArticleGeo) => void;
+}) {
   const [data, setData] = useState<Intel | null>(null);
   const [status, setStatus] = useState<"loading" | "live" | "error">("loading");
   // Open on a roomy viewport; start collapsed at narrow widths so the globe reads
@@ -86,8 +94,25 @@ export default function IntelPanel({ onCount }: { onCount?: (n: number) => void 
                       >
                         {a.headline}
                       </a>
-                      {a.publishedAt > 0 && (
-                        <span className="feed-time">{fmtTime(a.publishedAt)}</span>
+                      {/* one mono foot row: time left, fly affordance right —
+                          only for headlines the synthesis could ground to a place */}
+                      {(a.publishedAt > 0 || a.geo) && (
+                        <span className="feed-foot">
+                          {a.publishedAt > 0 && (
+                            <span className="feed-time">{fmtTime(a.publishedAt)}</span>
+                          )}
+                          {a.geo && (
+                            <button
+                              type="button"
+                              className="feed-fly"
+                              onClick={() => onFly?.(a.geo!)}
+                              title={`Fly the globe to ${a.geo.label}`}
+                              aria-label={`Fly the globe to ${a.geo.label}`}
+                            >
+                              ◎ {a.geo.label}
+                            </button>
+                          )}
+                        </span>
                       )}
                     </li>
                   ))}

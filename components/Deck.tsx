@@ -15,12 +15,15 @@ type DeckProps = {
   labels: string[];
   surfaces: ReactNode[];
   onActiveChange?: (index: number) => void;
+  // Per-surface "unseen" state — a quiet halo on that dot until the parent
+  // clears it (which it does the moment the surface becomes active).
+  fresh?: boolean[];
 };
 
 // A horizontally scroll-snapped deck of full-screen surfaces. Swipe / trackpad,
 // arrow keys, indicator dots, and an imperative goTo() (for AUGUST's nav tool).
 const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
-  { labels, surfaces, onActiveChange },
+  { labels, surfaces, onActiveChange, fresh },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -221,20 +224,25 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       </div>
 
       <div className="deck-indicators" role="tablist" aria-label="Surfaces">
-        {labels.map((label, i) => (
-          <button
-            key={label}
-            type="button"
-            role="tab"
-            aria-selected={i === active}
-            className={`deck-dot${i === active ? " active" : ""}`}
-            onClick={() => goTo(i)}
-            title={label}
-          >
-            <span className="deck-dot-mark" />
-            <span className="deck-dot-label">{label}</span>
-          </button>
-        ))}
+        {labels.map((label, i) => {
+          // Unseen only ever shows on inactive dots — the active surface is,
+          // by definition, being seen.
+          const isFresh = !!fresh?.[i] && i !== active;
+          return (
+            <button
+              key={label}
+              type="button"
+              role="tab"
+              aria-selected={i === active}
+              className={`deck-dot${i === active ? " active" : ""}${isFresh ? " fresh" : ""}`}
+              onClick={() => goTo(i)}
+              title={isFresh ? `${label} — new` : label}
+            >
+              <span className="deck-dot-mark" />
+              <span className="deck-dot-label">{label}</span>
+            </button>
+          );
+        })}
       </div>
     </>
   );

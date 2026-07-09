@@ -12,7 +12,7 @@ import type { AugustState } from "@/components/Presence3D";
 // over live wires (/api/intel). Each value is wired to the SAME endpoint its
 // destination fetches — DESK reads live /api/markets — no invented data.
 
-type Readout = { key: string; label: string; angle: number; value: string; sub: string; nav: boolean };
+type Readout = { key: string; label: string; angle: number; value: string; sub: string; nav: boolean; hot?: boolean };
 
 const REFRESH_MS = 30_000; // markets/comms/day — the fast-moving readouts
 const REFRESH_SLOW_MS = 60_000; // command/intel — both are server-cached ~5min anyway
@@ -56,6 +56,25 @@ function fmtPresence(state: AugustState): string {
 function fmtMemory(sessionCount: number): Pair {
   const exchanges = Math.ceil(sessionCount / 2);
   return exchanges > 0 ? { value: "RETAINING", sub: `${exchanges} THIS SESSION` } : { value: "STANDBY", sub: "MEMORY" };
+}
+// "Something new on World" since the last visit there: a big (M ≥ 6) quake, or a
+// wire published after it. Computed from the SAME feeds this frame already pulls
+// (no extra endpoint); the label swaps the WORLD sub line and is reported up so
+// the deck dot can carry the same signal. null = nothing new (or feeds warming).
+function fmtWorldNews(cmd: any, intel: any, seenAt: number): string | null {
+  const bq = cmd?.bigQuake;
+  if (bq && typeof bq.mag === "number" && Number(bq.time) > seenAt) {
+    return `M${bq.mag.toFixed(1)} QUAKE`;
+  }
+  // Newest article time, clamped to the fetch time so one future-dated pubDate
+  // can't pin the signal on forever.
+  const cap = Number(intel?.updatedAt) || Infinity;
+  let newest = 0;
+  for (const a of intel?.articles ?? []) {
+    const t = Math.min(Number(a?.publishedAt) || 0, cap);
+    if (t > newest) newest = t;
+  }
+  return newest > seenAt ? "NEW WIRES" : null;
 }
 
 // The orb's projected radius is orbFrac · min(viewport w, h) — see Presence3D,
@@ -108,11 +127,18 @@ export default function PresenceTelemetry({
   sessionCount,
   visible,
   onNavigate,
+  worldSeenAt = 0,
+  onWorldNews,
 }: {
   state: AugustState;
   sessionCount: number;
   visible: boolean;
   onNavigate?: (key: string) => void;
+  // Last World-visit stamp (ms epoch; 0 = never) — the page owns it.
+  worldSeenAt?: number;
+  // The "something new on World" label (null = clear) — the page mirrors it
+  // onto the World deck dot, so both signals share this one computation.
+  onWorldNews?: (label: string | null) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -181,6 +207,17 @@ export default function PresenceTelemetry({
     };
   }, []);
 
+  // The one "World has news" computation — WORLD's sub line swaps to it below,
+  // and the page mirrors it onto the deck dot. Clears (null) the moment the
+  // World visit stamp moves past the newest wire/quake.
+  const worldNews = useMemo(
+    () => fmtWorldNews(feeds.command, feeds.intel, worldSeenAt),
+    [feeds, worldSeenAt],
+  );
+  useEffect(() => {
+    onWorldNews?.(worldNews);
+  }, [worldNews, onWorldNews]);
+
   const readouts: Readout[] = useMemo(() => {
     const mk = fmtMarkets(feeds.markets);
     const wo = fmtWorld(feeds.command, feeds.intel);
@@ -190,11 +227,11 @@ export default function PresenceTelemetry({
     // the deck to their surfaces; MEMORY is a quiet status readout.
     return [
       { key: "desk", label: "DESK", angle: -52, nav: true, ...mk },
-      { key: "world", label: "WORLD", angle: 52, nav: true, ...wo },
+      { key: "world", label: "WORLD", angle: 52, nav: true, ...wo, ...(worldNews ? { sub: worldNews, hot: true } : {}) },
       { key: "comms", label: "COMMS", angle: 128, nav: true, ...co },
       { key: "memory", label: "MEMORY", angle: -128, nav: false, ...me },
     ];
-  }, [sessionCount, feeds]);
+  }, [sessionCount, feeds, worldNews]);
 
   const L = computeLayout(size.w, size.h);
   const ready = size.w > 0 && size.h > 0;
@@ -272,7 +309,7 @@ export default function PresenceTelemetry({
               <>
                 <span className="readout-label">{p.label}</span>
                 <span className="readout-value">{p.value}</span>
-                <span className="readout-sub">{p.sub}</span>
+                <span className={`readout-sub${p.hot ? " readout-sub-hot" : ""}`}>{p.sub}</span>
               </>
             );
             return p.nav ? (
