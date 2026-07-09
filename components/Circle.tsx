@@ -312,7 +312,7 @@ export default function Circle({ state, amplitudeRef }: CircleProps) {
           <radialGradient id="aug-core" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#e8e6e1" stopOpacity="0.05" />
             <stop offset="60%" stopColor="#9a9a9f" stopOpacity="0.03" />
-            <stop offset="100%" stopColor="#08080b" stopOpacity="0" />
+            <stop offset="100%" stopColor="#13151a" stopOpacity="0" />
           </radialGradient>
           <linearGradient id="aug-shard" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#e8e6e1" stopOpacity="0" />

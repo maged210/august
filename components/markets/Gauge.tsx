@@ -1,5 +1,8 @@
 // A semicircular dial gauge — pure SVG, no chart library. Colored zones, a needle,
 // a value readout. Shows a graceful "unavailable" state when value is null.
+// Colors ride CSS custom properties so the dial re-themes with [data-theme] —
+// set via `style` (SVG presentation attributes don't resolve var()); the
+// fallbacks are the dark-stage values, so dark rendering is unchanged.
 type Zone = { upTo: number; color: string };
 
 type GaugeProps = {
@@ -53,7 +56,7 @@ export default function Gauge({
         key={i}
         points={arc((prev - min) / span, (z.upTo - min) / span)}
         fill="none"
-        stroke={z.color}
+        style={{ stroke: z.color }}
         strokeWidth={3}
         strokeLinecap="round"
         opacity={0.6}
@@ -69,7 +72,7 @@ export default function Gauge({
         <polyline
           points={arc(0, 1)}
           fill="none"
-          stroke="rgba(255,255,255,0.1)"
+          style={{ stroke: "rgb(var(--wash-rgb, 255 255 255) / 0.1)" }}
           strokeWidth={3}
           strokeLinecap="round"
         />
@@ -81,11 +84,11 @@ export default function Gauge({
               y1={cy}
               x2={nx.toFixed(2)}
               y2={ny.toFixed(2)}
-              stroke="#e8e6e1"
+              style={{ stroke: "var(--bone, #e8e6e1)" }}
               strokeWidth={1.6}
               strokeLinecap="round"
             />
-            <circle cx={nx.toFixed(2)} cy={ny.toFixed(2)} r={2.4} fill="#e8e6e1" />
+            <circle cx={nx.toFixed(2)} cy={ny.toFixed(2)} r={2.4} style={{ fill: "var(--bone, #e8e6e1)" }} />
           </>
         ) : null}
         <circle cx={cx} cy={cy} r={2.4} fill="#6a6a70" />

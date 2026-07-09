@@ -146,12 +146,25 @@ export async function getCommandSummary(): Promise<{
   aircraft: number | null;
   quakes: number;
   maxQuake: { mag: number; place: string } | null;
+  bigQuake: { mag: number; place: string; time: number } | null;
   briefLine: string;
   snapshot: string;
 }> {
   const q = await getQuakes().catch(() => ({ count: 0, max: null }) as Quakes);
   const aircraft = lastFlightCount; // live count from the globe's last fetch (null until opened)
   const max = q.max;
+  // Newest big quake (M ≥ 6) WITH its time — `max` alone carries none, and the
+  // client-side "World has something new" pull needs newer-than-last-visit.
+  // Same payload, no new endpoint.
+  let bigQuake: { mag: number; place: string; time: number } | null = null;
+  const feats: unknown[] = Array.isArray(q.features) ? q.features : [];
+  for (const f of feats) {
+    const p = (f as { properties?: { mag?: number; place?: string; time?: number } }).properties;
+    const mag = Number(p?.mag) || 0;
+    if (mag < 6) continue;
+    const time = Number(p?.time) || 0;
+    if (!bigQuake || time > bigQuake.time) bigQuake = { mag, place: String(p?.place || ""), time };
+  }
   const planes = aircraft != null ? `${aircraft.toLocaleString()} aircraft tracked` : "live flights on the globe";
   const big = max ? `, biggest M${max.mag.toFixed(1)} ${shortPlace(max.place)}` : "";
   const briefLine = `${q.count} quakes in 24h${big}; ${planes}.`;
@@ -161,7 +174,7 @@ export async function getCommandSummary(): Promise<{
     `recent earthquakes (USGS) — ${q.count} in the last 24h${max ? `, largest M${max.mag.toFixed(1)} near ${max.place}` : ""}, ` +
     `and the day/night terminator. When he asks what's on the globe or about flights/quakes, answer from these. ` +
     `He can say "show me flights over Europe" and you should call look_closer to fly the globe there.`;
-  return { aircraft, quakes: q.count, maxQuake: max, briefLine, snapshot };
+  return { aircraft, quakes: q.count, maxQuake: max, bigQuake, briefLine, snapshot };
 }
 
 export async function getCommandSnapshot(): Promise<string> {

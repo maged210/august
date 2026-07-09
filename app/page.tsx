@@ -148,6 +148,11 @@ export default function Home() {
   const [booted, setBooted] = useState(false);
   const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState(0);
+  // The World pull — last real World visit (localStorage-backed) plus the
+  // "something new there" label PresenceTelemetry computes from the feeds it
+  // already polls. The label drives the World deck dot's quiet unseen halo.
+  const [worldSeenAt, setWorldSeenAt] = useState(0);
+  const [worldNews, setWorldNews] = useState<string | null>(null);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -780,6 +785,33 @@ export default function Home() {
     }
   }
 
+  // --- The World pull --------------------------------------------------------
+  // aug-world-seen marks the last real World visit. Stamped when the slide
+  // becomes active — clearing the deck-dot halo and the WORLD sub swap at that
+  // moment — AND when it stops being active, so wires that landed while you
+  // were watching the globe don't re-light the signal on departure.
+  useEffect(() => {
+    try {
+      setWorldSeenAt(Number(window.localStorage.getItem("aug-world-seen")) || 0);
+    } catch {
+      /* private mode — World just reads as never visited */
+    }
+  }, []);
+  const onWorldSlide = activeScreen === screenIndex("world");
+  const wasOnWorldRef = useRef(false);
+  useEffect(() => {
+    if (onWorldSlide || wasOnWorldRef.current) {
+      const now = Date.now();
+      setWorldSeenAt(now);
+      try {
+        window.localStorage.setItem("aug-world-seen", String(now));
+      } catch {
+        /* non-persistent */
+      }
+    }
+    wasOnWorldRef.current = onWorldSlide;
+  }, [onWorldSlide]);
+
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
   // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
   useEffect(() => {
@@ -1290,6 +1322,7 @@ export default function Home() {
       <Deck
         ref={deckRef}
         labels={DECK_LABELS}
+        fresh={SCREENS.map((s) => s === "world" && worldNews != null && !onWorldSlide)}
         onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
@@ -1298,6 +1331,8 @@ export default function Home() {
               state={state}
               sessionCount={messages.length}
               visible={booted && !briefOpen}
+              worldSeenAt={worldSeenAt}
+              onWorldNews={setWorldNews}
               onNavigate={(key) => {
                 // Every readout is a deck surface — slide to it.
                 const target = resolveTarget(key);

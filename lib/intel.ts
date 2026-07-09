@@ -36,11 +36,16 @@ async function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>):
 }
 
 // ---- Types ---------------------------------------------------------------
+// A grounded geolocation for a headline — present ONLY when the headline text
+// itself names a locatable place (same grounding contract as the synthesis).
+export type ArticleGeo = { lat: number; lon: number; label: string };
+
 export type Article = {
   source: string;
   headline: string;
   url: string;
   publishedAt: number; // ms epoch; 0 if unparseable
+  geo?: ArticleGeo;
 };
 
 export type Intel = {
@@ -142,16 +147,48 @@ function headlineKey(articles: Article[]): string {
     .join("|");
 }
 
-type SynthCache = { key: string; synthesis: string; briefLine: string; exp: number };
+type SynthCache = {
+  key: string;
+  synthesis: string;
+  briefLine: string;
+  // Optional so a cache entry written without geo (older shape, failed parse)
+  // can never crash a reader — absent just means "no flyable headlines".
+  geo?: Map<number, ArticleGeo>;
+  exp: number;
+};
 let synthCache: SynthCache | null = null;
+
+// Parse the model's GEO lines — `GEO: <1-based headline index>|<lat>,<lon>|<label>`.
+// Anything malformed, out of range, or duplicated is dropped silently.
+function parseGeoLines(raw: string, count: number): Map<number, ArticleGeo> {
+  const out = new Map<number, ArticleGeo>();
+  const re = /^GEO:\s*(\d+)\s*\|\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\|\s*(.+)$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const idx = Number(m[1]) - 1; // the prompt numbers headlines from 1
+    const lat = Number(m[2]);
+    const lon = Number(m[3]);
+    const label = m[4].trim().slice(0, 40);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= count) continue;
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90) continue;
+    if (!Number.isFinite(lon) || Math.abs(lon) > 180) continue;
+    if (!label || out.has(idx)) continue;
+    out.set(idx, { lat, lon, label });
+  }
+  return out;
+}
 
 async function getSynthesis(
   articles: Article[],
-): Promise<{ synthesis: string; briefLine: string }> {
+): Promise<{ synthesis: string; briefLine: string; geo?: Map<number, ArticleGeo> }> {
   const key = headlineKey(articles);
   const now = Date.now();
   if (synthCache && synthCache.key === key && synthCache.exp > now) {
-    return { synthesis: synthCache.synthesis, briefLine: synthCache.briefLine };
+    return {
+      synthesis: synthCache.synthesis,
+      briefLine: synthCache.briefLine,
+      geo: synthCache.geo,
+    };
   }
 
   const headlineBlock = articles
@@ -161,7 +198,7 @@ async function getSynthesis(
 
   const msg = await getClient().messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 300,
+    max_tokens: 400,
     messages: [
       {
         role: "user",
@@ -178,7 +215,11 @@ RULES — non-negotiable:
 
 Write 2–4 sentences in AUGUST's voice (calm, precise, occasionally wry) connecting the threads that are actually in this feed.
 
-Then on a new line starting with "BRIEF:", write a single clause under 12 words drawn only from these headlines.`,
+Then on a new line starting with "BRIEF:", write a single clause under 12 words drawn only from these headlines.
+
+Finally, ONLY for headlines whose own text explicitly names a locatable place (a city, country, or region written in the headline itself), add one line each in exactly this format:
+GEO: <headline number>|<latitude>,<longitude>|<place as named in the headline>
+Use the well-known coordinates of that named place. Same grounding rules: never infer a location the headline doesn't name (a wire agency, a nationality, or context you remember does not count); if unsure of the place or its coordinates, skip that headline entirely. At most 6 GEO lines. Nothing after them.`,
       },
     ],
   });
@@ -188,10 +229,14 @@ Then on a new line starting with "BRIEF:", write a single clause under 12 words 
   const briefLine = briefMatch
     ? briefMatch[1].trim()
     : raw.split(/[.!?]/)[0].trim() + ".";
-  const synthesis = raw.replace(/^BRIEF:.*$/m, "").trim();
+  const geo = parseGeoLines(raw, Math.min(articles.length, 12));
+  const synthesis = raw
+    .replace(/^BRIEF:.*$/m, "")
+    .replace(/^GEO:.*$/gm, "")
+    .trim();
 
-  synthCache = { key, synthesis, briefLine, exp: now + 15 * 60_000 };
-  return { synthesis, briefLine };
+  synthCache = { key, synthesis, briefLine, geo, exp: now + 15 * 60_000 };
+  return { synthesis, briefLine, geo };
 }
 
 // ---- Public API ----------------------------------------------------------
@@ -217,7 +262,15 @@ export async function getIntel(): Promise<Intel> {
 
     if (articles.length > 0 && process.env.ANTHROPIC_API_KEY) {
       try {
-        ({ synthesis, briefLine } = await getSynthesis(articles));
+        const s = await getSynthesis(articles);
+        synthesis = s.synthesis;
+        briefLine = s.briefLine;
+        // Pin each grounded geolocation onto its headline. Indices track
+        // headlineKey's order, so a synthCache hit maps onto the same list;
+        // `?.` keeps an old/stale cache entry without geo from crashing.
+        s.geo?.forEach((g, i) => {
+          if (articles[i]) articles[i].geo = g;
+        });
       } catch {
         synthesis = "Feeds loaded — synthesis temporarily unavailable.";
       }

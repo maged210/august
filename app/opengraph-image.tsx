@@ -57,7 +57,7 @@ export default async function OpengraphImage() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "0 110px 0 96px",
-          background: "#08080B",
+          background: "#13151A",
           fontFamily: mono ? "JetBrains Mono" : "sans-serif",
         }}
       >

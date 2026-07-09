@@ -5,6 +5,19 @@ import { createChart, AreaSeries, type IChartApi, type ISeriesApi } from "lightw
 
 // A tiny lightweight-charts area sparkline. Static after setData (no animation
 // loop), so many of them on a watchlist stay cheap.
+
+// Canvas can't consume CSS vars, so resolve the market colors from the root
+// tokens when the light theme is on; dark keeps the exact original literals.
+function seriesColor(up: boolean): string {
+  if (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light") {
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue(up ? "--pos" : "--neg")
+      .trim();
+    if (v) return v;
+  }
+  return up ? "#7fb0a3" : "#bb7d72";
+}
+
 export default function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -13,7 +26,7 @@ export default function Sparkline({ data, up }: { data: number[]; up: boolean })
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const color = up ? "#7fb0a3" : "#bb7d72";
+    const color = seriesColor(up);
     const chart = createChart(el, {
       width: el.clientWidth || 84,
       height: 26,
@@ -48,6 +61,21 @@ export default function Sparkline({ data, up }: { data: number[]; up: boolean })
       chartRef.current = null;
       seriesRef.current = null;
     };
+  }, [up]);
+
+  // Restyle in place when [data-theme] flips (declared after the build effect,
+  // so it always sees the freshly built series).
+  useEffect(() => {
+    const mo = new MutationObserver(() => {
+      const color = seriesColor(up);
+      seriesRef.current?.applyOptions({
+        lineColor: color,
+        topColor: color + "30",
+        bottomColor: color + "00",
+      });
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
   }, [up]);
 
   useEffect(() => {

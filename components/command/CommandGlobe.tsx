@@ -154,6 +154,19 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     return () => window.clearInterval(id);
   }, [inView]);
 
+  // A geolocated wire headline flies the globe through the SAME path as
+  // look_closer: targetRef is set first so the on-load replay picks it up if
+  // the style is still coming up, then flyToTarget runs the flight + marker.
+  // (Clicking the panel means the surface is on screen, so the repaint gate is
+  // already resumed — the flight itself wakes any remaining parked state.)
+  const wireKeyRef = useRef(0);
+  function flyToWire(g: { lat: number; lon: number; label: string }) {
+    wireKeyRef.current += 1;
+    const t: GlobeTarget = { lat: g.lat, lon: g.lon, label: g.label, key: wireKeyRef.current };
+    targetRef.current = t;
+    flyToTarget(t);
+  }
+
   function flyToTarget(t: GlobeTarget) {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
@@ -486,8 +499,9 @@ export default function CommandGlobe({ active, flyTo }: Props) {
         ) : null}
       </div>
 
-      {/* world news wires + AUGUST's synthesis, docked right (collapsible) */}
-      <IntelPanel />
+      {/* world news wires + AUGUST's synthesis, docked right (collapsible);
+          geolocated headlines hand their ◎ target back to this globe */}
+      <IntelPanel onFly={flyToWire} />
     </div>
   );
 }

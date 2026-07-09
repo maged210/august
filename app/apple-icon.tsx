@@ -33,7 +33,7 @@ export default function AppleIcon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#08080B",
+          background: "#13151A",
         }}
       >
         <Ring d={128} border="4px solid #E8E6E1d9">

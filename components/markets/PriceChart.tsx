@@ -12,6 +12,32 @@ import {
 type Props = { sym: string; kind: string; label: string };
 const TFS = ["1D", "1W", "1M"] as const;
 
+// Canvas can't consume CSS vars, so compute the chart's palette from
+// [data-theme] + the root tokens; the dark branch keeps the exact original
+// literals, the light one inks the chrome/candles for the off-white stage.
+function chartPalette() {
+  const light =
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "light";
+  if (!light) {
+    return {
+      text: "#8a8a90",
+      grid: "rgba(255,255,255,0.035)",
+      border: "rgba(255,255,255,0.08)",
+      up: "#7fb0a3",
+      down: "#bb7d72",
+    };
+  }
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    text: cs.getPropertyValue("--ash").trim() || "#5c5d63",
+    grid: "rgba(22,24,30,0.07)",
+    border: "rgba(22,24,30,0.16)",
+    up: cs.getPropertyValue("--pos").trim() || "#3c6f5e",
+    down: cs.getPropertyValue("--neg").trim() || "#a8584c",
+  };
+}
+
 export default function PriceChart({ sym, kind, label }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -23,30 +49,31 @@ export default function PriceChart({ sym, kind, label }: Props) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const pal = chartPalette();
     const chart = createChart(el, {
       width: el.clientWidth || 600,
       height: el.clientHeight || 320,
       layout: {
         background: { color: "transparent" },
-        textColor: "#8a8a90",
+        textColor: pal.text,
         attributionLogo: false,
         fontFamily: "var(--font-mono), monospace",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.035)" },
-        horzLines: { color: "rgba(255,255,255,0.035)" },
+        vertLines: { color: pal.grid },
+        horzLines: { color: pal.grid },
       },
-      rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
-      timeScale: { borderColor: "rgba(255,255,255,0.08)", timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: pal.border },
+      timeScale: { borderColor: pal.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#7fb0a3",
-      downColor: "#bb7d72",
+      upColor: pal.up,
+      downColor: pal.down,
       borderVisible: false,
-      wickUpColor: "#7fb0a3",
-      wickDownColor: "#bb7d72",
+      wickUpColor: pal.up,
+      wickDownColor: pal.down,
     });
     chartRef.current = chart;
     seriesRef.current = series;
@@ -66,6 +93,28 @@ export default function PriceChart({ sym, kind, label }: Props) {
       chartRef.current = null;
       seriesRef.current = null;
     };
+  }, []);
+
+  // Restyle in place when [data-theme] flips — no rebuild, the loaded candles
+  // and scales stay put; only the palette is re-applied.
+  useEffect(() => {
+    const mo = new MutationObserver(() => {
+      const pal = chartPalette();
+      chartRef.current?.applyOptions({
+        layout: { textColor: pal.text },
+        grid: { vertLines: { color: pal.grid }, horzLines: { color: pal.grid } },
+        rightPriceScale: { borderColor: pal.border },
+        timeScale: { borderColor: pal.border },
+      });
+      seriesRef.current?.applyOptions({
+        upColor: pal.up,
+        downColor: pal.down,
+        wickUpColor: pal.up,
+        wickDownColor: pal.down,
+      });
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
   }, []);
 
   // Load candles whenever the symbol or timeframe changes.
