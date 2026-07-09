@@ -3026,3 +3026,431 @@ body {
       box-shadow 0.42s var(--ease) !important;
   }
 }
+
+/* ======================================================================
+   HOME LANDING — the ask-first landing on the Presence panel.
+   Ported verbatim from docs/design/AUGUST Home.dc.html: the DAY palette is
+   the default; the applyTheme() NIGHT values apply under the app's dark AND
+   batman themes. Everything is scoped to .home-landing — global tokens and
+   the other three surfaces are untouched.
+   ====================================================================== */
+.home-landing {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --hair2: #eae6dc;
+  --card: #ffffff;
+  --label: #a2823f;
+  --thread: #16150f;
+  --up: #1b7f4d;
+  --down: #b4483e;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+  --orb-bg: radial-gradient(circle at 36% 32%, #3a332a 0%, #16130e 46%, #060505 74%);
+  --orb-glow:
+    0 0 70px rgba(201, 169, 106, 0.38),
+    0 26px 50px -18px rgba(30, 22, 8, 0.35),
+    inset -18px -26px 55px rgba(0, 0, 0, 0.8),
+    inset 8px 12px 40px rgba(201, 169, 106, 0.14);
+  --ring: rgba(170, 140, 80, 0.22);
+  --halo: rgba(201, 169, 106, 0.16);
+  --chip-hover: #c9a96a;
+
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  transition: background 0.5s ease;
+}
+:root[data-theme="dark"] .home-landing,
+:root[data-theme="batman"] .home-landing {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --hair2: rgba(255, 255, 255, 0.08);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --thread: rgba(255, 255, 255, 0.82);
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+  --orb-bg: radial-gradient(circle at 36% 32%, #282218 0%, #12100c 46%, #050504 74%);
+  --orb-glow:
+    0 0 90px rgba(201, 169, 106, 0.28),
+    0 0 32px rgba(201, 169, 106, 0.2),
+    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
+    inset 9px 12px 42px rgba(201, 169, 106, 0.12);
+  --ring: rgba(201, 169, 106, 0.13);
+  --halo: rgba(201, 169, 106, 0.14);
+}
+
+/* — top bar: wordmark · clock + state · quiet control cluster ------------- */
+.hl-top {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 26px 44px;
+  flex: none;
+}
+.hl-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.hl-brand-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.hl-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.hl-top-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.hl-clock {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.hl-ctls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hl-ctl {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.hl-ctl:hover {
+  color: var(--ink);
+}
+.hl-ctl.on {
+  color: var(--label);
+}
+.hl-ctl:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+/* — the orb: halo + ring + gradient circle under the living WebGL sphere -- */
+.hl-orb {
+  margin-top: 6vh;
+  width: 190px;
+  height: 190px;
+  position: relative;
+  flex: none;
+}
+.hl-orb-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 90px 34px var(--halo);
+  animation: hl-halo 7s ease-in-out infinite;
+}
+@keyframes hl-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.hl-orb-ring {
+  position: absolute;
+  inset: -22px;
+  border: 1px solid var(--ring);
+  border-radius: 50%;
+}
+.hl-orb-core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--orb-bg);
+  box-shadow: var(--orb-glow);
+}
+/* The canvas bleeds 65px past the circle so the corona can reach beyond the
+   rim; Presence3D orbFraction pins the sphere itself to the 190px circle. */
+.hl-orb-gl {
+  position: absolute;
+  inset: -65px;
+}
+
+/* — heading + ask bar + chips --------------------------------------------- */
+.hl-heading {
+  margin: 44px 0 0;
+  padding: 0 24px;
+  text-align: center;
+  font-family: inherit;
+  font-size: clamp(30px, 4.6vw, 42px);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.hl-bar {
+  margin-top: 30px;
+  width: min(760px, 88vw);
+  min-height: 62px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 20px;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: 16px;
+  box-shadow: var(--cardshadow);
+  flex: none;
+}
+.hl-input {
+  flex: 1;
+  min-width: 0;
+  height: 60px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+}
+.hl-input::placeholder {
+  color: var(--dim);
+}
+.hl-mic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.hl-mic:hover {
+  color: var(--ink);
+}
+.hl-mic.on {
+  color: var(--label);
+  background: rgba(201, 169, 106, 0.14);
+}
+.hl-mic:focus-visible,
+.hl-chip:focus-visible,
+.hl-thread:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.hl-kbd {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dim);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.hl-chips {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 24px;
+}
+.hl-chip {
+  border: 1px solid var(--hair);
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.hl-chip:hover {
+  border-color: var(--chip-hover);
+  color: var(--ink);
+}
+.hl-spacer {
+  flex: 1 1 auto;
+  min-height: 36px;
+}
+
+/* — activity grid: real threads · real quotes ------------------------------ */
+.hl-activity {
+  width: min(880px, 88vw);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 40px 60px;
+  margin-bottom: 7vh;
+  flex: none;
+}
+.hl-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hl-watch {
+  gap: 13px;
+}
+.hl-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: var(--label);
+}
+.hl-threads {
+  display: flex;
+  flex-direction: column;
+}
+.hl-thread {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 0;
+  border: none;
+  border-bottom: 1px solid var(--hair2);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  min-width: 0;
+  transition: opacity var(--dur-fast) var(--ease-snappy);
+}
+.hl-thread:first-child {
+  padding: 13px 0 11px;
+}
+.hl-thread:last-child {
+  border-bottom: none;
+}
+.hl-thread:hover {
+  opacity: 0.7;
+}
+.hl-thread-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--thread);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hl-thread-date {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dim);
+}
+.hl-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-content: flex-start;
+}
+.hl-pill {
+  border: 1px solid var(--hair);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.hl-up {
+  color: var(--up);
+}
+.hl-down {
+  color: var(--down);
+}
+
+/* — mobile: 44px targets, tighter chrome ----------------------------------- */
+@media (max-width: 700px) {
+  .hl-top {
+    padding: 18px 20px;
+  }
+  .hl-top-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .hl-clock {
+    letter-spacing: 0.12em;
+  }
+  .hl-ctl {
+    width: 44px;
+    height: 44px;
+  }
+  .hl-mic {
+    width: 44px;
+    height: 44px;
+  }
+  .hl-kbd {
+    display: none;
+  }
+  .hl-chip {
+    min-height: 44px;
+  }
+  .hl-thread {
+    align-items: center;
+    min-height: 44px;
+  }
+  .hl-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hl-orb-halo {
+    animation: none;
+  }
+}

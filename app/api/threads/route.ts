@@ -7,6 +7,7 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_THREAD_MESSAGES,
   listThreads,
+  threadDateLabel,
   threadsConfigured,
   upsertThread,
   type ThreadMessage,
@@ -61,7 +62,12 @@ export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const raw = Number(url.searchParams.get("limit") ?? "3");
   const limit = Math.min(10, Math.max(1, Number.isFinite(raw) ? Math.floor(raw) : 3));
-  const threads = await listThreads(limit);
+  // label: the landing's relative date column (TODAY / YESTERDAY / MON / JUL 3),
+  // computed server-side with the tested pure helper so the client stays thin.
+  const threads = (await listThreads(limit)).map((t) => ({
+    ...t,
+    label: threadDateLabel(t.updatedAt),
+  }));
   return Response.json(
     { configured: threadsConfigured(), threads },
     { headers: { "Cache-Control": "no-store" } },

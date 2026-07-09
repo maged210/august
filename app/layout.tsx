@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Inter } from "next/font/google";
+import { JetBrains_Mono, Inter, Geist } from "next/font/google";
 import "./globals.css";
 
 const mono = JetBrains_Mono({
@@ -12,6 +12,15 @@ const mono = JetBrains_Mono({
 const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
+  display: "swap",
+});
+
+// The home landing's face (docs/design/AUGUST Home.dc.html) — scoped to the
+// landing via --font-geist; the rest of the app keeps Inter + JetBrains Mono.
+const geist = Geist({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-geist",
   display: "swap",
 });
 
@@ -55,7 +64,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${mono.variable} ${sans.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${mono.variable} ${sans.variable} ${geist.variable}`} suppressHydrationWarning>
       <head>
         {/* Set the theme attribute before first paint so the toggle never flashes. */}
         <script

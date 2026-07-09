@@ -11,35 +11,46 @@ type Props = {
   /** 0..1 live audio level — mic RMS while listening, TTS envelope while speaking. */
   amplitudeRef: React.MutableRefObject<number>;
   theme?: Theme;
+  /**
+   * Override the orb's on-screen radius as a fraction of min(container w, h).
+   * The home landing mounts the canvas in a small fixed square around the
+   * design's 190px orb circle and needs the sphere to fill it; the default
+   * keeps the original full-surface presence sizing (0.18, 0.13 compact).
+   */
+  orbFraction?: number;
 };
 
-// Per-theme look. The sphere stays a glossy near-black in BOTH themes (the
-// reference); what changes is the corona/rim/glow — luminous cyan-steel on the
-// dark stage, dark ink on the off-white one — and their blend mode (additive vs
-// normal) so the energy reads as light on black and as ink on white.
+// Per-theme look, tuned to the home design (docs/design/AUGUST Home.dc.html):
+// the sphere stays a glossy near-black everywhere; the energy is warm gold
+// (#C9A96A / #E8C27A family) — luminous on the night stage (additive), gold
+// ink on the day's off-white stage (normal blending). Batman keeps its own
+// searchlight-gold signature untouched.
 const LOOK = {
+  // NIGHT (design applyTheme() night values): warm gold light on near-black.
   dark: {
-    sphere: 0x0a0d12,
-    rim: new THREE.Color(0x9fc3e8),
-    corona: new THREE.Color(0x8fb6dc),
-    glow: new THREE.Color(0x6e8ca8),
+    sphere: 0x12100c,
+    rim: new THREE.Color(0xe8c27a),
+    corona: new THREE.Color(0xc9a96a),
+    glow: new THREE.Color(0x8a744a),
     additive: true,
     rimIntensity: 1.0,
-    glowOpacity: 0.5,
-    coronaOpacity: 0.55,
+    glowOpacity: 0.45,
+    coronaOpacity: 0.52,
     envIntensity: 1.0,
-    exposure: 1.15,
+    exposure: 1.12,
   },
+  // DAY: dark warm sphere on the off-white stage, corona/rim as dark-gold ink
+  // (normal blending — additive gold would wash out against #F5F4F1).
   light: {
-    sphere: 0x0b0e13,
-    rim: new THREE.Color(0x2b3a4c),
-    corona: new THREE.Color(0x39414b),
-    glow: new THREE.Color(0x2a3340),
+    sphere: 0x16130e,
+    rim: new THREE.Color(0xa2823f),
+    corona: new THREE.Color(0x8b6f3e),
+    glow: new THREE.Color(0xc9a96a),
     additive: false,
-    rimIntensity: 0.9,
-    glowOpacity: 0.16,
-    coronaOpacity: 0.42,
-    envIntensity: 1.25,
+    rimIntensity: 0.95,
+    glowOpacity: 0.2,
+    coronaOpacity: 0.45,
+    envIntensity: 1.2,
     exposure: 1.0,
   },
   // Gotham: the same dark-stage physics with the energy in signal gold —
@@ -58,7 +69,7 @@ const LOOK = {
   },
 } as const;
 
-export default function Presence3D({ state, amplitudeRef, theme = "dark" }: Props) {
+export default function Presence3D({ state, amplitudeRef, theme = "dark", orbFraction }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const themeRef = useRef<Theme>(theme);
@@ -93,7 +104,8 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark" }: Prop
     // fraction PresenceTelemetry keys its lattice to (keep these in lock-step) — by
     // deriving the camera distance per resize. min() (not h) so it shrinks on
     // portrait; a smaller fraction on compact screens leaves room for the readouts.
-    const orbFrac = (w: number, h: number) => (Math.min(w, h) < 540 ? 0.13 : 0.18);
+    const orbFrac = (w: number, h: number) =>
+      orbFraction ?? (Math.min(w, h) < 540 ? 0.13 : 0.18);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 100);
@@ -472,7 +484,7 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark" }: Prop
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, [amplitudeRef]);
+  }, [amplitudeRef, orbFraction]);
 
   return <div ref={mountRef} className="presence-3d" />;
 }

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
-import PresenceTelemetry from "@/components/PresenceTelemetry";
+import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import CommsSurface from "@/components/surfaces/CommsSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex } from "@/lib/screens";
@@ -38,8 +38,8 @@ import {
 } from "@/lib/push-client";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
-// WebGL components load only in the browser.
-const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
+// WebGL components load only in the browser. (The Presence orb is mounted by
+// HomeLanding, which carries its own dynamic import.)
 const CommandGlobe = dynamic(() => import("@/components/command/CommandGlobe"), { ssr: false });
 
 const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
@@ -1041,6 +1041,41 @@ export default function Home() {
     speakReply(line);
   }
 
+  // Open a saved thread from the landing's RECENT THREADS: load its messages
+  // into the conversation and point threadIdRef at it so the next exchange
+  // CONTINUES that thread (the save path upserts by id).
+  async function openThread(id: string) {
+    try {
+      const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      const j = (await res.json()) as {
+        thread?: { id: string; messages?: Array<{ role: string; content: string }> };
+      };
+      const t = j.thread;
+      if (!t || !Array.isArray(t.messages)) throw new Error("malformed");
+      genRef.current += 1; // supersede any in-flight stream
+      abortRef.current?.abort();
+      stopSpeaking();
+      stopListening();
+      const msgs: ChatMessage[] = t.messages.filter(
+        (m): m is ChatMessage =>
+          (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string",
+      );
+      messagesRef.current = msgs;
+      setMessages(msgs);
+      threadIdRef.current = t.id;
+      setInterim("");
+      const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
+      setReplyText(lastAssistant?.content ?? "");
+      setHistoryOpen(true); // land on the full transcript, ready to continue
+      openPanel();
+      setState((s) => (s === "boot" ? s : "idle"));
+    } catch {
+      setReplyText("Couldn't open that thread just now.");
+      openPanel();
+    }
+  }
+
   async function handleSend(raw: string) {
     const text = raw.trim();
     if (!text) return;
@@ -1257,10 +1292,23 @@ export default function Home() {
   // on phones where Web Speech (micSupported) doesn't.
   const voiceCapable = micSupported || deepgramAvailable;
 
+  // The landing is the IDLE state of the Presence panel. Once a conversation is
+  // live (messages, a streamed/failed reply, voice mode, him thinking/speaking),
+  // the existing reply panel + composer own the screen and the landing's ask bar
+  // and chips yield (showSuggestions semantics from the design).
+  const conversationActive =
+    voiceMode ||
+    messages.length > 0 ||
+    replyText !== "" ||
+    interim !== "" ||
+    state === "thinking" ||
+    state === "speaking";
+  const landingIdle = activeScreen === screenIndex("presence") && !conversationActive;
+
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
-      <BootHud />
-      <FrameTicks />
+      {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
+          the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
           a conditionally-mounted bar wouldn't announce its first "mic live" state. */}
       <div className="sr-only" aria-live="assertive" aria-atomic="true">
@@ -1273,18 +1321,28 @@ export default function Home() {
         onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
-            <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} />
-            <PresenceTelemetry
+            <HomeLanding
               state={state}
-              sessionCount={messages.length}
-              visible={booted && !briefOpen}
-              onNavigate={(key) => deckRef.current?.goTo(screenIndex(key))}
+              theme={theme}
+              amplitudeRef={amplitudeRef}
+              active={activeScreen === screenIndex("presence")}
+              conversationActive={conversationActive}
+              micSupported={voiceCapable}
+              listening={state === "listening"}
+              busy={state === "thinking"}
+              voiceMode={voiceMode}
+              messagesCount={messages.length}
+              onSend={handleSend}
+              onToggleMic={toggleMic}
+              onToggleVoiceMode={toggleVoiceMode}
+              onOpenThread={openThread}
+              onSummonBrief={summonBrief}
+              pushState={pushState}
+              onNotify={handleNotify}
+              soundOn={soundOn}
+              onToggleSound={toggleSound}
+              onToggleTheme={toggleTheme}
             />
-            {booted && !briefOpen ? (
-              <button type="button" className="brief-summon" onClick={summonBrief}>
-                <span className="brief-summon-dot" /> today&rsquo;s brief
-              </button>
-            ) : null}
             {booted && briefOpen ? (
               <MorningBrief
                 brief={brief}
@@ -1412,6 +1470,10 @@ export default function Home() {
           </div>
         ) : null}
 
+        {/* On the idle landing the design's ask bar IS the input (mic + voice
+            mode ride inside it), so the dock composer stands down there; it
+            returns the moment a conversation is live or the deck slides away. */}
+        {!landingIdle ? (
         <div className="composer-row">
           <Composer
             onSend={handleSend}
@@ -1470,47 +1532,12 @@ export default function Home() {
             >
               {muted ? <VoiceOffIcon /> : <VoiceIcon />}
             </button>
-            <button
-              type="button"
-              className={`ctl-round${soundOn ? "" : " off"}`}
-              onClick={toggleSound}
-              title={soundOn ? "UI sounds on" : "UI sounds off"}
-              aria-pressed={soundOn}
-              aria-label={soundOn ? "Turn UI sounds off" : "Turn UI sounds on"}
-            >
-              <ToneIcon off={!soundOn} />
-            </button>
-            {pushState !== "unsupported" && (
-              <button
-                type="button"
-                className={`ctl-round${pushState === "granted" ? " on" : ""}`}
-                onClick={handleNotify}
-                title={
-                  pushState === "granted"
-                    ? "Notifications on"
-                    : pushState === "ios-install"
-                      ? "Install AUGUST to enable notifications"
-                      : pushState === "denied"
-                        ? "Notifications blocked — tap for help"
-                        : "Enable notifications"
-                }
-                aria-pressed={pushState === "granted"}
-                aria-label={pushState === "granted" ? "Notifications enabled" : "Enable notifications"}
-              >
-                {pushState === "denied" ? <BellOffIcon /> : <BellIcon on={pushState === "granted"} />}
-              </button>
-            )}
-            <button
-              type="button"
-              className="ctl-round ctl-theme"
-              onClick={toggleTheme}
-              title={theme === "dark" ? "Switch to light theme" : theme === "light" ? "Switch to Gotham theme" : "Switch to dark theme"}
-              aria-label={theme === "dark" ? "Switch to light theme" : theme === "light" ? "Switch to Gotham theme" : "Switch to dark theme"}
-            >
-              {theme === "dark" ? <SunIcon /> : theme === "light" ? <SignalIcon /> : <MoonIcon />}
-            </button>
+            {/* Sound, bell, and theme moved to the landing's quiet top-bar
+                cluster (HomeLanding) — the conversation cluster keeps only
+                the in-conversation controls: voice mode, stop, mute. */}
           </div>
         </div>
+        ) : null}
       </div>
     </main>
   );
