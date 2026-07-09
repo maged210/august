@@ -190,6 +190,10 @@ export default function Home() {
   // are ignored rather than corrupting shared refs or triggering double re-arms.
   const recSessionRef = useRef(0);
   const sessionIdRef = useRef<string>("");
+  // Server-side conversation thread (the landing's RECENT THREADS). null until
+  // the first completed exchange persists one; a page load or /forget starts a
+  // fresh conversation → fresh thread. Best-effort only — never blocks chat.
+  const threadIdRef = useRef<string | null>(null);
   const globeNonceRef = useRef(0);
   const deckRef = useRef<DeckHandle | null>(null);
   const replyDockRef = useRef<HTMLDivElement | null>(null);
@@ -1028,6 +1032,7 @@ export default function Home() {
     stopListening();
     messagesRef.current = [];
     setMessages([]);
+    threadIdRef.current = null; // the wiped conversation is over — next exchange opens a new thread
     setInterim("");
     openPanel();
     setHistoryOpen(false);
@@ -1193,6 +1198,28 @@ export default function Home() {
             assistantText: reply,
           }),
         }).catch(() => {});
+
+        // Background: persist the conversation as a thread (RECENT THREADS on the
+        // landing). Fire-and-forget and best-effort — a failure never blocks or
+        // breaks the chat. Pre-trimmed to the server caps (≤40 messages, ≤8KB
+        // each — see lib/threads.ts) so long sessions keep persisting instead of
+        // tripping the route's 400 validation.
+        void fetch("/api/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: threadIdRef.current ?? undefined,
+            messages: withAssistant.slice(-40).map((m) => ({
+              role: m.role,
+              content: m.content.length > 8000 ? m.content.slice(0, 8000) : m.content,
+            })),
+          }),
+        })
+          .then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null))
+          .then((d) => {
+            if (d && typeof d.id === "string") threadIdRef.current = d.id;
+          })
+          .catch(() => {});
       } else {
         concludeSpeech();
       }
