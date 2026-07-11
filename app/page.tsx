@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import PresenceTelemetry from "@/components/PresenceTelemetry";
+import PulseCard from "@/components/PulseCard";
 import CommsSurface from "@/components/surfaces/CommsSurface";
 import DeskSurface from "@/components/surfaces/DeskSurface";
 import WorldSurface from "@/components/surfaces/WorldSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex, resolveTarget } from "@/lib/screens";
+import { computePulse, type PulseDelta } from "@/lib/pulse";
 import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import type { GlobeTarget } from "@/components/command/CommandGlobe";
@@ -148,11 +150,14 @@ export default function Home() {
   const [booted, setBooted] = useState(false);
   const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState(0);
-  // The World pull — last real World visit (localStorage-backed) plus the
-  // "something new there" label PresenceTelemetry computes from the feeds it
-  // already polls. The label drives the World deck dot's quiet unseen halo.
-  const [worldSeenAt, setWorldSeenAt] = useState(0);
+  // The World pull — the "something new there" line the pulse computes from its
+  // one-shot feeds on load. Drives the World deck dot's quiet unseen halo AND
+  // gates the pulse card's world delta; cleared the moment World is visited so
+  // the two signals can never disagree.
   const [worldNews, setWorldNews] = useState<string | null>(null);
+  // The Pulse — at most four "since your last visit" deltas, computed once per
+  // load (lib/pulse.ts owns the snapshot semantics). Empty = no card renders.
+  const [pulse, setPulse] = useState<PulseDelta[]>([]);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -787,30 +792,51 @@ export default function Home() {
 
   // --- The World pull --------------------------------------------------------
   // aug-world-seen marks the last real World visit. Stamped when the slide
-  // becomes active — clearing the deck-dot halo and the WORLD sub swap at that
-  // moment — AND when it stops being active, so wires that landed while you
-  // were watching the globe don't re-light the signal on departure.
-  useEffect(() => {
-    try {
-      setWorldSeenAt(Number(window.localStorage.getItem("aug-world-seen")) || 0);
-    } catch {
-      /* private mode — World just reads as never visited */
-    }
-  }, []);
+  // becomes active — clearing the deck-dot halo and the pulse card's world line
+  // at that moment — AND when it stops being active, so wires that landed while
+  // you were watching the globe don't re-light the signal on departure.
   const onWorldSlide = activeScreen === screenIndex("world");
   const wasOnWorldRef = useRef(false);
   useEffect(() => {
     if (onWorldSlide || wasOnWorldRef.current) {
-      const now = Date.now();
-      setWorldSeenAt(now);
       try {
-        window.localStorage.setItem("aug-world-seen", String(now));
+        window.localStorage.setItem("aug-world-seen", String(Date.now()));
       } catch {
         /* non-persistent */
       }
+      setWorldNews(null); // seen — the dot and the pulse world delta clear together
     }
     wasOnWorldRef.current = onWorldSlide;
   }, [onWorldSlide]);
+
+  // --- The Pulse ---------------------------------------------------------------
+  // One-shot on load: diff the live feeds against the "aug-pulse" snapshot, keep
+  // at most four deltas, and stamp this load as the new "last visit". The world
+  // line doubles as the deck-dot signal (one computation, two quiet surfaces).
+  useEffect(() => {
+    let cancelled = false;
+    computePulse()
+      .then((r) => {
+        if (cancelled) return;
+        setPulse(r.deltas);
+        setWorldNews(r.worldLine);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Once World is visited (worldNews cleared), its delta leaves the card too —
+  // the card and the deck dot never disagree.
+  const pulseShown = worldNews == null ? pulse.filter((d) => d.nav !== "world") : pulse;
+
+  // The rail + pulse card share the readouts' old navigation path: resolve the
+  // spoken/legacy name, slide the deck to the surface.
+  const goToScreen = useCallback((key: string) => {
+    const target = resolveTarget(key);
+    if (target) deckRef.current?.goTo(target.index);
+  }, []);
 
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
   // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
@@ -1327,34 +1353,51 @@ export default function Home() {
         surfaces={[
           <div key="presence" className="presence-surface">
             <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} mood={mood} />
-            <PresenceTelemetry
-              state={state}
-              sessionCount={messages.length}
-              visible={booted && !briefOpen}
-              worldSeenAt={worldSeenAt}
-              onWorldNews={setWorldNews}
-              onNavigate={(key) => {
-                // Every readout is a deck surface — slide to it.
-                const target = resolveTarget(key);
-                if (target) deckRef.current?.goTo(target.index);
-              }}
-            />
+            <PresenceTelemetry state={state} visible={booted && !briefOpen} />
             {booted && !briefOpen ? (
               <button type="button" className="brief-summon" onClick={summonBrief}>
                 <span className="brief-summon-dot" /> today&rsquo;s brief
               </button>
             ) : null}
+            {/* The Pulse — renders null when nothing changed (the empty state is
+                the point). While the brief is open it stacks BELOW the brief in
+                its column — the brief speaks first. */}
+            {booted && !briefOpen ? <PulseCard deltas={pulseShown} onNavigate={goToScreen} /> : null}
             {booted && briefOpen ? (
-              <MorningBrief
-                brief={brief}
-                status={briefStatus}
-                playing={briefPlaying}
-                onPlay={playBrief}
-                onStop={stopVoice}
-                onCompile={compileBriefNow}
-                onDismiss={dismissBrief}
-              />
+              <div className="presence-stack">
+                <MorningBrief
+                  brief={brief}
+                  status={briefStatus}
+                  playing={briefPlaying}
+                  onPlay={playBrief}
+                  onStop={stopVoice}
+                  onCompile={compileBriefNow}
+                  onDismiss={dismissBrief}
+                />
+                <PulseCard deltas={pulseShown} onNavigate={goToScreen} />
+              </div>
             ) : null}
+            {/* Word-rail — the four surfaces as one quiet mono line above the
+                composer band; the current one reads a touch brighter. */}
+            <nav className={`presence-rail${booted ? " rail-in" : ""}`} aria-label="Surfaces">
+              {SCREENS.map((s, i) => (
+                <Fragment key={s}>
+                  {i > 0 ? (
+                    <span className="rail-sep" aria-hidden>
+                      ·
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`rail-word${activeScreen === i ? " on" : ""}`}
+                    onClick={() => goToScreen(s)}
+                    aria-current={activeScreen === i ? "true" : undefined}
+                  >
+                    {SCREEN_LABELS[s]}
+                  </button>
+                </Fragment>
+              ))}
+            </nav>
           </div>,
           <DeskSurface key="desk" />,
           <WorldSurface
