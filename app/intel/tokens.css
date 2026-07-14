@@ -2382,3 +2382,282 @@ a.rd-cite:hover { text-decoration: underline; }
   bottom: var(--rd-embed-dock);
   margin-bottom: var(--rd-embed-dock);
 }
+
+/* ==========================================================================
+   DAY DESK — light-theme palette (stage B). The desk follows the app theme:
+   under data-theme="light" every color variable above is re-pinned to a
+   paper/ink derivation of the same design; dark and batman keep the default
+   (dark) values untouched — this block is the ONLY light-mode delta.
+
+   Taste contract (from the app's light landing, .home-landing in globals.css):
+   warm paper stage (#F5F4F1 family), ink text ramp, black-alpha hairlines
+   (the dark skin's white-alpha flips direction), and the desk's identity
+   accent stays TEAL — darkened to ink strength (#2e6b68) so 9–10px mono
+   labels pass contrast on paper. Semantic hues are re-derived as deeper,
+   inkier versions of the same colors; soft ramps keep their alphas on the
+   light hues. Additive dark effects (glows, scrims, shimmer) become
+   subtractive ink washes and soft paper shadows. No new visual effects.
+
+   Scope mirrors the token block exactly (.intel-root + .intel-embed-frame);
+   nothing here can leak to .command-surface or any other route. Sits at the
+   end of the file so equal-specificity light rules win by source order.
+   Theme-invariant by design (no light value needed): --rd-mono/--rd-sans
+   (fonts), --rd-chart-line-{bull,amber,bear} (var() references that follow
+   the re-pinned semantic hues), --rd-cols/--rd-embed-dock (layout).
+   ========================================================================== */
+
+:root[data-theme="light"] .intel-root,
+:root[data-theme="light"] .intel-embed-frame {
+  /* ---- P palette (semantic colors — deeper ink derivations) ---- */
+  --rd-bull: #3e7a54;
+  --rd-bear: #b0503e;
+  --rd-amber: #8a6420;
+  --rd-blue: #3a6b8f;
+  --rd-teal: #2e6b68;
+  --rd-inferred: #6b5f85;
+  --rd-lo: #726e64;
+  --rd-live: #2f7a4d;
+  --rd-live-rgb: 47, 122, 77;
+
+  /* ---- accent ramp — teal ink ---- */
+  --rd-acc: #2e6b68;
+  --rd-acc-rgb: 46, 107, 104;
+  --rd-acc-soft06: rgba(46, 107, 104, 0.06);
+  --rd-acc-soft12: rgba(46, 107, 104, 0.12);
+  --rd-acc-soft25: rgba(46, 107, 104, 0.25);
+  --rd-acc-soft40: rgba(46, 107, 104, 0.42);
+
+  /* ---- stage / surface colors — warm paper ramp ---- */
+  --rd-stage: #f2f1ec;
+  --rd-frame: #ecebe5;
+  --rd-bar1-bg: #efeee8;
+  --rd-bar3-bg: #e9e8e2;
+  --rd-tape-label-bg: #e4e3dc;
+  --rd-card: #f7f6f2;
+  --rd-legend-bg: #edece6;
+  --rd-btn-bg: #e9e8e1;
+  --rd-inset: #edece7;
+
+  /* ---- hairlines — ink-alpha (direction flips; slightly stronger alphas
+     keep the same perceived weight on paper) ---- */
+  --rd-hair-045: rgba(30, 28, 22, 0.08);
+  --rd-hair-05: rgba(30, 28, 22, 0.08);
+  --rd-hair-06: rgba(30, 28, 22, 0.09);
+  --rd-hair-07: rgba(30, 28, 22, 0.1);
+  --rd-hair-08: rgba(30, 28, 22, 0.11);
+  --rd-hair-09: rgba(30, 28, 22, 0.12);
+  --rd-hair-10: rgba(30, 28, 22, 0.13);
+  --rd-hair-12: rgba(30, 28, 22, 0.16);
+  --rd-hair-13: rgba(30, 28, 22, 0.17);
+  --rd-hair-14: rgba(30, 28, 22, 0.18);
+
+  /* ---- text ramp — ink, relative hierarchy preserved ---- */
+  --rd-t-brightest: #131310;
+  --rd-t-primary: #1c1b17;
+  --rd-t-chip: #272620;
+  --rd-t-body: #393730;
+  --rd-t-secondary: #46443c;
+  --rd-t-secondary2: #4c4a42;
+  --rd-t-muted: #575349;
+  --rd-t-dim: #615e54;
+  --rd-t-dim2: #66635a;
+  --rd-t-dim3: #6b6860;
+  --rd-t-dim4: #6f6c63;
+  --rd-t-faint: #76736a;
+  --rd-t-faint2: #7b7870;
+  --rd-t-faint3: #807d74;
+  --rd-t-ghost: #868379;
+  --rd-t-disabled: #96938a;
+  --rd-t-absent: #a8a59b;
+  --rd-t-empty: #b4b1a7;
+
+  /* ---- misc literals ---- */
+  --rd-tape-sym: #2b2a24;
+  --rd-tape-div: #adaaa0;
+  --rd-val-amber: #7a5b1e;
+  --rd-val-green: #2e6b45;
+  --rd-accbtn-text: #17403e;
+  --rd-retry-text: #7c3728;
+
+  /* ---- illumination — restrained teal washes, soft ink rings ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(46, 107, 104, 0.07), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(46, 107, 104, 0.4), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(46, 107, 104, 0.5), 0 0 22px -8px rgba(46, 107, 104, 0.3);
+  --rd-live-wash: rgba(47, 122, 77, 0.05);
+  --rd-status-glow: 0 0 16px -3px rgba(47, 122, 77, 0.35);
+
+  /* ---- stage / surfaces / shadows ---- */
+  --rd-panel-grad: linear-gradient(180deg, #f7f6f1, #f0efea);
+  --rd-askbar-bg: rgba(242, 241, 236, 0.92);
+  --rd-thumb-grad: linear-gradient(135deg, #d9dee2, #e8e7e1);
+  --rd-scrim: rgba(32, 30, 26, 0.35);
+  --rd-mbar1-bg: rgba(242, 241, 236, 0.88);
+  --rd-mcard-grad: linear-gradient(180deg, #f8f7f3, #f1f0eb);
+  --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(240, 239, 234, 0.96) 70%, rgba(240, 239, 234, 0));
+  --rd-mseg-bg: #e9e8e2;
+  --rd-mseg-on-grad: linear-gradient(180deg, #fdfcfa, #f3f2ed);
+  --rd-shadow-70: rgba(50, 46, 38, 0.18);
+  --rd-edge-03: rgba(255, 255, 255, 0.5);
+  --rd-edge-035: rgba(255, 255, 255, 0.55);
+  --rd-edge-04: rgba(255, 255, 255, 0.6);
+
+  /* ---- text (value renderers + misc literals) ---- */
+  --rd-cell-quoted: #2e5876;
+  --rd-cell-inferred: #54496e;
+  --rd-cell-narr: #45637c;
+  --rd-blue-lt: #3c638a;
+  --rd-px-blue: #34617f;
+  --rd-tile-label: #33312a;
+  --rd-opt-violet: #7a4e8a;
+  --rd-plan-entry-text: #235b3b;
+  --rd-plan-exit-text: #8a3a2a;
+  --rd-plan-tp-text: #2e5876;
+
+  /* ---- mobile text ramp ---- */
+  --rd-mt-bright: #161510;
+  --rd-mt-brightest: #12110d;
+  --rd-mt-body2: #403e36;
+  --rd-mt-faint4: #8b887e;
+  --rd-mt-disc: #a3a096;
+  --rd-mnew-text: #f2f7f1;
+  --rd-mtile-trig-l: #55705c;
+  --rd-mtile-arm-l: #6e6142;
+  --rd-mtile-act-l: #536674;
+
+  /* ---- hairlines / ink overlays / states ---- */
+  --rd-hair-055: rgba(30, 28, 22, 0.09);
+  --rd-hover-row: rgba(30, 28, 22, 0.03);
+  --rd-hover-item: rgba(30, 28, 22, 0.04);
+  --rd-hover-btn: rgba(30, 28, 22, 0.08);
+  --rd-skel-bg: rgba(30, 28, 22, 0.07);
+  --rd-skel-hi: rgba(30, 28, 22, 0.09);
+  --rd-mdot-bg: rgba(30, 28, 22, 0.22);
+
+  /* ---- accent / selection ---- */
+  --rd-acc-soft04: rgba(46, 107, 104, 0.05);
+  --rd-sel-ring-flat: inset 0 0 0 1px rgba(46, 107, 104, 0.45);
+
+  /* ---- semantic soft ramps (same alphas, light hues) ---- */
+  --rd-bull-soft05: rgba(62, 122, 84, 0.05);
+  --rd-bull-soft08: rgba(62, 122, 84, 0.08);
+  --rd-bull-soft28: rgba(62, 122, 84, 0.28);
+  --rd-bull-soft30: rgba(62, 122, 84, 0.3);
+  --rd-bull-soft32: rgba(62, 122, 84, 0.32);
+  --rd-bull-dim: #5e8a6e;
+  --rd-bear-soft03: rgba(176, 80, 62, 0.03);
+  --rd-bear-soft05: rgba(176, 80, 62, 0.05);
+  --rd-bear-soft10: rgba(176, 80, 62, 0.1);
+  --rd-bear-soft18: rgba(176, 80, 62, 0.18);
+  --rd-bear-soft28: rgba(176, 80, 62, 0.28);
+  --rd-bear-soft40: rgba(176, 80, 62, 0.4);
+  --rd-bear-soft50: rgba(176, 80, 62, 0.5);
+  --rd-bear-dim: #9c6250;
+  --rd-amber-soft08: rgba(138, 100, 32, 0.08);
+  --rd-amber-soft25: rgba(138, 100, 32, 0.25);
+  --rd-amber-soft30: rgba(138, 100, 32, 0.3);
+  --rd-amber-soft35: rgba(138, 100, 32, 0.35);
+  --rd-blue-soft05: rgba(58, 107, 143, 0.05);
+  --rd-blue-soft14: rgba(58, 107, 143, 0.14);
+  --rd-blue-soft20: rgba(58, 107, 143, 0.2);
+  --rd-blue-soft25: rgba(58, 107, 143, 0.25);
+  --rd-blue-soft28: rgba(58, 107, 143, 0.28);
+  --rd-blue-soft30: rgba(58, 107, 143, 0.3);
+  --rd-blue-soft50: rgba(58, 107, 143, 0.5);
+  --rd-blue-dim: #567a94;
+  --rd-inferred-soft35: rgba(107, 95, 133, 0.35);
+  --rd-inferred-soft50: rgba(107, 95, 133, 0.5);
+  --rd-live-soft05: rgba(47, 122, 77, 0.05);
+  --rd-live-soft12: rgba(47, 122, 77, 0.12);
+  --rd-lo-soft50: rgba(114, 110, 100, 0.5);
+
+  /* ---- mobile soft ramps — the OLED-brightened hues are a dark-stage
+     legibility device; on paper the standard light hues carry them ---- */
+  --rd-mbull-soft05: rgba(62, 122, 84, 0.05);
+  --rd-mbull-soft06: rgba(62, 122, 84, 0.06);
+  --rd-mbull-soft12: rgba(62, 122, 84, 0.12);
+  --rd-mbull-soft20: rgba(62, 122, 84, 0.2);
+  --rd-mbull-soft32: rgba(62, 122, 84, 0.32);
+  --rd-mbull-soft50: rgba(62, 122, 84, 0.5);
+  --rd-mbull-soft70: rgba(62, 122, 84, 0.7);
+  --rd-mamber-soft05: rgba(138, 100, 32, 0.05);
+  --rd-mamber-soft20: rgba(138, 100, 32, 0.2);
+  --rd-mamber-soft50: rgba(138, 100, 32, 0.5);
+
+  /* ---- charts / sparks — ink grid, paper label scrims ---- */
+  --rd-chart-grid: rgba(30, 28, 22, 0.06);
+  --rd-chart-trigline: rgba(58, 107, 143, 0.55);
+  --rd-chart-fill-bull: rgba(62, 122, 84, 0.1);
+  --rd-chart-fill-amber: rgba(138, 100, 32, 0.1);
+  --rd-chart-fill-bear: rgba(176, 80, 62, 0.1);
+  --rd-mspark-fill-bull: rgba(62, 122, 84, 0.13);
+  --rd-mspark-fill-amber: rgba(138, 100, 32, 0.13);
+  --rd-mspark-fill-bear: rgba(176, 80, 62, 0.13);
+  --rd-chart-scrim-72: rgba(237, 236, 231, 0.72);
+  --rd-chart-scrim-85: rgba(237, 236, 231, 0.85);
+  --rd-chart-scrim-90: rgba(237, 236, 231, 0.9);
+
+  /* ---- map ---- */
+  --rd-map-state-fill: rgba(58, 107, 143, 0.07);
+  --rd-map-state-stroke: rgba(58, 107, 143, 0.3);
+  --rd-map-dot-up: #3e7a54;
+  --rd-map-dot-dn: #ad5b47;
+
+  /* ---- sentiment gauge + F&G bands (bands stay mutually distinguishable:
+     red-brown → orange-brown → amber → green → deep green) ---- */
+  --rd-gauge-seg-1: #ad5240;
+  --rd-gauge-seg-2: #a5663a;
+  --rd-gauge-seg-3: #8a6e30;
+  --rd-gauge-seg-4: #3e7a54;
+  --rd-gauge-seg-5: #2f7a4d;
+  --rd-gauge-needle: #1c1b17;
+  --rd-fng-xfear: #b0503e;
+  --rd-fng-xfear-bd: rgba(176, 80, 62, 0.42);
+  --rd-fng-xfear-bg: rgba(176, 80, 62, 0.09);
+  --rd-fng-fear: #a5663a;
+  --rd-fng-fear-bd: rgba(165, 102, 58, 0.42);
+  --rd-fng-fear-bg: rgba(165, 102, 58, 0.09);
+  --rd-fng-neutral: #8a6420;
+  --rd-fng-neutral-bd: rgba(138, 100, 32, 0.42);
+  --rd-fng-neutral-bg: rgba(138, 100, 32, 0.09);
+  --rd-fng-greed: #3e7a54;
+  --rd-fng-greed-bd: rgba(62, 122, 84, 0.42);
+  --rd-fng-greed-bg: rgba(62, 122, 84, 0.09);
+  --rd-fng-xgreed: #2f7a4d;
+  --rd-fng-xgreed-bd: rgba(47, 122, 77, 0.42);
+  --rd-fng-xgreed-bg: rgba(47, 122, 77, 0.09);
+
+  /* ---- sector heat map (alpha formula in JSX untouched — hue triplets only;
+     tile text is ink over the data-tinted paper) ---- */
+  --rd-sec-up-rgb: 62, 122, 84;
+  --rd-sec-dn-rgb: 173, 91, 71;
+  --rd-sec-up-text-hi: #1e5233;
+  --rd-sec-up-text: #33684a;
+  --rd-sec-dn-text-hi: #7c3320;
+  --rd-sec-dn-text: #8f4936;
+  --rd-sec-swatch-grad: linear-gradient(90deg, #ad5240, #b3b0a6 50%, #3e7a54);
+
+  /* ---- OPTIONS workspace legacy skin + TradingView shell ---- */
+  --rd-ows-bull: #35754a;
+  --rd-ows-bear: #a84a3e;
+  --rd-ows-watch: #8a6e2c;
+  --rd-ows-pred: #4a6096;
+  --rd-ows-stale: #9a5a32;
+  --rd-ows-gold-bd: rgb(138 108 46 / 0.35);
+  --rd-ows-gold-bg: rgb(138 108 46 / 0.05);
+  --rd-tv-bg: rgb(248 247 243 / 1);
+  --rd-tv-overlay: rgb(248 247 243 / 0.92);
+}
+
+/* mobile (<700px) light re-pins — the dark mobile block above re-pins
+   --rd-bull/--rd-amber/--rd-chart-fill-* to brighter OLED hues at (0,1,0)
+   specificity; the light block's (0,3,0) already outranks it, so on paper
+   those keep the standard light hues (correct — no brightening needed).
+   Only the two mobile-geometry tokens get light values here: the one-step-
+   deeper stage and the mobile ambient-gradient shape. Placed after the light
+   block so it wins its equal-specificity siblings by source order. */
+@media (max-width: 700px) {
+  :root[data-theme="light"] .intel-root {
+    --rd-stage: #efeee9;
+    --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(46, 107, 104, 0.07), transparent 62%);
+  }
+}
