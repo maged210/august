@@ -503,6 +503,13 @@ body::after {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   overflow: hidden;
+}
+/* the depth layer takes the swipe transform so the section's snap geometry
+   never moves (transformed boxes shift their own snap areas) */
+.deck-depth {
+  width: 100%;
+  height: 100%;
+  position: relative;
   /* JS (Deck) drives scale+opacity depth during the swipe; scale from the centre */
   transform-origin: center center;
 }

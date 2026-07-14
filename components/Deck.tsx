@@ -84,7 +84,15 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
     // Cinematic depth: the leaving surface eases back (scale + dim) while the
     // entering one comes forward. Pure transform + opacity — GPU-composited, no
     // layout, no blur — so it stays buttery even over the WebGL surfaces.
-    const surfaces = Array.from(el.children) as HTMLElement[];
+    //
+    // The transform goes on the INNER .deck-depth layer, never on the snap
+    // sections themselves: CSS scroll-snap computes each snap area from the
+    // TRANSFORMED border box, so scaling a snap child mid-settle moves its own
+    // snap target and the deck comes to rest a few px off-position — visible
+    // as a clipped panel edge / dim sliver. Inner layer = stable geometry.
+    const surfaces = Array.from(el.children).map(
+      (c) => c.firstElementChild as HTMLElement,
+    );
     const applyDepth = () => {
       const w = el.clientWidth || 1;
       const sl = el.scrollLeft;
@@ -169,7 +177,7 @@ const Deck = forwardRef<DeckHandle, DeckProps>(function Deck(
       <div ref={scrollRef} className="deck-scroll">
         {surfaces.map((surface, i) => (
           <section key={i} className="deck-surface" aria-label={labels[i]}>
-            {surface}
+            <div className="deck-depth">{surface}</div>
           </section>
         ))}
       </div>
