@@ -17,7 +17,10 @@ export type MorningBriefData = {
   grounded: boolean;
 };
 
-export type BriefStatus = "checking" | "ready" | "none" | "compiling" | "error";
+// "signedout": auth is configured and there's no session — the brief is a
+// personal surface (calendar + inbox digest), so it invites sign-in instead
+// of compiling. Never appears on an unconfigured (single-user) instance.
+export type BriefStatus = "checking" | "ready" | "none" | "compiling" | "error" | "signedout";
 
 type Props = {
   brief: MorningBriefData | null;
@@ -50,6 +53,22 @@ export default function MorningBrief({
 }: Props) {
   // No flash while we check whether today's brief is ready.
   if (status === "checking") return null;
+
+  // Signed out on a configured instance — quiet invitation, no compile offer.
+  if (status === "signedout") {
+    return (
+      <div className="morning-brief mb-pill" role="status">
+        <span className="mb-eyebrow">MORNING BRIEF</span>
+        <span className="mb-pill-text">Sign in to personalize — your briefings.</span>
+        <a className="mb-btn mb-go mb-signin" href="/login">
+          Sign in
+        </a>
+        <button type="button" className="mb-x" aria-label="Dismiss" onClick={onDismiss}>
+          ✕
+        </button>
+      </div>
+    );
+  }
 
   // No brief yet (opened before the cron ran, or it failed) — offer to compile.
   if (status === "none" || status === "error") {

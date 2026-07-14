@@ -11,6 +11,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth, signIn, authConfigured, authMissing } from "@/auth";
+import { getOnboarded } from "@/lib/user-scope";
 
 export const metadata: Metadata = { title: "AUGUST — sign in" };
 
@@ -23,6 +24,13 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage() {
   if (authConfigured) {
     const session = await auth();
+    const email = session?.user?.email;
+    if (email) {
+      // Already signed in: first-timers land on the one-screen /welcome setup;
+      // everyone else goes straight back to the deck. (The landing carries the
+      // same check as a one-time nudge for the post-OAuth arrival.)
+      redirect((await getOnboarded(email)) ? "/" : "/welcome");
+    }
     if (session?.user) redirect("/");
   }
 

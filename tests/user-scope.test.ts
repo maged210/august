@@ -7,17 +7,27 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   AuthRequiredError,
+  FEEDS_KEY,
+  ONBOARDED_FLAG,
   OWNER_EMAIL,
   USERS_INDEX_KEY,
   USER_SEED,
   WATCHLIST_KEY,
   WATCHLIST_MAX,
   ensureUserSeededWith,
+  getFeedPrefs,
+  getFeedPrefsWith,
+  getOnboardedWith,
   getWatchlist,
   normalizeEmail,
   scopeKey,
+  setFeedPrefs,
+  setFeedPrefsWith,
+  setOnboardedWith,
   setWatchlist,
+  validateFeedPrefs,
   validateWatchlist,
+  type PrefsKv,
   type SeedKv,
 } from "../lib/user-scope";
 
@@ -215,4 +225,110 @@ test("ensureUserSeededWith: rejects invalid emails before touching storage", asy
 test("USER_SEED: the stage-2 defaults are exactly as specified", () => {
   assert.deepEqual([...USER_SEED.watchlist], ["SPY", "QQQ", "BRK-B", "NVDA", "TSLA"]);
   assert.deepEqual(USER_SEED.feeds, { gmail: false, rss: true, markets: true });
+});
+
+// ── feed prefs (stage 3): validation + round-trip over a mock KV ─────────────
+
+function mockPrefsKv() {
+  const store = new Map<string, unknown>();
+  const kv: PrefsKv = {
+    async get(key: string) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    async set(key: string, value: unknown) {
+      store.set(key, value);
+      return "OK";
+    },
+  };
+  return { kv, store };
+}
+
+test("validateFeedPrefs: normalizes exactly-three-booleans and strips extras", () => {
+  assert.deepEqual(validateFeedPrefs({ gmail: true, rss: false, markets: true }), {
+    gmail: true,
+    rss: false,
+    markets: true,
+  });
+  // Extra keys are stripped, never stored.
+  assert.deepEqual(
+    validateFeedPrefs({ gmail: false, rss: true, markets: true, evil: "x" }),
+    { gmail: false, rss: true, markets: true },
+  );
+  // The seed default validates unchanged.
+  assert.deepEqual(validateFeedPrefs({ ...USER_SEED.feeds }), { ...USER_SEED.feeds });
+});
+
+test("validateFeedPrefs: rejects bad shapes outright (never partial)", () => {
+  assert.equal(validateFeedPrefs(null), null);
+  assert.equal(validateFeedPrefs(undefined), null);
+  assert.equal(validateFeedPrefs("gmail"), null);
+  assert.equal(validateFeedPrefs([true, true, true]), null); // array, not object
+  assert.equal(validateFeedPrefs({ gmail: true, rss: true }), null); // missing key
+  assert.equal(validateFeedPrefs({ gmail: 1, rss: true, markets: true }), null); // truthy ≠ boolean
+  assert.equal(validateFeedPrefs({ gmail: "true", rss: true, markets: true }), null);
+});
+
+test("feed prefs: round-trip through the KV under the scoped key", async () => {
+  const { kv, store } = mockPrefsKv();
+  const prefs = { gmail: true, rss: false, markets: true };
+
+  const w = await setFeedPrefsWith(kv, "viv@example.com", prefs);
+  assert.deepEqual(w, { ok: true, prefs });
+  assert.deepEqual(store.get("user:viv@example.com:" + FEEDS_KEY), prefs);
+
+  assert.deepEqual(await getFeedPrefsWith(kv, "viv@example.com"), prefs);
+  // Another user's read is untouched by that write — seed default.
+  assert.deepEqual(await getFeedPrefsWith(kv, "other@example.com"), { ...USER_SEED.feeds });
+});
+
+test("feed prefs: null email round-trips on the LEGACY key (single-user fallback)", async () => {
+  const { kv, store } = mockPrefsKv();
+  const prefs = { gmail: false, rss: false, markets: true };
+  await setFeedPrefsWith(kv, null, prefs);
+  assert.deepEqual(store.get(FEEDS_KEY), prefs); // exactly august:feeds, unscoped
+  assert.deepEqual(await getFeedPrefsWith(kv, null), prefs);
+});
+
+test("feed prefs: absent or invalid stored values fall back to the seed", async () => {
+  const { kv, store } = mockPrefsKv();
+  assert.deepEqual(await getFeedPrefsWith(kv, "viv@example.com"), { ...USER_SEED.feeds });
+  store.set("user:viv@example.com:" + FEEDS_KEY, { gmail: "yes" }); // corrupt
+  assert.deepEqual(await getFeedPrefsWith(kv, "viv@example.com"), { ...USER_SEED.feeds });
+});
+
+test("feed prefs: invalid input is rejected before any write", async () => {
+  const { kv, store } = mockPrefsKv();
+  const r = await setFeedPrefsWith(kv, "viv@example.com", { gmail: 1, rss: true, markets: true });
+  assert.deepEqual(r, { ok: false, error: "invalid_prefs" });
+  assert.equal(store.size, 0);
+});
+
+test("feed prefs store: unconfigured Redis serves the seed and refuses writes", async () => {
+  assert.deepEqual(await getFeedPrefs(null), { ...USER_SEED.feeds });
+  assert.deepEqual(await getFeedPrefs("viv@example.com"), { ...USER_SEED.feeds });
+  const res = await setFeedPrefs(null, { gmail: true, rss: true, markets: true });
+  assert.deepEqual(res, { ok: false, error: "storage_unconfigured" });
+  // Validation failures are reported BEFORE storage is consulted.
+  const bad = await setFeedPrefs(null, { gmail: "x" });
+  assert.deepEqual(bad, { ok: false, error: "invalid_prefs" });
+});
+
+// ── onboarded flag (stage 3): the /welcome one-time nudge gate ───────────────
+
+test("onboarded flag: false until set, true after, under the scoped key", async () => {
+  const { kv, store } = mockPrefsKv();
+  assert.equal(await getOnboardedWith(kv, "viv@example.com"), false);
+
+  await setOnboardedWith(kv, "viv@example.com");
+  assert.equal(await getOnboardedWith(kv, "viv@example.com"), true);
+  assert.ok(store.has("user:viv@example.com:" + ONBOARDED_FLAG));
+
+  // Scoping holds: another account is still un-onboarded.
+  assert.equal(await getOnboardedWith(kv, "other@example.com"), false);
+});
+
+test("onboarded flag: normalizes the email the same way every store does", async () => {
+  const { kv } = mockPrefsKv();
+  await setOnboardedWith(kv, "  Viv@Example.COM ");
+  assert.equal(await getOnboardedWith(kv, "viv@example.com"), true);
 });

@@ -75,6 +75,10 @@ export default function CommsSurface() {
   const [data, setData] = useState<InboxState | null>(null);
   const [status, setStatus] = useState<"loading" | "live" | "error">("loading");
   const [note, setNote] = useState<string | null>(null);
+  // Auth is configured and nobody's signed in — /api/inbox answers 401 (the
+  // middleware gate). Unconfigured auth never 401s (single-user fallback), so
+  // this state simply never appears there.
+  const [signedOut, setSignedOut] = useState(false);
 
   // Reply state — only one draft open at a time.
   const [replyMsg, setReplyMsg] = useState<InboxItem | null>(null);
@@ -88,8 +92,15 @@ export default function CommsSurface() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/inbox", { cache: "no-store" });
+      if (res.status === 401) {
+        setSignedOut(true);
+        setData(null);
+        setStatus("live");
+        return;
+      }
       if (!res.ok) throw new Error();
       const j: InboxState = await res.json();
+      setSignedOut(false);
       setData(j);
       setStatus("live");
     } catch {
@@ -193,7 +204,9 @@ export default function CommsSurface() {
 
   const connected = !!data?.connected;
   const canSend = !!data?.canSend;
-  const liveBadge = connected ? (
+  const liveBadge = signedOut ? (
+    <span className="todo">signed out</span>
+  ) : connected ? (
     <span className="comms-live">
       LIVE · GMAIL{data?.email ? ` · ${data.email}` : ""}
     </span>
@@ -213,7 +226,18 @@ export default function CommsSurface() {
 
         {note ? <div className="comms-note">{note}</div> : null}
 
-        {status === "loading" && !data ? (
+        {signedOut ? (
+          // Signed-out (auth configured): the inbox is personal — invite the
+          // sign-in instead of the Gmail connect card. Data surfaces (Markets,
+          // World, Intel) stay fully public; only the personal panels gate.
+          <div className="comms-connect comms-signedout">
+            <p className="comms-connect-lead">Sign in to personalize.</p>
+            <p className="comms-connect-sub">Your Gmail, your briefings.</p>
+            <a className="comms-connect-btn" href="/login">
+              Sign in
+            </a>
+          </div>
+        ) : status === "loading" && !data ? (
           <WidgetState state="loading" rows={6} />
         ) : status === "error" && !data ? (
           <WidgetState state="error" onRetry={load} />

@@ -830,9 +830,20 @@ export default function Home() {
       /* no-op */
     }
     fetch("/api/brief", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((j: { ready?: boolean; brief?: MorningBriefData | null }) => {
+      .then<{ ready?: boolean; brief?: MorningBriefData | null } | "signedout">((r) => {
+        // 401 = auth configured, no session (middleware gate) — the brief is
+        // personal, so the card offers sign-in instead of a compile.
+        if (r.status === 401) return "signedout";
+        return r.ok
+          ? (r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>)
+          : Promise.reject(r);
+      })
+      .then((j) => {
         if (cancelled) return;
+        if (j === "signedout") {
+          setBriefStatus("signedout");
+          return;
+        }
         if (j.ready && j.brief) {
           setBrief(j.brief); // always store so the summon trigger has it later
           if (fromPush) {
@@ -931,6 +942,7 @@ export default function Home() {
     setBriefStatus("compiling");
     fetch("/api/brief", { method: "POST" })
       .then(async (r) => {
+        if (r.status === 401) throw new Error("signedout");
         if (r.status === 429) throw new Error("rate");
         if (!r.ok) throw new Error("compile");
         return r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>;
@@ -951,7 +963,9 @@ export default function Home() {
           setBriefStatus("error");
         }
       })
-      .catch(() => setBriefStatus("error"));
+      .catch((e) =>
+        setBriefStatus((e as Error)?.message === "signedout" ? "signedout" : "error"),
+      );
   }
 
   function dismissBrief() {

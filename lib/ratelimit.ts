@@ -28,7 +28,7 @@ type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
   | "intelMutate" | "intelProcess" | "intelAsk"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
-  | "threads" | "watchlist";
+  | "threads" | "watchlist" | "feeds";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -51,6 +51,7 @@ const LIMITS: Record<RouteKey, number> = {
   "intel-track": 10, // Idea Tracker cron — same external-pinger profile as watchers
   threads: 30, // conversation persistence — one background POST per completed reply
   watchlist: 30, // per-user watchlist reads/writes — cheap Redis ops
+  feeds: 30,  // per-user feed prefs + onboarded flag — cheap Redis ops
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

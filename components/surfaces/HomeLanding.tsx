@@ -33,8 +33,12 @@ const CHIPS = [
   "What's on the intel board?",
 ];
 
-// WATCHING — symbols lib/markets actually serves through /api/intel/quotes
-// (Yahoo chart: real CME futures quotes, crypto pairs, ^VIX).
+// WATCHING — the PUBLIC DEFAULT (stage 3): signed out, or on an instance where
+// auth isn't configured, the pills show exactly this macro five — symbols
+// lib/markets actually serves through /api/intel/quotes (Yahoo chart: real CME
+// futures quotes, crypto pairs, ^VIX). A signed-in session swaps in the user's
+// stored watchlist from GET /api/watchlist (plain tickers pass to the quotes
+// route as-is; the store validates the Yahoo-style charset).
 const WATCH: Array<{ sym: string; label: string }> = [
   { sym: "NQ=F", label: "NQ" },
   { sym: "ES=F", label: "ES" },
@@ -104,6 +108,9 @@ export default function HomeLanding({
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  // The symbols WATCHING quotes: the public macro five until a signed-in
+  // session's watchlist loads (see the session effect below).
+  const [watch, setWatch] = useState<Array<{ sym: string; label: string }>>(WATCH);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const activeRef = useRef(active);
 
@@ -151,6 +158,12 @@ export default function HomeLanding({
   // only session consumer). Signed out → the endpoint returns JSON null;
   // auth unconfigured → the route answers 501 and the chip stays hidden
   // (single-user fallback keeps the cluster clean).
+  //
+  // A signed-in session additionally (stage 3):
+  //   - swaps WATCHING to the user's stored watchlist (failure or an empty
+  //     list keeps the public five — no blank pill row, no mock data);
+  //   - nudges first-timers to /welcome ONCE per browser session (the flag
+  //     rides sessionStorage so a storage failure can't cause a redirect loop).
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session", { cache: "no-store" })
@@ -159,6 +172,30 @@ export default function HomeLanding({
         if (cancelled) return;
         const email = j?.user?.email;
         setAccount(email ? { email } : null);
+        if (!email) return;
+        fetch("/api/watchlist", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+          .then((w: { symbols?: unknown }) => {
+            if (cancelled) return;
+            const syms = Array.isArray(w.symbols)
+              ? w.symbols.filter((s): s is string => typeof s === "string" && s.length > 0)
+              : [];
+            if (syms.length > 0) setWatch(syms.map((s) => ({ sym: s, label: s })));
+          })
+          .catch(() => {});
+        fetch("/api/feeds", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+          .then((f: { onboarded?: boolean }) => {
+            if (cancelled || f.onboarded !== false) return;
+            try {
+              if (window.sessionStorage.getItem("aug-welcome-nudged")) return;
+              window.sessionStorage.setItem("aug-welcome-nudged", "1");
+            } catch {
+              return; // can't guard against a loop — skip the nudge entirely
+            }
+            window.location.assign("/welcome");
+          })
+          .catch(() => {});
       })
       .catch(() => {});
     return () => {
@@ -199,16 +236,18 @@ export default function HomeLanding({
   }, [messagesCount, fetchThreads]);
 
   // WATCHING — live quotes, gentle 60s poll riding the server's 60s cache.
+  // Re-keyed on `watch` (the public five, or the signed-in watchlist once it
+  // lands); the cadence itself is unchanged.
   useEffect(() => {
     let cancelled = false;
-    const symbols = WATCH.map((w) => w.sym).join(",");
+    const symbols = watch.map((w) => w.sym).join(",");
     const pull = () => {
       fetch(`/api/intel/quotes?symbols=${encodeURIComponent(symbols)}`, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { quotes?: Record<string, { price: number; chgPct: number }> }) => {
           if (cancelled) return;
           const out: Pill[] = [];
-          for (const w of WATCH) {
+          for (const w of watch) {
             const q = j.quotes?.[w.sym];
             if (q && Number.isFinite(q.price) && q.price > 0 && Number.isFinite(q.chgPct)) {
               out.push({ label: w.label, price: q.price, chgPct: q.chgPct });
@@ -226,7 +265,7 @@ export default function HomeLanding({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [watch]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,6 +384,18 @@ export default function HomeLanding({
             >
               {theme === "dark" ? <SunGlyph /> : theme === "light" ? <SignalGlyph /> : <MoonGlyph />}
             </button>
+            {/* SETTINGS — re-opens /welcome ("Your setup": watchlist + feeds).
+                Session-only: signed out and unconfigured instances never show it. */}
+            {account ? (
+              <a
+                className="hl-ctl"
+                href="/welcome"
+                title="Your setup"
+                aria-label="Your setup — watchlist and feeds"
+              >
+                <GearGlyph />
+              </a>
+            ) : null}
           </div>
         </div>
       </div>
@@ -635,6 +686,26 @@ function MoonGlyph() {
       aria-hidden
     >
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+// Settings gear — same stroke language as the rest of the quiet cluster.
+function GearGlyph() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.4v3M12 18.6v3M2.4 12h3M18.6 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1" />
     </svg>
   );
 }

@@ -16,6 +16,7 @@
 //   /api/speak           ElevenLabs quota
 //   /api/deepgram-token  Deepgram STT grant mint
 //   /api/watchlist       the user's watchlist store (stage 2)
+//   /api/feeds           the user's feed prefs + onboarded flag (stage 3)
 //   /api/push/subscribe  device push subscriptions are per-user (stage 2)
 //
 // NOT gated (public data or separately protected):
@@ -75,6 +76,7 @@ export const config = {
     "/api/speak/:path*",
     "/api/deepgram-token/:path*",
     "/api/watchlist/:path*",
+    "/api/feeds/:path*",
     "/api/push/subscribe/:path*",
   ],
 };

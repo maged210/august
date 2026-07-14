@@ -1431,6 +1431,28 @@ body::after {
   color: var(--bg, #08080b);
 }
 
+/* Signed-out (auth configured, no session): the personal inbox invites a
+   sign-in — centered and quiet, same voice as the connect card. */
+.comms-signedout {
+  align-items: center;
+  text-align: center;
+  margin: 0 auto;
+  padding: 56px 4px;
+  gap: 6px;
+}
+.comms-signedout .comms-connect-btn {
+  margin-top: 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The morning-brief pill's sign-in control is an anchor — strip the UA link
+   styling so it reads as its sibling buttons do. */
+a.mb-btn {
+  text-decoration: none;
+}
+
 @media (max-width: 720px) {
   .surface {
     padding: 84px 22px clamp(170px, 24vh, 260px);
@@ -3608,4 +3630,378 @@ body {
 }
 .lp-back:hover {
   text-decoration: underline;
+}
+
+/* ======================================================================
+   WELCOME — /welcome, the one-screen setup ("Set up AUGUST" first time,
+   "Your setup" thereafter). The home landing's face: Geist + mono, gold
+   label accent, day/night palettes. Tokens duplicated from .home-landing
+   and scoped to .welcome-page — no global leaks (same pattern as /login).
+   ====================================================================== */
+.welcome-page {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --card: #ffffff;
+  --label: #a2823f;
+  --up: #1b7f4d;
+  --down: #b4483e;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: clamp(24px, 6vh, 64px) 20px 48px;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  color: var(--ink);
+}
+:root[data-theme="dark"] .welcome-page,
+:root[data-theme="batman"] .welcome-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+}
+.wp-card {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  margin: auto 0; /* vertical centering when short; scrolls when tall */
+}
+.wp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wp-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.wp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.wp-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.wp-title {
+  margin: 10px 0 0;
+  font-size: clamp(26px, 4vw, 34px);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.wp-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--body2);
+}
+.wp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 26px;
+  border-top: 1px solid var(--hair);
+}
+.wp-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: var(--label);
+}
+.wp-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.wp-loading {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+.wp-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* — watchlist chips + add row — */
+.wp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.wp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 4px 6px 4px 16px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  box-shadow: var(--cardshadow);
+}
+.wp-chip-x {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.wp-chip-x:hover:not(:disabled) {
+  color: var(--down);
+}
+.wp-chip-x:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.wp-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wp-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  outline: none;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.wp-input::placeholder {
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--dim);
+  text-transform: none;
+}
+.wp-input:focus-visible {
+  border-color: var(--label);
+}
+.wp-ghost {
+  flex: none;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.wp-ghost:hover:not(:disabled) {
+  border-color: #c9a96a;
+  color: var(--ink);
+}
+.wp-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.wp-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--body2);
+}
+.wp-err {
+  color: var(--down);
+}
+
+/* — feed toggles: full-row buttons with a switch — */
+.wp-toggles {
+  display: flex;
+  flex-direction: column;
+}
+.wp-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 44px;
+  padding: 13px 2px;
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.wp-toggle:last-child {
+  border-bottom: none;
+}
+.wp-switch {
+  flex: none;
+  margin-top: 1px;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  position: relative;
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.wp-switch-dot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition:
+    transform var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.wp-toggle.on .wp-switch {
+  border-color: #c9a96a;
+  background: rgba(201, 169, 106, 0.18);
+}
+.wp-toggle.on .wp-switch-dot {
+  transform: translateX(14px);
+  background: var(--label);
+}
+.wp-toggle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.wp-toggle-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.wp-toggle-hint {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+
+/* — actions — */
+.wp-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-top: 26px;
+  border-top: 1px solid var(--hair);
+}
+.wp-start {
+  min-height: 44px;
+  padding: 12px 30px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-snappy),
+    color var(--dur-fast) var(--ease-snappy);
+}
+.wp-start:hover:not(:disabled) {
+  border-color: #c9a96a;
+  color: var(--label);
+}
+.wp-start:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.wp-skip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--dim);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.wp-skip:hover:not(:disabled) {
+  color: var(--ink);
+}
+.wp-skip:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.wp-start:focus-visible,
+.wp-skip:focus-visible,
+.wp-ghost:focus-visible,
+.wp-chip-x:focus-visible,
+.wp-toggle:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .welcome-page {
+    padding: 20px 16px 40px;
+  }
+  .wp-add {
+    flex-wrap: wrap;
+  }
+  /* The brief pill's sign-in anchor keeps a 44px touch target on phones. */
+  .mb-signin {
+    min-height: 44px;
+  }
 }

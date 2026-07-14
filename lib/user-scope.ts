@@ -451,3 +451,121 @@ export async function setWatchlist(
     return { ok: false, error: "write_failed" };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Feed prefs + the onboarded flag (stage 3 — the /welcome setup screen)
+// ---------------------------------------------------------------------------
+//
+// Feed prefs mirror the watchlist store exactly: seeded at first login
+// (ensureUserSeededWith above), read/written through /api/feeds, seed default
+// when absent/invalid/unconfigured. The onboarded flag records that the user
+// has SEEN /welcome (Start or Skip both set it) — it gates the one-time
+// post-sign-in nudge, nothing else. Both cores take an injected KV so the
+// node:test suite can round-trip them without Redis.
+
+export type FeedPrefs = { gmail: boolean; rss: boolean; markets: boolean };
+
+/** The minimal Redis surface the prefs/flag stores need (method syntax on
+ *  purpose, as with SeedKv: keeps the real Upstash client assignable). */
+export type PrefsKv = {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown): Promise<unknown>;
+};
+
+/** PURE. Exactly three booleans, extra keys stripped, anything else → null
+ *  (never partial — same contract as validateWatchlist). */
+export function validateFeedPrefs(input: unknown): FeedPrefs | null {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const o = input as Record<string, unknown>;
+  if (
+    typeof o.gmail !== "boolean" ||
+    typeof o.rss !== "boolean" ||
+    typeof o.markets !== "boolean"
+  ) {
+    return null;
+  }
+  return { gmail: o.gmail, rss: o.rss, markets: o.markets };
+}
+
+/** The user's feed prefs from the injected KV; seed default when absent/invalid. */
+export async function getFeedPrefsWith(kv: PrefsKv, email: string | null): Promise<FeedPrefs> {
+  try {
+    const stored = await kv.get(scopeKey(email, FEEDS_KEY));
+    return validateFeedPrefs(stored) ?? { ...USER_SEED.feeds };
+  } catch {
+    return { ...USER_SEED.feeds };
+  }
+}
+
+export type SetFeedPrefsResult =
+  | { ok: true; prefs: FeedPrefs }
+  | { ok: false; error: "invalid_prefs" | "storage_unconfigured" | "write_failed" };
+
+export async function setFeedPrefsWith(
+  kv: PrefsKv,
+  email: string | null,
+  input: unknown,
+): Promise<SetFeedPrefsResult> {
+  const prefs = validateFeedPrefs(input);
+  if (!prefs) return { ok: false, error: "invalid_prefs" };
+  try {
+    await kv.set(scopeKey(email, FEEDS_KEY), prefs);
+    return { ok: true, prefs };
+  } catch {
+    return { ok: false, error: "write_failed" };
+  }
+}
+
+/** The user's feed prefs; the seed default when Redis is unconfigured. */
+export async function getFeedPrefs(email: string | null): Promise<FeedPrefs> {
+  const redis = getRedis();
+  if (!redis) return { ...USER_SEED.feeds };
+  return getFeedPrefsWith(redis, email);
+}
+
+export async function setFeedPrefs(
+  email: string | null,
+  input: unknown,
+): Promise<SetFeedPrefsResult> {
+  const prefs = validateFeedPrefs(input);
+  if (!prefs) return { ok: false, error: "invalid_prefs" };
+  const redis = getRedis();
+  if (!redis) return { ok: false, error: "storage_unconfigured" };
+  return setFeedPrefsWith(redis, email, prefs);
+}
+
+export const ONBOARDED_FLAG = "onboarded"; // → user:{email}:onboarded
+
+export async function getOnboardedWith(kv: PrefsKv, email: string): Promise<boolean> {
+  try {
+    return Boolean(await kv.get(scopeKey(email, ONBOARDED_FLAG)));
+  } catch {
+    return true; // can't read the flag — fail toward "no nudge", never a nag loop
+  }
+}
+
+export async function setOnboardedWith(kv: PrefsKv, email: string): Promise<void> {
+  await kv.set(scopeKey(email, ONBOARDED_FLAG), new Date().toISOString());
+}
+
+/** Has this account been through /welcome? null email (single-user fallback)
+ *  and missing Redis both report TRUE — the nudge only ever fires for a real
+ *  signed-in account with somewhere to store the flag. */
+export async function getOnboarded(email: string | null): Promise<boolean> {
+  if (!email) return true;
+  const redis = getRedis();
+  if (!redis) return true;
+  return getOnboardedWith(redis, email);
+}
+
+/** Best-effort — a Redis failure never blocks finishing (or skipping) setup. */
+export async function setOnboarded(email: string | null): Promise<void> {
+  if (!email) return;
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await setOnboardedWith(redis, email);
+  } catch {
+    /* best-effort */
+  }
+}
