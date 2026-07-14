@@ -199,11 +199,31 @@ function ExpBadge({ e }: { e: "explicit" | "inferred" }) {
   );
 }
 
-// hex → rgba at a given alpha (design hexA — SVG presentation attrs can't take var())
-const hexA = (h: string, a: number) => {
-  const m = h.replace("#", "");
-  return `rgba(${parseInt(m.slice(0, 2), 16)},${parseInt(m.slice(2, 4), 16)},${parseInt(m.slice(4, 6), 16)},${a})`;
+// §3.6 chart/spark tones → DESK PALETTE variables (stage A theming). SVG
+// colors flow through CSS custom properties via the style prop; the mobile
+// media block re-pins the underlying tokens, so one tone key renders the
+// desktop hue ≥701px and the brighter SPEC-mobile hue below — exactly the
+// old RD_HEX/MB_HEX split, now themeable.
+type ChartTone = "bull" | "amber" | "bear";
+const CHART_LINE: Record<ChartTone, string> = {
+  bull: "var(--rd-chart-line-bull)",
+  amber: "var(--rd-chart-line-amber)",
+  bear: "var(--rd-chart-line-bear)",
 };
+const CHART_FILL: Record<ChartTone, string> = {
+  bull: "var(--rd-chart-fill-bull)",
+  amber: "var(--rd-chart-fill-amber)",
+  bear: "var(--rd-chart-fill-bear)",
+};
+const MSPARK_FILL: Record<ChartTone, string> = {
+  bull: "var(--rd-mspark-fill-bull)",
+  amber: "var(--rd-mspark-fill-amber)",
+  bear: "var(--rd-mspark-fill-bear)",
+};
+/** design color rule (§3.6): with a stated trigger the favored side paints
+ * bull/amber; otherwise the direction color (bearish → bear, else bull) */
+const chartTone = (favored: boolean | null, dir: TradeIdea["direction"]): ChartTone =>
+  favored != null ? (favored ? "bull" : "amber") : dir === "bearish" ? "bear" : "bull";
 
 /** Inspector chart — design 352×92 area chart (SPEC-desktop §2.6.3 item 7,
  * scaling math ported from the design's buildChart) drawn from the REAL ~1mo
@@ -211,11 +231,11 @@ const hexA = (h: string, a: number) => {
  * not ship — the honest `1M · DAILY` axis label lives in the PRICE ACTION sub).
  * The series ends at the live quote (design contract: last point = live), the
  * dashed line is the stated trigger, H/L labels read the closes array only. */
-function InspChart({ closes, live, trigger, lineColor }: {
+function InspChart({ closes, live, trigger, tone }: {
   closes: number[];
   live: number;
   trigger: number | null;
-  lineColor: string;
+  tone: ChartTone;
 }) {
   if (!closes || closes.length < 2) {
     // the design specifies no no-series treatment — small honest absent line
@@ -243,16 +263,16 @@ function InspChart({ closes, live, trigger, lineColor }: {
     <div className="rd-chart">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="1-month daily-close price chart">
         <title>{`1M · DAILY closes${trigger != null ? ` · trigger ${rdPx(trigger)}` : ""}`}</title>
-        <line x1={0} y1={23} x2={W} y2={23} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
-        <line x1={0} y1={46} x2={W} y2={46} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
-        <line x1={0} y1={69} x2={W} y2={69} stroke="rgba(255,255,255,0.035)" strokeWidth={1} />
-        <path d={ap} fill={hexA(lineColor, 0.1)} />
+        <line x1={0} y1={23} x2={W} y2={23} style={{ stroke: "var(--rd-chart-grid)" }} strokeWidth={1} />
+        <line x1={0} y1={46} x2={W} y2={46} style={{ stroke: "var(--rd-chart-grid)" }} strokeWidth={1} />
+        <line x1={0} y1={69} x2={W} y2={69} style={{ stroke: "var(--rd-chart-grid)" }} strokeWidth={1} />
+        <path d={ap} style={{ fill: CHART_FILL[tone] }} />
         {trigY != null && (
-          <line x1={0} y1={trigY} x2={W} y2={trigY} stroke="rgba(106,160,200,0.55)" strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+          <line x1={0} y1={trigY} x2={W} y2={trigY} style={{ stroke: "var(--rd-chart-trigline)" }} strokeWidth={1} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         )}
-        <path d={lp} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <circle cx={liveX} cy={liveY} r={6} fill="none" stroke={lineColor} strokeWidth={1} opacity={0.35} />
-        <circle cx={liveX} cy={liveY} r={3.2} fill={lineColor} />
+        <path d={lp} fill="none" style={{ stroke: CHART_LINE[tone] }} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <circle cx={liveX} cy={liveY} r={6} fill="none" style={{ stroke: CHART_LINE[tone] }} strokeWidth={1} opacity={0.35} />
+        <circle cx={liveX} cy={liveY} r={3.2} style={{ fill: CHART_LINE[tone] }} />
       </svg>
       <span className="rd-chart-h">H {rdPx(Math.max(...closes))}</span>
       <span className="rd-chart-l">L {rdPx(Math.min(...closes))}</span>
@@ -658,14 +678,11 @@ const RD_DIR: Record<TradeIdea["direction"], { label: string; glyph: string; cls
   watch: { label: "NEUT", glyph: "◆", cls: "rd-dir-neut", title: "watch idea" },
 };
 
-// design P-palette hexes for SVG strokes (presentation attrs can't take var())
-const RD_HEX = { bull: "#6fa085", bear: "#cd7e6d", amber: "#bfa05a" };
-
 // ── spark (52×20 path + end dot; SPEC-desktop §2.6.2 cell 11) ────────────────
 /** Drawn from the REAL ~1mo of DAILY closes (SPEC-wiring §2.4 — never seeded
  * paths); labeled honestly via <title> + the board legend. Color follows the
  * design rule (§3.6): favored-vs-trigger → bull/amber, else direction color. */
-function RdSpark({ closes, color }: { closes: number[]; color: string }) {
+function RdSpark({ closes, tone }: { closes: number[]; tone: ChartTone }) {
   if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
   const W = 52, H = 20, padY = 3;
   let min = Math.min(...closes), max = Math.max(...closes);
@@ -680,8 +697,8 @@ function RdSpark({ closes, color }: { closes: number[]; color: string }) {
       preserveAspectRatio="none" role="img" aria-label="1-month daily-close sparkline"
     >
       <title>1M · DAILY closes</title>
-      <path d={d} fill="none" stroke={color} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r="1.6" fill={color} />
+      <path d={d} fill="none" style={{ stroke: CHART_LINE[tone] }} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r="1.6" style={{ fill: CHART_LINE[tone] }} />
     </svg>
   );
 }
@@ -767,14 +784,12 @@ function BlotterRow({
   const ev = ideaEvKind(idea);
   const conf = Math.round(idea.confidence * 100);
 
-  // spark color per the design rule (§3.6): levels → favored? bull : amber,
+  // spark tone per the design rule (§3.6): levels → favored? bull : amber,
   // else direction color (bearish → bear, everything else → bull)
   const favored = trigVal != null && trigVal > 0 && live != null
     ? (dir === "bullish" ? live >= trigVal : live <= trigVal)
     : null;
-  const sparkColor = favored != null
-    ? (favored ? RD_HEX.bull : RD_HEX.amber)
-    : dir === "bearish" ? RD_HEX.bear : RD_HEX.bull;
+  const sparkTone = chartTone(favored, dir);
 
   return (
     <div
@@ -832,7 +847,7 @@ function BlotterRow({
         <span className="rd-c rd-c-age" title={tracked ? "tracked since first mention" : "not tracked"}>
           {tracked ? ageStr(tracked.createdAt) : "—"}
         </span>
-        <span className="rd-c rd-c-spark"><RdSpark closes={closes} color={sparkColor} /></span>
+        <span className="rd-c rd-c-spark"><RdSpark closes={closes} tone={sparkTone} /></span>
         <span className="rd-c rd-c-conf">
           <span className="rd-conf-bar" aria-hidden="true"><span className="rd-conf-fill" style={{ width: `${conf}%` }} /></span>
           {conf}%
@@ -1069,8 +1084,9 @@ function BlotterTable({
 // (blotter/tracker/quotes/brief); the whole tree is display:none ≥701px, so
 // the desktop board is untouched.
 
-// mobile P palette for SVG strokes (SPEC-mobile §2.1 — brighter than desktop)
-const MB_HEX = { bull: "#6fbf93", bear: "#cd7e6d", amber: "#c79a52" };
+// mobile spark colors ride the same CHART_LINE/MSPARK_FILL variables — the
+// <700px media block re-pins --rd-bull/--rd-amber to the brighter SPEC-mobile
+// §2.1 hues, so the tone keys resolve to the mobile palette here.
 
 type HorizonKey = "ALL" | "TODAY" | "SWING" | "LONG";
 // design segments → REAL timeframe groups (SPEC-mobile §4.4 mapping, expressed
@@ -1085,7 +1101,7 @@ const HORIZONS: { key: HorizonKey; group: string | null }[] = [
 /** mobile spark (§4.5 row 2 / §10): 52×22 viewBox at 112×30, stroke 1.4,
  * end dot r1.9, + area fill at 0.13 — REAL ~1mo daily closes, same series as
  * the desktop spark */
-function RdSparkM({ closes, color }: { closes: number[]; color: string }) {
+function RdSparkM({ closes, tone }: { closes: number[]; tone: ChartTone }) {
   if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
   const W = 52, H = 22, padY = 3;
   let min = Math.min(...closes), max = Math.max(...closes);
@@ -1101,9 +1117,9 @@ function RdSparkM({ closes, color }: { closes: number[]; color: string }) {
       preserveAspectRatio="none" role="img" aria-label="1-month daily-close sparkline"
     >
       <title>1M · DAILY closes</title>
-      <path d={area} fill={hexA(color, 0.13)} />
-      <path d={d} fill="none" stroke={color} strokeWidth={1.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r={1.9} fill={color} />
+      <path d={area} style={{ fill: MSPARK_FILL[tone] }} />
+      <path d={d} fill="none" style={{ stroke: CHART_LINE[tone] }} strokeWidth={1.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={xAt(closes.length - 1)} cy={yAt(closes[closes.length - 1])} r={1.9} style={{ fill: CHART_LINE[tone] }} />
     </svg>
   );
 }
@@ -1133,11 +1149,10 @@ function MobileIdeaCard({ idea, tracked, open, onToggle }: {
   const deltaCls =
     delta?.label === "PAST TRIGGER" ? "rd-mdelta-past" : delta?.label === "TO TRIGGER" ? "rd-mdelta-to" : "";
 
-  // spark/chart color per the design rule (§3.6 / mobile delta logic), mobile hexes
+  // spark/chart tone per the design rule (§3.6 / mobile delta logic) — the
+  // media-block token re-pin supplies the mobile hues
   const favored = hasTrig && live != null ? (dir === "bullish" ? live >= trigVal : live <= trigVal) : null;
-  const lineColor = favored != null
-    ? (favored ? MB_HEX.bull : MB_HEX.amber)
-    : dir === "bearish" ? MB_HEX.bear : MB_HEX.bull;
+  const tone = chartTone(favored, dir);
 
   // setup word: CAT_LABEL of the chapter category when present, else omitted —
   // never an invented classifier (SPEC-wiring §2.1)
@@ -1189,7 +1204,7 @@ function MobileIdeaCard({ idea, tracked, open, onToggle }: {
           {setup && <span className="rd-msetup">{setup}</span>}
           <span className="rd-mtf">{TF_FULL[idea.timeHorizon] ?? "—"}</span>
           <span className="rd-mspark-slot">
-            <RdSparkM closes={closes} color={lineColor} />
+            <RdSparkM closes={closes} tone={tone} />
           </span>
           <span className="rd-mcaret" aria-hidden="true">{open ? "▾" : "▸"}</span>
         </span>
@@ -1204,7 +1219,7 @@ function MobileIdeaCard({ idea, tracked, open, onToggle }: {
             )}
           </div>
           {live != null ? (
-            <InspChart closes={closes} live={live} trigger={hasTrig ? trigVal : null} lineColor={lineColor} />
+            <InspChart closes={closes} live={live} trigger={hasTrig ? trigVal : null} tone={tone} />
           ) : (
             // a quote-less row has no live point to draw — honest absent panel
             <div className="rd-chart rd-chart-noseries">
@@ -2089,9 +2104,9 @@ function MiniSparkWide({ snaps, basis, up }: { snaps: { at: number; price: numbe
   return (
     <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="tracker snapshot sparkline">
       {basis != null && (
-        <line x1={0} y1={toY(basis)} x2={W} y2={toY(basis)} stroke="rgba(106,160,200,0.55)" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={0} y1={toY(basis)} x2={W} y2={toY(basis)} style={{ stroke: "var(--rd-chart-trigline)" }} strokeWidth="1" strokeDasharray="3 3" />
       )}
-      <polyline points={pts} fill="none" stroke={up ? RD_HEX.bull : RD_HEX.bear} strokeWidth="1.3" />
+      <polyline points={pts} fill="none" style={{ stroke: up ? "var(--rd-bull)" : "var(--rd-bear)" }} strokeWidth="1.3" />
     </svg>
   );
 }
@@ -2191,15 +2206,13 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
   const trigSrc = tracked ? tracked.statedLevels.trigger : idea.entry;
   const delta = trigVal != null && trigVal > 0 ? deltaView(live, trigVal, idea.direction) : null;
 
-  // chart line follows the design rule (§3.6, same as the board sparks):
+  // chart tone follows the design rule (§3.6, same as the board sparks):
   // with a stated trigger the favored side paints bull/amber; otherwise the
   // direction color
   const favored = trigVal != null && trigVal > 0
     ? (idea.direction === "bullish" ? live >= trigVal : live <= trigVal)
     : null;
-  const lineColor = favored != null
-    ? (favored ? RD_HEX.bull : RD_HEX.amber)
-    : idea.direction === "bearish" ? RD_HEX.bear : RD_HEX.bull;
+  const tone = chartTone(favored, idea.direction);
 
   // TRADE PLAN cells — ValueField-driven, no invented wording (the design's
   // "Break $X" fallback is dropped: a bare level is shown, never a direction
@@ -2322,7 +2335,7 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
         closes={quote.closes}
         live={live}
         trigger={trigVal != null && trigVal > 0 ? trigVal : null}
-        lineColor={lineColor}
+        tone={tone}
       />
 
       {/* tracker lifecycle — real transition history + excursions */}
@@ -2442,14 +2455,16 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
 // simply tightens. No placeholder boxes, no fake neutral-50 gauge, and the
 // crypto F&G index is never silently substituted for CNN's equity index.
 
-// F&G band thresholds + colors (SPEC-desktop §2.5a, exact):
+// F&G band thresholds + colors (SPEC-desktop §2.5a, exact values now living
+// in the DESK PALETTE tokens; bd/bg are the design's hexA(c,0.42)/hexA(c,0.09)
+// tints, tokenized whole):
 // ≤24 EXTREME FEAR · ≤44 FEAR · ≤55 NEUTRAL · ≤74 GREED · else EXTREME GREED
-const FNG_BANDS: { max: number; label: string; c: string }[] = [
-  { max: 24, label: "EXTREME FEAR", c: "#cd7e6d" },
-  { max: 44, label: "FEAR", c: "#c68a5e" },
-  { max: 55, label: "NEUTRAL", c: "#bfa05a" },
-  { max: 74, label: "GREED", c: "#6fa085" },
-  { max: 100, label: "EXTREME GREED", c: "#74b08a" },
+const FNG_BANDS: { max: number; label: string; c: string; bd: string; bg: string }[] = [
+  { max: 24, label: "EXTREME FEAR", c: "var(--rd-fng-xfear)", bd: "var(--rd-fng-xfear-bd)", bg: "var(--rd-fng-xfear-bg)" },
+  { max: 44, label: "FEAR", c: "var(--rd-fng-fear)", bd: "var(--rd-fng-fear-bd)", bg: "var(--rd-fng-fear-bg)" },
+  { max: 55, label: "NEUTRAL", c: "var(--rd-fng-neutral)", bd: "var(--rd-fng-neutral-bd)", bg: "var(--rd-fng-neutral-bg)" },
+  { max: 74, label: "GREED", c: "var(--rd-fng-greed)", bd: "var(--rd-fng-greed-bd)", bg: "var(--rd-fng-greed-bg)" },
+  { max: 100, label: "EXTREME GREED", c: "var(--rd-fng-xgreed)", bd: "var(--rd-fng-xgreed-bd)", bg: "var(--rd-fng-xgreed-bg)" },
 ];
 const fngBand = (v: number) => FNG_BANDS.find((b) => v <= b.max) ?? FNG_BANDS[FNG_BANDS.length - 1];
 const fngClamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
@@ -2459,7 +2474,7 @@ const fngClamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
 const GAUGE_SEGS: { d: string; color: string }[] = (() => {
   const cx = 100, cy = 104, r = 82;
   const stops = [180, 144, 108, 72, 36, 0.01];
-  const colors = ["#b06a58", "#c68a5e", "#ad9158", "#6fa085", "#74b08a"];
+  const colors = ["var(--rd-gauge-seg-1)", "var(--rd-gauge-seg-2)", "var(--rd-gauge-seg-3)", "var(--rd-gauge-seg-4)", "var(--rd-gauge-seg-5)"];
   const pt = (deg: number): [number, number] => {
     const a = (deg * Math.PI) / 180;
     return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
@@ -2473,8 +2488,9 @@ const GAUGE_SEGS: { d: string; color: string }[] = (() => {
 
 /** F&G band chip in the title-bar meta cluster. The design computed the chip
  * border/bg (hexA(c,0.42) / hexA(c,0.09)) without binding them — this chip is
- * their use. Data is CNN's EQUITY index via /api/intel/desk; when that part
- * is null (CNN down, no cache) the chip is absent — never a fake neutral. */
+ * their use (the tints are the band's -bd/-bg palette tokens now). Data is
+ * CNN's EQUITY index via /api/intel/desk; when that part is null (CNN down,
+ * no cache) the chip is absent — never a fake neutral. */
 function FngChip({ fng }: { fng: DeskFng | null }) {
   if (!fng) return null;
   const v = fngClamp(fng.value);
@@ -2482,7 +2498,7 @@ function FngChip({ fng }: { fng: DeskFng | null }) {
   return (
     <span
       className="rd-fng-chip"
-      style={{ color: band.c, borderColor: hexA(band.c, 0.42), background: hexA(band.c, 0.09) }}
+      style={{ color: band.c, borderColor: band.bd, background: band.bg }}
       title={`CNN Fear & Greed (equities) — ${v} · ${band.label}`}
     >
       F&amp;G {v} · {band.label}
@@ -2515,10 +2531,10 @@ function SentimentGauge({ fng }: { fng: DeskFng | null }) {
           aria-label={`CNN Fear and Greed index ${v} — ${band.label}`}
         >
           {GAUGE_SEGS.map((s) => (
-            <path key={s.color} d={s.d} stroke={s.color} strokeWidth={13} strokeLinecap="butt" opacity={0.85} fill="none" />
+            <path key={s.color} d={s.d} style={{ stroke: s.color }} strokeWidth={13} strokeLinecap="butt" opacity={0.85} fill="none" />
           ))}
-          <line x1={100} y1={104} x2={nx.toFixed(2)} y2={ny.toFixed(2)} stroke="#e9ebee" strokeWidth={2.4} strokeLinecap="round" />
-          <circle cx={100} cy={104} r={5} fill="#e9ebee" />
+          <line x1={100} y1={104} x2={nx.toFixed(2)} y2={ny.toFixed(2)} style={{ stroke: "var(--rd-gauge-needle)" }} strokeWidth={2.4} strokeLinecap="round" />
+          <circle cx={100} cy={104} r={5} style={{ fill: "var(--rd-gauge-needle)" }} />
         </svg>
         <div className="rd-gauge-vrow">
           <span className="rd-gauge-val" style={{ color: band.c }}>{v}</span>
@@ -2560,8 +2576,12 @@ function SectorStrip({ sectors }: { sectors: DeskSector[] | null }) {
         <div className="rd-sec-tiles">
           {rows.map((s) => {
             const t = Math.min(1, Math.abs(s.chgPct) / maxAbs);
-            const base = s.chgPct >= 0 ? "111,158,131" : "197,133,117";
-            const text = s.chgPct >= 0 ? (t > 0.55 ? "#c3e4d1" : "#93c1a6") : (t > 0.55 ? "#ecbcb0" : "#d3a396");
+            // hue = palette rgb-triplet token; the alpha stays a live-data
+            // formula (§2.6.2b), so only the rgb part is themeable
+            const base = s.chgPct >= 0 ? "var(--rd-sec-up-rgb)" : "var(--rd-sec-dn-rgb)";
+            const text = s.chgPct >= 0
+              ? (t > 0.55 ? "var(--rd-sec-up-text-hi)" : "var(--rd-sec-up-text)")
+              : (t > 0.55 ? "var(--rd-sec-dn-text-hi)" : "var(--rd-sec-dn-text)");
             return (
               <div
                 key={s.etf}
@@ -2707,7 +2727,7 @@ function UsMapPanel({ blotter, trackedByIdeaId, quotes }: {
       dots.push({
         t, x: e.x, y: e.y, city: e.city, pct,
         r: pct != null ? 3 + Math.min(5, Math.abs(pct)) : 2.4,
-        c: pct != null ? (pct >= 0 ? "#6fa085" : "#c58575") : null, // §2.5d literals
+        c: pct != null ? (pct >= 0 ? "var(--rd-map-dot-up)" : "var(--rd-map-dot-dn)") : null, // §2.5d literals → palette tokens
       });
     }
   }
@@ -2738,8 +2758,8 @@ function UsMapPanel({ blotter, trackedByIdeaId, quotes }: {
                   <title>{`${d.t} · ${d.city}${d.pct != null ? ` · ${fmtPct(d.pct)}` : ""}`}</title>
                   {d.c ? (
                     <>
-                      <circle cx={d.x} cy={d.y} r={d.r} fill={d.c} opacity={0.35} />
-                      <circle cx={d.x} cy={d.y} r={2.4} fill={d.c} />
+                      <circle cx={d.x} cy={d.y} r={d.r} style={{ fill: d.c }} opacity={0.35} />
+                      <circle cx={d.x} cy={d.y} r={2.4} style={{ fill: d.c }} />
                     </>
                   ) : (
                     <circle cx={d.x} cy={d.y} r={2.4} className="rd-map-dot-ash" />
