@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import type { PushState } from "@/lib/push-client";
 
@@ -44,6 +45,10 @@ const WATCH: Array<{ sym: string; label: string }> = [
 
 type ThreadRow = { id: string; title: string; updatedAt: number; label?: string };
 type Pill = { label: string; price: number; chgPct: number };
+
+// Session chip state: undefined = unknown or auth unconfigured (render
+// nothing), null = signed out (quiet SIGN IN link), object = signed in.
+type Account = { email: string };
 
 type HomeLandingProps = {
   state: AugustState;
@@ -98,6 +103,7 @@ export default function HomeLanding({
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [pills, setPills] = useState<Pill[]>([]);
+  const [account, setAccount] = useState<Account | null | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const activeRef = useRef(active);
 
@@ -138,6 +144,26 @@ export default function HomeLanding({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Who's signed in — one fetch of the NextAuth session endpoint (no
+  // SessionProvider: the page is one big client component and this is the
+  // only session consumer). Signed out → the endpoint returns JSON null;
+  // auth unconfigured → the route answers 501 and the chip stays hidden
+  // (single-user fallback keeps the cluster clean).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((j: { user?: { email?: string } } | null) => {
+        if (cancelled) return;
+        const email = j?.user?.email;
+        setAccount(email ? { email } : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // RECENT THREADS — the real store. Unconfigured or empty → the column
@@ -237,6 +263,25 @@ export default function HomeLanding({
         </div>
         <div className="hl-top-right">
           <span className="hl-clock">{clock ? `${clock} · ${stateWord}` : stateWord}</span>
+          {account === null ? (
+            <a className="hl-signin" href="/login">
+              SIGN IN
+            </a>
+          ) : account ? (
+            <span className="hl-session">
+              <span className="hl-account-email" title={account.email}>
+                {account.email}
+              </span>
+              <button
+                type="button"
+                className="hl-signout"
+                onClick={() => void signOut({ redirectTo: "/" })}
+                aria-label={`Sign out of ${account.email}`}
+              >
+                SIGN OUT
+              </button>
+            </span>
+          ) : null}
           <div className="hl-ctls">
             <button
               type="button"

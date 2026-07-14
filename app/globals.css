@@ -3165,6 +3165,49 @@ body {
   outline-offset: 2px;
 }
 
+/* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
+.hl-session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hl-signin,
+.hl-signout {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.hl-signin:hover,
+.hl-signout:hover {
+  color: var(--label);
+}
+.hl-signin:focus-visible,
+.hl-signout:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.hl-account-email {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* — the orb: halo + ring + gradient circle under the living WebGL sphere -- */
 .hl-orb {
   margin-top: 6vh;
@@ -3428,6 +3471,13 @@ body {
     width: 44px;
     height: 44px;
   }
+  .hl-signin,
+  .hl-signout {
+    min-height: 44px;
+  }
+  .hl-account-email {
+    max-width: 110px;
+  }
   .hl-mic {
     width: 44px;
     height: 44px;
@@ -3453,4 +3503,109 @@ body {
   .hl-orb-halo {
     animation: none;
   }
+}
+
+/* ======================================================================
+   LOGIN — /login. The home landing's face (Geist, gold-dot wordmark,
+   day/night palettes) reduced to one decision. Tokens are duplicated from
+   .home-landing and scoped to .login-page — no global leaks.
+   ====================================================================== */
+.login-page {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --card: #ffffff;
+  --label: #a2823f;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+}
+:root[data-theme="dark"] .login-page,
+:root[data-theme="batman"] .login-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --cardshadow: none;
+}
+.lp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.lp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.lp-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.lp-copy {
+  margin: 18px 0 34px;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--body2);
+}
+.lp-google {
+  min-height: 44px;
+  padding: 12px 28px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.lp-google:hover {
+  border-color: #c9a96a;
+  color: var(--label);
+}
+.lp-google:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.lp-note {
+  max-width: 380px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+.lp-back {
+  color: var(--label);
+  text-decoration: none;
+}
+.lp-back:hover {
+  text-decoration: underline;
 }
