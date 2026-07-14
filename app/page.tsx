@@ -1318,6 +1318,10 @@ export default function Home() {
     state === "thinking" ||
     state === "speaking";
   const landingIdle = activeScreen === screenIndex("presence") && !conversationActive;
+  // One input per screen: the landing has its ask bar, the intel desk has its
+  // own contextual ASK AUGUST bar — the global composer dock renders on
+  // neither (unless a conversation is live, which the reply panel handles).
+  const intelPanelIdle = activeScreen === screenIndex("markets") && !conversationActive;
 
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
@@ -1485,9 +1489,11 @@ export default function Home() {
         ) : null}
 
         {/* On the idle landing the design's ask bar IS the input (mic + voice
-            mode ride inside it), so the dock composer stands down there; it
-            returns the moment a conversation is live or the deck slides away. */}
-        {!landingIdle ? (
+            mode ride inside it), and the intel desk carries its own contextual
+            ASK AUGUST bar — the dock composer stands down on both (one input
+            per screen); it returns the moment a conversation is live or the
+            deck slides to World/Comms. */}
+        {!landingIdle && !intelPanelIdle ? (
         <div className="composer-row">
           <Composer
             onSend={handleSend}

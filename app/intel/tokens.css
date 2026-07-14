@@ -2168,10 +2168,11 @@ a.rd-cite:hover { text-decoration: underline; }
 /* the embedded root scrolls internally; the deck page's body stays locked
    (see the :not(.intel-embedded) guard on the scroll fix in intel.css) */
 .intel-root.intel-embedded {
-  /* clearance for the home shell's bottom dock (composer cluster) — the
-     sticky askbar pins this far above the panel's bottom edge (measured live:
-     the composer row tops out ~102px above the viewport bottom at 1280×800) */
-  --rd-embed-dock: 112px;
+  /* the home shell's composer dock no longer renders on the intel panel
+     (one input per screen — the desk's ASK bar is the input here), so the
+     sticky askbar pins to the true bottom edge; no reserved band, no rail
+     content peeking out beneath it */
+  --rd-embed-dock: 0px;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
