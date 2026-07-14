@@ -18,8 +18,13 @@
 //
 // threadTitle / capThreadMessages / threadDateLabel are PURE (no Redis, no
 // clock beyond an injectable `now`) and unit-tested in tests/threads.test.ts.
+//
+// MULTI-USER (stage 2): every store function takes the session email (resolved
+// once by the route via requireSessionEmail) and scopes its keys through
+// scopeKey — null email = single-user fallback = the legacy keys, unchanged.
 
 import { Redis } from "@upstash/redis";
+import { scopeKey } from "./user-scope";
 
 export type ThreadMessage = { role: "user" | "assistant"; content: string };
 
@@ -41,10 +46,10 @@ export const MAX_MESSAGE_CHARS = 8192;
 export const MAX_TITLE_CHARS = 48;
 
 const NS = "august:threads:";
-const K = {
-  index: NS + "index",
-  thread: (id: string) => `${NS}t:${id}`,
-};
+const K = (email: string | null) => ({
+  index: scopeKey(email, NS + "index"),
+  thread: (id: string) => scopeKey(email, `${NS}t:${id}`),
+});
 
 let _redis: Redis | null | undefined;
 function getRedis(): Redis | null {
@@ -131,11 +136,11 @@ function newThreadId(): string {
   return `th_${rand}`;
 }
 
-export async function getThread(id: string): Promise<Thread | null> {
+export async function getThread(email: string | null, id: string): Promise<Thread | null> {
   const redis = getRedis();
   if (!redis || !id) return null;
   try {
-    const raw = await redis.get<string>(K.thread(id));
+    const raw = await redis.get<string>(K(email).thread(id));
     if (!raw) return null;
     return (typeof raw === "string" ? JSON.parse(raw) : raw) as Thread;
   } catch {
@@ -144,14 +149,14 @@ export async function getThread(id: string): Promise<Thread | null> {
 }
 
 /** Newest first by updatedAt. Empty when Redis is unconfigured or errors. */
-export async function listThreads(limit = 3): Promise<ThreadSummary[]> {
+export async function listThreads(email: string | null, limit = 3): Promise<ThreadSummary[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
     const n = Math.max(1, Math.floor(limit));
-    const ids = await redis.zrange<string[]>(K.index, 0, n - 1, { rev: true });
+    const ids = await redis.zrange<string[]>(K(email).index, 0, n - 1, { rev: true });
     if (!ids || ids.length === 0) return [];
-    const threads = await Promise.all(ids.map((id) => getThread(id)));
+    const threads = await Promise.all(ids.map((id) => getThread(email, id)));
     return threads
       .filter((t): t is Thread => t !== null)
       .map((t) => ({ id: t.id, title: t.title, updatedAt: t.updatedAt }))
@@ -169,10 +174,13 @@ export async function listThreads(limit = 3): Promise<ThreadSummary[]> {
  * is sticky once set. Returns {id, title} even when Redis is unconfigured
  * (computed, not written) so the caller's bookkeeping stays uniform.
  */
-export async function upsertThread(input: {
-  id?: string | null;
-  messages: ThreadMessage[];
-}): Promise<{ id: string; title: string }> {
+export async function upsertThread(
+  email: string | null,
+  input: {
+    id?: string | null;
+    messages: ThreadMessage[];
+  },
+): Promise<{ id: string; title: string }> {
   const { messages: capped, truncated } = capThreadMessages(
     input.messages.filter(
       (m) =>
@@ -182,7 +190,7 @@ export async function upsertThread(input: {
   const redis = getRedis();
   const now = Date.now();
 
-  const existing = redis && input.id ? await getThread(input.id) : null;
+  const existing = redis && input.id ? await getThread(email, input.id) : null;
   const id = existing ? existing.id : newThreadId();
   const title = existing ? existing.title : threadTitle(input.messages);
 
@@ -198,15 +206,16 @@ export async function upsertThread(input: {
   };
 
   try {
-    await redis.set(K.thread(id), JSON.stringify(thread));
-    await redis.zadd(K.index, { score: thread.updatedAt, member: id });
+    const k = K(email);
+    await redis.set(k.thread(id), JSON.stringify(thread));
+    await redis.zadd(k.index, { score: thread.updatedAt, member: id });
     // Evict the oldest threads beyond the cap (lowest updatedAt scores first).
-    const count = await redis.zcard(K.index);
+    const count = await redis.zcard(k.index);
     if (count > MAX_THREADS) {
-      const oldest = await redis.zrange<string[]>(K.index, 0, count - MAX_THREADS - 1);
+      const oldest = await redis.zrange<string[]>(k.index, 0, count - MAX_THREADS - 1);
       for (const old of oldest ?? []) {
-        await redis.del(K.thread(old));
-        await redis.zrem(K.index, old);
+        await redis.del(k.thread(old));
+        await redis.zrem(k.index, old);
       }
     }
   } catch {

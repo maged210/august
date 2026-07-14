@@ -6,6 +6,7 @@ import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
 //
@@ -43,6 +44,13 @@ function getClient(apiKey: string): Anthropic {
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("chat", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+
+  // Session → namespace, resolved ONCE and passed down (stage 2). Unconfigured
+  // auth resolves null (single-user fallback → legacy keys); configured with no
+  // session 401s here as defense-in-depth behind the middleware.
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
+  const userEmail = user.email;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -89,7 +97,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const t0 = Date.now();
   let memMs = -1; // -1 = memory missed the 300ms window (reply went out without it)
-  const memTimed = loadMemory()
+  const memTimed = loadMemory(userEmail)
     .catch(() => EMPTY_MEM)
     .then((r) => {
       memMs = Date.now() - t0;
@@ -220,7 +228,7 @@ export async function POST(req: Request): Promise<Response> {
             resultText = `The deck is now on the ${screen} surface.`;
           } else if (isWatcher) {
             try {
-              resultText = await runWatcherTool(tb.name, input);
+              resultText = await runWatcherTool(userEmail, tb.name, input);
             } catch (e) {
               console.error("[chat] watcher tool failed:", e instanceof Error ? e.message : e);
               resultText = "That watcher action hit an error on the server.";

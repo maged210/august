@@ -4,6 +4,7 @@ import { getBrief } from "@/lib/intel/store";
 import { generateBrief } from "@/lib/intel/brief";
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { etDateKey } from "@/lib/intel/session";
+import { gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ date: string }
 export async function POST(req: Request, ctx: { params: Promise<{ date: string }> }): Promise<Response> {
   const rl = await checkRateLimit("intelProcess", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+  // Intel data is SHARED; (re)generating the brief is OWNER-only (no-op when
+  // auth unconfigured). Reading a brief (GET) stays public.
+  const denied = await gateIntelMutationOrRespond();
+  if (denied) return denied;
   if (!intelligenceConfigured()) return Response.json({ ok: false, error: "ai_unconfigured" }, { status: 501 });
   const { date } = await ctx.params;
   try {

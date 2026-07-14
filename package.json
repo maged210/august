@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts"
+    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

@@ -11,12 +11,21 @@
 // simplest protection and matches the brief cron.) Accepts GET and POST so any pinger
 // works. In production with no secret set, the route refuses — never left open.
 import { timingSafeEqual } from "node:crypto";
-import { checkWatchers } from "@/lib/watchers";
+import { authConfigured } from "@/auth";
+import { checkWatchers, type CheckResult } from "@/lib/watchers";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { listKnownUsers } from "@/lib/user-scope";
 
+// MULTI-USER (stage 2): with auth unconfigured this checks the ONE legacy
+// watcher store exactly as before. With auth configured it iterates the known
+// users' stores sequentially (capped; the feed fetchers share in-process TTL
+// caches, so extra users cost Redis reads, not repeat feed hits) and pushes
+// each trip only to the owning user's devices.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // feed fetches across N watchers can take a few seconds
+
+const MAX_WATCHER_USERS = 25;
 
 function tokensMatch(provided: string, expected: string): boolean {
   const a = Buffer.from(provided);
@@ -40,7 +49,26 @@ async function handle(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
   try {
-    const result = await checkWatchers();
+    let result: CheckResult;
+    if (!authConfigured) {
+      // Single-user fallback: the legacy store, unchanged.
+      result = await checkWatchers(null);
+    } else {
+      const users = (await listKnownUsers()).slice(0, MAX_WATCHER_USERS);
+      result = { checked: 0, fired: 0, details: [] };
+      if (!users.length) result.skipped = "no_users";
+      for (const email of users) {
+        const r = await checkWatchers(email);
+        result.checked += r.checked;
+        result.fired += r.fired;
+        result.details.push(...r.details.map((d) => `${email}: ${d}`));
+        if (r.skipped === "quiet_hours") {
+          // Quiet hours are global (one ET clock) — no point looping on.
+          result.skipped = "quiet_hours";
+          break;
+        }
+      }
+    }
     console.log(
       `[cron/watchers] checked=${result.checked} fired=${result.fired}${result.skipped ? ` skipped=${result.skipped}` : ""}`,
     );

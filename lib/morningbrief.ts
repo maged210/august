@@ -12,6 +12,10 @@
 // key falls back to a stitched factual read, and absent Upstash just means the
 // brief recompiles on each open instead of being cached.
 
+// MULTI-USER (stage 2): the brief is PERSONAL — its comms/day organs read the
+// user's Gmail/Calendar and its day-cache key is scoped per user. Every entry
+// point takes the session email (null = single-user fallback = legacy keys).
+
 import Anthropic from "@anthropic-ai/sdk";
 import { Redis } from "@upstash/redis";
 import { SYSTEM_PROMPT } from "./persona";
@@ -21,6 +25,7 @@ import { getIntel } from "./intel";
 import { getInboxState } from "./gmail";
 import { getDayState } from "./calendar";
 import { getQuakes } from "./command";
+import { scopeKey } from "./user-scope";
 
 const BRIEF_MODEL = "claude-sonnet-4-6"; // capable model — the voice has to land
 const KEY_PREFIX = "august:brief:";
@@ -129,8 +134,8 @@ async function marketsFacts(): Promise<string | null> {
   return "MARKETS (delayed free proxies — NOT the live CME tape; index levels are estimates):\n" + lines.join("\n");
 }
 
-async function commsFacts(): Promise<string | null> {
-  const inbox = await getInboxState(); // may throw inbox_fetch_failed — settled by caller
+async function commsFacts(email: string | null): Promise<string | null> {
+  const inbox = await getInboxState(email); // may throw inbox_fetch_failed — settled by caller
   if (!inbox.connected) return null;
 
   const lines: string[] = [
@@ -197,8 +202,8 @@ async function commandFacts(): Promise<string | null> {
   return "COMMAND (overnight world activity — USGS seismic, last 24h):\n" + lines.join("\n");
 }
 
-async function dayFacts(): Promise<string | null> {
-  const day = await getDayState();
+async function dayFacts(email: string | null): Promise<string | null> {
+  const day = await getDayState(email);
   if (!day.connected) return null; // not authorized / unreachable — silently absent
   if (!day.count) {
     return "DAY (Maged's Google Calendar, today — read-only):\nNothing on the calendar today; the day is open.";
@@ -222,7 +227,7 @@ async function dayFacts(): Promise<string | null> {
 
 type Gathered = { blocks: string[]; sources: string[] };
 
-async function gather(): Promise<Gathered> {
+async function gather(email: string | null): Promise<Gathered> {
   const settle = async (label: string, fn: () => Promise<string | null>): Promise<[string, string | null]> => {
     try {
       return [label, await fn()];
@@ -232,9 +237,9 @@ async function gather(): Promise<Gathered> {
   };
 
   const results = await Promise.all([
-    settle("day", dayFacts),
+    settle("day", () => dayFacts(email)),
     settle("markets", marketsFacts),
-    settle("comms", commsFacts),
+    settle("comms", () => commsFacts(email)),
     settle("intel", intelFacts),
     settle("command", commandFacts),
   ]);
@@ -273,10 +278,15 @@ DELIVERY (this is SPOKEN ALOUD)
 - Speak TO him: first person, second person. Never narrate yourself in the third person, never describe what you're "about to" do — just give the read.
 - Close on a single clean line — a dry aside or a forward look. Don't trail into "let me know if…".`;
 
-async function synthesize(apiKey: string, parts: ReturnType<typeof nowParts>, g: Gathered): Promise<string> {
+async function synthesize(
+  apiKey: string,
+  parts: ReturnType<typeof nowParts>,
+  g: Gathered,
+  email: string | null,
+): Promise<string> {
   let memorySection = "";
   try {
-    const { profile, summaries } = await loadMemory();
+    const { profile, summaries } = await loadMemory(email);
     memorySection = buildMemorySection(profile, summaries);
   } catch {
     /* memory is optional context */
@@ -318,9 +328,9 @@ function fallbackStitch(parts: ReturnType<typeof nowParts>, g: Gathered): string
 }
 
 // --- compile + cache ------------------------------------------------------
-export async function compileBrief(): Promise<MorningBrief> {
+export async function compileBrief(email: string | null): Promise<MorningBrief> {
   const parts = nowParts();
-  const g = await gather();
+  const g = await gather(email);
   const compiledAt = Date.now();
 
   // Structured calendar summary for the push teaser — a cheap cache hit (gather()
@@ -328,7 +338,7 @@ export async function compileBrief(): Promise<MorningBrief> {
   // stays undefined and the push falls back to a generic teaser.
   let day: MorningBrief["day"];
   try {
-    const d = await getDayState();
+    const d = await getDayState(email);
     if (d.connected && d.count > 0) {
       day = { count: d.count, nextUp: d.nextUp ? `${d.nextUp.time} ${d.nextUp.title}` : undefined };
     } else if (d.connected) {
@@ -346,7 +356,7 @@ export async function compileBrief(): Promise<MorningBrief> {
   }
 
   try {
-    const text = await synthesize(apiKey, parts, g);
+    const text = await synthesize(apiKey, parts, g, email);
     if (!text) return { ...base, text: fallbackStitch(parts, g), grounded: false };
     return { ...base, text, grounded: true };
   } catch {
@@ -354,10 +364,13 @@ export async function compileBrief(): Promise<MorningBrief> {
   }
 }
 
-export async function getCachedBrief(date?: string): Promise<MorningBrief | null> {
+export async function getCachedBrief(
+  email: string | null,
+  date?: string,
+): Promise<MorningBrief | null> {
   const redis = getRedis();
   if (!redis) return null;
-  const key = KEY_PREFIX + (date ?? nowParts().key);
+  const key = scopeKey(email, KEY_PREFIX + (date ?? nowParts().key));
   try {
     return (await redis.get<MorningBrief>(key)) ?? null;
   } catch {
@@ -365,20 +378,21 @@ export async function getCachedBrief(date?: string): Promise<MorningBrief | null
   }
 }
 
-async function setCachedBrief(brief: MorningBrief): Promise<void> {
+async function setCachedBrief(email: string | null, brief: MorningBrief): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(KEY_PREFIX + brief.date, brief, { ex: TTL_SECONDS });
+    await redis.set(scopeKey(email, KEY_PREFIX + brief.date), brief, { ex: TTL_SECONDS });
   } catch {
     /* caching is best-effort — a write failure just means we recompile next time */
   }
 }
 
 // Coalesce concurrent NON-forced compiles within one warm instance (two app-opens
-// landing together shouldn't both burn a model call). Forced compiles (the cron)
+// landing together shouldn't both burn a model call). Per user — one user's
+// in-flight compile must never be handed to another. Forced compiles (the cron)
 // never join this lock — see below.
-let _inflight: Promise<MorningBrief> | null = null;
+const _inflight = new Map<string, Promise<MorningBrief>>();
 
 // On-demand path:
 //   force=true  (cron only): always compile fresh and cache — the whole point is
@@ -386,29 +400,35 @@ let _inflight: Promise<MorningBrief> | null = null;
 //               so a user GET in flight can never hand the cron a stale cache hit.
 //   force=false (app open / "brief me"): serve today's cache, else compile once
 //               (coalesced) and cache.
-export async function getOrCompileBrief(opts?: { force?: boolean }): Promise<MorningBrief> {
+export async function getOrCompileBrief(
+  email: string | null,
+  opts?: { force?: boolean },
+): Promise<MorningBrief> {
   const date = nowParts().key;
 
   if (opts?.force) {
-    const brief = await compileBrief();
-    await setCachedBrief(brief);
+    const brief = await compileBrief(email);
+    await setCachedBrief(email, brief);
     return brief;
   }
 
-  const cached = await getCachedBrief(date);
+  const cached = await getCachedBrief(email, date);
   if (cached) return cached;
 
-  if (_inflight) return _inflight;
-  _inflight = (async () => {
+  const lockId = email ?? "__single_user__";
+  const inflight = _inflight.get(lockId);
+  if (inflight) return inflight;
+  const compile = (async () => {
     try {
-      const again = await getCachedBrief(date); // re-check inside the lock
+      const again = await getCachedBrief(email, date); // re-check inside the lock
       if (again) return again;
-      const brief = await compileBrief();
-      await setCachedBrief(brief);
+      const brief = await compileBrief(email);
+      await setCachedBrief(email, brief);
       return brief;
     } finally {
-      _inflight = null;
+      _inflight.delete(lockId);
     }
   })();
-  return _inflight;
+  _inflight.set(lockId, compile);
+  return compile;
 }

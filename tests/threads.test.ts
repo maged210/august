@@ -118,10 +118,11 @@ test("threadDateLabel: future days fall through to the date style", () => {
 
 test("store degrades gracefully when Upstash is unconfigured", async () => {
   assert.equal(threadsConfigured(), false);
-  assert.deepEqual(await listThreads(3), []);
-  assert.equal(await getThread("th_missing"), null);
+  // null email = the single-user fallback namespace (stage 2 signatures).
+  assert.deepEqual(await listThreads(null, 3), []);
+  assert.equal(await getThread(null, "th_missing"), null);
   // upsert still returns usable bookkeeping (computed, not written).
-  const res = await upsertThread({ messages: [u("hello there")] });
+  const res = await upsertThread(null, { messages: [u("hello there")] });
   assert.match(res.id, /^th_/);
   assert.equal(res.title, "hello there");
 });

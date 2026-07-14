@@ -15,11 +15,14 @@
 //                        just the on-demand compile POST
 //   /api/speak           ElevenLabs quota
 //   /api/deepgram-token  Deepgram STT grant mint
+//   /api/watchlist       the user's watchlist store (stage 2)
+//   /api/push/subscribe  device push subscriptions are per-user (stage 2)
 //
 // NOT gated (public data or separately protected):
 //   /api/cron/*  (CRON_SECRET)  ·  /api/markets  ·  /api/quakes
-//   /api/intel/* (reads/quotes/desk)  ·  /api/command  ·  /api/flights
-//   /api/push/*  (stage 2)  ·  /api/auth/*  ·  every page route
+//   /api/intel/* (reads/quotes/desk; MUTATIONS are owner-gated in-route)
+//   /api/command  ·  /api/flights  ·  /api/push/send (PUSH_SEND_SECRET)
+//   /api/auth/*  ·  every page route
 //
 // UNCONFIGURED (no AUTH_SECRET / Google client): pass everything through with
 // a one-time console.warn — the single-user dev fallback documented in
@@ -71,5 +74,7 @@ export const config = {
     "/api/brief/:path*",
     "/api/speak/:path*",
     "/api/deepgram-token/:path*",
+    "/api/watchlist/:path*",
+    "/api/push/subscribe/:path*",
   ],
 };

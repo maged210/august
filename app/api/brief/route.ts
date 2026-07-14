@@ -1,5 +1,6 @@
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { getCachedBrief, getOrCompileBrief } from "@/lib/morningbrief";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 // Morning Brief — client-facing.
 //   GET  : cheap "is today's brief ready?" check on app open. NEVER compiles.
@@ -13,7 +14,11 @@ export async function GET(req: Request): Promise<Response> {
   const rl = await checkRateLimit("brief", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
-  const brief = await getCachedBrief();
+  // Session → namespace (stage 2): the cached brief read is THIS user's.
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
+
+  const brief = await getCachedBrief(user.email);
   return new Response(JSON.stringify({ ready: !!brief, brief: brief ?? null }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
@@ -23,8 +28,11 @@ export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("brief", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
+
   try {
-    const brief = await getOrCompileBrief();
+    const brief = await getOrCompileBrief(user.email);
     return new Response(JSON.stringify({ ready: true, brief }), {
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });

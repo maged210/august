@@ -152,7 +152,10 @@ function buildLine(connected: boolean, count: number, nextUp?: { time: string; t
 }
 
 // --- in-process cache (mirrors the inbox layer) ---------------------------
-let _cache: { exp: number; state: DayState } | null = null;
+// Per-user (stage 2): keyed by session email so one user's day is never served
+// to another from a warm instance; null email = the single-user fallback slot.
+const cacheId = (email: string | null) => email ?? "__single_user__";
+const _cache = new Map<string, { exp: number; state: DayState }>();
 
 function emptyState(extra: Partial<DayState>): DayState {
   return {
@@ -166,11 +169,12 @@ function emptyState(extra: Partial<DayState>): DayState {
   };
 }
 
-export async function getDayState(): Promise<DayState> {
+export async function getDayState(userEmail: string | null): Promise<DayState> {
   const now = Date.now();
-  if (_cache && _cache.exp > now) return _cache.state;
+  const cached = _cache.get(cacheId(userEmail));
+  if (cached && cached.exp > now) return cached.state;
 
-  const auth = await getGoogleAccessToken();
+  const auth = await getGoogleAccessToken(userEmail);
   if (!auth) return emptyState({}); // not connected to Google at all
   if (!scopeGranted(auth.scopes, CALENDAR_SCOPE)) {
     // Connected for Gmail but the calendar scope was never granted — the user needs
@@ -212,7 +216,7 @@ export async function getDayState(): Promise<DayState> {
       nextUp,
       line: buildLine(true, events.length, nextUp),
     };
-    _cache = { exp: now + DAY_TTL_MS, state };
+    _cache.set(cacheId(userEmail), { exp: now + DAY_TTL_MS, state });
     return state;
   } catch {
     return emptyState({});

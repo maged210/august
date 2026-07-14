@@ -3,7 +3,7 @@
 // future cron) can spend pushes. This is the manual test endpoint AND the seam the
 // Morning Brief / Watchers will call later. VAPID private key stays in lib/push.
 import { timingSafeEqual } from "crypto";
-import { pushConfigured, sendToAll, type PushPayload } from "@/lib/push";
+import { pushConfigured, sendBroadcast, type PushPayload } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +40,9 @@ export async function POST(req: Request): Promise<Response> {
     /* no/!json body — use the defaults above */
   }
 
-  const result = await sendToAll(payload);
+  // Secret-guarded test seam → BROADCAST: legacy store + every known user,
+  // deduped by endpoint (see lib/push.ts).
+  const result = await sendBroadcast(payload);
   console.log(
     `[push] send → total=${result.total} sent=${result.sent} pruned=${result.pruned} failed=${result.failed}`,
   );

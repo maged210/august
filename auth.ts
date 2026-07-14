@@ -43,6 +43,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  events: {
+    // First-login bootstrap (stage 2): seed the user's namespace (watchlist
+    // defaults, users:index membership) and — for the OWNER — copy the legacy
+    // single-user data into their namespace, one time. Dynamic import on
+    // purpose: it keeps lib/user-scope (and its Redis client) out of the
+    // middleware bundle and avoids a static cycle (user-scope reads sessions
+    // via this module's auth()). Best-effort: seeding never blocks sign-in.
+    async signIn({ user }) {
+      const email = user?.email;
+      if (!email) return;
+      try {
+        const { ensureUserSeeded } = await import("@/lib/user-scope");
+        await ensureUserSeeded(email);
+      } catch (err) {
+        console.error(
+          "[auth] first-login seeding failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    },
+  },
   providers: [
     Google({
       clientId,
