@@ -386,10 +386,21 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
   color: var(--rd-t-ghost); white-space: nowrap;
+  /* narrow-desktop give: the meta may shrink (its F&G chip truncates first)
+     and clips at the hard floor — it must never collide with .rd-bar2-right */
+  min-width: 0; overflow: hidden;
 }
 .rd-datechip {
   color: var(--rd-t-chip); letter-spacing: 0.08em; padding: 2px 7px;
   border: 1px solid var(--rd-hair-14); border-radius: 2px; white-space: nowrap;
+  flex-shrink: 0; /* the date never truncates — the F&G chip gives first */
+}
+/* the DESK text — FIRST in the shrink order: it ellipsizes before the F&G
+   chip gives anything (session + tracked-count are echoed by the status bar
+   and the board header; the chip's reading has no other bar2 home) */
+.rd-meta-t {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex-shrink: 400;
 }
 .rd-bar2-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .rd-count {
@@ -650,10 +661,80 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 }
 .rd-mday-v { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary2); min-width: 0; }
 
-/* ---- DAY BOARDS rail, phone form (44px chips, horizontal scroll) ---- */
+/* ---- DAY STACK: PAST IDEAS section (owner default view, below TODAY) ---- */
+/* a day group whose rows are all filtered out DIMS — never vanishes (no-CLS) */
+.rd-group-dim > * { opacity: 0.45; }
+/* past-day group header — the rd-group anatomy on a real <button> */
+.rd-dayg-h {
+  width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit;
+  border-left: 0; border-right: 0;
+}
+.rd-dayg-h:hover .rd-group-label { color: var(--rd-t-chip); }
+.rd-dayg-h:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-dayg-caret {
+  font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-faint);
+  width: 10px; flex-shrink: 0;
+}
+/* one-line day states (error / absent / filter miss) inside the day table */
+.rd-dayg-state {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 16px; border-bottom: 1px solid var(--rd-hair-05);
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint);
+}
+/* PAST IDEAS section divider — bhead metrics over a hairline */
+.rd-past-head { border-top: 1px solid var(--rd-hair-06); margin-top: 14px; padding-top: 12px; }
+.rd-past-older { padding: 10px 16px 14px; }
+/* skeleton rows sized like real day rows (rd-row-grid: 8px pad + ~13px cell)
+   so a loading day reserves the space its rows will take (no-CLS) */
+.rd-skelrow-day { padding: 8.5px 16px; }
+
+/* ---- DAY BOARDS rail, phone form (44px chips, horizontal scroll) +
+   PAST IDEAS phone form (44px collapsible date headers over the card idiom,
+   inside the .rd-mb tree — <700px only) ---- */
 @media (max-width: 700px) {
   .rd-dayrail-m { display: flex; padding: 10px 16px 0; }
   .rd-dayrail-m .rd-daychip { min-height: 44px; padding: 3px 12px; }
+
+  .rd-mpast { margin-top: 20px; }
+  .rd-mpast-head {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 0 16px 8px;
+  }
+  .rd-mpast-title {
+    font-family: var(--rd-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.18em; color: var(--rd-t-muted); white-space: nowrap;
+  }
+  .rd-mpast-meta {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+    color: var(--rd-t-ghost); white-space: nowrap;
+  }
+  .rd-mpast-h {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    min-height: 44px; padding: 6px 16px; text-align: left; cursor: pointer;
+    background: var(--rd-bar1-bg);
+    border: 0; border-top: 1px solid var(--rd-hair-05);
+    border-bottom: 1px solid var(--rd-hair-07);
+  }
+  .rd-mpast-h:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+  .rd-mpast-h.dim > * { opacity: 0.45; } /* zero-match day dims, never vanishes */
+  .rd-mpast-caret { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-faint); flex-shrink: 0; }
+  .rd-mpast-date {
+    font-family: var(--rd-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; color: var(--rd-t-muted); white-space: nowrap;
+  }
+  .rd-mpast-sub {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+    color: var(--rd-t-ghost); white-space: nowrap;
+  }
+  .rd-mpast-n {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+    color: var(--rd-t-faint); white-space: nowrap; flex-shrink: 0;
+  }
+  .rd-mpast-older { padding: 10px 16px; }
+  .rd-mpast-older .rd-btn { min-height: 44px; width: 100%; }
 }
 
 /* ---- board scroll frame: 17 real columns share one template ---- */
@@ -1800,13 +1881,19 @@ a.rd-cite:hover { text-decoration: underline; }
    the other three in .rd-lrail — both display:none in the mobile block.
    ========================================================================== */
 
-/* F&G band chip — datechip metrics; color/border/bg inline per band */
+/* F&G band chip — datechip metrics; color/border/bg inline per band.
+   min-width 0 lets it SHRINK inside .rd-meta at narrow desktop widths; the
+   inner .rd-fng-t ellipsizes so the chip truncates cleanly instead of
+   colliding with bar2's count pills (both themes — tokens only). */
 .rd-fng-chip {
   display: inline-flex; align-items: center;
   font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.08em;
   padding: 2px 7px; border: 1px solid transparent; border-radius: 2px;
-  white-space: nowrap;
+  white-space: nowrap; min-width: 0; overflow: hidden;
+  /* second in the meta's shrink order (default flex-shrink 1): stays whole
+     until .rd-meta-t has fully ellipsized, then truncates itself */
 }
+.rd-fng-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* sentiment gauge (§2.5a: svg 196px wide, value 32px/600, regime 12px) */
 .rd-gauge-svg { display: block; width: 100%; max-width: 196px; height: auto; margin: 8px auto 0; }

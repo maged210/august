@@ -24,7 +24,7 @@ import type {
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
 import { mfeMaeView, pnlView, type TrackedIdea, type TrackedStatus } from "@/lib/intel/tracker";
-import { dayAlerted, dayCreated, daySoFar } from "@/lib/intel/dayBoard";
+import { dayAlerted, dayCreated, daySoFar, planPastDays, type PastDayPlan } from "@/lib/intel/dayBoard";
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -390,7 +390,10 @@ function PageHeader({
           <span className="rd-livechip"><span className="rd-livechip-dot" aria-hidden="true" />LIVE</span>
           <span className="rd-meta">
             <span className="rd-datechip">{data.clock.nice.toUpperCase()}</span>
-            DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED
+            {/* shrink order at narrow desktop widths: this text ellipsizes
+                first (it is echoed by the status bar + board header), then
+                the F&G chip — the meta never collides with the count pills */}
+            <span className="rd-meta-t">DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED</span>
             {/* stage-5: F&G band chip appended LAST so its async arrival never
                 shifts the date/desk text (absent while the fng part is null) */}
             <FngChip fng={fng} />
@@ -1147,34 +1150,50 @@ function BlotterTable({
 }
 
 // ── DAY BOARDS (owner control feature) ───────────────────────────────────────
-// One board per desk run (dated brief). The rail scopes the BOARD: TODAY
-// (default), any prior brief date, or OVERALL — the pre-existing cumulative
-// blotter, byte-identical. A day board answers the owner's three questions
-// per idea — CREATED / ALERTED / SO FAR — from the tracker record + that
-// date's stored brief (lib/intel/dayBoard.ts), honestly: absent data renders
-// the ∅ treatment, a date without a stored brief renders "no desk run", and
-// SO FAR is the tracker engine's pnlView labeled verbatim.
+// The owner's default BOARD is a STACK: today's day board on top, then PAST
+// IDEAS — one group per prior desk run (dated brief), newest first. A day
+// board answers the owner's three questions per idea — CREATED / ALERTED /
+// SO FAR — from the tracker record + that date's stored brief
+// (lib/intel/dayBoard.ts), honestly: absent data renders the ∅ treatment, a
+// date without a stored brief renders "no desk run", and SO FAR is the
+// tracker engine's pnlView labeled verbatim. The rail NAVIGATES the stack
+// (TODAY + date chips anchor-scroll to that day's section); only OVERALL is
+// a true view switch — to the pre-existing cumulative blotter, byte-identical.
 
-type BoardScope = "TODAY" | "OVERALL" | string; // string = a YYYY-MM-DD brief date
+type BoardScope = "TODAY" | "OVERALL"; // TODAY = the day stack (owner default)
 
-function BoardDateRail({ scope, dates, todayCount, overallCount, onScope, mobile }: {
+// stack load discipline: reveal PAST_DAYS_INIT past days up front (covers
+// every rail chip — the rail is cut from the same 14-date index slice), fetch
+// only the newest EAGER_PAST_DAYS eagerly, and let LOAD OLDER reveal
+// +PAST_PAGE more collapsed headers per press (revealing fetches nothing;
+// a day fetches once, on expand).
+const PAST_DAYS_INIT = 14;
+const EAGER_PAST_DAYS = 3;
+const PAST_PAGE = 14;
+
+function BoardDateRail({ scope, dates, todayCount, overallCount, onScope, onJump, mobile }: {
   scope: BoardScope;
   /** prior brief dates, newest first (today's key excluded by the caller) */
   dates: string[];
   todayCount: number;
   overallCount: number;
   onScope: (s: BoardScope) => void;
+  /** anchor-scroll to a day section in the stack ("TODAY" or a date) —
+   *  switches back to the stack first when the blotter is showing */
+  onJump: (key: string) => void;
   /** phone instance (<700px only); the desktop instance carries rd-mhide */
   mobile?: boolean;
 }) {
-  const chip = (key: BoardScope, label: string, count: number | null, title: string) => (
+  const chip = (key: string, label: string, count: number | null, title: string, opts: {
+    pressed?: boolean; onClick: () => void;
+  }) => (
     <button
       key={key}
       type="button"
-      className={`rd-daychip${scope === key ? " on" : ""}`}
-      aria-pressed={scope === key}
+      className={`rd-daychip${opts.pressed ? " on" : ""}`}
+      aria-pressed={opts.pressed !== undefined ? opts.pressed : undefined}
       title={title}
-      onClick={() => onScope(key)}
+      onClick={opts.onClick}
     >
       {label}
       {count !== null && <span className={`rd-daychip-n${count === 0 ? " zero" : ""}`}>{count}</span>}
@@ -1184,12 +1203,20 @@ function BoardDateRail({ scope, dates, todayCount, overallCount, onScope, mobile
     <div
       className={`rd-dayrail${mobile ? " rd-dayrail-m" : " rd-mhide"}`}
       role="group"
-      aria-label="Day boards — scope the board to one desk run"
+      aria-label="Day boards — jump to a desk day, or switch to the cumulative blotter"
     >
       <span className="rd-dayrail-lab">DAY BOARDS</span>
-      {chip("TODAY", "TODAY", todayCount, "today's desk run")}
-      {dates.map((d) => chip(d, d.slice(5), null, `desk run · ${d}`))}
-      {chip("OVERALL", "OVERALL", overallCount, "the cumulative blotter")}
+      {chip("TODAY", "TODAY", todayCount, "today's desk run — top of the stack", {
+        pressed: scope === "TODAY",
+        onClick: () => onJump("TODAY"),
+      })}
+      {dates.map((d) => chip(d, d.slice(5), null, `jump to desk run · ${d}`, {
+        onClick: () => onJump(d),
+      }))}
+      {chip("OVERALL", "OVERALL", overallCount, "the cumulative blotter", {
+        pressed: scope === "OVERALL",
+        onClick: () => onScope("OVERALL"),
+      })}
     </div>
   );
 }
@@ -1294,11 +1321,50 @@ function DayRow({ idea, tracked, briefGeneratedAt, selected, published, onSelect
 
 const DAY_COLS = ["STATUS", "TICKER", "DIR", "TF", "THESIS", "CREATED", "ALERTED", "SO FAR", "SRC"];
 
-/** the desktop day board (rd-mhide — MobileBoard owns <700px). States, in
- * order of honesty: loading (fetch in flight) → error (fetch failed, retry)
- * → no stored brief ("no desk run") → 0-idea brief → filter miss → rows. */
-function DayBoard({ scopeKey, date, brief, ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, error, onRetry, publishedIds }: {
-  scopeKey: "TODAY" | string;
+/** the day-board column header — shared by the TODAY board and every PAST
+ * day group so the two sections can never label a column differently */
+function DayColHead() {
+  return (
+    <div className="rd-colhead">
+      {DAY_COLS.map((c) => (
+        <span
+          key={c}
+          title={c === "SO FAR" ? "the tracker engine's P&L — since called vs stated trigger; ° = price since first mention"
+            : c === "CREATED" ? "when the idea entered the desk — tracker ingest, else the desk run (ET)"
+            : c === "ALERTED" ? "the tracker's TRIGGERED transition (ET)" : undefined}
+        >
+          {c}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** skeleton rows shaped like real day rows — shown while a day's brief loads
+ * so an expanding group reserves its space (no-CLS contract) */
+function DaySkelRows({ n = 3 }: { n?: number }) {
+  return (
+    <>
+      {Array.from({ length: n }, (_, r) => (
+        <div key={r} className="rd-skelrow rd-skelrow-day" aria-hidden="true">
+          {SKEL_BARS.map((b, i) => (
+            <span
+              key={i}
+              className={`rd-skelbar${b.hi ? " hi" : ""}`}
+              style={{ width: b.w, height: b.h, animationDelay: `${SKEL_DELAYS[i]}s` }}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** the TODAY section of the desktop stack (rd-mhide — MobileBoard owns
+ * <700px). Today's brief rides the overview load, so there is no fetch state
+ * here. States, in order of honesty: no stored brief ("no desk run") →
+ * 0-idea brief → filter miss → rows. */
+function DayBoard({ date, brief, ideas, trackedByIdeaId, filter, selectedId, onSelect, publishedIds }: {
   date: string;
   brief: DailyBrief | null;
   ideas: BlotterIdea[];
@@ -1306,61 +1372,23 @@ function DayBoard({ scopeKey, date, brief, ideas, trackedByIdeaId, filter, selec
   filter: BlotterFilter;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  loading: boolean;
-  error: boolean;
-  onRetry: () => void;
   publishedIds: Set<string> | null;
 }) {
-  if (loading) {
-    return (
-      <div className="rd-mhide" role="status" aria-label={`Loading the ${date} desk run`}>
-        <div className="rd-load-strip">
-          <span className="rd-load-dot" aria-hidden="true" />
-          LOADING {date} DESK RUN…
-        </div>
-        {[0, 1, 2].map((r) => (
-          <div key={r} className="rd-skelrow" aria-hidden="true">
-            {SKEL_BARS.map((b, i) => (
-              <span
-                key={i}
-                className={`rd-skelbar${b.hi ? " hi" : ""}`}
-                style={{ width: b.w, height: b.h, animationDelay: `${SKEL_DELAYS[i]}s` }}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rd-mhide" style={{ padding: "8px 16px" }}>
-        <div className="rd-state rd-state-err" role="alert">
-          Couldn&apos;t load the {date} desk run.{" "}
-          <button type="button" className="rd-btn rd-btn-sm" onClick={onRetry}>Retry</button>
-        </div>
-      </div>
-    );
-  }
   if (!brief) {
     return (
-      <div className="rd-board-empty rd-mhide">
+      <div className="rd-board-empty rd-mhide" id="rd-day-sec-TODAY">
         <div className="rd-empty-glyph" aria-hidden="true">∅</div>
         <div className="rd-empty-title">NO DESK RUN FOR THIS DATE</div>
-        <p className="rd-empty-copy">
-          {scopeKey === "TODAY"
-            ? <>No brief has been generated for today ({date}) yet.</>
-            : <>No brief was generated for {date} — there is no board for this date.</>}
-        </p>
+        <p className="rd-empty-copy">No brief has been generated for today ({date}) yet.</p>
       </div>
     );
   }
   const visible = visibleBlotter(ideas, trackedByIdeaId, filter);
   return (
-    <div className="rd-mhide">
-      <div className="rd-group hero">
+    <div className="rd-mhide" id="rd-day-sec-TODAY">
+      <div className={`rd-group hero${ideas.length > 0 && visible.length === 0 ? " rd-group-dim" : ""}`}>
         <span className="rd-group-tick rd-tick-today" aria-hidden="true" />
-        <span className="rd-group-label">DESK RUN · {scopeKey === "TODAY" ? `TODAY (${date})` : date}</span>
+        <span className="rd-group-label">DESK RUN · TODAY ({date})</span>
         <span className="rd-group-sub">brief generated {etStamp(brief.generatedAt)} ET</span>
         <span className="rd-group-hair" aria-hidden="true" />
         <span className="rd-group-count">{ideas.length} IDEA{ideas.length !== 1 ? "S" : ""}</span>
@@ -1380,18 +1408,7 @@ function DayBoard({ scopeKey, date, brief, ideas, trackedByIdeaId, filter, selec
       ) : (
         <div className="rd-board-wrap">
           <div className="rd-day-min">
-            <div className="rd-colhead">
-              {DAY_COLS.map((c) => (
-                <span
-                  key={c}
-                  title={c === "SO FAR" ? "the tracker engine's P&L — since called vs stated trigger; ° = price since first mention"
-                    : c === "CREATED" ? "when the idea entered the desk — tracker ingest, else the desk run (ET)"
-                    : c === "ALERTED" ? "the tracker's TRIGGERED transition (ET)" : undefined}
-                >
-                  {c}
-                </span>
-              ))}
-            </div>
+            <DayColHead />
             {visible.map((idea) => {
               const t = trackedByIdeaId.get(idea.id) ?? null;
               return (
@@ -1407,6 +1424,173 @@ function DayBoard({ scopeKey, date, brief, ideas, trackedByIdeaId, filter, selec
               );
             })}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** one past day's fetch state — "ok" carries the stored brief (null = the
+ * index listed the date but no brief came back: rendered as absent, never
+ * conflated with a failed fetch, which is "error" + Retry) */
+type DayFetch =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ok"; brief: DailyBrief | null };
+
+/** one PAST day group: a collapsible date header + that day's rows. The
+ * header count is honest — "—" until the brief is fetched (the briefs index
+ * carries dates only, no counts); a zero-filter-match day DIMS its header
+ * (rd-group-dim) rather than vanishing (no-CLS contract). */
+function PastDayGroup({ date, open, fetchState, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onToggle, onSelect, onRetry, publishedIds }: {
+  date: string;
+  open: boolean;
+  fetchState: DayFetch | undefined;
+  quotes: QuoteMap;
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  filter: BlotterFilter;
+  selectedDayKey: string;
+  selectedId: string | null;
+  onToggle: () => void;
+  onSelect: (id: string) => void;
+  onRetry: () => void;
+  publishedIds: Set<string> | null;
+}) {
+  const brief = fetchState?.status === "ok" ? fetchState.brief : null;
+  const ideas = brief ? buildBlotter(brief, quotes) : [];
+  const visible = brief ? visibleBlotter(ideas, trackedByIdeaId, filter) : [];
+  const dim = !!brief && ideas.length > 0 && visible.length === 0;
+  const sub =
+    fetchState === undefined ? "not loaded — expand to load"
+    : fetchState.status === "loading" ? "loading…"
+    : fetchState.status === "error" ? "load failed"
+    : brief ? `brief generated ${etStamp(brief.generatedAt)} ET`
+    : "no stored brief";
+  return (
+    <section id={`rd-day-sec-${date}`} aria-label={`Desk run ${date}`}>
+      <button
+        type="button"
+        className={`rd-group rd-dayg-h${dim ? " rd-group-dim" : ""}`}
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="rd-dayg-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span className="rd-group-tick rd-tick-long" aria-hidden="true" />
+        <span className="rd-group-label">DESK RUN · {date}</span>
+        <span className="rd-group-sub">{sub}</span>
+        <span className="rd-group-hair" aria-hidden="true" />
+        <span className="rd-group-count" title={brief ? undefined : "idea count is known once the day loads"}>
+          {brief ? `${ideas.length} IDEA${ideas.length !== 1 ? "S" : ""}` : "—"}
+        </span>
+      </button>
+      {open && (
+        fetchState === undefined || fetchState.status === "loading" ? (
+          <DaySkelRows />
+        ) : fetchState.status === "error" ? (
+          <div className="rd-dayg-state" role="alert">
+            <span className="rd-abs-g" aria-hidden="true">△</span>
+            Couldn&apos;t load the {date} desk run.{" "}
+            <button type="button" className="rd-btn rd-btn-sm" onClick={onRetry}>Retry</button>
+          </div>
+        ) : !brief ? (
+          <div className="rd-dayg-state">
+            <span className="rd-abs-g" aria-hidden="true">∅</span> no stored brief for {date}
+          </div>
+        ) : ideas.length === 0 ? (
+          <div className="rd-dayg-state">
+            <span className="rd-abs-g" aria-hidden="true">∅</span> desk ran — no board ideas
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="rd-dayg-state">
+            <span className="rd-abs-g" aria-hidden="true">∅</span> no ideas from this desk run in the {filter.toLowerCase()} state
+          </div>
+        ) : (
+          visible.map((idea) => {
+            const t = trackedByIdeaId.get(idea.id) ?? null;
+            return (
+              <DayRow
+                key={idea.id}
+                idea={idea}
+                tracked={t}
+                briefGeneratedAt={brief.generatedAt}
+                selected={selectedDayKey === date && selectedId === idea.id}
+                published={!!(t && publishedIds?.has(t.id))}
+                onSelect={() => onSelect(idea.id)}
+              />
+            );
+          })
+        )
+      )}
+    </section>
+  );
+}
+
+/** PAST IDEAS — the second section of the desktop stack: prior desk days,
+ * newest first, in ONE scroll frame sharing the day column template (columns
+ * align with TODAY's board above). Load discipline lives in the parent: the
+ * newest EAGER_PAST_DAYS fetch on stack mount, the rest load on expand, and
+ * LOAD OLDER only reveals more collapsed headers (zero fetches). */
+function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLoadOlder, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onSelect, publishedIds }: {
+  days: PastDayPlan[];
+  older: number;
+  fetches: Map<string, DayFetch>;
+  isOpen: (date: string, eager: boolean) => boolean;
+  onToggleDay: (date: string, eager: boolean) => void;
+  onRetryDay: (date: string) => void;
+  onLoadOlder: () => void;
+  quotes: QuoteMap;
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  filter: BlotterFilter;
+  selectedDayKey: string;
+  selectedId: string | null;
+  onSelect: (date: string, id: string) => void;
+  publishedIds: Set<string> | null;
+}) {
+  return (
+    <div className="rd-mhide">
+      <div className="rd-bhead rd-past-head">
+        <span className="rd-bhead-title">PAST IDEAS</span>
+        <span className="rd-bhead-meta">
+          {days.length + older > 0
+            ? `${days.length + older} PRIOR DESK DAY${days.length + older !== 1 ? "S" : ""} · NEWEST FIRST`
+            : "PRIOR DESK DAYS"}
+        </span>
+      </div>
+      {days.length === 0 ? (
+        <div className="rd-board-empty">
+          <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+          <div className="rd-empty-title">NO PRIOR DESK RUNS</div>
+          <p className="rd-empty-copy">The briefs index holds no earlier desk days yet.</p>
+        </div>
+      ) : (
+        <div className="rd-board-wrap">
+          <div className="rd-day-min">
+            <DayColHead />
+            {days.map((d) => (
+              <PastDayGroup
+                key={d.date}
+                date={d.date}
+                open={isOpen(d.date, d.eager)}
+                fetchState={fetches.get(d.date)}
+                quotes={quotes}
+                trackedByIdeaId={trackedByIdeaId}
+                filter={filter}
+                selectedDayKey={selectedDayKey}
+                selectedId={selectedId}
+                onToggle={() => onToggleDay(d.date, d.eager)}
+                onSelect={(id) => onSelect(d.date, id)}
+                onRetry={() => onRetryDay(d.date)}
+                publishedIds={publishedIds}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {older > 0 && (
+        <div className="rd-past-older">
+          <button type="button" className="rd-btn" onClick={onLoadOlder}>
+            LOAD OLDER · {older} MORE DESK DAY{older !== 1 ? "S" : ""}
+          </button>
         </div>
       )}
     </div>
@@ -1658,19 +1842,28 @@ function MobileIdeaCard({ idea, tracked, open, publish, onToggle, dayGeneratedAt
   );
 }
 
-/** DAY BOARDS scope handed to MobileBoard — null means OVERALL (the
- * pre-existing behavior, unchanged). `brief`/`blotter` arrive already scoped. */
+/** DAY STACK context handed to MobileBoard — null means OVERALL (the
+ * pre-existing behavior, unchanged). Non-null = the stack: the card list is
+ * TODAY (with the day-facts block) and `past` renders the prior-day groups. */
 type MobileDayScope = {
-  scope: "TODAY" | string;
   date: string;
-  loading: boolean;
-  error: boolean;
-  onRetry: () => void;
+};
+
+/** PAST IDEAS stack for the phone — same plan/fetch machinery as PastBoard,
+ * rendered as 44px collapsible date headers over the card idiom */
+type MobilePast = {
+  days: PastDayPlan[];
+  older: number;
+  fetches: Map<string, DayFetch>;
+  isOpen: (date: string, eager: boolean) => boolean;
+  onToggleDay: (date: string, eager: boolean) => void;
+  onRetryDay: (date: string) => void;
+  onLoadOlder: () => void;
 };
 
 function MobileBoard({
   blotter, trackedByIdeaId, trackedList, filter, onFilter, brief, quotes,
-  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief, day,
+  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief, day, past,
 }: {
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
@@ -1690,6 +1883,7 @@ function MobileBoard({
   onAddSource: () => void;
   onGenerateBrief: () => void;
   day: MobileDayScope | null;
+  past: MobilePast | null;
 }) {
   // design §5 state model: horizon default is the design's TODAY — shipped as
   // ALL so a board whose real ideas sit in other horizons never opens empty
@@ -1774,7 +1968,7 @@ function MobileBoard({
       >
         <section className="rd-mcard rd-mcard-brief" role="group" aria-roledescription="slide" aria-label="Tonight's brief, card 1 of 3">
           <div className="rd-mcar-h">
-            <span className="rd-mcar-title">{day && day.scope !== "TODAY" ? <>BRIEF · {day.date}</> : <>TONIGHT&apos;S BRIEF</>}</span>
+            <span className="rd-mcar-title">TONIGHT&apos;S BRIEF</span>
             {brief?.read60 && (
               /* the design's READ · 60s chip was a mock estimate — here it is
                  the REAL read60 digest toggle */
@@ -1809,14 +2003,6 @@ function MobileBoard({
                 </div>
               </div>
             </>
-          ) : day?.loading ? (
-            <p className="rd-mbrief-p rd-mabs">Loading the {day.date} desk run…</p>
-          ) : day?.error ? (
-            <p className="rd-mbrief-p rd-mabs">Couldn&apos;t load the {day.date} desk run.</p>
-          ) : day && day.scope !== "TODAY" ? (
-            <p className="rd-mbrief-p rd-mabs">
-              <span className="rd-abs-g" aria-hidden="true">∅</span> No desk run for {day.date}.
-            </p>
           ) : (
             <p className="rd-mbrief-p rd-mabs">
               <span className="rd-abs-g" aria-hidden="true">∅</span> No brief generated yet — add a source, then generate tonight&apos;s brief.
@@ -1906,8 +2092,9 @@ function MobileBoard({
         ))}
       </div>
 
-      {/* ── sticky segmented horizon control (§4.4) ── */}
-      <div className="rd-mseg-wrap">
+      {/* ── sticky segmented horizon control (§4.4) — also the TODAY anchor
+          for the day-stack chip rail's jump behavior ── */}
+      <div className="rd-mseg-wrap" id="rd-mday-sec-TODAY">
         <div className="rd-mseg" role="group" aria-label="Filter ideas by horizon">
           {HORIZONS.map((h) => (
             <button
@@ -1929,26 +2116,9 @@ function MobileBoard({
         <FilterSeg filter={filter} onFilter={onFilter} />
       </div>
 
-      {/* ── idea cards ── */}
+      {/* ── idea cards (the TODAY section of the stack when `day` is set) ── */}
       {blotter.length === 0 ? (
-        day?.loading ? (
-          <div role="status" aria-label={`Loading the ${day.date} desk run`}>
-            <div className="rd-load-strip">
-              <span className="rd-load-dot" aria-hidden="true" />
-              LOADING {day.date} DESK RUN…
-            </div>
-            <div className="rd-mlist" aria-hidden="true">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
-              ))}
-            </div>
-          </div>
-        ) : day?.error ? (
-          <div className="rd-state rd-state-err" role="alert" style={{ padding: "12px 16px" }}>
-            Couldn&apos;t load the {day.date} desk run.{" "}
-            <button type="button" className="rd-btn rd-btn-sm" onClick={day.onRetry}>Retry</button>
-          </div>
-        ) : loading ? (
+        loading ? (
           <div role="status" aria-label="Syncing sources and extracting ideas">
             <div className="rd-load-strip">
               <span className="rd-load-dot" aria-hidden="true" />
@@ -1959,18 +2129,6 @@ function MobileBoard({
                 <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
               ))}
             </div>
-          </div>
-        ) : day && day.scope !== "TODAY" && !brief ? (
-          <div className="rd-board-empty">
-            <div className="rd-empty-glyph" aria-hidden="true">∅</div>
-            <div className="rd-empty-title">NO DESK RUN FOR THIS DATE</div>
-            <p className="rd-empty-copy">No brief was generated for {day.date} — there is no board for this date.</p>
-          </div>
-        ) : day && day.scope !== "TODAY" && brief ? (
-          <div className="rd-board-empty">
-            <div className="rd-empty-glyph" aria-hidden="true">∅</div>
-            <div className="rd-empty-title">DESK RAN — NO BOARD IDEAS</div>
-            <p className="rd-empty-copy">The {day.date} brief holds no board ideas.</p>
           </div>
         ) : (
           <BoardEmpty busy={busy} aiOn={aiOn} owner={owner} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} />
@@ -1999,6 +2157,108 @@ function MobileBoard({
               />
             );
           })}
+        </div>
+      )}
+
+      {/* ── PAST IDEAS (day stack, phone form): 44px collapsible date headers,
+          newest first — same plan/fetch/filter machinery as the desktop
+          PastBoard, cards instead of rows. Absent on OVERALL. ── */}
+      {past && (
+        <div className="rd-mpast">
+          <div className="rd-mpast-head">
+            <span className="rd-mpast-title">PAST IDEAS</span>
+            <span className="rd-mpast-meta">
+              {past.days.length + past.older > 0
+                ? `${past.days.length + past.older} PRIOR DESK DAY${past.days.length + past.older !== 1 ? "S" : ""}`
+                : ""}
+            </span>
+          </div>
+          {past.days.length === 0 ? (
+            <div className="rd-mabs-line">
+              <span className="rd-abs-g" aria-hidden="true">∅</span> No prior desk runs stored yet.
+            </div>
+          ) : past.days.map((d) => {
+            const st = past.fetches.get(d.date);
+            const dayBrief = st?.status === "ok" ? st.brief : null;
+            const ideas = dayBrief ? buildBlotter(dayBrief, quotes) : [];
+            const dayVisible = dayBrief ? visibleBlotter(ideas, trackedByIdeaId, filter) : [];
+            const open = past.isOpen(d.date, d.eager);
+            const dim = !!dayBrief && ideas.length > 0 && dayVisible.length === 0;
+            return (
+              <section key={d.date} id={`rd-mday-sec-${d.date}`} aria-label={`Desk run ${d.date}`}>
+                <button
+                  type="button"
+                  className={`rd-mpast-h${dim ? " dim" : ""}`}
+                  aria-expanded={open}
+                  onClick={() => past.onToggleDay(d.date, d.eager)}
+                >
+                  <span className="rd-mpast-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+                  <span className="rd-mpast-date">{d.date}</span>
+                  <span className="rd-mpast-sub">
+                    {st === undefined ? "tap to load"
+                      : st.status === "loading" ? "loading…"
+                      : st.status === "error" ? "load failed"
+                      : dayBrief ? `brief ${etStamp(dayBrief.generatedAt)} ET`
+                      : "no stored brief"}
+                  </span>
+                  <span className="rd-mpast-n" title={dayBrief ? undefined : "idea count is known once the day loads"}>
+                    {dayBrief ? `${ideas.length} IDEA${ideas.length !== 1 ? "S" : ""}` : "—"}
+                  </span>
+                </button>
+                {open && (
+                  st === undefined || st.status === "loading" ? (
+                    <div className="rd-mlist" aria-hidden="true">
+                      {[0, 1].map((i) => (
+                        <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
+                      ))}
+                    </div>
+                  ) : st.status === "error" ? (
+                    <div className="rd-state rd-state-err" role="alert" style={{ margin: "8px 16px" }}>
+                      Couldn&apos;t load the {d.date} desk run.{" "}
+                      <button type="button" className="rd-btn rd-btn-sm" onClick={() => past.onRetryDay(d.date)}>Retry</button>
+                    </div>
+                  ) : !dayBrief ? (
+                    <div className="rd-mabs-line">
+                      <span className="rd-abs-g" aria-hidden="true">∅</span> No stored brief for {d.date}.
+                    </div>
+                  ) : ideas.length === 0 ? (
+                    <div className="rd-mabs-line">
+                      <span className="rd-abs-g" aria-hidden="true">∅</span> Desk ran — no board ideas.
+                    </div>
+                  ) : dayVisible.length === 0 ? (
+                    <div className="rd-mabs-line">
+                      <span className="rd-abs-g" aria-hidden="true">∅</span> No ideas from this desk run in the {filter.toLowerCase()} state.
+                    </div>
+                  ) : (
+                    <div className="rd-mlist">
+                      {dayVisible.map((idea) => {
+                        const t = trackedByIdeaId.get(idea.id) ?? null;
+                        const cardKey = `${d.date}:${idea.id}`;
+                        return (
+                          <MobileIdeaCard
+                            key={cardKey}
+                            idea={idea}
+                            tracked={t}
+                            open={expandedId === cardKey}
+                            publish={publishCtl(t)}
+                            onToggle={() => setExpandedId((c) => (c === cardKey ? null : cardKey))}
+                            dayGeneratedAt={dayBrief.generatedAt}
+                          />
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+              </section>
+            );
+          })}
+          {past.older > 0 && (
+            <div className="rd-mpast-older">
+              <button type="button" className="rd-btn" onClick={past.onLoadOlder}>
+                LOAD OLDER · {past.older} MORE DESK DAY{past.older !== 1 ? "S" : ""}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2974,7 +3234,9 @@ function FngChip({ fng }: { fng: DeskFng | null }) {
       style={{ color: band.c, borderColor: band.bd, background: band.bg }}
       title={`CNN Fear & Greed (equities) — ${v} · ${band.label}`}
     >
-      F&amp;G {v} · {band.label}
+      {/* inner span so the chip can SHRINK (ellipsis) instead of colliding
+          with bar2's count pills at narrow desktop widths */}
+      <span className="rd-fng-t">F&amp;G {v} · {band.label}</span>
     </span>
   );
 }
@@ -4166,16 +4428,27 @@ export default function IntelDashboard() {
   // server-throttled, so polling this is cheap).
   const [trackedList, setTrackedList] = useState<TrackedIdea[]>([]);
   const [blotterFilter, setBlotterFilter] = useState<BlotterFilter>("ALL");
-  // DAY BOARDS (owner control): the board scope — TODAY (default), a prior
-  // brief date, or OVERALL (the pre-existing cumulative blotter, unchanged).
-  // Prior-date briefs load through the EXISTING GET /api/intel/briefs/[date]
-  // and are cached per date (briefs are immutable once stored; retry evicts).
+  // DAY STACK (owner control): the board view — TODAY (the stack: today's day
+  // board, then PAST IDEAS) or OVERALL (the pre-existing cumulative blotter,
+  // unchanged). Prior-date briefs load through the EXISTING GET
+  // /api/intel/briefs/[date] and are cached per date (briefs are immutable
+  // once stored; retry evicts). Load discipline: the newest EAGER_PAST_DAYS
+  // fetch when the stack shows; other days fetch only on expand; LOAD OLDER
+  // reveals +PAST_PAGE collapsed headers and fetches nothing.
   const [boardScope, setBoardScope] = useState<BoardScope>("TODAY");
-  const [dayBrief, setDayBrief] = useState<DailyBrief | null>(null);
-  const [dayLoading, setDayLoading] = useState(false);
-  const [dayErr, setDayErr] = useState(false);
-  const [dayRetryN, setDayRetryN] = useState(0);
+  const [allBriefDates, setAllBriefDates] = useState<string[]>([]);
+  const [pastShown, setPastShown] = useState(PAST_DAYS_INIT);
+  // per-day expand/collapse OVERRIDES — a day's default is its eager flag
+  const [dayOpen, setDayOpen] = useState<Map<string, boolean>>(new Map());
+  const [dayFetches, setDayFetches] = useState<Map<string, DayFetch>>(new Map());
   const dayCache = useRef<Map<string, DailyBrief | null>>(new Map());
+  const dayInflight = useRef<Set<string>>(new Set());
+  // rail chip pressed → anchor-scroll to that day's section after commit
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
+  // which stack section the selected row lives in ("TODAY" or a past date) —
+  // the inspector's per-row brief context follows the ROW's day, not the top
+  // section's. OVERALL selections use "TODAY" (the blotter IS today's brief).
+  const [selectedDayKey, setSelectedDayKey] = useState<string>("TODAY");
   // when the overview fetch last failed (ET, with seconds) — the board error
   // state renders this real timestamp, never the design's sample ERR line
   const [errAt, setErrAt] = useState<string | null>(null);
@@ -4288,7 +4561,12 @@ export default function IntelDashboard() {
     fetchTracker();
     fetch("/api/intel/briefs", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
+      .then((j) => {
+        if (Array.isArray(j.dates)) {
+          setHistoryDates(j.dates.slice(0, 14)); // BRIEF-tab pills + the rail (unchanged cap)
+          setAllBriefDates(j.dates); // full index — the PAST stack's LOAD OLDER reserve
+        }
+      })
       .catch(() => {});
   }, [load, fetchMacroTape, fetchTracker]);
 
@@ -4432,39 +4710,82 @@ export default function IntelDashboard() {
     finally { setHistoryLoading(false); }
   }, [selectedDate]);
 
-  // DAY BOARDS: fetch a prior date's stored brief when that scope is selected.
-  // TODAY reads the overview's brief directly; OVERALL fetches nothing. A
-  // failed fetch is an ERROR state (retry), never conflated with "no brief
-  // was stored" — the two render differently.
-  useEffect(() => {
-    if (boardScope === "TODAY" || boardScope === "OVERALL") { setDayLoading(false); setDayErr(false); return; }
-    const date = boardScope;
+  // DAY STACK: fetch one past date's stored brief (idempotent — the per-date
+  // cache and the in-flight guard make repeat calls free). A failed fetch is
+  // an ERROR state (retry), never conflated with "no brief was stored" — the
+  // two render differently.
+  const ensureDay = useCallback((date: string) => {
+    if (dayInflight.current.has(date)) return;
     const cached = dayCache.current.get(date);
-    if (cached !== undefined) { setDayBrief(cached); setDayLoading(false); setDayErr(false); return; }
-    let alive = true;
-    setDayLoading(true); setDayErr(false); setDayBrief(null);
+    if (cached !== undefined) {
+      setDayFetches((m) => (m.get(date)?.status === "ok" ? m : new Map(m).set(date, { status: "ok", brief: cached })));
+      return;
+    }
+    dayInflight.current.add(date);
+    setDayFetches((m) => new Map(m).set(date, { status: "loading" }));
     (async () => {
       try {
         const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
         if (!r.ok) throw new Error();
         const j = await r.json();
-        if (!alive) return;
         const b: DailyBrief | null = j.brief ?? null;
         dayCache.current.set(date, b);
-        setDayBrief(b);
+        setDayFetches((m) => new Map(m).set(date, { status: "ok", brief: b }));
       } catch {
-        if (alive) { setDayBrief(null); setDayErr(true); }
+        setDayFetches((m) => new Map(m).set(date, { status: "error" }));
       } finally {
-        if (alive) setDayLoading(false);
+        dayInflight.current.delete(date);
       }
     })();
-    return () => { alive = false; };
-  }, [boardScope, dayRetryN]);
+  }, []);
 
-  const retryDay = useCallback(() => {
-    if (boardScope !== "TODAY" && boardScope !== "OVERALL") dayCache.current.delete(boardScope);
-    setDayRetryN((n) => n + 1);
-  }, [boardScope]);
+  // eager + on-expand loading for the PAST stack: any visible day that is
+  // open (eager default or user-expanded) and has no fetch state yet gets ONE
+  // fetch. Bounded by construction: EAGER_PAST_DAYS + user expansions.
+  useEffect(() => {
+    if (!owner || tab !== "BOARD" || boardScope !== "TODAY") return;
+    const todayKey = data?.clock.date;
+    if (!todayKey) return;
+    const { days } = planPastDays(allBriefDates, todayKey, pastShown, EAGER_PAST_DAYS);
+    for (const d of days) {
+      if ((dayOpen.get(d.date) ?? d.eager) && !dayFetches.has(d.date)) ensureDay(d.date);
+    }
+  }, [owner, tab, boardScope, data?.clock.date, allBriefDates, pastShown, dayOpen, dayFetches, ensureDay]);
+
+  // retry a failed day: evict cache + fetch state; the effect above refetches
+  // (the group is necessarily open — that's where the Retry button lives)
+  const retryDay = useCallback((date: string) => {
+    dayCache.current.delete(date);
+    setDayFetches((m) => { const n = new Map(m); n.delete(date); return n; });
+  }, []);
+
+  const toggleDay = useCallback((date: string, eager: boolean) => {
+    setDayOpen((m) => new Map(m).set(date, !(m.get(date) ?? eager)));
+  }, []);
+
+  // rail navigation: TODAY/date chips jump WITHIN the stack (switching back
+  // from OVERALL first); a collapsed day expands so the jump lands on rows
+  const jumpToDay = useCallback((key: string) => {
+    setBoardScope("TODAY");
+    if (key !== "TODAY") setDayOpen((m) => (m.get(key) === true ? m : new Map(m).set(key, true)));
+    setPendingJump(key);
+  }, []);
+
+  // anchor scroll after the stack is committed — the desktop and phone
+  // sections carry surface-specific ids; scroll whichever one is rendered
+  useEffect(() => {
+    if (!pendingJump) return;
+    const raf = requestAnimationFrame(() => {
+      const els = [
+        document.getElementById(`rd-day-sec-${pendingJump}`),
+        document.getElementById(`rd-mday-sec-${pendingJump}`),
+      ];
+      const el = els.find((e): e is HTMLElement => !!e && e.offsetParent !== null) ?? null;
+      el?.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+      setPendingJump(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pendingJump]);
 
   const removeSource = useCallback(async (id: string) => {
     await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -4527,30 +4848,33 @@ export default function IntelDashboard() {
   const displayBrief = selectedDate ? historyBrief : brief;
   const blotter = buildBlotter(brief, quotes);
 
-  // DAY BOARDS scope resolution — non-owner desks are pinned to OVERALL (the
+  // DAY STACK view resolution — non-owner desks are pinned to OVERALL (the
   // pre-day-boards behavior, byte-identical; the rail never renders for them).
-  // TODAY reads the overview's brief (it IS today's stored brief); a prior
-  // date reads the fetched dayBrief; OVERALL keeps the cumulative blotter.
+  // TODAY = the stack: today's day board (the overview brief IS today's
+  // stored brief) with PAST IDEAS below it; OVERALL = the cumulative blotter.
   const scope: BoardScope = owner ? boardScope : "OVERALL";
-  const isDayScope = scope !== "OVERALL";
+  const isStack = scope === "TODAY";
   const todayKey = data.clock.date;
-  const scopedDayBrief = scope === "TODAY" ? brief : scope === "OVERALL" ? null : dayBrief;
-  const dayIdeas = isDayScope ? buildBlotter(scopedDayBrief, quotes) : [];
-  const scopedIdeas = isDayScope ? dayIdeas : blotter;
-  const scopeDate = scope === "TODAY" ? todayKey : scope; // meaningless for OVERALL
-  const dayStateLoading = isDayScope && scope !== "TODAY" && dayLoading;
-  const dayStateErr = isDayScope && scope !== "TODAY" && dayErr;
   const railDates = historyDates.filter((d) => d !== todayKey);
-  const selectedIdea = scopedIdeas.find((i) => i.id === selectedId) ?? null;
+  const pastPlan = planPastDays(allBriefDates, todayKey, pastShown, EAGER_PAST_DAYS);
 
   // join blotter rows to tracker records through contributed idea ids
   const trackedByIdeaId = new Map<string, TrackedIdea>();
   for (const t of trackedList) for (const iid of t.ideaIds) trackedByIdeaId.set(iid, t);
+
+  // the selected row resolves through ITS OWN day's section — a past-day row
+  // reads that day's fetched brief, never the top section's. OVERALL keeps
+  // the pre-stack lookup (the blotter IS today's brief ideas).
+  const selDayKey = scope === "OVERALL" ? "TODAY" : selectedDayKey;
+  const selPastFetch = selDayKey === "TODAY" ? undefined : dayFetches.get(selDayKey);
+  const selDayBrief = selDayKey === "TODAY" ? brief : selPastFetch?.status === "ok" ? selPastFetch.brief : null;
+  const sectionIdeas = selDayKey === "TODAY" ? blotter : buildBlotter(selDayBrief, quotes);
+  const selectedIdea = sectionIdeas.find((i) => i.id === selectedId) ?? null;
   const selectedTracked = selectedIdea ? trackedByIdeaId.get(selectedIdea.id) ?? null : null;
 
-  // the brief the BOARD tab's panels render — the scoped day's brief under a
-  // day scope (TODAY === the overview brief), the current brief on OVERALL
-  const boardBrief = isDayScope ? scopedDayBrief : brief;
+  // the brief the BOARD tab's panels (options strip, option ticket) render —
+  // always the CURRENT brief: options are a today panel in both views
+  const boardBrief = brief;
 
   // stage 7: the ticket's option, resolved from the BOARD brief's option
   // sections (plays + candidates — the two lists the panel renders)
@@ -4575,16 +4899,25 @@ export default function IntelDashboard() {
         }
       : null;
 
-  // inspector breadcrumb position — the selected row's 1-based index among the
-  // currently visible rows in DISPLAY order (horizon groups), and the derived
-  // denominator (SPEC-wiring §2.11: the design's /6 was hardcoded)
-  const visibleRows = visibleBlotter(scopedIdeas, trackedByIdeaId, blotterFilter);
-  const displayRows = isDayScope
-    ? visibleRows // the day board is flat, in brief order (favorites → rank)
-    : BOARD_GROUPS.flatMap((g) =>
+  // inspector breadcrumb position — the selected row's 1-based index among
+  // ITS SECTION's visible rows in DISPLAY order (OVERALL: horizon groups;
+  // a day board: flat, in brief order), and the derived denominator
+  // (SPEC-wiring §2.11: the design's /6 was hardcoded)
+  const visibleRows = visibleBlotter(sectionIdeas, trackedByIdeaId, blotterFilter);
+  const displayRows = scope === "OVERALL"
+    ? BOARD_GROUPS.flatMap((g) =>
         visibleRows.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g.key),
-      );
+      )
+    : visibleRows; // day boards are flat, in brief order (favorites → rank)
   const selRowIdx = selectedIdea ? displayRows.findIndex((r) => r.id === selectedIdea.id) : -1;
+
+  // one selection contract for every section: same row (same day) toggles
+  // off; the inspector follows (mode 'idea' — a row click always inspects)
+  const selectRow = (dayKey: string, id: string) => {
+    setSelectedId((c) => (c === id && selectedDayKey === dayKey ? null : id));
+    setSelectedDayKey(dayKey);
+    setInspectorMode("idea");
+  };
 
   // compose watchlist tape items from blotter — one chip per symbol. Multiple
   // ideas can share a ticker (e.g. two stated FCEL triggers); the quote is
@@ -4668,7 +5001,7 @@ export default function IntelDashboard() {
               onGoSources={() => setTab("SOURCES")}
               blotter={blotter}
               trackedByIdeaId={trackedByIdeaId}
-              onSelectIdea={(id) => { setSelectedId(id); setInspectorMode("idea"); }}
+              onSelectIdea={(id) => { setSelectedId(id); setSelectedDayKey("TODAY"); setInspectorMode("idea"); }}
               desk={desk}
             />
             <div className="rd-center">
@@ -4682,14 +5015,15 @@ export default function IntelDashboard() {
                   todayCount={blotter.length}
                   overallCount={blotter.length}
                   onScope={setBoardScope}
+                  onJump={jumpToDay}
                 />
               )}
               {/* stage 8 — the SPEC-mobile phone board (display:none ≥701px);
                   first in DOM so the mobile order is carousel → filter →
-                  cards → options strip. Desktop board chrome below is hidden
-                  <700px (rd-mhide + the stage-8 media block). */}
+                  TODAY cards → PAST day groups → options strip. Desktop board
+                  chrome below is hidden <700px (rd-mhide + stage-8 media). */}
               <MobileBoard
-                blotter={scopedIdeas}
+                blotter={blotter}
                 trackedByIdeaId={trackedByIdeaId}
                 trackedList={trackedList}
                 filter={blotterFilter}
@@ -4705,12 +5039,15 @@ export default function IntelDashboard() {
                 publishCtl={publishCtl}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
-                day={isDayScope ? {
-                  scope: scope as "TODAY" | string,
-                  date: scopeDate,
-                  loading: dayStateLoading,
-                  error: dayStateErr,
-                  onRetry: retryDay,
+                day={isStack ? { date: todayKey } : null}
+                past={isStack ? {
+                  days: pastPlan.days,
+                  older: pastPlan.older,
+                  fetches: dayFetches,
+                  isOpen: (date, eager) => dayOpen.get(date) ?? eager,
+                  onToggleDay: toggleDay,
+                  onRetryDay: retryDay,
+                  onLoadOlder: () => setPastShown((n) => n + PAST_PAGE),
                 } : null}
               />
               {/* board header (SPEC-desktop §2.6.2) — real count, real cadence.
@@ -4718,12 +5055,10 @@ export default function IntelDashboard() {
                   an owner desk (zero dims, never unmounts — no-CLS), an honest
                   — until the publish listing lands, absent for non-owners. */}
               <div className="rd-bhead">
-                <span className="rd-bhead-title">{isDayScope ? "DAY BOARD" : "TRADE BLOTTER"}</span>
+                <span className="rd-bhead-title">{isStack ? "DAY BOARD" : "TRADE BLOTTER"}</span>
                 <span className="rd-bhead-meta">
-                  {isDayScope
-                    ? dayStateLoading
-                      ? `${scopeDate} · LOADING…`
-                      : `${scope === "TODAY" ? `TODAY · ${todayKey}` : scopeDate} · ${scopedIdeas.length} IDEAS · CREATED → ALERTED → SO FAR`
+                  {isStack
+                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR`
                     : `${blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s`}
                 </span>
                 {owner && (
@@ -4757,42 +5092,54 @@ export default function IntelDashboard() {
                   todayCount={blotter.length}
                   overallCount={blotter.length}
                   onScope={setBoardScope}
+                  onJump={jumpToDay}
                 />
               )}
               {/* tracker filter — TRACKED = level-anchored ideas only;
-                  semantics + aria-pressed unchanged, design segmented look
+                  semantics + aria-pressed unchanged, design segmented look;
+                  applies across the WHOLE stack (TODAY + every past group).
                   (desktop placement; <700px it re-hosts inside MobileBoard) */}
               <div className="rd-filter-row" role="group" aria-label="Filter ideas by tracker state">
                 <FilterSeg filter={blotterFilter} onFilter={setBlotterFilter} />
               </div>
-              {isDayScope ? (
-                <DayBoard
-                  scopeKey={scope as "TODAY" | string}
-                  date={scopeDate}
-                  brief={scopedDayBrief}
-                  ideas={dayIdeas}
-                  trackedByIdeaId={trackedByIdeaId}
-                  filter={blotterFilter}
-                  selectedId={selectedId}
-                  onSelect={(id) => {
-                    setSelectedId((c) => (c === id ? null : id));
-                    setInspectorMode("idea"); // same contract as the blotter: a row click inspects
-                  }}
-                  loading={dayStateLoading}
-                  error={dayStateErr}
-                  onRetry={retryDay}
-                  publishedIds={publishedIds}
-                />
+              {isStack ? (
+                <>
+                  {/* section one: TODAY — the existing day board machinery */}
+                  <DayBoard
+                    date={todayKey}
+                    brief={brief}
+                    ideas={blotter}
+                    trackedByIdeaId={trackedByIdeaId}
+                    filter={blotterFilter}
+                    selectedId={selectedDayKey === "TODAY" ? selectedId : null}
+                    onSelect={(id) => selectRow("TODAY", id)}
+                    publishedIds={publishedIds}
+                  />
+                  {/* section two: PAST IDEAS — prior desk days, newest first */}
+                  <PastBoard
+                    days={pastPlan.days}
+                    older={pastPlan.older}
+                    fetches={dayFetches}
+                    isOpen={(date, eager) => dayOpen.get(date) ?? eager}
+                    onToggleDay={toggleDay}
+                    onRetryDay={retryDay}
+                    onLoadOlder={() => setPastShown((n) => n + PAST_PAGE)}
+                    quotes={quotes}
+                    trackedByIdeaId={trackedByIdeaId}
+                    filter={blotterFilter}
+                    selectedDayKey={selectedDayKey}
+                    selectedId={selectedId}
+                    onSelect={selectRow}
+                    publishedIds={publishedIds}
+                  />
+                </>
               ) : (
                 <BlotterTable
                   ideas={blotter}
                   trackedByIdeaId={trackedByIdeaId}
                   filter={blotterFilter}
                   selectedId={selectedId}
-                  onSelect={(id) => {
-                    setSelectedId((c) => (c === id ? null : id));
-                    setInspectorMode("idea"); // design §5: a row click always shows the idea inspector
-                  }}
+                  onSelect={(id) => selectRow("TODAY", id) /* design §5: a row click always shows the idea inspector */}
                   loading={busy === "sync" || busy === "brief"}
                   busy={busy}
                   aiOn={config.ai}

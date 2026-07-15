@@ -46,3 +46,35 @@ export function dayAlerted(tracked: TrackedIdea | null): DayAlerted | null {
 export function daySoFar(tracked: TrackedIdea | null): PnlView {
   return tracked ? pnlView(tracked) : { kind: "none", reason: "untracked" };
 }
+
+// ── DAY STACK group derivations ──────────────────────────────────────────────
+// The owner's default BOARD is a STACK: today's day board on top, then PAST
+// IDEAS — prior desk days newest-first. This plans WHICH past days render and
+// how they load, purely from the briefs index (dates only — the index carries
+// no counts, so a day's idea count is unknown until its brief is fetched).
+
+export type PastDayPlan = {
+  date: string;
+  /** fetched eagerly when the stack mounts (the newest few past days);
+   *  non-eager days start as collapsed headers and load on expand */
+  eager: boolean;
+};
+
+/** Plan the PAST IDEAS stack. `briefDates` is the briefs index, newest first
+ *  (today's key, when present, is excluded — TODAY is its own section).
+ *  `visibleCount` caps how many past days render (LOAD OLDER raises it);
+ *  the first `eagerCount` of those are marked for eager fetch. `older` is
+ *  how many known past days remain beyond the cap — 0 means the index is
+ *  exhausted. Pure: no I/O, input order preserved. */
+export function planPastDays(
+  briefDates: string[],
+  todayKey: string,
+  visibleCount: number,
+  eagerCount = 3,
+): { days: PastDayPlan[]; older: number } {
+  const past = briefDates.filter((d) => d !== todayKey);
+  const days = past
+    .slice(0, Math.max(0, visibleCount))
+    .map((date, i) => ({ date, eager: i < Math.max(0, eagerCount) }));
+  return { days, older: past.length - days.length };
+}
