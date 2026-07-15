@@ -1794,11 +1794,23 @@ function MoodIcon() {
 // Boot HUD — typed sequence in the corner, then a live ZULU clock.
 // ---------------------------------------------------------------------------
 
+// Declutter: the full identity block belongs to the boot sequence only. After
+// this dwell it folds — one way, never re-expanding — to the single quiet line
+// that earns its permanence: the live ZULU clock.
+const HUD_COLLAPSE_MS = 5200;
+
 function BootHud() {
   const LINES = ["SYSTEM INITIATED", "AUGUST · BUILD 0.10", "LOCATION — UNDISCLOSED"];
   const full = LINES.join("\n");
   const [n, setN] = useState(0);
   const [zulu, setZulu] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
+
+  // One-way fold to the quiet line (see HUD_COLLAPSE_MS above).
+  useEffect(() => {
+    const id = window.setTimeout(() => setCollapsed(true), HUD_COLLAPSE_MS);
+    return () => window.clearTimeout(id);
+  }, []);
 
   // Typewriter driven by ONE character index over the joined block, so even if React
   // double-invokes this effect (StrictMode / HMR) the chains converge instead of
@@ -1822,11 +1834,13 @@ function BootHud() {
 
   return (
     <div className="boot-hud hud fixed left-5 top-5 z-30 select-none">
-      {LINES.map((_, i) => (
-        <div key={i} className={i === 1 ? "boot-brand" : "opacity-70"}>
-          {shown[i] ?? ""}
-        </div>
-      ))}
+      <div className={`boot-lines${collapsed ? " boot-lines-out" : ""}`} aria-hidden={collapsed}>
+        {LINES.map((_, i) => (
+          <div key={i} className={i === 1 ? "boot-brand" : "opacity-70"}>
+            {shown[i] ?? ""}
+          </div>
+        ))}
+      </div>
       {done ? <div className="fade-in boot-zulu">{zulu}</div> : null}
     </div>
   );

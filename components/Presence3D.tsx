@@ -22,16 +22,18 @@ type Props = {
 // dark stage, dark ink on the off-white one — and their blend mode (additive vs
 // normal) so the energy reads as light on black and as ink on white.
 const LOOK = {
+  // Brightness pass: rim/glow/corona lifted ~15-20% over the reference (rings a
+  // touch too) so the orb carries more presence — tune HERE, not inline.
   dark: {
     sphere: 0x0a0d12,
     rim: new THREE.Color(0x9fc3e8),
     corona: new THREE.Color(0x8fb6dc),
     glow: new THREE.Color(0x6e8ca8),
     additive: true,
-    rimIntensity: 1.0,
-    glowOpacity: 0.5,
-    coronaOpacity: 0.55,
-    ringOpacity: 0.5,
+    rimIntensity: 1.15,
+    glowOpacity: 0.58,
+    coronaOpacity: 0.64,
+    ringOpacity: 0.55,
     envIntensity: 1.0,
     exposure: 1.15,
   },
@@ -41,10 +43,10 @@ const LOOK = {
     corona: new THREE.Color(0x39414b),
     glow: new THREE.Color(0x2a3340),
     additive: false,
-    rimIntensity: 0.9,
-    glowOpacity: 0.16,
-    coronaOpacity: 0.42,
-    ringOpacity: 0.45,
+    rimIntensity: 1.05,
+    glowOpacity: 0.19,
+    coronaOpacity: 0.49,
+    ringOpacity: 0.5,
     envIntensity: 1.25,
     exposure: 1.0,
   },
@@ -163,6 +165,27 @@ const RING_ARC_SPAN = 2.35; // arc length (rad ≈ 135°); the remainder is gap
 const RING_SEGMENTS = 96; // line segments per arc
 const RING_PHASE_STEP = 2.1; // per-ring start offset (rad) so the gaps never align
 const RING_FAR_DIM = 0.25; // far-side segment brightness (near side = 1) — front/back depth cue
+// --- Starfield — the space backdrop behind the orb (presence slide only) ------
+// One THREE.Points cloud on a REAR spherical cap centred on the view axis: the
+// drift is a roll around that axis, so no star can ever migrate in front of the
+// orb, at any aspect/zoom. Per-star brightness variance rides vertex colors;
+// the twinkle is one slow whole-cloud opacity sine (no per-frame buffer
+// writes). Reduced motion keeps the field static (no drift, no twinkle).
+const STARS = {
+  count: 360, // points in the cloud
+  radius: 48, // shell radius (world units) — far behind the orb, inside the far plane
+  capDeg: 57, // rear-cap half-angle off the view axis — overfills every viewport
+  size: 1.7, // point size (CSS px; scaled by devicePixelRatio, capped at 2)
+  opacity: 0.32, // dark-stage base opacity (variance dims individual stars below this)
+  opacityLight: 0.14, // light stage — faint ink specks (normal blending, see applyLook)
+  brightMin: 0.45, // per-star brightness floor, 0..1 of the cloud colour
+  driftDegPerSec: 0.1, // roll drift — barely perceptible (<0.2°/s per the brief)
+  twinkle: 0.12, // ± fraction of the slow whole-cloud opacity sine
+  twinkleHz: 0.045, // sine frequency — one breath ≈ 22s
+  colorDark: 0xdbe4f0, // pale steel-white on the dark stage
+  colorLight: 0x2b3a4c, // ink on the off-white stage (matches the light rim)
+};
+
 // Key light rest position, derived from azimuth/elevation (matches the env key blob).
 const KEY_POS = new THREE.Vector3(
   Math.sin(LIGHT_AZIMUTH) * Math.cos(LIGHT_ELEVATION),
@@ -401,6 +424,43 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
     scene.add(glow);
     disposables.push(glowTex, glowMat, glowGeo);
 
+    // --- Starfield (see STARS above): sparse points on a rear cap. Added to the
+    // SCENE, not the root group, so the orb's breathing/wobble never moves the
+    // sky. depthTest stays on — the sphere occludes the stars behind it.
+    const starPos = new Float32Array(STARS.count * 3);
+    const starCol = new Float32Array(STARS.count * 3);
+    const capCos = Math.cos((STARS.capDeg * Math.PI) / 180);
+    for (let i = 0; i < STARS.count; i++) {
+      // Uniform over the cap: cos(φ) uniform in [cos(capDeg), 1], aimed down -z.
+      const cphi = capCos + Math.random() * (1 - capCos);
+      const sphi = Math.sqrt(Math.max(0, 1 - cphi * cphi));
+      const th = Math.random() * Math.PI * 2;
+      starPos[i * 3] = Math.cos(th) * sphi * STARS.radius;
+      starPos[i * 3 + 1] = Math.sin(th) * sphi * STARS.radius;
+      starPos[i * 3 + 2] = -cphi * STARS.radius;
+      const b = STARS.brightMin + Math.random() * (1 - STARS.brightMin);
+      starCol[i * 3] = b;
+      starCol[i * 3 + 1] = b;
+      starCol[i * 3 + 2] = b;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    starGeo.setAttribute("color", new THREE.BufferAttribute(starCol, 3));
+    const starMat = new THREE.PointsMaterial({
+      size: STARS.size * Math.min(2, window.devicePixelRatio || 1),
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      color: new THREE.Color(STARS.colorDark),
+      opacity: STARS.opacity,
+      blending: L0.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+    disposables.push(starGeo, starMat);
+    let starBase = STARS.opacity; // theme-resolved base; applyLook retargets it
+
     // --- Energy corona: a turbulent eruption of radial filaments off the rim. A
     // dense short fringe with a few long whipping spikes (power-law length), drifting
     // angular clumps, slow undulation + fast flicker = violent contained energy. All
@@ -595,6 +655,12 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       ringMat.uniforms.uOpacity.value = L.ringOpacity;
       ringMat.blending = blend;
       ringMat.needsUpdate = true;
+      // Stars: luminous dust on the dark stage, faint ink specks on the light one.
+      starBase = t === "dark" ? STARS.opacity : STARS.opacityLight;
+      starMat.color.set(t === "dark" ? STARS.colorDark : STARS.colorLight);
+      starMat.opacity = starBase;
+      starMat.blending = blend;
+      starMat.needsUpdate = true;
       moodEnergy = ML.energy;
       // Retarget the light colours (rings share the rim tint) + re-tint the env.
       tint.rim.setHex(C.rim);
@@ -713,6 +779,14 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       glowMat.opacity = L.glowOpacity * moodEnergy * (0.85 + (easedGlow - 1) * 0.9 + amp * 0.8);
       const glowPulse = reduced ? 1 : 1 + Math.sin(t * 0.7) * 0.05 + amp * 0.18;
       glow.scale.setScalar(glowPulse);
+
+      // Starfield: an extremely slow roll around the view axis + one whole-cloud
+      // opacity sine — the cheapest possible twinkle. Static under reduced motion.
+      if (!reduced) {
+        stars.rotation.z = t * ((STARS.driftDegPerSec * Math.PI) / 180);
+        starMat.opacity =
+          starBase * (1 + Math.sin(t * STARS.twinkleHz * Math.PI * 2) * STARS.twinkle);
+      }
 
       // Slow breathing + a gentle drift at idle.
       const breathe = reduced ? 0 : Math.sin(t * 0.62) * 0.011 + Math.sin(t * 0.29) * 0.006;

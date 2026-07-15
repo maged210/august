@@ -273,6 +273,20 @@ body::after {
 .boot-zulu {
   opacity: 0.5;
 }
+/* After boot the HUD folds to that single quiet line — the identity block
+   collapses once (page.tsx BootHud, HUD_COLLAPSE_MS) and never re-expands;
+   the clock glides up as the block closes. */
+.boot-lines {
+  overflow: hidden;
+  max-height: 64px; /* 3 lines at 9px/1.5 ≈ 41px — headroom, never clips */
+  transition:
+    max-height 700ms var(--ease),
+    opacity 500ms var(--ease);
+}
+.boot-lines-out {
+  max-height: 0;
+  opacity: 0;
+}
 
 /* Corner frame ticks — thin L-marks framing the stage. Precise periphery, calm
    centre (Westworld/Bloomberg). Above the grain, below the dock + boot HUD. */
@@ -660,7 +674,7 @@ body::after {
   color: var(--bone);
 }
 .desk-boot-line {
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.2em;
   opacity: 0.6;
   margin-bottom: 8px;
@@ -1080,6 +1094,7 @@ body::after {
 }
 .t-last {
   color: var(--bone);
+  opacity: var(--desk-num-dim, 0.92); /* comfort: bone numerals one step dimmer */
   text-align: right;
 }
 .t-chg {
@@ -1118,6 +1133,7 @@ body::after {
 }
 .kv-list li span:last-child {
   color: var(--bone);
+  opacity: var(--desk-num-dim, 0.92); /* comfort: bone numerals one step dimmer */
 }
 .econ-list li {
   display: grid;
@@ -1707,7 +1723,7 @@ body::after {
 }
 .mkt-status-text {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ash);
@@ -1762,7 +1778,7 @@ body::after {
 .lvl-note {
   margin-top: 10px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ash);
@@ -1781,7 +1797,7 @@ body::after {
 }
 .sent-label {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ash);
@@ -1794,7 +1810,7 @@ body::after {
 }
 .sent-sub {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px; /* comfort floor (was 10px) */
   color: var(--steel);
   letter-spacing: 0.1em;
 }
@@ -1849,7 +1865,7 @@ body::after {
 .flow-note {
   margin-top: 10px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.06em;
   color: var(--ash);
   opacity: 0.6;
@@ -1905,7 +1921,7 @@ body::after {
 .desk-note {
   margin-top: 10px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.06em;
   color: var(--ash);
   opacity: 0.6;
@@ -1940,7 +1956,7 @@ body::after {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
 .desk-glyph {
-  font-size: 10px;
+  font-size: 11px; /* comfort floor (was 10px) */
   color: var(--ash);
 }
 .desk-tkr {
@@ -1950,7 +1966,7 @@ body::after {
 }
 .desk-stat {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ash);
@@ -1971,7 +1987,7 @@ body::after {
   flex-wrap: wrap;
   gap: 4px 14px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px; /* comfort floor (was 10px) */
   letter-spacing: 0.06em;
   color: var(--ash);
   opacity: 0.85;
@@ -1985,7 +2001,7 @@ body::after {
   display: inline-block;
   margin-top: 6px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */
   color: var(--steel);
   text-decoration: none;
 }
@@ -2004,7 +2020,7 @@ body::after {
   font-family: var(--font-mono), ui-monospace, monospace;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  font-size: 10px;
+  font-size: 11px; /* comfort floor (was 10px) */
   color: var(--bone);
   border: 1px solid var(--steel);
   border-radius: var(--r-sm);
@@ -2056,7 +2072,7 @@ body::after {
   color: var(--bone);
 }
 .arch-chev {
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   opacity: 0.6;
 }
 
@@ -2081,7 +2097,7 @@ body::after {
   justify-content: space-between;
 }
 .chart-title {
-  font-size: 9.5px;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */
   letter-spacing: 0.16em;
   color: var(--bone);
 }
@@ -2091,7 +2107,7 @@ body::after {
 }
 .tf {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
+  font-size: 10.5px; /* comfort floor (was 9px) */
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ash);
@@ -2121,7 +2137,7 @@ body::after {
   display: grid;
   place-items: center;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px; /* comfort floor (was 10px) */
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ash);
@@ -2864,9 +2880,9 @@ body {
 
 /* ---- mobile pass (~390px) ---- */
 @media (max-width: 480px) {
-  /* HUD condenses to essentials: location + live clock */
-  .boot-hud > div:nth-child(1),
-  .boot-hud > div:nth-child(2) {
+  /* HUD condenses to essentials: location + live clock (until the block folds) */
+  .boot-lines > div:nth-child(1),
+  .boot-lines > div:nth-child(2) {
     display: none;
   }
   .deck-indicators {
@@ -3075,6 +3091,23 @@ body {
   z-index: 1;
 }
 
+/* Optical centring — the fixed chrome is bottom-heavy (word-rail + composer
+   band ≈128px vs ~40px of top chrome), which left the orb reading low. Lift
+   the whole orb block (canvas + telemetry + centre label together — they must
+   never separate) by half that imbalance. THE tunable: */
+.presence-surface {
+  --presence-lift: clamp(24px, 5vh, 44px);
+}
+.presence-surface .presence-3d,
+.presence-surface .telemetry {
+  transform: translateY(calc(var(--presence-lift) * -1));
+}
+/* Inside the brief's right-hand stack the pulse keeps its own dock geometry —
+   the lift applies only to the orb composition. */
+.presence-stack {
+  --presence-lift: 0px;
+}
+
 /* Radial telemetry overlay — decorative, non-interactive, fades in on boot. */
 .telemetry {
   position: absolute;
@@ -3123,18 +3156,20 @@ body {
   z-index: 3;
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+/* Presence-scoped brightness step (these literals sit over the dark orb in
+   both themes — deliberately NOT the global --bone/--ash tokens). */
 .presence-center-t1 {
   font-size: 16px;
   letter-spacing: 0.42em;
   text-indent: 0.42em;
-  color: rgba(233, 239, 246, 0.92);
+  color: rgba(233, 239, 246, 0.98);
 }
 .presence-center-t2 {
   margin-top: 7px;
   font-size: 9px;
   letter-spacing: 0.34em;
   text-indent: 0.34em;
-  color: rgba(233, 239, 246, 0.5);
+  color: rgba(233, 239, 246, 0.62);
 }
 
 /* Day awareness — one restrained line under the state readout. A hair warmer than
@@ -3145,7 +3180,7 @@ body {
   font-size: 8.5px;
   letter-spacing: 0.26em;
   text-indent: 0.26em;
-  color: rgb(var(--steel-rgb) / 0.82); /* steel accent — an awareness, not chrome */
+  color: rgb(var(--steel-rgb) / 0.92); /* steel accent — an awareness, not chrome */
   white-space: nowrap;
   max-width: 62vw;
   overflow: hidden;
@@ -3200,8 +3235,9 @@ body {
 }
 
 /* Word-rail — the four surfaces as one quiet mono line above the composer band.
-   The readouts' navigation reduced to language: ash words, the current surface
-   a touch brighter. Very quiet — it should read like an inscription. */
+   The readouts' navigation reduced to language: dimmed-bone words (one step up
+   from the old ash — theme-safe), the current surface a touch brighter. Still
+   quiet — it should read like an inscription. */
 .presence-rail {
   position: absolute;
   left: 50%;
@@ -3237,7 +3273,7 @@ body {
   font-size: 11px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--ash);
+  color: var(--bone);
   opacity: 0.62;
   transition:
     color var(--dur-fast) var(--ease-snappy),
@@ -3272,7 +3308,8 @@ body {
 .pulse-card {
   position: absolute;
   left: 50%;
-  top: min(calc(50% + 30vmin), calc(100% - 212px));
+  /* Hangs off the orb — follows the orb block's optical lift (0 in the stack). */
+  top: min(calc(50% + 30vmin - var(--presence-lift, 0px)), calc(100% - 212px));
   transform: translateX(-50%);
   width: min(340px, calc(100vw - 48px));
   z-index: 7;
