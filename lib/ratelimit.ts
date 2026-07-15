@@ -26,7 +26,7 @@ function getRedis(): Redis {
 
 type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
-  | "intelMutate" | "intelProcess" | "intelAsk"
+  | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
   | "threads" | "watchlist" | "feeds";
 
@@ -43,6 +43,8 @@ const LIMITS: Record<RouteKey, number> = {
   intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
   intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
   intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
+  intelRole: 30,   // owner/auth signal — one cheap session read per page load
+  intelFeed: 30,   // public published-ideas feed — served from a 45s cache
   push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
   day: 30,    // Google Calendar today-view — server-cached, Presence polls it
   draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft

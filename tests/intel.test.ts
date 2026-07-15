@@ -19,7 +19,21 @@ import { normalizeOptionIdea, numberSupported, type RawOptionIdea } from "../lib
 import { pickExpiration, passesLiquidity, effLiquidity, priceOf, convictionFor } from "../lib/intel/candidates.ts";
 import { mergeOptionSettings } from "../lib/intel/option-settings.ts";
 import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
-import type { OptionIdea } from "../lib/intel/types.ts";
+import type { BriefIdea, DailyBrief, IntelVideo, OptionIdea } from "../lib/intel/types.ts";
+import { redactBrief } from "../lib/intel/redact.ts";
+import {
+  applyPublish,
+  applyUnpublish,
+  buildFeedCards,
+  FEED_FORBIDDEN_KEYS,
+  PUBLIC_ATTRIBUTION,
+  PUBLISHED_CAP,
+  refreshSnapshots,
+  snapshotFromTracked,
+  type PublishedEntry,
+} from "../lib/intel/publish.ts";
+import { applySnapshot, newTrackedIdea } from "../lib/intel/tracker.ts";
+import { decideVideoMerge, isSoftDuplicate, normalizeVideoTitle, SOFT_DUP_WINDOW_MS } from "../lib/intel/store.ts";
 
 test("parseYouTubeUrl: watch URL → video id", () => {
   assert.deepEqual(parseYouTubeUrl("https://www.youtube.com/watch?v=Eo_B71QWJa8"), { kind: "video", videoId: "Eo_B71QWJa8" });
@@ -432,4 +446,272 @@ test("mergeOptionSettings: inverted DTE band is swapped so min<=max; unknown key
   assert.equal(out.preferredDteMin, 10);
   assert.equal(out.preferredDteMax, 50);
   assert.equal("bogusKey" in out, false);
+});
+
+// --- source privacy (redact.ts) --------------------------------------------
+const ATTRIBUTION_KEYS = ["channelTitle", "videoTitle", "videoId", "sourceSegmentIds", "sourceStartSeconds", "sourceEndSeconds", "sourceChapterId", "chapter"];
+
+const mkBriefIdea = (over: Partial<BriefIdea> = {}): BriefIdea => ({
+  id: "ti_1",
+  ticker: "NVDA",
+  assetName: "NVIDIA",
+  assetType: "equity",
+  direction: "bullish",
+  timeHorizon: "swing",
+  thesis: "Breakout continuation over 120",
+  catalysts: ["earnings"],
+  entry: { value: 120, type: "price", text: "over 120" },
+  invalidation: { value: 112, type: "price", text: "loses 112" },
+  targets: [{ value: 130, type: "price", text: "130" }],
+  risks: [],
+  confidence: 0.8,
+  explicitness: "explicit",
+  creatorDesignation: { isFavoriteSetup: true, isPrediction: false, isWatchlistMention: false },
+  sourceSegmentIds: ["s1"],
+  sourceStartSeconds: 61,
+  sourceEndSeconds: 88,
+  chapter: { title: "Setups", normalizedCategory: "favorite_setups", startSeconds: 60, endSeconds: 90, priority: "high", creatorDefined: true },
+  videoId: "vid123",
+  channelTitle: "Some Channel",
+  videoTitle: "Nightly prep",
+  rankScore: 7.5,
+  rankFactors: [],
+  ...over,
+});
+
+const mkBrief = (): DailyBrief => ({
+  date: "2026-06-30",
+  generatedAt: 1,
+  marketSession: "closed",
+  posture: "risk-on",
+  whatChanged: "",
+  whatMattersTomorrow: "",
+  read60: "Sixty seconds.",
+  bullCase: "",
+  bearCase: "",
+  watchAtOpen: "",
+  invalidation: "",
+  topIdeas: [mkBriefIdea()],
+  creatorFavorites: [mkBriefIdea()],
+  consensus: [{
+    ticker: "NVDA",
+    direction: "bullish",
+    sources: [{ channelTitle: "Some Channel", videoId: "vid123", startSeconds: 61, explicitness: "explicit" }],
+    agreement: "single",
+    note: "Single source.",
+  }],
+  levels: [{
+    id: "lv1", instrument: "NQ", level: 20000, levelText: "20000", type: "support", explanation: "prior low",
+    videoId: "vid123", sourceSegmentIds: ["s2"], sourceStartSeconds: 120, sourceEndSeconds: 130,
+  }],
+  catalysts: [{
+    name: "CPI", eventTime: null, importance: "high", affectedTickers: [], creatorMentioned: true,
+    externallyVerified: false, explanation: "", sourceSegmentIds: ["s3"],
+  }],
+  risks: [],
+  sourceVideoIds: ["vid123"],
+  grounded: true,
+  options: {
+    bestCreatorPlays: [],
+    augustCandidates: [{ ...mkOption({ origin: "august_candidate", videoId: "vid123" }), channelTitle: "Some Channel", videoTitle: "Nightly prep", rankScore: 50, rankFactors: [] }],
+    directionalOnly: [],
+    optionsRisk: [],
+    providerStatus: "delayed",
+    consensus: [],
+  },
+});
+
+test("redactBrief: no attribution or evidence field survives (exports carry no sources)", () => {
+  const json = JSON.stringify(redactBrief(mkBrief()));
+  for (const key of ATTRIBUTION_KEYS) {
+    assert.equal(json.includes(`"${key}"`), false, `"${key}" must not survive redaction`);
+  }
+  assert.equal(json.includes("Some Channel"), false);
+  assert.equal(json.includes("vid123"), false);
+});
+
+test("redactBrief: keeps the tradecraft, empties sourceVideoIds, never mutates input", () => {
+  const brief = mkBrief();
+  const out = redactBrief(brief);
+  assert.equal(out.topIdeas[0].ticker, "NVDA");
+  assert.equal(out.topIdeas[0].entry.text, "over 120");
+  assert.equal(out.topIdeas[0].rankScore, 7.5);
+  assert.equal(out.consensus[0].sources.length, 1); // the agreement signal survives
+  assert.equal(out.options?.augustCandidates.length, 1);
+  assert.deepEqual(out.sourceVideoIds, []);
+  // the stored brief keeps full provenance for the owner
+  assert.equal(brief.topIdeas[0].channelTitle, "Some Channel");
+  assert.deepEqual(brief.sourceVideoIds, ["vid123"]);
+});
+
+// --- publish + public feed (publish.ts) -------------------------------------
+const T0 = Date.UTC(2026, 0, 5, 15);
+
+test("snapshotFromTracked: whitelist only — captures the core, carries zero source linkage", () => {
+  const t = newTrackedIdea(mkBriefIdea(), T0);
+  const snap = snapshotFromTracked(t);
+  const json = JSON.stringify(snap);
+  for (const key of [...ATTRIBUTION_KEYS, "sourceRefs", "conflictKey", "ideaIds"]) {
+    assert.equal(json.includes(`"${key}"`), false, `"${key}" must not appear in a publish snapshot`);
+  }
+  assert.equal(snap.ticker, "NVDA");
+  assert.equal(snap.statedLevels.trigger?.value, 120);
+  assert.equal(snap.firstMentionAt, T0);
+  assert.equal(snap.statusAtPublish, "ARMED");
+});
+
+test("applyPublish: idempotent, and an unknown tracked id is rejected (never invented)", () => {
+  const t = newTrackedIdea(mkBriefIdea(), T0);
+  const first = applyPublish([], [t], t.id, T0 + 1);
+  assert.ok(first.ok && !first.already && first.entries.length === 1);
+  const again = applyPublish(first.ok ? first.entries : [], [t], t.id, T0 + 2);
+  assert.ok(again.ok && again.already && again.entries.length === 1);
+  assert.equal(again.ok && again.entries[0].publishedAt, T0 + 1); // original publish time survives
+  const missing = applyPublish([], [t], "nope", T0);
+  assert.deepEqual(missing, { ok: false, error: "tracked_not_found" });
+});
+
+test("applyPublish: cap holds at PUBLISHED_CAP — oldest published falls out", () => {
+  const t = newTrackedIdea(mkBriefIdea(), T0);
+  const snap = snapshotFromTracked(t);
+  const entries: PublishedEntry[] = Array.from({ length: PUBLISHED_CAP }, (_, i) => ({
+    trackedId: `old_${i}`,
+    publishedAt: i + 1,
+    snapshot: snap,
+  }));
+  const res = applyPublish(entries, [t], t.id, T0);
+  assert.ok(res.ok && !res.already);
+  assert.equal(res.ok && res.entries.length, PUBLISHED_CAP);
+  assert.equal(res.ok && res.evicted.length, 1);
+  assert.equal(res.ok && res.evicted[0].trackedId, "old_0"); // oldest publishedAt out
+  assert.ok(res.ok && res.entries.some((e) => e.trackedId === t.id));
+});
+
+test("applyUnpublish: idempotent — reports whether anything was removed", () => {
+  const t = newTrackedIdea(mkBriefIdea(), T0);
+  const pub = applyPublish([], [t], t.id, T0);
+  const entries = pub.ok ? pub.entries : [];
+  const removed = applyUnpublish(entries, t.id);
+  assert.equal(removed.removed, true);
+  assert.equal(removed.entries.length, 0);
+  const again = applyUnpublish(removed.entries, t.id);
+  assert.equal(again.removed, false);
+});
+
+test("feed: serialized JSON carries ZERO source attribution; attribution is fixed to AUGUST DESK", () => {
+  const armed = newTrackedIdea(mkBriefIdea(), T0);
+  const triggered = { ...applySnapshot(armed, { at: T0 + 10_000, price: 121 }, { force: true }), conflictKey: "Some Channel|NVDA|bullish" };
+  assert.equal(triggered.status, "TRIGGERED"); // precondition: real transition, real history
+  const pub = applyPublish([], [triggered], triggered.id, T0 + 20_000);
+  const cards = buildFeedCards(pub.ok ? pub.entries : [], [triggered], {
+    NVDA: { price: 121.5, prevClose: 118, chgPct: 2.9, closes: [118, 120, 121.5] },
+  });
+  assert.equal(cards.length, 1);
+  const json = JSON.stringify(cards);
+  for (const key of FEED_FORBIDDEN_KEYS) {
+    assert.equal(json.includes(`"${key}"`), false, `"${key}" must not appear in the public feed`);
+  }
+  assert.equal(json.includes("Some Channel"), false);
+  assert.equal(json.includes("vid123"), false);
+  const card = cards[0];
+  assert.equal(card.attribution, PUBLIC_ATTRIBUTION);
+  assert.equal(card.conflict, true); // the marker survives; the key (with the channel) does not
+  assert.equal(card.status, "TRIGGERED");
+  assert.equal(card.pnl?.kind, "since_called"); // P&L only from the STATED trigger
+  assert.equal(card.quote?.price, 121.5);
+  assert.ok(card.statusHistory.length >= 2 && card.priceHistory.length === 1);
+});
+
+test("feed: an evicted tracker row renders from the snapshot — stale-marked, nothing invented", () => {
+  const t = newTrackedIdea(mkBriefIdea(), T0);
+  const pub = applyPublish([], [t], t.id, T0 + 1);
+  const cards = buildFeedCards(pub.ok ? pub.entries : [], []); // tracker row gone
+  assert.equal(cards.length, 1);
+  const card = cards[0];
+  assert.equal(card.live, false);
+  assert.equal(card.evicted, true);
+  assert.equal(card.stale, true);
+  assert.equal(card.status, "ARMED"); // last known state, from the snapshot
+  assert.equal(card.pnl, null); // absent data stays absent
+  assert.equal(card.lastQuote, null);
+  assert.deepEqual(card.statusHistory, []);
+  assert.deepEqual(card.priceHistory, []);
+  assert.equal(card.extremes, null);
+  assert.equal(card.ticker, "NVDA");
+  assert.equal(card.statedLevels.trigger?.value, 120);
+});
+
+test("refreshSnapshots: lastKnownStatus follows the live row, so eviction shows real last state", () => {
+  const armed = newTrackedIdea(mkBriefIdea(), T0);
+  const pub = applyPublish([], [armed], armed.id, T0 + 1);
+  const entries = pub.ok ? pub.entries : [];
+  const triggered = applySnapshot(armed, { at: T0 + 10_000, price: 121 }, { force: true });
+  const refreshed = refreshSnapshots(entries, new Map([[triggered.id, triggered]]));
+  assert.equal(refreshed.changed, true);
+  assert.equal(refreshed.entries[0].snapshot.lastKnownStatus, "TRIGGERED");
+  const again = refreshSnapshots(refreshed.entries, new Map([[triggered.id, triggered]]));
+  assert.equal(again.changed, false);
+  const cards = buildFeedCards(refreshed.entries, []); // now evicted
+  assert.equal(cards[0].status, "TRIGGERED");
+});
+
+test("feed sort: TRIGGERED → ARMED → ACTIVE → terminal, deterministic id tie-break", () => {
+  const armedA = newTrackedIdea(mkBriefIdea({ id: "t_a2", ticker: "AAA" }), T0);
+  const armedB = newTrackedIdea(mkBriefIdea({ id: "t_a9", ticker: "BBB" }), T0);
+  const trig = applySnapshot(newTrackedIdea(mkBriefIdea({ id: "t_trig", ticker: "CCC" }), T0), { at: T0 + 10_000, price: 121 }, { force: true });
+  const active = newTrackedIdea(mkBriefIdea({ id: "t_act", ticker: "DDD", entry: { value: null, type: "unspecified", text: "Not specified" } }), T0);
+  let hit = applySnapshot(newTrackedIdea(mkBriefIdea({ id: "t_hit", ticker: "EEE" }), T0), { at: T0 + 10_000, price: 121 }, { force: true });
+  hit = applySnapshot(hit, { at: T0 + 20_000, price: 131 }, { force: true });
+  assert.equal(hit.status, "TARGET_HIT");
+  const tracked = [armedA, armedB, trig, active, hit];
+  let entries: PublishedEntry[] = [];
+  for (const t of [hit, active, armedB, armedA, trig]) {
+    const r = applyPublish(entries, tracked, t.id, T0 + 100); // identical publish time → id tie-break
+    entries = r.ok ? r.entries : entries;
+  }
+  const order = buildFeedCards(entries, tracked).map((c) => `${c.status}:${c.id}`);
+  assert.deepEqual(order, ["TRIGGERED:t_trig", "ARMED:t_a2", "ARMED:t_a9", "ACTIVE:t_act", "TARGET_HIT:t_hit"]);
+});
+
+// --- video soft-dedup (store.ts pure helpers) --------------------------------
+const mkVideo = (over: Partial<IntelVideo> = {}): IntelVideo => ({
+  videoId: "v_orig",
+  sourceId: "UC1",
+  channelId: "UC1",
+  channelTitle: "Chan",
+  title: "Morning LIVE: SPY levels 6/25",
+  publishedAt: T0,
+  liveState: "uploaded",
+  status: "transcript_pending",
+  transcriptStatus: "pending",
+  created: T0,
+  updated: T0,
+  ...over,
+});
+
+test("normalizeVideoTitle: case/punctuation/whitespace/emoji-insensitive key", () => {
+  assert.equal(normalizeVideoTitle("  Morning LIVE: SPY levels — 6/25!! \u{1F534}"), normalizeVideoTitle("morning live spy levels 6 25"));
+  assert.notEqual(normalizeVideoTitle("SPY levels 6/25"), normalizeVideoTitle("SPY levels 6/26"));
+  assert.equal(normalizeVideoTitle("\u{1F534}\u{1F534}"), ""); // symbols-only titles never match anything
+});
+
+test("decideVideoMerge: richer status wins regardless of argument order", () => {
+  const analyzed = mkVideo({ videoId: "vA", status: "analyzed" });
+  const pending = mkVideo({ videoId: "vB", status: "transcript_pending", publishedAt: T0 + 3_600_000 });
+  assert.equal(decideVideoMerge(analyzed, pending)?.keep.videoId, "vA");
+  assert.equal(decideVideoMerge(pending, analyzed)?.keep.videoId, "vA");
+  const ready = mkVideo({ videoId: "vC", status: "transcript_ready" });
+  assert.equal(decideVideoMerge(ready, pending)?.keep.videoId, "vC"); // analyzed > transcript_ready > pending
+  const older = mkVideo({ videoId: "vD", created: T0 - 1 });
+  assert.equal(decideVideoMerge(older, mkVideo({ videoId: "vE" }))?.keep.videoId, "vD"); // tie → older record
+});
+
+test("decideVideoMerge: only same-channel same-title twins inside the 48h window", () => {
+  const base = mkVideo({ videoId: "v1" });
+  assert.equal(decideVideoMerge(base, mkVideo({ videoId: "v2", publishedAt: T0 + SOFT_DUP_WINDOW_MS + 1 })), null); // outside window
+  assert.equal(decideVideoMerge(base, mkVideo({ videoId: "v3", channelId: "UC2" })), null); // different channel
+  assert.equal(decideVideoMerge(base, mkVideo({ videoId: "v4", channelId: undefined })), null); // unknown channel never merges
+  assert.equal(decideVideoMerge(base, mkVideo({ videoId: "v5", title: "totally different show" })), null);
+  assert.equal(decideVideoMerge(base, base), null); // same id is not a twin
+  assert.equal(isSoftDuplicate(base, mkVideo({ videoId: "v6", publishedAt: T0 + SOFT_DUP_WINDOW_MS })), true); // boundary inclusive
 });

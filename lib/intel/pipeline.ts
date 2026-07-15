@@ -8,12 +8,16 @@ import { getQuote } from "@/lib/markets";
 import { computeOptionMetrics, findContract, getOptionChain, quoteFromContract, spreadPct, type ChainResult } from "./options";
 import { dte } from "./dates";
 import {
+  decideVideoMerge,
   getAnalysis,
   getSource,
   getTranscript,
   getVideo,
   listSources,
+  listVideos,
   logIntel,
+  mergeVideoTwins,
+  normalizeVideoTitle,
   saveAnalysis,
   saveChapters,
   saveSource,
@@ -95,7 +99,10 @@ async function upsertVideoFromMeta(sourceId: string, videoId: string): Promise<I
   const publishedAt = meta.publishedAt ?? existing?.publishedAt ?? Date.now();
   const v: IntelVideo = {
     videoId,
-    sourceId,
+    // Debris fix: an already-known video KEEPS its source. Re-adding a channel
+    // video as a one-off must not retarget it to v_<id> (the old channel's
+    // source:<id>:videos set is only ever SADDed, so retargeting stranded ids).
+    sourceId: existing?.sourceId ?? sourceId,
     channelId: meta.channelId ?? existing?.channelId,
     channelTitle: meta.author ?? existing?.channelTitle,
     title: meta.title || existing?.title || videoId,
@@ -116,7 +123,62 @@ async function upsertVideoFromMeta(sourceId: string, videoId: string): Promise<I
     updated: Date.now(),
   };
   await saveVideo(v);
-  return v;
+  // Discovery-time dedup: a livestream and its VOD re-upload share a channel,
+  // title, and ~publish window but have distinct ids — absorb such twins NOW
+  // so they never persist (the richer record wins; see store.decideVideoMerge).
+  return absorbSoftTwins(v);
+}
+
+/** Merge any soft-duplicate twins of `v` that already exist in the library.
+ *  Returns the surviving record (which may be the pre-existing twin when it is
+ *  the richer of the pair). Best-effort — a failure never blocks discovery. */
+async function absorbSoftTwins(v: IntelVideo): Promise<IntelVideo> {
+  if (!v.channelId) return v;
+  try {
+    let current = v;
+    const key = normalizeVideoTitle(current.title);
+    if (!key) return current;
+    for (const other of await listVideos()) {
+      const decision = decideVideoMerge(current, other);
+      if (!decision) continue;
+      current = await mergeVideoTwins(decision.keep, decision.absorb);
+    }
+    return current;
+  } catch {
+    return v;
+  }
+}
+
+/** One-shot idempotent sweep over the whole library: group by channel +
+ *  normalized title, merge every soft-duplicate pair. Runs at the start of
+ *  every sync — a clean library makes it a read-only pass. */
+export async function sweepVideoTwins(): Promise<number> {
+  const all = await listVideos();
+  const groups = new Map<string, IntelVideo[]>();
+  for (const v of all) {
+    if (!v.channelId) continue;
+    const key = `${v.channelId}|${normalizeVideoTitle(v.title)}`;
+    const g = groups.get(key);
+    if (g) g.push(v);
+    else groups.set(key, [v]);
+  }
+  let merges = 0;
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const absorbed = new Set<string>();
+    for (let i = 0; i < g.length; i++) {
+      for (let j = i + 1; j < g.length; j++) {
+        if (absorbed.has(g[i].videoId) || absorbed.has(g[j].videoId)) continue;
+        const decision = decideVideoMerge(g[i], g[j]);
+        if (!decision) continue;
+        await mergeVideoTwins(decision.keep, decision.absorb);
+        absorbed.add(decision.absorb.videoId);
+        merges++;
+      }
+    }
+  }
+  if (merges) await logIntel("video_twin_sweep", { merged: merges });
+  return merges;
 }
 
 // --- enrichment (live quotes, kept separate from creator-quoted values) ---
@@ -390,6 +452,13 @@ export async function reprocessVideo(videoId: string): Promise<ProcessResult> {
 export type SyncResult = { checked: number; discovered: number; details: string[] };
 
 export async function syncSources(): Promise<SyncResult> {
+  // Idempotent hygiene pass first: merge any livestream/VOD twins already in
+  // the library so discovery below starts from a clean slate.
+  try {
+    await sweepVideoTwins();
+  } catch {
+    /* best-effort — sync must not fail on hygiene */
+  }
   const sources = (await listSources()).filter((s) => s.enabled && s.type === "channel" && s.uploadsPlaylistId);
   let discovered = 0;
   const details: string[] = [];

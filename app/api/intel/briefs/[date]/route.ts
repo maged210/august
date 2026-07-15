@@ -5,6 +5,7 @@ import { generateBrief } from "@/lib/intel/brief";
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { etDateKey } from "@/lib/intel/session";
 import { gateIntelMutationOrRespond } from "@/lib/user-scope";
+import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +17,11 @@ function resolveDate(d: string): string {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ date: string }> }): Promise<Response> {
   const { date } = await ctx.params;
-  const brief = await getBrief(resolveDate(date));
-  return Response.json({ brief: brief ?? null });
+  // Source privacy: the stored brief keeps full provenance for the OWNER's
+  // audit trail; every other reader gets the redacted view (tradecraft intact,
+  // zero attribution). ownerView is the contract for which one this is.
+  const [brief, ownerView] = await Promise.all([getBrief(resolveDate(date)), intelOwnerView()]);
+  return Response.json({ brief: brief ? (ownerView ? brief : redactBrief(brief)) : null, ownerView });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ date: string }> }): Promise<Response> {

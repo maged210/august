@@ -327,11 +327,11 @@ export function briefToMarkdown(b: DailyBrief): string {
   if (b.bearCase) L.push(`**Bear case:** ${b.bearCase}`, "");
   if (b.creatorFavorites.length) {
     L.push("## Creator Favorites");
-    for (const i of b.creatorFavorites) L.push(`- **${i.ticker}** (${i.direction}, ${i.channelTitle}) — ${i.thesis} | entry: ${i.entry.text} | invalidation: ${i.invalidation.text}`);
+    for (const i of b.creatorFavorites) L.push(`- **${i.ticker}** (${i.direction}${i.channelTitle ? `, ${i.channelTitle}` : ""}) — ${i.thesis} | entry: ${i.entry.text} | invalidation: ${i.invalidation.text}`);
     L.push("");
   }
   L.push("## Top Ideas");
-  for (const i of b.topIdeas) L.push(`- **${i.ticker}** ${i.direction} [${i.timeHorizon}] (${i.channelTitle}, score ${i.rankScore}) — ${i.thesis}`);
+  for (const i of b.topIdeas) L.push(`- **${i.ticker}** ${i.direction} [${i.timeHorizon}] (${i.channelTitle ? `${i.channelTitle}, ` : ""}score ${i.rankScore}) — ${i.thesis}`);
   if (b.options && (b.options.bestCreatorPlays.length || b.options.augustCandidates.length || b.options.directionalOnly.length)) {
     const o = b.options;
     const legStr = (i: { legs: { action: string; optionType: string; strike: number | null; expiration: string | null }[] }) =>
@@ -339,7 +339,7 @@ export function briefToMarkdown(b: DailyBrief): string {
     L.push("", "## Tonight's Options Brief", `_Options provider: ${o.providerStatus} (delayed, no Greeks). Scores reflect fit + data quality, not expected profit._`);
     if (o.bestCreatorPlays.length) {
       L.push("", "### Creator Options Plays");
-      for (const i of o.bestCreatorPlays) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (${i.channelTitle}, score ${i.rankScore}) — ${legStr(i)}${i.quotedPremium !== null ? ` | creator premium ${i.quotedPremium}` : ""}`);
+      for (const i of o.bestCreatorPlays) L.push(`- **${i.underlyingSymbol}** ${i.strategyType} (${i.channelTitle ? `${i.channelTitle}, ` : ""}score ${i.rankScore}) — ${legStr(i)}${i.quotedPremium !== null ? ` | creator premium ${i.quotedPremium}` : ""}`);
     }
     if (o.augustCandidates.length) {
       L.push("", "### AUGUST Options Candidates _(AUGUST-generated — not creator recommendations, not advice)_");
@@ -347,7 +347,7 @@ export function briefToMarkdown(b: DailyBrief): string {
     }
     if (o.directionalOnly.length) {
       L.push("", "### Directional Setups Without a Contract");
-      for (const i of o.directionalOnly) L.push(`- **${i.underlyingSymbol}** ${i.direction} (${i.channelTitle}) — directional thesis; exact options contract not specified.`);
+      for (const i of o.directionalOnly) L.push(`- **${i.underlyingSymbol}** ${i.direction}${i.channelTitle ? ` (${i.channelTitle})` : ""} — directional thesis; exact options contract not specified.`);
     }
   }
   L.push("", "## Levels");

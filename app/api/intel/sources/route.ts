@@ -8,6 +8,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
+  // The source roster IS the watched-channel list — owner-only (source privacy:
+  // published output must read as AUGUST's, never reveal who is watched).
+  // 401 signed-out / 403 non-owner when auth is configured; open otherwise.
+  const denied = await gateIntelMutationOrRespond();
+  if (denied) return denied;
   return Response.json({ sources: await listSources() });
 }
 

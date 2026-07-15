@@ -5,6 +5,7 @@ import { getBrief, intelStorageConfigured, listSources, listVideos } from "@/lib
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { youtubeApiConfigured } from "@/lib/intel/youtube";
 import { etClock, etDateKey, etNiceDate, marketSession, SESSION_LABEL } from "@/lib/intel/session";
+import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,12 @@ export async function GET(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
   const date = etDateKey();
-  const [sources, videos, brief] = await Promise.all([listSources(), listVideos(), getBrief(date)]);
+  const [sources, videos, brief, ownerView] = await Promise.all([
+    listSources(),
+    listVideos(),
+    getBrief(date),
+    intelOwnerView(),
+  ]);
   const lastSync = sources.reduce((m, s) => Math.max(m, s.lastChecked), 0);
   const lastProcessed = videos.reduce((m, v) => Math.max(m, v.status === "analyzed" ? v.updated : 0), 0);
 
@@ -28,8 +34,11 @@ export async function GET(req: Request): Promise<Response> {
     lastSync,
     lastBriefAt: brief?.generatedAt ?? 0,
     lastProcessed,
-    sources,
-    videos,
-    brief: brief ?? null,
+    // Source privacy: sources + videos ARE the attribution (who is watched) —
+    // non-owners get none of them, and the brief only in its redacted form.
+    sources: ownerView ? sources : [],
+    videos: ownerView ? videos : [],
+    brief: brief ? (ownerView ? brief : redactBrief(brief)) : null,
+    ownerView,
   });
 }
