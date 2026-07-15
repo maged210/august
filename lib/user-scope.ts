@@ -163,6 +163,43 @@ export async function gateIntelMutationOrRespond(): Promise<Response | null> {
   );
 }
 
+/** The role-signal payload GET /api/intel/role serves. Booleans ONLY — no
+ *  identity values (no email, no name) ever ride this shape. */
+export type IntelRoleSignal = {
+  owner: boolean;
+  authConfigured: boolean;
+  /** a session exists at all — false covers BOTH "signed out" and
+   *  "auth unconfigured" (there is no session system to be signed into) */
+  signedIn: boolean;
+};
+
+/** PURE derivation of the role signal from a session read — kept out of the
+ *  route module so the four gate paths stay unit-testable (route files may
+ *  only export route fields). Must stay in lockstep with
+ *  checkIntelMutateAllowed: owner === gate.ok for every input.
+ *
+ *    auth unconfigured        → { owner: true,  authConfigured: false, signedIn: false }
+ *    configured, signed out   → { owner: false, authConfigured: true,  signedIn: false }
+ *    configured, non-owner    → { owner: false, authConfigured: true,  signedIn: true  }
+ *    configured, owner        → { owner: true,  authConfigured: true,  signedIn: true  } */
+export function deriveIntelRole(read: {
+  configured: boolean;
+  email: string | null;
+}): IntelRoleSignal {
+  if (!read.configured) return { owner: true, authConfigured: false, signedIn: false };
+  return {
+    owner: read.email === OWNER_EMAIL,
+    authConfigured: true,
+    signedIn: read.email !== null,
+  };
+}
+
+/** Session-backed role signal — the one reader behind GET /api/intel/role and
+ *  the /feed page's owner-only OPEN DESK link. */
+export async function getIntelRoleSignal(): Promise<IntelRoleSignal> {
+  return deriveIntelRole(await readSession());
+}
+
 // ---------------------------------------------------------------------------
 // Redis (the standard lazy best-effort client, as in every other store)
 // ---------------------------------------------------------------------------

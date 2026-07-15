@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { signIn } from "next-auth/react";
 import type {
   BriefIdea,
   Chapter,
@@ -46,7 +47,10 @@ type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null
 // renders the optimistic owner chrome (unconfigured auth = single-user desk,
 // unchanged); a resolved non-owner strips desk controls entirely. Data privacy
 // never depends on this flag — every mutation/read is gated server-side.
-type Role = { owner: boolean; authConfigured: boolean };
+// `signedIn` (additive): a session exists at all — the ONLY thing it gates is
+// the SIGN IN affordance ({ authConfigured: true, signedIn: false } = a
+// signed-out visitor who could be the owner; give them a path in).
+type Role = { owner: boolean; authConfigured: boolean; signedIn: boolean };
 
 // publish curation control for one tracked idea (owner-only; null hides it)
 type PublishCtl = { published: boolean; busy: boolean; onToggle: () => void };
@@ -299,7 +303,7 @@ function InspChart({ closes, live, trigger, tone }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner,
+  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner, signedOut,
 }: {
   data: Overview;
   clock: string;
@@ -312,6 +316,9 @@ function PageHeader({
   fng: DeskFng | null;
   /** non-owner desks drop SOURCES + SYNC + BRIEF entirely (absent, not disabled) */
   owner: boolean;
+  /** role RESOLVED as { authConfigured: true, signedIn: false } — the one case
+   *  that renders SIGN IN (a signed-in non-owner gets nothing new) */
+  signedOut: boolean;
 }) {
   const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
   for (const idea of blotter) {
@@ -397,7 +404,24 @@ function PageHeader({
             </button>
           )}
           <a className="rd-btn" href="/api/intel/export/today">EXPORT</a>
+          {/* owner preview of the public /feed page — the audience URL */}
+          {owner && (
+            <a className="rd-btn" href="/feed" target="_blank" rel="noopener noreferrer">VIEW FEED</a>
+          )}
           <a className="rd-btn" href="/">← AUGUST</a>
+          {/* signed-out visitor on a configured instance: give the owner (or
+              anyone) a path in — Google identity-only, callback to /intel.
+              `redirectTo` is next-auth v5's option (callbackUrl deprecated);
+              same client pattern as HomeLanding's signOut. */}
+          {signedOut && (
+            <button
+              type="button"
+              className="rd-btn rd-btn-acc"
+              onClick={() => void signIn("google", { redirectTo: "/intel" })}
+            >
+              SIGN IN
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -3738,6 +3762,10 @@ export default function IntelDashboard() {
   // desk); a resolved non-owner strips SOURCES/SYNC/BRIEF/publish entirely.
   const [role, setRole] = useState<Role | null>(null);
   const owner = role?.owner ?? true;
+  // SIGN IN renders ONLY on a RESOLVED { authConfigured: true, signedIn: false }
+  // role — never optimistically (an unconfigured instance has no sign-in to
+  // offer, and a signed-in non-owner is a visitor: nothing new for them).
+  const signedOut = role !== null && role.authConfigured && !role.signedIn;
   // mirror for pollers (fetchTracker) so a known non-owner never spams a
   // guaranteed-401 endpoint from the 30s interval
   const ownerRef = useRef(true);
@@ -3849,7 +3877,7 @@ export default function IntelDashboard() {
         const j = (await r.json()) as Partial<Role>;
         if (!alive || !r.ok || typeof j.owner !== "boolean") return;
         ownerRef.current = j.owner;
-        setRole({ owner: j.owner, authConfigured: !!j.authConfigured });
+        setRole({ owner: j.owner, authConfigured: !!j.authConfigured, signedIn: !!j.signedIn });
         if (!j.owner) return;
         const pr = await fetch("/api/intel/publish", { cache: "no-store" });
         const pj = await pr.json().catch(() => null);
@@ -4125,6 +4153,7 @@ export default function IntelDashboard() {
           onGenerateBrief={generateBrief}
           fng={desk?.fng ?? null}
           owner={owner}
+          signedOut={signedOut}
         />
         <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
         <LiveTape tape={fullTape} />
@@ -4355,6 +4384,11 @@ export default function IntelDashboard() {
           </div>
         )}
 
+        {/* quiet owner hint on the signed-out visitor desk (board footer area)
+            — honest text only; the SIGN IN action lives in the header */}
+        {signedOut && (
+          <div className="rd-owner-hint">Owner? Sign in to manage sources and publish.</div>
+        )}
         <div className="rd-disc" style={{ paddingBottom: 64 }}>
           AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>

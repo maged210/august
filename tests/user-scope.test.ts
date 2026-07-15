@@ -10,6 +10,7 @@ import {
   FEEDS_KEY,
   ONBOARDED_FLAG,
   OWNER_EMAIL,
+  deriveIntelRole,
   USERS_INDEX_KEY,
   USER_SEED,
   WATCHLIST_KEY,
@@ -121,6 +122,60 @@ test("AuthRequiredError carries a stable code and name", () => {
   assert.equal(err.name, "AuthRequiredError");
   assert.equal(err.code, "auth_required");
   assert.ok(err instanceof Error);
+});
+
+// ── deriveIntelRole: the four GET /api/intel/role gate paths ────────────────
+
+test("deriveIntelRole: unconfigured auth keeps the single-user owner desk", () => {
+  // The unconfigured fallback must be untouched: owner chrome, no sign-in
+  // affordance (signedIn: false — there is no session system to sign into).
+  assert.deepEqual(deriveIntelRole({ configured: false, email: null }), {
+    owner: true,
+    authConfigured: false,
+    signedIn: false,
+  });
+});
+
+test("deriveIntelRole: configured + signed out → visitor with a sign-in path", () => {
+  assert.deepEqual(deriveIntelRole({ configured: true, email: null }), {
+    owner: false,
+    authConfigured: true,
+    signedIn: false,
+  });
+});
+
+test("deriveIntelRole: configured + non-owner session → signed-in visitor", () => {
+  assert.deepEqual(deriveIntelRole({ configured: true, email: "viv@example.com" }), {
+    owner: false,
+    authConfigured: true,
+    signedIn: true,
+  });
+});
+
+test("deriveIntelRole: configured + owner session → owner desk", () => {
+  assert.deepEqual(deriveIntelRole({ configured: true, email: OWNER_EMAIL }), {
+    owner: true,
+    authConfigured: true,
+    signedIn: true,
+  });
+});
+
+test("deriveIntelRole: owner stays in lockstep with checkIntelMutateAllowed", () => {
+  // Contract: role.owner === gate.ok for every session shape — the desk's
+  // owner chrome and the server's mutation gate must never disagree.
+  const cases: { configured: boolean; email: string | null; gateOk: boolean }[] = [
+    { configured: false, email: null, gateOk: true },
+    { configured: true, email: null, gateOk: false },
+    { configured: true, email: "viv@example.com", gateOk: false },
+    { configured: true, email: OWNER_EMAIL, gateOk: true },
+  ];
+  for (const c of cases) {
+    assert.equal(
+      deriveIntelRole({ configured: c.configured, email: c.email }).owner,
+      c.gateOk,
+      JSON.stringify(c),
+    );
+  }
 });
 
 // ── watchlist validation ─────────────────────────────────────────────────────

@@ -1717,6 +1717,16 @@ a.rd-cite:hover { text-decoration: underline; }
   margin-top: 24px;
 }
 
+/* quiet owner hint — signed-out visitor desks only ({ authConfigured: true,
+   signedIn: false }); sits above the disclaimer footer. Existing tokens only
+   (--rd-t-faint carries its own DAY DESK re-pin), so both themes resolve. */
+.rd-owner-hint {
+  padding: 10px 16px 0;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint); text-align: center;
+  margin-top: 16px;
+}
+
 /* ==========================================================================
    STAGE 5 — FOLD-INS (SPEC-wiring §2.5–2.7, SPEC-desktop §2.5)
    FngChip (bar2 meta) · SentimentGauge · SectorStrip · CatalystLine.
