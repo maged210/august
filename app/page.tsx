@@ -1320,8 +1320,17 @@ export default function Home() {
   const landingIdle = activeScreen === screenIndex("presence") && !conversationActive;
   // One input per screen: the landing has its ask bar, the intel desk has its
   // own contextual ASK AUGUST bar — the global composer dock renders on
-  // neither (unless a conversation is live, which the reply panel handles).
-  const intelPanelIdle = activeScreen === screenIndex("markets") && !conversationActive;
+  // neither unless a conversation is live ON SCREEN. conversationActive is
+  // deliberately sticky (messages persist all session so the landing stays in
+  // its conversation layout); the desk instead keys off what is visibly live —
+  // voice mode, an in-flight reply, or the reply card being open. A dismissed
+  // panel with old history must not summon the dock over the desk.
+  const conversationLive =
+    voiceMode ||
+    state === "thinking" ||
+    state === "speaking" ||
+    (panelOpen && (replyText !== "" || interim !== ""));
+  const intelPanelIdle = activeScreen === screenIndex("markets") && !conversationLive;
 
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
