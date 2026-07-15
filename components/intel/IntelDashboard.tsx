@@ -535,9 +535,9 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
   if (!playCount && !candCount) return null;
 
   const optDir = (o: OptionBriefIdea) =>
-    o.direction === "bullish" ? <span className="bl-bull-glyph" style={{ fontSize: 9 }}>▲ BULL</span>
-    : o.direction === "bearish" ? <span className="bl-bear-glyph" style={{ fontSize: 9 }}>▼ BEAR</span>
-    : <span className="bl-neut-glyph" style={{ fontSize: 9 }}>— NEUT</span>;
+    o.direction === "bullish" ? <span className="bl-bull-glyph" style={{ fontSize: 10.5 }}>▲ BULL</span>
+    : o.direction === "bearish" ? <span className="bl-bear-glyph" style={{ fontSize: 10.5 }}>▼ BEAR</span>
+    : <span className="bl-neut-glyph" style={{ fontSize: 10.5 }}>— NEUT</span>;
 
   const optContract = (o: OptionBriefIdea) => {
     if (!o.legs.length) return "—";
@@ -580,7 +580,7 @@ function OptionsIntelPanel({ brief }: { brief: DailyBrief | null }) {
                       <td className="bl-optx-td" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
                         {optContract(o)}
                       </td>
-                      <td className="bl-optx-td" style={{ fontSize: 10, opacity: 0.7 }}>
+                      <td className="bl-optx-td" style={{ fontSize: 10.5, opacity: 0.7 }}>
                         {o.quotedPremium != null ? `$${o.quotedPremium}` : <span className="bl-ns">∅ not sized</span>}
                         {o.expirationText?.resolved ? ` → ${o.expirationText.resolved}` : o.expirationText?.text ? ` → ${o.expirationText.text}` : ""}
                       </td>
@@ -638,7 +638,7 @@ function Inspector({ idea, trace }: { idea: BlotterIdea | null; trace: boolean }
     return (
       <div className="bl-insp-empty">
         <div>SELECT A ROW</div>
-        <div style={{ fontSize: 9.5 }}>to inspect the trade setup</div>
+        <div style={{ fontSize: 10.5 }}>to inspect the trade setup</div>
       </div>
     );
   }
@@ -665,7 +665,7 @@ function Inspector({ idea, trace }: { idea: BlotterIdea | null; trace: boolean }
         {idea.__fav && <span className="badge b-fav" style={{ fontSize: 8 }}>FAV</span>}
       </div>
       {idea.assetName && (
-        <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--ash)", opacity: 0.6, marginBottom: 6 }}>
+        <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--ash)", opacity: 0.6, marginBottom: 6 }}>
           {idea.assetName}
         </div>
       )}
@@ -944,7 +944,7 @@ function LeftPanel({
             return (
               <div key={l.id} className="bl-atopen-row">
                 <span className="bl-atopen-inst">{l.instrument}</span>
-                <span style={{ fontSize: 10, color: "var(--ash)", opacity: 0.7 }}>
+                <span style={{ fontSize: 10.5, color: "var(--ash)", opacity: 0.7 }}>
                   {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
                   {l.level != null && <b style={{ marginLeft: 4, color: "var(--bone)", fontFamily: "var(--font-mono), monospace" }}>${l.level}</b>}
                 </span>
@@ -974,10 +974,10 @@ function LeftPanel({
                   <div className="irow-title" style={{ fontSize: 11 }}>{s.title}</div>
                   <div className="irow-meta">
                     <span className={`badge ${s.status === "active" ? "b-verified" : "b-stale"}`} style={{ fontSize: 7.5 }}>{s.status}</span>
-                    <span style={{ fontSize: 9, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
+                    <span style={{ fontSize: 10.5, opacity: 0.55 }}>{ago(s.lastChecked)}</span>
                   </div>
                 </div>
-                <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 9 }} onClick={() => removeSource(s.id)}>✕</button>
+                <button className="ibtn ibtn-sm ibtn-ghost" style={{ fontSize: 10.5 }} onClick={() => removeSource(s.id)}>✕</button>
               </div>
             ))}
 
@@ -1147,7 +1147,7 @@ function CatalystRow({ c }: { c: IntelCatalyst }) {
       <b style={{ color: "var(--bone)" }}>{c.name}</b>{" "}
       <span className={`badge ${c.importance === "high" ? "b-bear" : c.importance === "medium" ? "b-watch" : "b-neutral"}`}>{c.importance}</span>{" "}
       <span className={`badge ${c.externallyVerified ? "b-verified" : "b-inferred"}`}>{c.externallyVerified ? "Verified" : "Creator claim"}</span>
-      {c.eventTime && <span className="intel-mono" style={{ color: "var(--ash)", fontSize: 10, marginLeft: 6 }}>{c.eventTime}</span>}
+      {c.eventTime && <span className="intel-mono" style={{ color: "var(--ash)", fontSize: 11, marginLeft: 6 }}>{c.eventTime}</span>}
       {c.affectedTickers.length > 0 && <span style={{ color: "var(--steel)", fontSize: 11 }}> · {c.affectedTickers.join(" ")}</span>}
     </div>
   );
@@ -1225,12 +1225,12 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
           <button className="ibtn ibtn-sm ibtn-primary" disabled={busy || !text.trim()} onClick={submit}>
             {busy ? "Adding…" : "Add"}
           </button>
-          <span className="inote" style={{ fontSize: 9 }}>Ctrl+Enter</span>
+          <span className="inote" style={{ fontSize: 10.5 }}>Ctrl+Enter</span>
         </div>
         {results.length > 0 && (
           <div className="iadd-results">
             {results.map((r, i) => (
-              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 9.5 }}>
+              <div key={i} className={`iadd-result ${r.status === "ok" ? "iadd-ok" : r.status === "exists" ? "iadd-exist" : "iadd-err"}`} style={{ fontSize: 10.5 }}>
                 {r.status === "ok" ? "✓" : r.status === "exists" ? "=" : "✗"} {r.label}
               </div>
             ))}
@@ -1369,7 +1369,7 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
         <button className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
         {!bundle ? <div className="iskel" /> : (
           <>
-            <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>VIDEO</div>
+            <div className="intel-mono" style={{ fontSize: 11, color: "var(--ash)" }}>VIDEO</div>
             <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>{v?.title}</h3>
             <div className="irow-meta" style={{ marginBottom: 12 }}>
               <span>{v?.channelTitle}</span>
@@ -2140,7 +2140,7 @@ export default function IntelDashboard() {
                     </div>
                   )}
                   {!config.ai && data.lastBriefAt === 0 && (
-                    <div className="inote iwarn" style={{ marginTop: 8, fontSize: 10 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
+                    <div className="inote iwarn" style={{ marginTop: 8, fontSize: 11 }}>needs ANTHROPIC_API_KEY to generate briefs</div>
                   )}
                 </div>
                 <AddSource onReload={load} />

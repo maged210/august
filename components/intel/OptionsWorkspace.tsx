@@ -290,7 +290,7 @@ function ContractPanel({ idea, onClose, onChart }: { idea: RankedOption; onClose
       <div className="idrawer-scrim" onClick={onClose} />
       <div className="idrawer" role="dialog" aria-modal="true" aria-label={`${idea.underlyingSymbol} option contract`}>
         <button ref={closeRef} className="idrawer-x" onClick={onClose} aria-label="Close">✕</button>
-        <div className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}>OPTION CONTRACT</div>
+        <div className="intel-mono" style={{ fontSize: 11, color: "var(--ash)" }}>OPTION CONTRACT</div>
         <h3 style={{ margin: "4px 0 6px", fontSize: 16 }}>
           <button type="button" className="idea-tkr" onClick={() => onChart(idea.underlyingSymbol)}>{idea.underlyingSymbol}</button>{" "}
           {idea.strategyType.replace(/_/g, " ")} · {idea.direction}
@@ -304,7 +304,7 @@ function ContractPanel({ idea, onClose, onChart }: { idea: RankedOption; onClose
               <span className="badge b-neutral">{l.action}</span> {l.quantity}× {l.optionType.toUpperCase()}
               {" · strike "}{l.strike ?? <span className="notspec">not specified</span>}
               {" · exp "}{l.expiration ?? <span className="notspec">not specified</span>}
-              {l.contractSymbol && <span className="intel-mono" style={{ fontSize: 10, color: "var(--ash)" }}> · {l.contractSymbol}</span>}
+              {l.contractSymbol && <span className="intel-mono" style={{ fontSize: 11, color: "var(--ash)" }}> · {l.contractSymbol}</span>}
             </div>
           ))}
         </div>

@@ -5,10 +5,23 @@
    scroll — Bloomberg screens don't page-scroll); ≤720px the shell itself
    scrolls. No new color system. */
 
+/* ── COMFORT PASS — typography & contrast only; no layout, no information lost.
+   · type floors: 9/9.5px mono → 10.5px · 10px → 11px (hierarchy preserved;
+     micro eyebrows/badges ≤8.5px untouched)
+   · blotter rows: +2px vertical padding · SETUP text line-height 1.5
+   · inspector: big price + thesis at reading line-height/tracking
+   · dimmers (the tunables below, on .desk-shell):
+       --desk-num-dim   bone numerals in blotter/tape (was full bone)
+       --desk-chip-dim  ARMED/TRIG/ACTIVE chips+pills (border+text together)
+       --desk-updown-dim tape ±% (pos/neg tokens at reduced alpha, no new colors) */
+
 /* ---- desk shell — the slide's frame ---- */
 .desk-shell {
   position: absolute;
   inset: 0;
+  --desk-num-dim: 0.92;
+  --desk-chip-dim: 0.85;
+  --desk-updown-dim: 0.85;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -73,6 +86,13 @@
   flex: none;
   margin-bottom: 10px;
 }
+/* comfort: the TAPE grid's ±% ride the same dim as the tape strip's, so TAPE
+   stays consistent with BOARD (pos/neg tokens at reduced alpha — no new colors). */
+.desk-shell td.t-chg.pos { color: rgb(var(--pos-rgb) / var(--desk-updown-dim, 0.85)); }
+.desk-shell td.t-chg.neg { color: rgb(var(--neg-rgb) / var(--desk-updown-dim, 0.85)); }
+/* comfort: desk panel headings ride the 10.5px floor (the shared .panel-head
+   in globals.css stays 9.5px for the other surfaces). */
+.desk-shell .panel-head { font-size: 10.5px; }
 
 .intel-wrap {
   max-width: 1180px;
@@ -139,7 +159,7 @@
 .ibtn-primary { background: rgb(var(--steel-rgb) / 0.25); border-color: rgb(var(--steel-rgb) / 0.5); }
 .ibtn-ghost { background: transparent; color: var(--ash); }
 .ibtn-ghost:hover { color: var(--bone); }
-.ibtn-sm { padding: 5px 9px; font-size: 10px; }
+.ibtn-sm { padding: 5px 9px; font-size: 10.5px; } /* comfort floor (was 10px; stays under .ibtn 11px) */
 
 /* layout */
 .intel-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 18px; }
@@ -168,13 +188,13 @@
 /* brief */
 .brief-read60 { font-size: 15px; line-height: 1.55; color: var(--bone); margin: 0 0 14px; }
 .brief-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 7px 0; border-top: 1px solid rgb(var(--steel-rgb) / 0.08); }
-.brief-row dt { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); opacity: 0.75; }
+.brief-row dt { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10.5px; /* comfort floor (was 9px) */ letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); opacity: 0.75; }
 .brief-row dd { margin: 0; font-size: 13px; line-height: 1.5; color: var(--bone); }
 .bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (max-width: 640px) { .bullbear { grid-template-columns: 1fr; } }
 .bull { border-left: 2px solid var(--pos); padding-left: 10px; }
 .bear { border-left: 2px solid var(--neg); padding-left: 10px; }
-.bull h4, .bear h4 { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.1em; margin: 0 0 4px; }
+.bull h4, .bear h4 { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; /* comfort floor (was 10px) */ letter-spacing: 0.1em; margin: 0 0 4px; }
 .bull h4 { color: var(--pos); } .bear h4 { color: var(--neg); }
 
 /* idea cards */
@@ -193,7 +213,7 @@
 .idea-f { font-size: 11px; }
 .idea-f span { font-family: var(--font-mono), ui-monospace, monospace; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ash); opacity: 0.7; display: block; }
 .idea-f b { font-weight: 500; color: var(--bone); }
-.idea-cite { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; color: var(--steel); margin-top: 8px; display: inline-flex; gap: 6px; align-items: center; text-decoration: none; }
+.idea-cite { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; /* comfort floor (was 10px) */ color: var(--steel); margin-top: 8px; display: inline-flex; gap: 6px; align-items: center; text-decoration: none; }
 .idea-cite:hover { color: var(--bone); }
 .notspec { color: var(--ash); opacity: 0.7; font-style: italic; }
 
@@ -228,7 +248,7 @@
 .irow-thumb { width: 64px; height: 36px; border-radius: 4px; object-fit: cover; background: rgb(var(--steel-rgb) / 0.12); }
 .irow-main { min-width: 0; }
 .irow-title { font-size: 12.5px; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.irow-meta { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; color: var(--ash); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+.irow-meta { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
 .irow-actions { display: flex; gap: 6px; }
 .irow.clickable { cursor: pointer; border-radius: 6px; }
 .irow.clickable:hover { background: rgb(var(--steel-rgb) / 0.06); }
@@ -254,9 +274,9 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .istate-err { color: var(--neg); }
 .iskel { height: 14px; border-radius: 4px; background: linear-gradient(90deg, rgb(var(--steel-rgb)/0.06), rgb(var(--steel-rgb)/0.14), rgb(var(--steel-rgb)/0.06)); background-size: 200% 100%; animation: ishimmer 1.3s infinite; margin: 8px 0; }
 @keyframes ishimmer { to { background-position: -200% 0; } }
-.inote { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; color: var(--ash); opacity: 0.8; }
+.inote { font-family: var(--font-mono), ui-monospace, monospace; font-size: 11px; /* comfort floor (was 10px) */ color: var(--ash); opacity: 0.8; }
 .iwarn { color: var(--amber, #c9a24a); }
-.idisc { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; color: var(--ash); opacity: 0.65; margin-top: 24px; text-align: center; }
+.idisc { font-family: var(--font-mono), ui-monospace, monospace; font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); opacity: 0.65; margin-top: 24px; text-align: center; }
 
 /* drawer */
 .idrawer-scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.55); z-index: 40; }
@@ -282,7 +302,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .ihistory { margin: 14px 0 10px; }
 .ihistory-label {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+  font-size: 10.5px; /* comfort floor (was 9px) */ letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--ash); opacity: 0.7; margin-bottom: 7px;
 }
 .ihistory-pills { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -394,13 +414,13 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .tvchart-skel, .tvchart-fallback { display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; height: 100%; min-height: 320px; color: var(--ash); font-size: 12px; padding: 20px; text-align: center; }
 /* overlaid on the still-mounted widget container so a transient failure can recover */
 .tvchart-overlay { position: absolute; inset: 0; background: rgb(10 11 13 / 0.92); z-index: 2; }
-.tvchart-attr { font-size: 9.5px; color: var(--ash); padding: 4px 10px; border-top: 1px solid rgb(var(--steel-rgb)/0.1); }
+.tvchart-attr { font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); padding: 4px 10px; border-top: 1px solid rgb(var(--steel-rgb)/0.1); }
 .tvchart-attr a { color: var(--steel); text-decoration: none; }
 .tvchart-attr a:hover { color: var(--bone); }
 
 .optx-rail { border: 1px solid rgb(var(--steel-rgb)/0.14); border-radius: 10px; padding: 10px 12px; background: rgb(0 0 0 / 0.18); overflow-y: auto; max-height: 460px; }
 .optx-rail-h { font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: 0.12em; color: var(--bone); margin-bottom: 4px; }
-.optx-rail-note { font-size: 10px; color: var(--ash); line-height: 1.45; margin-bottom: 8px; }
+.optx-rail-note { font-size: 11px; /* comfort floor (was 10px) */ color: var(--ash); line-height: 1.5; margin-bottom: 8px; }
 .optx-lvl { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-top: 1px solid rgb(var(--steel-rgb)/0.08); font-size: 12px; }
 .optx-lvl-px { font-family: var(--font-mono), monospace; color: var(--bone); min-width: 56px; }
 .optx-lvl-go { margin-left: auto; background: none; border: none; color: var(--steel); cursor: pointer; font-size: 12px; }
@@ -447,7 +467,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: flex; align-items: center; gap: 0;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.14);
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px; letter-spacing: 0.06em;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */ letter-spacing: 0.06em;
   overflow-x: auto; overflow-y: hidden;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -476,12 +496,15 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: flex; align-items: center; gap: 8px; padding: 5px 14px;
   border-right: 1px solid rgb(var(--steel-rgb) / 0.08);
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px; white-space: nowrap; flex-shrink: 0; cursor: default;
+  font-size: 11px; /* comfort: was 10.5px — keeps the price a half-step above sym/chg */
+  white-space: nowrap; flex-shrink: 0; cursor: default;
 }
-.bl-tape-sym { color: var(--ash); letter-spacing: 0.08em; font-size: 9.5px; text-transform: uppercase; }
-.bl-tape-px { color: var(--bone); }
-.bl-tape-chg { font-size: 9.5px; }
-.bl-tape-up { color: var(--pos); } .bl-tape-dn { color: var(--neg); }
+.bl-tape-sym { color: var(--ash); letter-spacing: 0.08em; font-size: 10.5px; /* comfort floor (was 9.5px) */ text-transform: uppercase; }
+.bl-tape-px { color: var(--bone); opacity: var(--desk-num-dim, 0.92); /* comfort: numerals one step off full bone */ }
+.bl-tape-chg { font-size: 10.5px; /* comfort floor (was 9.5px) */ }
+/* comfort: ±% desaturated one step — the existing pos/neg tokens at reduced alpha */
+.bl-tape-up { color: rgb(var(--pos-rgb) / var(--desk-updown-dim, 0.85)); }
+.bl-tape-dn { color: rgb(var(--neg-rgb) / var(--desk-updown-dim, 0.85)); }
 
 /* ---- tab nav ---- */
 .bl-tabs {
@@ -564,7 +587,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: grid; grid-template-columns: 44px auto 1fr auto; gap: 8px; align-items: center;
   padding: 4px 0; border-top: 1px solid rgb(var(--steel-rgb) / 0.07); font-size: 11px;
 }
-.bl-atopen-inst { font-family: var(--font-mono), monospace; color: var(--bone); font-size: 10px; }
+.bl-atopen-inst { font-family: var(--font-mono), monospace; color: var(--bone); font-size: 10.5px; /* comfort floor (was 10px; stays under the 11px price) */ }
 .bl-atopen-px { font-family: var(--font-mono), monospace; font-size: 11px; }
 .bl-lvl-r { color: var(--pos); } .bl-lvl-s { color: var(--neg); }
 .bl-lvl-ref { color: var(--ash); }
@@ -599,7 +622,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-row:hover { background: rgb(var(--steel-rgb) / 0.05); }
 .bl-row.selected { background: rgb(var(--steel-rgb) / 0.10); }
 .bl-row.selected td { color: var(--bone); }
-.bl-row td { padding: 6px 8px; font-size: 11.5px; vertical-align: middle; white-space: nowrap; }
+.bl-row td { padding: 8px 8px; /* comfort: +2px vertical (was 6px) */ font-size: 11.5px; vertical-align: middle; white-space: nowrap; }
 
 /* blotter cell types */
 .bl-c-status { width: 52px; }
@@ -608,21 +631,22 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-size: 12.5px; color: var(--bone); letter-spacing: 0.04em; width: 60px;
 }
 .bl-c-dir { width: 36px; text-align: center; }
-.bl-c-tf { font-family: var(--font-mono), monospace; font-size: 10px; color: var(--ash); width: 36px; }
-.bl-c-setup { color: var(--ash); font-size: 11px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
-.bl-c-num { font-family: var(--font-mono), monospace; font-size: 11px; width: 68px; }
-.bl-c-live { font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--bone); width: 70px; }
-.bl-c-delta { font-family: var(--font-mono), monospace; font-size: 10.5px; width: 58px; }
+.bl-c-tf { font-family: var(--font-mono), monospace; font-size: 11px; /* comfort floor (was 10px) */ color: var(--ash); width: 36px; }
+.bl-c-setup { color: var(--ash); font-size: 11px; line-height: 1.5; /* comfort: setup text breathes */ max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.bl-c-num { font-family: var(--font-mono), monospace; font-size: 11px; opacity: var(--desk-num-dim, 0.92); /* comfort: numerals one step off full bone */ width: 68px; }
+.bl-c-live { font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--bone); opacity: var(--desk-num-dim, 0.92); /* comfort */ width: 70px; }
+.bl-c-delta { font-family: var(--font-mono), monospace; font-size: 11px; /* comfort: was 10.5px — rides the tf/num step */ width: 58px; }
 .bl-c-spark { width: 64px; padding: 4px 8px; }
-.bl-c-conf { font-family: var(--font-mono), monospace; font-size: 10.5px; color: var(--ash); width: 42px; }
+.bl-c-conf { font-family: var(--font-mono), monospace; font-size: 11px; /* comfort: was 10.5px */ color: var(--ash); width: 42px; }
 .bl-c-evid { width: 52px; }
 
 /* status badges */
 .bl-st { display: inline-block; font-family: var(--font-mono), monospace; font-size: 8px; letter-spacing: 0.12em; padding: 2px 5px; border-radius: 3px; border: 1px solid; }
 .bl-st-watch { color: var(--ash); border-color: rgb(var(--steel-rgb) / 0.2); }
-.bl-st-trig { color: var(--pos); border-color: var(--pos); box-shadow: 0 0 6px rgb(var(--pos-rgb) / 0.27); }
+/* comfort: TRIG/ARMED/ACTIVE spoke at full token — border+text pulled back ~15% */
+.bl-st-trig { color: var(--pos); border-color: var(--pos); box-shadow: 0 0 6px rgb(var(--pos-rgb) / 0.27); opacity: var(--desk-chip-dim, 0.85); }
 .bl-st-invld { color: var(--neg); border-color: var(--neg); }
-.bl-st-arm { color: var(--amber, #c9a24a); border-color: var(--amber, #c9a24a); }
+.bl-st-arm { color: var(--amber, #c9a24a); border-color: var(--amber, #c9a24a); opacity: var(--desk-chip-dim, 0.85); }
 
 /* direction glyphs */
 .bl-bull-glyph { color: var(--pos); font-size: 11px; }
@@ -662,7 +686,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   font-size: 22px; letter-spacing: 0.06em; color: var(--bone); line-height: 1;
 }
 .bl-insp-badges { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 8px 0 12px; }
-.bl-insp-thesis { font-size: 12.5px; line-height: 1.55; color: var(--bone); margin: 0 0 14px; }
+.bl-insp-thesis { font-size: 12.5px; line-height: 1.6; letter-spacing: 0.01em; /* comfort: reading rhythm (was lh 1.55, tracking 0) */ color: var(--bone); margin: 0 0 14px; }
 .bl-insp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 .bl-insp-field { font-size: 11px; }
 .bl-insp-field-label {
@@ -682,7 +706,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-insp-evid { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ash); }
 .bl-insp-cite {
-  font-family: var(--font-mono), monospace; font-size: 10px; color: var(--steel);
+  font-family: var(--font-mono), monospace; font-size: 11px; /* comfort floor (was 10px) */ color: var(--steel);
   text-decoration: none; display: inline-flex; gap: 5px; align-items: center; margin-top: 10px;
 }
 .bl-insp-cite:hover { color: var(--bone); }
@@ -742,7 +766,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-spark-empty { font-family: var(--font-mono), monospace; color: var(--ash); opacity: 0.4; font-size: 11px; }
 
 /* ---- ACTIVE status (steel — the system's live-state accent) ---- */
-.bl-st-active { color: var(--steel); border-color: var(--steel); }
+.bl-st-active { color: var(--steel); border-color: var(--steel); opacity: var(--desk-chip-dim, 0.85); /* comfort */ }
 
 /* ---- PAGE HEADER (2 rows) ---- */
 .bl-head {
@@ -778,7 +802,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   flex-shrink: 0;
 }
 .bl-head-date {
-  font-family: var(--font-mono), monospace; font-size: 9.5px; color: var(--ash);
+  font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash);
   letter-spacing: 0.06em; flex-shrink: 0;
 }
 .bl-head-session {
@@ -788,7 +812,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-head-tabs { display: flex; gap: 0; margin-left: auto; flex-shrink: 0; }
 .bl-head-tab {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */ letter-spacing: 0.12em; text-transform: uppercase;
   padding: 5px 12px; border: 1px solid rgb(var(--steel-rgb) / 0.15);
   border-left: none; background: none; cursor: pointer;
   color: var(--ash); transition: color 0.12s, background 0.12s;
@@ -805,10 +829,11 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   display: flex; align-items: center; gap: 4px; flex-shrink: 0;
 }
 .bl-sp-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-.bl-sp-trig { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.33); background: rgb(var(--pos-rgb) / 0.07); }
+/* comfort: header pills follow the chip dim — border+text down ~15% together */
+.bl-sp-trig { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.33); background: rgb(var(--pos-rgb) / 0.07); opacity: var(--desk-chip-dim, 0.85); }
 .bl-sp-trig .bl-sp-dot { background: var(--pos); box-shadow: 0 0 4px rgb(var(--pos-rgb) / 0.53); }
-.bl-sp-arm { color: var(--amber, #c9a24a); border-color: rgb(var(--amber-rgb, 201 162 74) / 0.33); background: rgb(var(--amber-rgb, 201 162 74) / 0.07); }
-.bl-sp-active { color: var(--steel); border-color: rgb(var(--steel-rgb) / 0.33); background: rgb(var(--steel-rgb) / 0.07); }
+.bl-sp-arm { color: var(--amber, #c9a24a); border-color: rgb(var(--amber-rgb, 201 162 74) / 0.33); background: rgb(var(--amber-rgb, 201 162 74) / 0.07); opacity: var(--desk-chip-dim, 0.85); }
+.bl-sp-active { color: var(--steel); border-color: rgb(var(--steel-rgb) / 0.33); background: rgb(var(--steel-rgb) / 0.07); opacity: var(--desk-chip-dim, 0.85); }
 .bl-brief-age-pill {
   font-family: var(--font-mono), monospace; font-size: 8px; letter-spacing: 0.06em;
   color: var(--ash); border: 1px solid rgb(var(--steel-rgb)/0.15); border-radius: 3px;
@@ -820,11 +845,11 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-center-head {
   display: flex; align-items: center; gap: 8px; padding: 6px 12px;
   border-bottom: 1px solid rgb(var(--steel-rgb) / 0.10); flex-shrink: 0;
-  font-family: var(--font-mono), monospace; font-size: 9px; color: var(--ash);
+  font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9px) */ color: var(--ash);
   overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .bl-center-head::-webkit-scrollbar { display: none; }
-.bl-ch-title { color: var(--bone); font-size: 10.5px; letter-spacing: 0.1em; }
+.bl-ch-title { color: var(--bone); font-size: 11px; /* comfort: was 10.5px — stays above the row base */ letter-spacing: 0.1em; }
 .bl-ch-sep { opacity: 0.3; }
 .bl-preview-states { margin-left: auto; display: flex; gap: 3px; flex-shrink: 0; }
 .bl-ps {
@@ -849,16 +874,16 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 
 /* ---- TAPE watchlist section ---- */
 .bl-tape-watch { color: var(--ash); border-color: rgb(var(--steel-rgb)/0.15); }
-.bl-tape-sep { flex-shrink: 0; padding: 0 6px; color: var(--ash); opacity: 0.25; font-size: 10px; align-self: center; }
+.bl-tape-sep { flex-shrink: 0; padding: 0 6px; color: var(--ash); opacity: 0.25; font-size: 11px; /* comfort: rides the tape item size */ align-self: center; }
 
 /* ---- AT THE OPEN states ---- */
-.bl-cleared { color: var(--pos); font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
-.bl-broken { color: var(--neg); font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.08em; font-weight: 600; }
+.bl-cleared { color: var(--pos); font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9px) */ letter-spacing: 0.08em; font-weight: 600; }
+.bl-broken { color: var(--neg); font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9px) */ letter-spacing: 0.08em; font-weight: 600; }
 
 /* ---- INSPECTOR v2 ---- */
 .bl-insp-price-block { margin: 8px 0 12px; }
-.bl-insp-price-live { font-family: var(--font-mono), monospace; font-size: 9px; color: var(--ash); opacity: 0.55; letter-spacing: 0.08em; margin-bottom: 2px; }
-.bl-insp-price { font-family: var(--font-mono), monospace; font-size: 26px; color: var(--bone); line-height: 1; letter-spacing: 0.02em; }
+.bl-insp-price-live { font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9px) */ color: var(--ash); opacity: 0.55; letter-spacing: 0.08em; margin-bottom: 2px; }
+.bl-insp-price { font-family: var(--font-mono), monospace; font-size: 26px; color: var(--bone); line-height: 1.15; letter-spacing: 0.04em; /* comfort: the hero numeral gets air (was lh 1 / 0.02em) */ }
 .bl-insp-price-chg { font-family: var(--font-mono), monospace; font-size: 12px; margin-left: 6px; }
 .bl-insp-meta-grid {
   display: grid; grid-template-columns: auto auto auto auto; gap: 0;
@@ -875,19 +900,19 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-insp-meta-ev { font-family: var(--font-mono), monospace; font-size: 7.5px; color: var(--ash); }
 .bl-pa-section { margin: 10px 0; padding: 8px 10px; background: rgb(var(--steel-rgb)/0.04); border-radius: 4px; }
 .bl-pa-label { font-family: var(--font-mono), monospace; font-size: 7.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ash); opacity: 0.5; margin-bottom: 4px; }
-.bl-pa-note { font-size: 10px; color: var(--ash); opacity: 0.6; font-style: italic; }
+.bl-pa-note { font-size: 11px; /* comfort floor (was 10px) */ color: var(--ash); opacity: 0.6; font-style: italic; }
 .bl-lev-section { margin: 10px 0; }
 .bl-lev-section-head { font-family: var(--font-mono), monospace; font-size: 7.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ash); opacity: 0.5; margin-bottom: 8px; }
 .bl-lev-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .bl-lev-cell { font-size: 11px; }
 .bl-lev-cell-label { font-family: var(--font-mono), monospace; font-size: 7px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ash); opacity: 0.5; margin-bottom: 2px; display: flex; align-items: center; gap: 5px; }
 .bl-lev-cell-val { color: var(--bone); line-height: 1.45; font-size: 11px; }
-.bl-lev-cell-ns { color: var(--ash); opacity: 0.4; font-style: italic; font-size: 10px; font-family: var(--font-mono), monospace; }
+.bl-lev-cell-ns { color: var(--ash); opacity: 0.4; font-style: italic; font-size: 10.5px; /* comfort floor (was 10px; stays under the 11px value) */ font-family: var(--font-mono), monospace; }
 .bl-conf-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgb(var(--steel-rgb)/0.10); }
 .bl-conf-bar-wrap { flex: 1; height: 3px; background: rgb(var(--steel-rgb)/0.12); border-radius: 2px; overflow: hidden; }
 .bl-conf-bar-fill { height: 100%; background: var(--steel); border-radius: 2px; }
-.bl-conf-pct { font-family: var(--font-mono), monospace; font-size: 9px; color: var(--ash); flex-shrink: 0; }
-.bl-insp-cite2 { font-family: var(--font-mono), monospace; font-size: 9.5px; color: var(--ash); opacity: 0.55; margin-top: 4px; }
+.bl-conf-pct { font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9px) */ color: var(--ash); flex-shrink: 0; }
+.bl-insp-cite2 { font-family: var(--font-mono), monospace; font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); opacity: 0.55; margin-top: 4px; }
 
 /* ---- OPTIONS INTEL embedded panel ---- */
 .bl-optx {
@@ -900,7 +925,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   letter-spacing: 0.08em;
 }
 .bl-optx-toggle:hover { color: var(--bone); }
-.bl-optx-title { color: var(--bone); font-size: 9.5px; margin-right: 2px; }
+.bl-optx-title { color: var(--bone); font-size: 10.5px; /* comfort floor (was 9.5px) */ margin-right: 2px; }
 .bl-optx-counts { margin-left: auto; display: flex; gap: 4px; }
 .bl-optx-cp {
   font-size: 8px; padding: 1px 6px; border-radius: 3px;
@@ -919,7 +944,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
   text-transform: uppercase; color: var(--ash); opacity: 0.45;
   padding: 5px 8px 2px; border-top: 1px solid rgb(var(--steel-rgb)/0.07);
 }
-.bl-optx-foot { font-size: 9.5px; color: var(--ash); opacity: 0.45; padding: 5px 12px 8px; font-style: italic; }
+.bl-optx-foot { font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); opacity: 0.45; padding: 5px 12px 8px; font-style: italic; }
 
 /* ---- LEFT PANEL QUICK ACTIONS ---- */
 .bl-lp-actions {
@@ -945,12 +970,12 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 }
 .bl-txcard-step {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */ letter-spacing: 0.2em; text-transform: uppercase;
   color: var(--steel); margin-bottom: 8px; font-weight: 600;
 }
 .bl-txcard-how {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px; color: var(--ash); opacity: 0.6;
+  font-size: 10.5px; /* comfort floor (was 9px) */ color: var(--ash); opacity: 0.6;
   margin-bottom: 10px; letter-spacing: 0.03em;
 }
 .bl-txcard-ta { min-height: 90px; }
@@ -962,7 +987,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-src-step { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--bone); }
 .bl-src-stepn {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px; font-weight: 700;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */ font-weight: 700;
   width: 22px; height: 22px; border-radius: 50%;
   border: 1px solid rgb(var(--steel-rgb) / 0.45);
   display: flex; align-items: center; justify-content: center;
@@ -986,7 +1011,7 @@ textarea.iinput { resize: vertical; min-height: 120px; font-family: var(--font-m
 .bl-hist-pills { display: flex; flex-wrap: wrap; gap: 5px; }
 .bl-hist-empty {
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px; color: var(--ash); opacity: 0.4;
+  font-size: 10.5px; /* comfort floor (was 9.5px) */ color: var(--ash); opacity: 0.4;
 }
 
 /* ---- MOBILE SHELL (≤720px): the slide MAY scroll vertically — one page-like

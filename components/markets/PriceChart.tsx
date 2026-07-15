@@ -58,7 +58,7 @@ export default function PriceChart({ sym, kind, label }: Props) {
         textColor: pal.text,
         attributionLogo: false,
         fontFamily: "var(--font-mono), monospace",
-        fontSize: 10,
+        fontSize: 11, // comfort floor (was 10) — axis labels on the TAPE chart
       },
       grid: {
         vertLines: { color: pal.grid },
