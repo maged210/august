@@ -1,12 +1,69 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import IntelPanel from "@/components/command/IntelPanel";
 
 const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+// CARTO's light sibling of dark-matter — the same keyless basemap family.
+const LIGHT_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const EMPTY = { type: "FeatureCollection" as const, features: [] };
+
+// The World follows the app theme: "day" mirrors the [data-theme="light"]
+// .command-surface chrome in globals.css; "dark" serves data-theme dark AND
+// batman (the globe's dark skin — exactly the pre-theming look).
+type WorldTheme = "dark" | "day";
+function readWorldTheme(): WorldTheme {
+  return typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "light"
+    ? "day"
+    : "dark";
+}
+
+// Per-theme scene palette for everything painted ON the basemap. Day values are
+// derived from the app's warm-paper family (landing paper/ink + the intel desk's
+// DAY DESK ink ramps) — semantic meanings hold: quakes stay a cool→warning ramp,
+// aircraft stay steel, the night shade stays "darker than the map". Dark values
+// are the exact pre-theming literals.
+const SCENE = {
+  dark: {
+    style: DARK_STYLE,
+    sky: {
+      "sky-color": "#070d18",
+      "sky-horizon-blend": 0.5,
+      "horizon-color": "#24405c",
+      "horizon-fog-blend": 0.7,
+      "fog-color": "#05080f",
+      "fog-ground-blend": 0.4,
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 9, 0],
+    } as Record<string, unknown>,
+    night: { color: "#03050b", opacity: 0.5 },
+    quakeRamp: ["#5fd0c0", "#e0c24a", "#e8836a", "#ff5a44"],
+    quakeStroke: { color: "#eaf2f8", opacity: 0.6 },
+    plane: { fill: "#d4e6f6", glow: "rgba(150,200,240,0.95)" },
+  },
+  day: {
+    style: LIGHT_STYLE,
+    sky: {
+      "sky-color": "#b9cedd",
+      "sky-horizon-blend": 0.5,
+      "horizon-color": "#e9edee",
+      "horizon-fog-blend": 0.7,
+      "fog-color": "#f0efe9",
+      "fog-ground-blend": 0.4,
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 9, 0],
+    } as Record<string, unknown>,
+    // the night hemisphere reads as a soft ink dusk over paper
+    night: { color: "#232019", opacity: 0.24 },
+    // deepened ink hues keep the low→high warning ramp legible on positron
+    quakeRamp: ["#2e6b68", "#8a6420", "#b0503e", "#c0361c"],
+    quakeStroke: { color: "#f7f6f2", opacity: 0.75 },
+    // steel ink glyph, glow softened to an ink halo
+    plane: { fill: "#33506b", glow: "rgba(63,86,112,0.45)" },
+  },
+} as const;
 
 export type GlobeTarget = {
   lat: number;
@@ -52,16 +109,16 @@ function nightFeature(date: Date) {
 }
 
 // A small glowing aircraft glyph (canvas → map image), rotated by heading.
-function planeImage(): ImageData {
+function planeImage(theme: WorldTheme): ImageData {
   const s = 48;
   const c = document.createElement("canvas");
   c.width = c.height = s;
   const ctx = c.getContext("2d");
   if (!ctx) return new ImageData(s, s);
   ctx.translate(s / 2, s / 2);
-  ctx.shadowColor = "rgba(150,200,240,0.95)";
+  ctx.shadowColor = SCENE[theme].plane.glow;
   ctx.shadowBlur = 7;
-  ctx.fillStyle = "#d4e6f6";
+  ctx.fillStyle = SCENE[theme].plane.fill;
   ctx.beginPath();
   ctx.moveTo(0, -16);
   ctx.lineTo(13, 13);
@@ -71,6 +128,105 @@ function planeImage(): ImageData {
   ctx.fill();
   return ctx.getImageData(0, 0, s, s);
 }
+
+// --- LIVE rail — curated 24/7 broadcaster streams -----------------------------
+// Channel IDs verified against each channel page's canonical og:url /
+// RSS channel_id link (youtube.com/@handle, 2026-07). The durable
+// /embed/live_stream?channel=<ID> form always points at whatever stream the
+// channel is currently running; when a broadcaster is off-air YouTube renders
+// its own notice inside the iframe — honest, and the tile keeps working.
+const LIVE_CHANNELS = [
+  { id: "UCNye-wNBqNL5ZzHSJj3l8Bg", name: "Al Jazeera English" },
+  { id: "UCoMdktPbSTixAyNGwb-UYkQ", name: "Sky News" },
+  { id: "UCBi2mrWuNuyYy4gbM6fU18Q", name: "ABC News Live" },
+  { id: "UCIALMKvObZNtJ6AmdCLP7Lg", name: "Bloomberg Television" },
+  { id: "UCknLrEdhRCp1aegoMqRaCZg", name: "DW News" },
+] as const;
+
+// Collapsed by default to a small LIVE tab pinned just above the LAYERS chip;
+// expanding flies a panel UPWARD into the empty upper-left band (the tab never
+// moves under the pointer). Perf discipline: at rest a tile is a styled
+// poster — NO YouTube iframe, NO thumbnail fetch, zero network — and the
+// iframe (muted autoplay, the privacy-friendly nocookie host) exists in the
+// DOM only while its tile is the one playing; `playing` is a single id, so
+// loading a second stream unmounts the first, and the player renders as a
+// NON-scrolling block below the poster list so the video is never clipped by
+// the list's own scroll. State lives HERE and the component is memo'd with no
+// props, so neither the per-second HUD clock re-render of CommandGlobe nor
+// any rail interaction ever touches the map (the WebGL loop is unaffected).
+const LiveRail = memo(function LiveRail() {
+  const [open, setOpen] = useState(false);
+  const [playing, setPlaying] = useState<string | null>(null);
+  const playingChannel = LIVE_CHANNELS.find((ch) => ch.id === playing) ?? null;
+
+  return (
+    <div className={`command-live${open ? " open" : ""}`}>
+      {open ? (
+        <div className="command-live-panel">
+          <div className="command-live-list">
+            {LIVE_CHANNELS.map((ch) => (
+              <button
+                key={ch.id}
+                type="button"
+                className={`live-tile${playing === ch.id ? " on" : ""}`}
+                onClick={() => setPlaying((p) => (p === ch.id ? null : ch.id))}
+                title={playing === ch.id ? `Unload ${ch.name}` : `Play ${ch.name} (muted)`}
+              >
+                <span className="live-tile-dot" aria-hidden />
+                <span className="live-tile-name">{ch.name}</span>
+                <span className="live-tile-play" aria-hidden>
+                  {playing === ch.id ? "◼" : "▸"}
+                </span>
+              </button>
+            ))}
+          </div>
+          {playingChannel ? (
+            <div className="live-player">
+              <div className="live-player-bar">
+                <span className="live-tile-name">{playingChannel.name}</span>
+                <button
+                  type="button"
+                  className="live-player-x"
+                  onClick={() => setPlaying(null)}
+                  aria-label={`Unload ${playingChannel.name}`}
+                  title="Unload stream"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="live-player-frame">
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/live_stream?channel=${playingChannel.id}&autoplay=1&mute=1`}
+                  title={`${playingChannel.name} — live`}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                  referrerPolicy="strict-origin-when-cross-origin"
+                />
+              </div>
+            </div>
+          ) : null}
+          <div className="command-live-note">streams provided by their broadcasters</div>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="command-live-head"
+        onClick={() => {
+          setOpen((o) => !o);
+          setPlaying(null); // collapsing unloads any playing stream with it
+        }}
+        aria-expanded={open}
+        title={open ? "Hide live streams" : "Show live streams"}
+      >
+        <span className="command-live-glyph" aria-hidden />
+        <span>Live</span>
+        <span className="command-live-chev" aria-hidden>
+          {open ? "▾" : "▴"}
+        </span>
+      </button>
+    </div>
+  );
+});
 
 export default function CommandGlobe({ active, flyTo }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -88,12 +244,34 @@ export default function CommandGlobe({ active, flyTo }: Props) {
   // LAYERS rail starts collapsed so the globe is unobstructed by default.
   const [layersOpen, setLayersOpen] = useState(false);
 
+  // Theme plumbing: worldTheme drives the basemap; the refs let the style.load
+  // scene rebuild read the current theme / toggles / last data without closing
+  // over state. (Loaded ssr:false, so readWorldTheme sees the real attribute.)
+  const [worldTheme, setWorldTheme] = useState<WorldTheme>(readWorldTheme);
+  const themeRef = useRef(worldTheme);
+  const appliedThemeRef = useRef(worldTheme);
+  const layersRef = useRef(layers);
+  const quakesFcRef = useRef<FeatureCollection | null>(null);
+  const flightsFcRef = useRef<FeatureCollection | null>(null);
+
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
   useEffect(() => {
     targetRef.current = flyTo;
   }, [flyTo]);
+
+  // Follow live theme cycling: watch data-theme on <html>, exactly like
+  // TradingViewIntelChart does (layout.tsx stamps it pre-hydration; the home
+  // shell's toggle re-stamps it).
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setWorldTheme(readWorldTheme());
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
 
   // ZULU clock
   useEffect(() => {
@@ -132,13 +310,14 @@ export default function CommandGlobe({ active, flyTo }: Props) {
 
     const map = new maplibregl.Map({
       container: el,
-      style: DARK_STYLE,
+      style: SCENE[themeRef.current].style,
       center: [12, 24],
       zoom: 1.55,
       maxZoom: 14,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    appliedThemeRef.current = themeRef.current;
 
     map.on("error", (e) => {
       const msg = (e && (e as { error?: { message?: string } }).error?.message) || "map error";
@@ -148,6 +327,7 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     const loadQuakes = async () => {
       try {
         const fc = await (await fetch("/api/quakes", { cache: "no-store" })).json();
+        quakesFcRef.current = fc; // kept so a theme swap can reseed the fresh style
         (mapRef.current?.getSource("quakes") as maplibregl.GeoJSONSource | undefined)?.setData(fc);
         setQuakes(typeof fc.count === "number" ? fc.count : (fc.features?.length ?? 0));
       } catch {
@@ -180,6 +360,7 @@ export default function CommandGlobe({ active, flyTo }: Props) {
           /* fall back to global */
         }
         const fc = await (await fetch(url, { cache: "no-store" })).json();
+        flightsFcRef.current = fc; // kept so a theme swap can reseed the fresh style
         (m.getSource("flights") as maplibregl.GeoJSONSource | undefined)?.setData(fc);
         setAircraft(typeof fc.count === "number" ? fc.count : (fc.features?.length ?? 0));
       } catch {
@@ -198,83 +379,107 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     const ro = new ResizeObserver(() => mapRef.current?.resize());
     ro.observe(el);
 
-    map.on("load", () => {
-      // Globe projection + atmosphere — the cinematic limb glow (OSIRIS look). Cast
+    // Everything painted ON the basemap lives here, keyed by the current theme.
+    // Runs on the INITIAL style load and again after every setStyle (a theme
+    // swap), because setStyle drops all runtime sources/layers/images — the
+    // idempotence guards make the repeat calls safe either way.
+    const buildScene = () => {
+      const m = mapRef.current;
+      if (!m) return;
+      const scene = SCENE[themeRef.current];
+      // Globe projection + atmosphere — the cinematic limb glow (OSIRIS look).
+      // Both are style-scoped, so they must be re-applied per style load. Cast
       // defensively so a types mismatch can never break the build.
       try {
-        (map as unknown as { setProjection: (p: { type: string }) => void }).setProjection({
+        (m as unknown as { setProjection: (p: { type: string }) => void }).setProjection({
           type: "globe",
         });
       } catch {
         /* mercator fallback */
       }
       try {
-        (map as unknown as { setSky: (s: Record<string, unknown>) => void }).setSky({
-          "sky-color": "#070d18",
-          "sky-horizon-blend": 0.5,
-          "horizon-color": "#24405c",
-          "horizon-fog-blend": 0.7,
-          "fog-color": "#05080f",
-          "fog-ground-blend": 0.4,
-          "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.5, 9, 0],
-        });
+        (m as unknown as { setSky: (s: Record<string, unknown>) => void }).setSky(scene.sky);
       } catch {
         /* no atmosphere on this version */
       }
 
-      if (!map.hasImage("plane")) map.addImage("plane", planeImage(), { pixelRatio: 2 });
+      // The glyph color is theme-baked, so replace rather than keep a stale one.
+      if (m.hasImage("plane")) m.removeImage("plane");
+      m.addImage("plane", planeImage(themeRef.current), { pixelRatio: 2 });
 
-      map.addSource("night", { type: "geojson", data: EMPTY });
-      map.addSource("quakes", { type: "geojson", data: EMPTY });
-      map.addSource("flights", { type: "geojson", data: EMPTY });
+      // Reseed sources from the last-known data so a theme swap repaints
+      // instantly instead of waiting out the next poll.
+      if (!m.getSource("night"))
+        m.addSource("night", { type: "geojson", data: nightFeature(new Date()) });
+      if (!m.getSource("quakes"))
+        m.addSource("quakes", { type: "geojson", data: quakesFcRef.current ?? EMPTY });
+      if (!m.getSource("flights"))
+        m.addSource("flights", { type: "geojson", data: flightsFcRef.current ?? EMPTY });
 
-      map.addLayer({
-        id: "night",
-        type: "fill",
-        source: "night",
-        paint: { "fill-color": "#03050b", "fill-opacity": 0.5 },
-      });
-      map.addLayer({
-        id: "quakes",
-        type: "circle",
-        source: "quakes",
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["get", "mag"], 0, 3, 3, 7, 5, 16, 7, 30],
-          "circle-color": [
-            "interpolate",
-            ["linear"],
-            ["get", "mag"],
-            1,
-            "#5fd0c0",
-            3,
-            "#e0c24a",
-            5,
-            "#e8836a",
-            7,
-            "#ff5a44",
-          ],
-          "circle-opacity": 0.7,
-          "circle-blur": 0.45,
-          "circle-stroke-width": 1.2,
-          "circle-stroke-color": "#eaf2f8",
-          "circle-stroke-opacity": 0.6,
-        },
-      });
-      map.addLayer({
-        id: "flights",
-        type: "symbol",
-        source: "flights",
-        layout: {
-          "icon-image": "plane",
-          "icon-size": 0.5,
-          "icon-rotate": ["get", "heading"],
-          "icon-rotation-alignment": "map",
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-        },
-        paint: { "icon-opacity": 0.95 },
-      });
+      if (!m.getLayer("night"))
+        m.addLayer({
+          id: "night",
+          type: "fill",
+          source: "night",
+          paint: { "fill-color": scene.night.color, "fill-opacity": scene.night.opacity },
+        });
+      if (!m.getLayer("quakes"))
+        m.addLayer({
+          id: "quakes",
+          type: "circle",
+          source: "quakes",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["get", "mag"], 0, 3, 3, 7, 5, 16, 7, 30],
+            "circle-color": [
+              "interpolate",
+              ["linear"],
+              ["get", "mag"],
+              1,
+              scene.quakeRamp[0],
+              3,
+              scene.quakeRamp[1],
+              5,
+              scene.quakeRamp[2],
+              7,
+              scene.quakeRamp[3],
+            ],
+            "circle-opacity": 0.7,
+            "circle-blur": 0.45,
+            "circle-stroke-width": 1.2,
+            "circle-stroke-color": scene.quakeStroke.color,
+            "circle-stroke-opacity": scene.quakeStroke.opacity,
+          },
+        });
+      if (!m.getLayer("flights"))
+        m.addLayer({
+          id: "flights",
+          type: "symbol",
+          source: "flights",
+          layout: {
+            "icon-image": "plane",
+            "icon-size": 0.5,
+            "icon-rotate": ["get", "heading"],
+            "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+          },
+          paint: { "icon-opacity": 0.95 },
+        });
 
+      // A fresh style resets visibility — restore the user's layer toggles.
+      for (const key of ["flights", "quakes", "night"] as const) {
+        if (m.getLayer(key)) {
+          m.setLayoutProperty(key, "visibility", layersRef.current[key] ? "visible" : "none");
+        }
+      }
+    };
+    // "style.load" fires on the initial style AND after every setStyle, which is
+    // exactly the rebuild hook we need — maplibre's typed event map omits it
+    // (styledata is the typed cousin but fires on every style mutation), so cast
+    // like the setSky/setProjection shims above.
+    (map as unknown as { on: (t: string, cb: () => void) => void }).on("style.load", buildScene);
+
+    map.on("load", () => {
       readyRef.current = true;
       map.resize();
       updateNight();
@@ -311,6 +516,20 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyTo?.key]);
 
+  // Live theme flip → swap the basemap with setStyle rather than remounting the
+  // map keyed by theme: setStyle preserves the camera, any in-flight flyTo and
+  // the DOM marker, where a remount would snap the globe back to the home
+  // framing and refetch everything. setStyle drops all runtime sources/layers/
+  // images, so the style.load handler above rebuilds the scene from the
+  // last-known data refs the moment the new style is in.
+  useEffect(() => {
+    themeRef.current = worldTheme;
+    const map = mapRef.current;
+    if (!map || appliedThemeRef.current === worldTheme) return;
+    appliedThemeRef.current = worldTheme;
+    map.setStyle(SCENE[worldTheme].style);
+  }, [worldTheme]);
+
   // when the surface becomes active: size the map and start polling flights
   useEffect(() => {
     if (!active) return;
@@ -329,7 +548,9 @@ export default function CommandGlobe({ active, flyTo }: Props) {
     const map = mapRef.current;
     if (!map) return;
     const next = !layers[key];
-    setLayers((s) => ({ ...s, [key]: next }));
+    const nextLayers = { ...layers, [key]: next };
+    layersRef.current = nextLayers; // mirrored so a theme-swap rebuild restores it
+    setLayers(nextLayers);
     if (map.getLayer(key)) {
       map.setLayoutProperty(key, "visibility", next ? "visible" : "none");
     }
@@ -425,6 +646,9 @@ export default function CommandGlobe({ active, flyTo }: Props) {
           </div>
         ) : null}
       </div>
+
+      {/* LIVE broadcaster streams — collapsed tab clustered above LAYERS (left) */}
+      <LiveRail />
 
       {/* world news wires + AUGUST's synthesis, docked right (collapsible) */}
       <IntelPanel />

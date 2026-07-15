@@ -2134,13 +2134,15 @@ a.mb-btn {
 .command-surface {
   position: absolute;
   inset: 0;
-  background: #05060a;
+  background: var(--cmd-stage);
   overflow: hidden;
-  /* The globe stage is a dark space backdrop in BOTH themes, so its glass chrome
-     (HUD, layers rail, reset, intel panel) must stay light-on-dark even when the
-     app goes light. Re-pin the text/accent/hairline tokens to their dark values
-     for everything inside the surface — otherwise light theme flips them dark and
-     they vanish against the dark glass. */
+  /* The World follows the app theme. These defaults are the DARK skin and they
+     serve data-theme dark AND batman unchanged (batman's gold accent never
+     reaches the globe — the chrome stays steel, exactly as before). Re-pinning
+     the text/accent/hairline tokens here keeps the glass chrome light-on-dark
+     regardless of what the outer app tokens say; the DAY WORLD block further
+     down re-pins the same set to a warm-paper derivation under
+     [data-theme="light"]. The basemap swap lives in CommandGlobe.tsx. */
   --bone: #e8e6e1;
   --ash: #9a9a9f;
   --ink-mute: #6b6b72;
@@ -2150,6 +2152,13 @@ a.mb-btn {
   --steel-rgb: 110 140 168;
   --wash-rgb: 255 255 255;
   --line: rgb(var(--wash-rgb) / 0.08);
+  /* Surface-scoped chrome tokens — the former hard-coded dark-glass literals,
+     lifted so the DAY WORLD block can re-pin them (values byte-identical). */
+  --cmd-stage: #05060a;
+  --cmd-vignette: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
+  --cmd-chip-bg: rgba(10, 11, 14, 0.55);
+  --cmd-hud-bg: rgba(8, 8, 11, 0.55);
+  --cmd-panel-bg: rgba(8, 8, 11, 0.5);
 }
 .command-map {
   position: absolute;
@@ -2168,7 +2177,7 @@ a.mb-btn {
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
+  background: var(--cmd-vignette);
 }
 .command-reset {
   position: absolute;
@@ -2183,7 +2192,7 @@ a.mb-btn {
   letter-spacing: 0.2em;
   color: var(--ash);
   border: 1px solid var(--line);
-  background: rgba(10, 11, 14, 0.55);
+  background: var(--cmd-chip-bg);
   padding: 7px 12px;
   border-radius: 6px;
   backdrop-filter: blur(6px);
@@ -2206,7 +2215,7 @@ a.mb-btn {
   align-items: center;
   gap: 10px;
   padding: 7px 16px;
-  background: rgba(8, 8, 11, 0.55);
+  background: var(--cmd-hud-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   backdrop-filter: blur(6px);
@@ -2229,7 +2238,7 @@ a.mb-btn {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  background: rgba(8, 8, 11, 0.5);
+  background: var(--cmd-panel-bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   backdrop-filter: blur(6px);
@@ -2307,6 +2316,230 @@ a.mb-btn {
   white-space: nowrap;
 }
 
+/* LIVE rail — curated 24/7 broadcaster streams, clustered with the LAYERS
+   control on the left. Geometry: LAYERS is centered at top:50% and its
+   fully-EXPANDED list tops out around 50% − 65px, so this cluster is
+   BOTTOM-anchored at calc(50% + 78px) — its bottom edge sits at 50% − 78px,
+   always ≥ 13px clear of LAYERS in any state. The collapsed tab is therefore
+   pinned in place and the panel flies UPWARD into the upper-left band, which
+   carries no chrome in this x-range (HUD + deck dots are center-x, RESET is
+   right-x) — so the expanded rail can never cover LAYERS or the HUD. The
+   player is a NON-scrolling block (only the poster list scrolls), so a
+   playing video is never clipped; max-height on the cluster keeps its top
+   ≥ 16px from the surface top. Collapsed it is ONE small tab: no panel in
+   the DOM, zero network, zero layout beyond the chip itself. Every color
+   rides the .command-surface tokens (re-pinned above / in DAY WORLD), so
+   dark + batman keep the dark glass and light gets paper for free — no new
+   literals. Interactive targets are 44px (touch-sized). */
+.command-live {
+  position: absolute;
+  bottom: calc(50% + 78px);
+  left: calc(env(safe-area-inset-left, 0px) + 28px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: max(200px, calc(50% - 94px));
+}
+.command-live.open {
+  width: 240px;
+}
+.command-live-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px; /* thumb-sized */
+  background: var(--cmd-panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  padding: 0 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ash);
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease);
+}
+.command-live-head:hover {
+  color: var(--bone);
+}
+.command-live.open .command-live-head {
+  color: var(--bone);
+}
+.command-live-glyph {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--steel);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.8);
+}
+.command-live-chev {
+  margin-left: auto;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ash);
+}
+.command-live-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--cmd-panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+.command-live-list {
+  /* shrink weight 1000: the SCROLLABLE list gives up its height long before
+     the player frame does — flex shrinks proportionally, and the video should
+     only letterbox once the list is already down to scrolling */
+  flex: 0 1000 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+/* poster (rest state) — a styled row, deliberately NOT a YouTube thumbnail:
+   the rail makes no network request until a tile is clicked */
+.live-tile {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px; /* thumb-sized */
+  padding: 0 14px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  text-align: left;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.live-tile + .live-tile {
+  border-top: 1px solid var(--line);
+}
+.live-tile:hover,
+.live-tile.on {
+  color: var(--bone);
+}
+.live-tile:hover {
+  background: rgb(var(--wash-rgb) / 0.04);
+}
+.live-tile-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--ash);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.live-tile:hover .live-tile-dot,
+.live-tile.on .live-tile-dot {
+  background: var(--steel);
+  border-color: var(--steel);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.8);
+}
+.live-tile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-tile-play {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--ash);
+}
+/* player — name bar + the muted stream; one at most, never scroll-clipped */
+.live-player {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.live-player-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.live-player-x {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 44px;
+  min-height: 44px; /* thumb-sized */
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ash);
+  transition: color var(--dur-fast) var(--ease);
+}
+.live-player-x:hover {
+  color: var(--bone);
+}
+.live-player-frame {
+  position: relative;
+  width: 100%;
+  /* natural size is 16:9, but on short viewports the frame SHRINKS (YouTube
+     letterboxes inside) rather than getting clipped by the panel edge */
+  aspect-ratio: 16 / 9;
+  flex: 0 1 auto;
+  min-height: 96px;
+  background: var(--cmd-stage);
+}
+.live-player-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.command-live-note {
+  flex: 0 0 auto;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ash);
+  opacity: 0.8;
+}
+/* Phones: the LIVE rail is desktop-only for now — a DELIBERATE scope cut, not
+   an oversight: live video is a perf tax on phones and the phone deck chrome
+   (HUD + LAYERS + intel panel + composer) is already crowded. A mobile entry
+   point can come later. */
+@media (max-width: 700px) {
+  .command-live {
+    display: none;
+  }
+}
+
 /* INTEL panel — world news wires + AUGUST's synthesis, folded onto the globe as
    a collapsible glass panel docked right (a sibling to the left LAYERS rail).
    pointer-events live on the box only, so the globe keeps drag/zoom elsewhere. */
@@ -2321,7 +2554,7 @@ a.mb-btn {
   display: flex;
   flex-direction: column;
   max-height: min(72vh, 560px);
-  background: rgba(8, 8, 11, 0.5);
+  background: var(--cmd-panel-bg);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   backdrop-filter: blur(8px);
@@ -2403,10 +2636,68 @@ a.mb-btn {
 }
 
 .command-surface .maplibregl-ctrl-attrib {
-  background: rgba(8, 8, 11, 0.5);
+  background: var(--cmd-panel-bg);
 }
 .command-surface .maplibregl-ctrl-attrib a {
   color: var(--ash);
+}
+
+/* ==========================================================================
+   DAY WORLD — light-theme palette for the World surface. The globe follows
+   the app theme (user decision — supersedes the old "dark in both themes"
+   behavior): under data-theme="light" the .command-surface re-pins above
+   yield to a warm-paper derivation of the same chrome, in the landing's
+   family (paper #f5f4f1 / ink #16150f — .home-landing) with the ramp
+   discipline of the intel desk's DAY DESK block (app/intel/tokens.css):
+   ink text ramp, ink-alpha hairlines, the steel accent deepened to ink
+   strength, additive glows becoming soft ink washes. Dark and batman keep
+   the defaults above untouched — this block is the ONLY light-mode delta.
+   The basemap swap (dark-matter ↔ positron) lives in CommandGlobe.tsx.
+   ========================================================================== */
+:root[data-theme="light"] .command-surface {
+  /* text ramp — ink on paper (micro-mono ≥3:1, body ≥4.5:1 on paper glass) */
+  --bone: #1c1b17;
+  --ash: #57534a;
+  --ink-mute: #7b7870;
+  --graphite: #cfcec7;
+  --charcoal: #f2f1ec;
+  /* accent — steel deepened for paper (the app light theme's own steel) */
+  --steel: #3f5670;
+  --steel-rgb: 63 86 112;
+  /* hairlines — ink-alpha; direction flips, slightly stronger for the same
+     perceived weight on paper */
+  --wash-rgb: 30 28 22;
+  --line: rgb(var(--wash-rgb) / 0.14);
+  /* stage + glass — warm paper family over the positron basemap */
+  --cmd-stage: #e9e7e1;
+  --cmd-vignette: radial-gradient(circle at 50% 46%, transparent 50%, rgba(20, 22, 28, 0.12) 100%);
+  --cmd-chip-bg: rgba(247, 246, 241, 0.78);
+  --cmd-hud-bg: rgba(247, 246, 241, 0.78);
+  --cmd-panel-bg: rgba(247, 246, 241, 0.76);
+}
+/* Shared-global classes rendered inside the surface that carry dark literals —
+   day values are scoped here so the dark "look closer" overlay (Globe.tsx uses
+   the same .aug-marker) and the dark-panel feeds keep theirs. */
+:root[data-theme="light"] .command-surface .aug-marker-label {
+  background: rgba(250, 249, 246, 0.9);
+}
+:root[data-theme="light"] .command-surface .feed-link:hover {
+  text-decoration-color: rgba(28, 27, 23, 0.35);
+}
+:root[data-theme="light"] .command-surface .feed-list li {
+  /* wash at 0.04 is a dark-glass hairline; on paper it vanishes */
+  border-bottom-color: rgb(var(--wash-rgb) / 0.1);
+}
+:root[data-theme="light"] .command-surface .widget-state {
+  /* the dark literal is a white-family gray — illegible on paper */
+  color: rgba(87, 83, 74, 0.85);
+}
+:root[data-theme="light"] .command-surface .feed-time,
+:root[data-theme="light"] .command-surface .synth-meta {
+  /* ash at 0.45 lands under 3:1 on paper — trade the heavy fade for a
+     deeper ink at a light fade (same quiet register, legible) */
+  color: var(--ink-mute);
+  opacity: 0.9;
 }
 
 /* ======================================================================
