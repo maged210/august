@@ -12,8 +12,9 @@
 // definition: auth unconfigured → TRUE (byte-compatible single-user fallback),
 // signed-out or non-owner → FALSE.
 
-import type { ConsensusItem, DailyBrief } from "./types";
+import type { ConsensusItem, DailyBrief, IntelSource, IntelVideo } from "./types";
 import { checkIntelMutateAllowed } from "../user-scope";
+import { listSources, listVideos } from "./store";
 
 // Attribution + evidence keys, dropped wherever they occur on an idea-like item
 // (BriefIdea, OptionBriefIdea, IntelLevel, IntelCatalyst all carry a subset).
@@ -64,8 +65,100 @@ function redactConsensus(c: ConsensusItem): ConsensusItem {
   } as ConsensusItem;
 }
 
-/** Strip all source attribution from a brief. Never mutates the input. */
-export function redactBrief(brief: DailyBrief): DailyBrief {
+// ── prose scrub ──────────────────────────────────────────────────────────────
+// Field deletion can't catch attribution the LLM wrote INTO the prose (an
+// observed leak: a channel name inside brief.invalidation text). Given the
+// known identity strings — the brief's own channelTitle/videoTitle values
+// plus everything the store knows (sources' channelTitle/channelId/title,
+// videos' title/channelTitle/channelId) — every string field of the redacted
+// brief is walked generically and occurrences are replaced with "the source".
+// Word-boundary matching (alphanumeric lookarounds) so tickers and words that
+// merely CONTAIN an identity are never mangled; longest-string-first so a
+// full video title wins over a channel name it contains.
+
+/** Recursively apply `fn` to every string VALUE in a JSON-ish tree. Never
+ *  mutates the input — returns a mapped clone. */
+export function deepMapStrings<T>(input: T, fn: (s: string) => string): T {
+  if (typeof input === "string") return fn(input) as unknown as T;
+  if (Array.isArray(input)) {
+    return input.map((v) => deepMapStrings(v, fn)) as unknown as T;
+  }
+  if (input !== null && typeof input === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      out[k] = deepMapStrings(v, fn);
+    }
+    return out as T;
+  }
+  return input;
+}
+
+// Keys whose string values ARE source identity — harvested from the brief
+// itself before deletion, so even a caller that threads no store identities
+// still scrubs everything the brief could possibly name.
+const IDENTITY_VALUE_KEYS = new Set(["channelTitle", "videoTitle", "channelId", "videoId"]);
+
+/** Collect the brief's own identity strings (channel/video names + ids) from
+ *  anywhere in the tree — the union with the store-threaded strings feeds the
+ *  prose scrubber. */
+export function collectBriefIdentityStrings(brief: DailyBrief): string[] {
+  const found: string[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) { for (const v of node) walk(v); return; }
+    if (node !== null && typeof node === "object") {
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        if (IDENTITY_VALUE_KEYS.has(k) && typeof v === "string" && v) found.push(v);
+        walk(v);
+      }
+    }
+  };
+  walk(brief);
+  return found;
+}
+
+/** Identity strings the store knows — all sources' channel titles/ids/titles
+ *  and all videos' titles/channels. Threaded into redactBrief wherever its
+ *  output reaches a non-owner. */
+export function storeIdentityStrings(sources: IntelSource[], videos: IntelVideo[]): string[] {
+  const out: string[] = [];
+  for (const s of sources) {
+    if (s.channelTitle) out.push(s.channelTitle);
+    if (s.channelId) out.push(s.channelId);
+    if (s.title) out.push(s.title);
+  }
+  for (const v of videos) {
+    if (v.title) out.push(v.title);
+    if (v.channelTitle) out.push(v.channelTitle);
+    if (v.channelId) out.push(v.channelId);
+  }
+  return out;
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Build the case-insensitive, word-boundary, longest-first replacer for a
+ *  set of identity strings — or null when nothing usable was given.
+ *  Identities under 3 chars are dropped: replacing them would mangle
+ *  ordinary words/tickers, which the boundary rule exists to prevent. */
+export function buildIdentityScrubber(identities: readonly string[]): ((s: string) => string) | null {
+  const uniq = [...new Set(identities.map((s) => s.trim()).filter((s) => s.length >= 3))]
+    .sort((a, b) => b.length - a.length); // longest first — full titles win over names they contain
+  if (uniq.length === 0) return null;
+  const patterns = uniq.map(
+    (id) => new RegExp(`(?<![A-Za-z0-9])${escapeRe(id)}(?![A-Za-z0-9])`, "gi"),
+  );
+  return (s: string) => {
+    let out = s;
+    for (const re of patterns) out = out.replace(re, "the source");
+    return out;
+  };
+}
+
+/** Strip all source attribution from a brief — structural field deletion plus
+ *  the prose scrub over every remaining string field. `knownIdentities` are
+ *  the store-side identity strings (see storeIdentityStrings); the brief's
+ *  own attribution values are always included. Never mutates the input. */
+export function redactBrief(brief: DailyBrief, knownIdentities: readonly string[] = []): DailyBrief {
   const out: DailyBrief = {
     ...brief,
     topIdeas: brief.topIdeas.map(omitSource),
@@ -84,7 +177,24 @@ export function redactBrief(brief: DailyBrief): DailyBrief {
       consensus: brief.options.consensus.map(redactConsensus),
     };
   }
-  return out;
+  // prose scrub — identities gathered from the brief PRE-deletion ∪ threaded
+  // store identities, applied to every string field of the redacted tree
+  const scrub = buildIdentityScrubber([...collectBriefIdentityStrings(brief), ...knownIdentities]);
+  return scrub ? deepMapStrings(out, scrub) : out;
+}
+
+/** redactBrief for the wire: threads the STORE's identity strings (all
+ *  sources + videos) into the prose scrub. Use wherever a redacted brief
+ *  reaches a non-owner and the caller hasn't already fetched sources/videos.
+ *  A store hiccup never blocks the response — the brief's own attribution
+ *  strings are still scrubbed. */
+export async function redactBriefForWire(brief: DailyBrief): Promise<DailyBrief> {
+  try {
+    const [sources, videos] = await Promise.all([listSources(), listVideos()]);
+    return redactBrief(brief, storeIdentityStrings(sources, videos));
+  } catch {
+    return redactBrief(brief);
+  }
 }
 
 /** Server-side owner flag — attribution is visible only when this resolves

@@ -25,6 +25,13 @@ import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
 import { mfeMaeView, pnlView, type TrackedIdea, type TrackedStatus } from "@/lib/intel/tracker";
 import { dayAlerted, dayCreated, daySoFar, planPastDays, type PastDayPlan } from "@/lib/intel/dayBoard";
+import {
+  inspectorQuoteView,
+  mergeQuotes,
+  selQuoteFresh,
+  selQuoteUpsert,
+  type SelQuoteMap,
+} from "@/lib/intel/selQuotes";
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -2899,17 +2906,20 @@ function buildLevelFields(
 }
 
 /** idea-mode inspector body — design §2.6.3, every value wired to the real
- * idea/tracker/quote (quote is guaranteed by the caller: no quote → the
- * AWAITING ANALYSIS state renders instead) */
-function InspectorIdea({ idea, quote, tracked, variants, publish }: {
+ * idea/tracker/quote. A NULL quote (selection fetch failed / returned empty)
+ * renders the same body with every live-price read absent-treated — thesis,
+ * levels, lifecycle, evidence and PUBLISH never starve on a quote miss. */
+function InspectorIdea({ idea, quote, tracked, variants, publish, onRetryQuote }: {
   idea: BlotterIdea;
-  quote: NonNullable<BlotterIdea["quote"]>;
+  quote: BlotterIdea["quote"];
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
   /** owner curation — PUBLISHED chip + the PUBLISH/UNPUBLISH action (tracked ideas only) */
   publish: PublishCtl | null;
+  /** explicit refetch shown in the ∅ live block when the quote is null */
+  onRetryQuote: (() => void) | null;
 }) {
-  const live = quote.price;
+  const live = quote?.price ?? null;
   const life = rowLife(idea, tracked);
   const dirMeta = RD_DIR[idea.direction];
   const ev = ideaEvKind(idea);
@@ -2919,12 +2929,12 @@ function InspectorIdea({ idea, quote, tracked, variants, publish }: {
   // the tracker's stated trigger; untracked fall back to the stated entry value
   const trigVal = tracked ? tracked.statedLevels.trigger?.value ?? null : idea.entry?.value ?? null;
   const trigSrc = tracked ? tracked.statedLevels.trigger : idea.entry;
-  const delta = trigVal != null && trigVal > 0 ? deltaView(live, trigVal, idea.direction) : null;
+  const delta = live != null && trigVal != null && trigVal > 0 ? deltaView(live, trigVal, idea.direction) : null;
 
   // chart tone follows the design rule (§3.6, same as the board sparks):
   // with a stated trigger the favored side paints bull/amber; otherwise the
   // direction color
-  const favored = trigVal != null && trigVal > 0
+  const favored = live != null && trigVal != null && trigVal > 0
     ? (idea.direction === "bullish" ? live >= trigVal : live <= trigVal)
     : null;
   const tone = chartTone(favored, idea.direction);
@@ -2957,10 +2967,23 @@ function InspectorIdea({ idea, quote, tracked, variants, publish }: {
         </div>
         <div className="rd-insp-liveblk">
           <div className="rd-insp-livelabel">LIVE · REAL-TIME</div>
-          <div className="rd-insp-liveprice">
-            <span className="rd-live-dot-g" aria-hidden="true">◉</span>
-            {rdPx(live)}
-          </div>
+          {live != null ? (
+            <div className="rd-insp-liveprice">
+              <span className="rd-live-dot-g" aria-hidden="true">◉</span>
+              {rdPx(live)}
+            </div>
+          ) : (
+            /* the design's ∅ absent treatment — the quote fetch failed or
+               returned empty; RETRY QUOTE re-runs the exact failed action */
+            <div className="rd-insp-noquote">
+              <span className="rd-abs"><span className="rd-abs-g" aria-hidden="true">∅</span> NO QUOTE</span>
+              {onRetryQuote && (
+                <button type="button" className="rd-btn rd-btn-sm" onClick={onRetryQuote}>
+                  RETRY QUOTE
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -3049,25 +3072,39 @@ function InspectorIdea({ idea, quote, tracked, variants, publish }: {
               <div className="rd-pa-deltalabel">Δ → TRIGGER</div>
               <div
                 className={`rd-pa-deltaval ${delta.cls}`}
-                title={trigVal != null ? `live ${rdPx(live)} vs stated trigger ${rdPx(trigVal)}` : undefined}
+                title={live != null && trigVal != null ? `live ${rdPx(live)} vs stated trigger ${rdPx(trigVal)}` : undefined}
               >
                 {delta.val}{delta.label && <span className="rd-pa-deltatag"> {delta.label}</span>}
               </div>
             </>
-          ) : (
+          ) : trigVal == null || trigVal <= 0 ? (
             <span className="rd-notrig">
               <span className="rd-notrig-g" aria-hidden="true">~</span>
               NO TRIGGER · THESIS-DRIVEN
             </span>
+          ) : (
+            /* a trigger EXISTS but there is no live price to compare — saying
+               "no trigger" would be a lie; the honest absent dash renders */
+            <span className="rd-abs" title="stated trigger exists — no live quote to compare">
+              <span className="rd-abs-g" aria-hidden="true">∅</span> Δ NEEDS A QUOTE
+            </span>
           )}
         </div>
       </div>
-      <InspChart
-        closes={quote.closes}
-        live={live}
-        trigger={trigVal != null && trigVal > 0 ? trigVal : null}
-        tone={tone}
-      />
+      {live != null ? (
+        <InspChart
+          closes={quote?.closes ?? []}
+          live={live}
+          trigger={trigVal != null && trigVal > 0 ? trigVal : null}
+          tone={tone}
+        />
+      ) : (
+        /* no live point to draw — the same honest absent panel the mobile
+           card uses (never an invented series) */
+        <div className="rd-chart rd-chart-noseries">
+          <span className="rd-abs"><span className="rd-abs-g" aria-hidden="true">∅</span> NO QUOTE YET</span>
+        </div>
+      )}
 
       {/* tracker lifecycle — real transition history + excursions */}
       {tracked && <LifecyclePanel t={tracked} variants={variants} />}
@@ -3112,7 +3149,7 @@ function InspectorIdea({ idea, quote, tracked, variants, publish }: {
   );
 }
 
-function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, publish, onBackToIdea }: {
+function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, publish, onBackToIdea, quotePending, onRetryQuote }: {
   idea: BlotterIdea | null;
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
@@ -3127,6 +3164,11 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
   /** owner curation control for the selected tracked idea (null hides it) */
   publish: PublishCtl | null;
   onBackToIdea: () => void;
+  /** a selection-quote fetch for THIS row's ticker is genuinely in flight —
+   * the only condition allowed to render the quote-loading treatment */
+  quotePending: boolean;
+  /** explicit refetch for a quote-less row (the ∅ live block's RETRY QUOTE) */
+  onRetryQuote: (() => void) | null;
 }) {
   // option mode only renders with a live option from the CURRENT brief —
   // a regenerated brief that dropped the id falls back to the idea inspector
@@ -3162,13 +3204,15 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
           <div className="rd-insp-state-title">NOTHING SELECTED</div>
           <p className="rd-insp-state-copy">Populate the board, then select a row to inspect its thesis and evidence.</p>
         </div>
-      ) : !idea.quote ? (
-        /* design LOADING state (§2.12), used honestly: a row is selected but
-           its quote hasn't landed yet (quotes map miss) */
+      ) : !idea.quote && quotePending ? (
+        /* design LOADING state (§2.12), used honestly: a single-symbol
+           selection-quote fetch is GENUINELY in flight for this row. It
+           always resolves — success re-renders the full inspector below,
+           failure re-renders the ∅ null-quote body (never a permanent pulse) */
         <div className="rd-insp-state rd-insp-loading" role="status">
           <span className="rd-insp-pulse" aria-hidden="true" />
-          <div className="rd-insp-state-title">AWAITING ANALYSIS</div>
-          <span className="sr-only">Awaiting market data for {idea.ticker}</span>
+          <div className="rd-insp-state-title">FETCHING QUOTE</div>
+          <span className="sr-only">Fetching market data for {idea.ticker}</span>
           <div className="rd-insp-shimmers" aria-hidden="true">
             <span className="rd-shim" />
             <span className="rd-shim" style={{ width: "70%", animationDelay: "0.2s" }} />
@@ -3176,7 +3220,11 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
           </div>
         </div>
       ) : (
-        <InspectorIdea idea={idea} quote={idea.quote} tracked={tracked} variants={variants} publish={publish} />
+        /* quote present → the full inspector; quote ABSENT (fetch failed /
+           returned empty) → the same body with the live-price block absent-
+           treated (∅ + RETRY QUOTE): thesis, levels, lifecycle, evidence and
+           the PUBLISH control render either way */
+        <InspectorIdea idea={idea} quote={idea.quote} tracked={tracked} variants={variants} publish={publish} onRetryQuote={onRetryQuote} />
       )}
     </div>
   );
@@ -4413,6 +4461,20 @@ export default function IntelDashboard() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [histErr, setHistErr] = useState(false);
   const [quotes, setQuotes] = useState<QuoteMap>({});
+  // SELECTION quotes — single-symbol fetches for selected rows the 30s poll
+  // can't cover (past-day boards, >20-symbol briefs). SEPARATE map, merged at
+  // read time (mergeQuotes), so the poll's wholesale setQuotes replacement
+  // never clobbers them. Bounded LRU (cap 20) with timestamps; a re-selection
+  // after SEL_QUOTE_STALE_MS refetches.
+  const [selQuotes, setSelQuotes] = useState<SelQuoteMap<QuoteMap[string]>>(new Map());
+  // symbols with a selection fetch genuinely IN FLIGHT — the only state that
+  // may render a quote-loading treatment (it always resolves: settled fetches
+  // land in selQuotes or selQuoteFailed)
+  const [selQuoteBusy, setSelQuoteBusy] = useState<Set<string>>(new Set());
+  // symbols whose LAST selection fetch failed — renders the ∅ null-quote
+  // inspector with RETRY QUOTE; no auto-retry loop (retry is an explicit tap)
+  const [selQuoteFailed, setSelQuoteFailed] = useState<Set<string>>(new Set());
+  const selQuoteInflight = useRef<Set<string>>(new Set());
   const [tape, setTape] = useState<TapeItem[]>([]);
   const [clock, setClock] = useState(etClock());
   // Honest latency: the last successful /api/intel/quotes roundtrip, measured
@@ -4531,6 +4593,56 @@ export default function IntelDashboard() {
       setQuotes(j.quotes ?? {});
     } catch { /* keep */ }
   }, []);
+
+  // SELECTION quote: fetch ONE symbol for a selected row the poll set doesn't
+  // carry (single symbol — well inside GET /api/intel/quotes's 20-symbol
+  // contract). Resolves into selQuotes (LRU upsert) or selQuoteFailed; the
+  // busy set is only ever true while the fetch is genuinely in flight.
+  const fetchSelectionQuote = useCallback(async (symRaw: string) => {
+    const sym = symRaw.toUpperCase();
+    if (selQuoteInflight.current.has(sym)) return;
+    selQuoteInflight.current.add(sym);
+    setSelQuoteBusy((prev) => new Set(prev).add(sym));
+    setSelQuoteFailed((prev) => {
+      if (!prev.has(sym)) return prev;
+      const n = new Set(prev); n.delete(sym); return n;
+    });
+    try {
+      const r = await fetch(`/api/intel/quotes?symbols=${encodeURIComponent(sym)}`, { cache: "no-store" });
+      const j = await r.json();
+      const q: QuoteMap[string] | undefined = j?.quotes?.[sym];
+      if (!q) throw new Error();
+      setSelQuotes((prev) => selQuoteUpsert(prev, sym, q, Date.now()));
+    } catch {
+      setSelQuoteFailed((prev) => new Set(prev).add(sym));
+    } finally {
+      selQuoteInflight.current.delete(sym);
+      setSelQuoteBusy((prev) => { const n = new Set(prev); n.delete(sym); return n; });
+    }
+  }, []);
+
+  // on selection: if the row's ticker has no poll quote and no fresh selection
+  // quote, fetch it once. A FAILED symbol is not auto-retried (that would flip
+  // the inspector between loading and ∅ every poll tick) — RETRY QUOTE is the
+  // explicit path, and it clears the failed flag.
+  useEffect(() => {
+    if (!selectedId) return;
+    const dayBrief = selectedDayKey === "TODAY"
+      ? data?.brief ?? null
+      : (() => {
+          const f = dayFetches.get(selectedDayKey);
+          return f?.status === "ok" ? f.brief : null;
+        })();
+    if (!dayBrief) return;
+    const idea = [...(dayBrief.creatorFavorites ?? []), ...(dayBrief.topIdeas ?? [])]
+      .find((i) => i.id === selectedId);
+    if (!idea) return;
+    const sym = idea.ticker.toUpperCase();
+    if (quotes[sym]) return; // the 30s poll already covers it
+    if (selQuoteFailed.has(sym)) return; // explicit retry only
+    if (selQuoteFresh(selQuotes, sym, Date.now())) return;
+    fetchSelectionQuote(sym);
+  }, [selectedId, selectedDayKey, data, dayFetches, quotes, selQuotes, selQuoteFailed, fetchSelectionQuote]);
 
   const fetchTracker = useCallback(async () => {
     if (!ownerRef.current) return; // tracker is owner-only — don't poll a guaranteed 401
@@ -4846,7 +4958,12 @@ export default function IntelDashboard() {
 
   const { config, sources, videos, brief } = data;
   const displayBrief = selectedDate ? historyBrief : brief;
-  const blotter = buildBlotter(brief, quotes);
+  // READ-TIME merge: poll quotes win (refreshed every 30s); selection quotes
+  // fill the symbols the ≤20-symbol poll can't carry — every board/inspector
+  // read below goes through this map, so a poll replacement tick can never
+  // blank a selection-fetched row.
+  const boardQuotes = mergeQuotes(quotes, selQuotes);
+  const blotter = buildBlotter(brief, boardQuotes);
 
   // DAY STACK view resolution — non-owner desks are pinned to OVERALL (the
   // pre-day-boards behavior, byte-identical; the rail never renders for them).
@@ -4868,9 +4985,18 @@ export default function IntelDashboard() {
   const selDayKey = scope === "OVERALL" ? "TODAY" : selectedDayKey;
   const selPastFetch = selDayKey === "TODAY" ? undefined : dayFetches.get(selDayKey);
   const selDayBrief = selDayKey === "TODAY" ? brief : selPastFetch?.status === "ok" ? selPastFetch.brief : null;
-  const sectionIdeas = selDayKey === "TODAY" ? blotter : buildBlotter(selDayBrief, quotes);
+  const sectionIdeas = selDayKey === "TODAY" ? blotter : buildBlotter(selDayBrief, boardQuotes);
   const selectedIdea = sectionIdeas.find((i) => i.id === selectedId) ?? null;
   const selectedTracked = selectedIdea ? trackedByIdeaId.get(selectedIdea.id) ?? null : null;
+
+  // inspector quote view for the selected row: "full" (quote in the merged
+  // read) / "loading" (selection fetch genuinely in flight — always resolves)
+  // / "noquote" (fetch failed or returned empty → ∅ body + RETRY QUOTE)
+  const selSym = selectedIdea ? selectedIdea.ticker.toUpperCase() : null;
+  const selQuoteView = selectedIdea
+    ? inspectorQuoteView(!!selectedIdea.quote, !!selSym && selQuoteBusy.has(selSym))
+    : "full";
+  const retrySelQuote = selSym ? () => fetchSelectionQuote(selSym) : null;
 
   // the brief the BOARD tab's panels (options strip, option ticket) render —
   // always the CURRENT brief: options are a today panel in both views
@@ -4989,7 +5115,7 @@ export default function IntelDashboard() {
             <LeftPanel
               brief={brief}
               onReload={load}
-              quotes={quotes}
+              quotes={boardQuotes}
               onSync={sync}
               onGenerateBrief={generateBrief}
               busy={busy}
@@ -5029,7 +5155,7 @@ export default function IntelDashboard() {
                 filter={blotterFilter}
                 onFilter={setBlotterFilter}
                 brief={boardBrief}
-                quotes={quotes}
+                quotes={boardQuotes}
                 loading={busy === "sync" || busy === "brief"}
                 busy={busy}
                 aiOn={config.ai}
@@ -5124,7 +5250,7 @@ export default function IntelDashboard() {
                     onToggleDay={toggleDay}
                     onRetryDay={retryDay}
                     onLoadOlder={() => setPastShown((n) => n + PAST_PAGE)}
-                    quotes={quotes}
+                    quotes={boardQuotes}
                     trackedByIdeaId={trackedByIdeaId}
                     filter={blotterFilter}
                     selectedDayKey={selectedDayKey}
@@ -5166,6 +5292,8 @@ export default function IntelDashboard() {
                 briefStatus={boardBrief?.options?.providerStatus ?? null}
                 publish={publishCtl(selectedTracked)}
                 onBackToIdea={() => setInspectorMode("idea")}
+                quotePending={selQuoteView === "loading"}
+                onRetryQuote={retrySelQuote}
               />
             </div>
           </div>

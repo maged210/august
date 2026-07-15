@@ -1075,6 +1075,13 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   white-space: nowrap;
 }
 .rd-insp-liveprice .rd-live-dot-g { font-size: 11px; }
+/* live block when the row has NO quote (selection fetch failed / empty):
+   the ∅ absent treatment stacked over the explicit RETRY QUOTE action */
+.rd-insp-noquote {
+  display: inline-flex; flex-direction: column; align-items: flex-end;
+  gap: 4px; margin-top: 2px;
+}
+.rd-insp-noquote .rd-abs { font-size: 11px; }
 
 /* ---- stat strip ---- */
 .rd-insp-stats {

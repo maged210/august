@@ -19,7 +19,7 @@ import { normalizeOptionIdea, numberSupported, type RawOptionIdea } from "../lib
 import { pickExpiration, passesLiquidity, effLiquidity, priceOf, convictionFor } from "../lib/intel/candidates.ts";
 import { mergeOptionSettings } from "../lib/intel/option-settings.ts";
 import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
-import type { BriefIdea, DailyBrief, IntelVideo, OptionIdea, TradeIdea, VideoAnalysis } from "../lib/intel/types.ts";
+import type { BriefIdea, DailyBrief, IntelSource, IntelVideo, OptionIdea, TradeIdea, VideoAnalysis } from "../lib/intel/types.ts";
 import { validateRawShape, ExtractionFailedError } from "../lib/intel/extract.ts";
 import {
   ANALYZING_LOCK_MS,
@@ -28,7 +28,17 @@ import {
   isProcessingLocked,
   isStrictlyPoorer,
 } from "../lib/intel/pipeline.ts";
-import { redactBrief } from "../lib/intel/redact.ts";
+import { buildIdentityScrubber, redactBrief, storeIdentityStrings } from "../lib/intel/redact.ts";
+import { briefToMarkdown } from "../lib/intel/brief.ts";
+import {
+  inspectorQuoteView,
+  mergeQuotes,
+  selQuoteFresh,
+  selQuoteUpsert,
+  SEL_QUOTE_CAP,
+  SEL_QUOTE_STALE_MS,
+  type SelQuoteMap,
+} from "../lib/intel/selQuotes.ts";
 import {
   applyPublish,
   applyUnpublish,
@@ -552,6 +562,137 @@ test("redactBrief: keeps the tradecraft, empties sourceVideoIds, never mutates i
   assert.deepEqual(brief.sourceVideoIds, ["vid123"]);
 });
 
+// --- prose scrub (redact.ts) — field deletion can't catch attribution the
+// --- LLM wrote INTO brief prose (observed leak: a channel name inside
+// --- brief.invalidation text). Every string field must come out scrubbed.
+
+test("prose scrub: channel + video names inside LLM prose become 'the source' on every string field", () => {
+  const brief = mkBrief();
+  brief.invalidation = "Setup dies if the level Some Channel flagged at 112 breaks.";
+  brief.whatChanged = "Nightly prep covered a rotation into energy names.";
+  brief.read60 = "SOME CHANNEL is bullish NVDA."; // case-insensitive
+  brief.topIdeas[0].thesis = "Breakout continuation over 120 per some channel.";
+  brief.risks = ["Some Channel disagrees with its own prior take."]; // arrays of strings walk too
+  const out = redactBrief(brief);
+  const json = JSON.stringify(out);
+  assert.equal(/some channel/i.test(json), false, "channel name must not survive in prose");
+  assert.equal(/nightly prep/i.test(json), false, "video title must not survive in prose");
+  assert.equal(out.invalidation, "Setup dies if the level the source flagged at 112 breaks.");
+  assert.equal(out.read60, "the source is bullish NVDA.");
+  assert.equal(out.topIdeas[0].thesis, "Breakout continuation over 120 per the source.");
+  assert.equal(out.risks[0], "the source disagrees with its own prior take.");
+  // OWNER output untouched: redaction is the non-owner branch — the input
+  // brief still carries the prose verbatim
+  assert.equal(brief.invalidation.includes("Some Channel"), true);
+  assert.equal(brief.whatChanged.includes("Nightly prep"), true);
+});
+
+test("prose scrub: word-boundary matching never mangles tickers; longest identity wins; <3-char identities dropped", () => {
+  const brief = mkBrief();
+  brief.topIdeas[0].channelTitle = "Stocked";
+  brief.topIdeas[0].videoTitle = "Stocked Weekly Watchlist";
+  brief.whatChanged = "per stocked: watch STOCKEDX, then the Stocked Weekly Watchlist recap.";
+  const out = redactBrief(brief);
+  // "STOCKEDX" contains the identity but is its own token — untouched;
+  // the full video title (longest) is replaced whole, not channel-first
+  assert.equal(out.whatChanged, "per the source: watch STOCKEDX, then the the source recap.");
+  // a 1–2 char identity would mangle ordinary words — the scrubber drops it
+  assert.equal(buildIdentityScrubber(["", "  ", "ab"]), null);
+  const scrub = buildIdentityScrubber(["Up"]);
+  assert.equal(scrub, null);
+});
+
+test("prose scrub: STORE identities thread in — names the brief items no longer carry still come out", () => {
+  const brief = mkBrief();
+  brief.bullCase = "EnergyDeskTV thinks NVDA runs; 'Tuesday Full Recap' has the details.";
+  const sources: IntelSource[] = [{
+    id: "c1", type: "channel", channelId: "UCabcdefghijklmnopqrstuv", channelTitle: "EnergyDeskTV",
+    title: "EnergyDeskTV", url: "https://youtube.com/@EnergyDeskTV", enabled: true,
+    created: 0, lastChecked: 0, lastProcessed: 0, status: "active",
+  }];
+  const videos: IntelVideo[] = [{
+    videoId: "v9", sourceId: "c1", channelTitle: "EnergyDeskTV", title: "Tuesday Full Recap",
+    publishedAt: 0, liveState: "uploaded", status: "analyzed", transcriptStatus: "available",
+    created: 0, updated: 0,
+  }];
+  const out = redactBrief(brief, storeIdentityStrings(sources, videos));
+  const json = JSON.stringify(out);
+  assert.equal(/EnergyDeskTV/i.test(json), false);
+  assert.equal(/Tuesday Full Recap/i.test(json), false);
+  assert.ok(out.bullCase.includes("the source"));
+  assert.ok(brief.bullCase.includes("EnergyDeskTV")); // input (owner view) untouched
+});
+
+test("prose scrub: the markdown export surface is clean too (redact → briefToMarkdown)", () => {
+  const brief = mkBrief();
+  brief.read60 = "Some Channel says buy; Nightly prep covers the rest.";
+  const md = briefToMarkdown(redactBrief(brief));
+  assert.equal(/some channel/i.test(md), false);
+  assert.equal(/nightly prep/i.test(md), false);
+  assert.equal(/vid123/i.test(md), false);
+  assert.ok(md.includes("the source"));
+  // the OWNER export is the unredacted branch — prose verbatim
+  assert.ok(/some channel/i.test(briefToMarkdown(brief)));
+});
+
+// --- selection quotes (selQuotes.ts) — a selected row outside the 30s poll
+// --- set (past-day boards, >20-symbol briefs) fetches its ONE symbol into a
+// --- separate LRU map merged at read time, so the poll's wholesale
+// --- replacement never starves the inspector.
+
+type Q = { price: number; prevClose: number; chgPct: number; closes: number[] };
+const mkQuote = (price: number): Q => ({ price, prevClose: price - 1, chgPct: 1, closes: [price - 2, price - 1, price] });
+
+test("selection quote survives a 30s poll replacement tick (merged at read time)", () => {
+  let sel: SelQuoteMap<Q> = new Map();
+  sel = selQuoteUpsert(sel, "fcel", mkQuote(2.1), 1_000); // lower-case in, canonical key out
+  // poll tick 1
+  let poll: Record<string, Q> = { NVDA: mkQuote(120) };
+  let merged = mergeQuotes(poll, sel);
+  assert.equal(merged.FCEL?.price, 2.1);
+  assert.equal(merged.NVDA?.price, 120);
+  // poll tick 2: the map is REPLACED wholesale (the bug's mechanism) —
+  // the selection entry still reads through
+  poll = { SPY: mkQuote(500) };
+  merged = mergeQuotes(poll, sel);
+  assert.equal(merged.FCEL?.price, 2.1);
+  assert.equal(merged.NVDA, undefined);
+  // overlap: the fresher poll quote wins over the selection entry
+  poll = { FCEL: mkQuote(2.5) };
+  assert.equal(mergeQuotes(poll, sel).FCEL?.price, 2.5);
+});
+
+test("selection map is a bounded LRU: cap evicts oldest, re-upsert refreshes recency", () => {
+  let sel: SelQuoteMap<Q> = new Map();
+  for (let i = 0; i < SEL_QUOTE_CAP; i++) sel = selQuoteUpsert(sel, `T${i}`, mkQuote(i), i);
+  assert.equal(sel.size, SEL_QUOTE_CAP);
+  sel = selQuoteUpsert(sel, "T0", mkQuote(99), 100); // refresh the oldest entry…
+  sel = selQuoteUpsert(sel, "NEW", mkQuote(7), 101); // …so the overflow evicts T1, not T0
+  assert.equal(sel.size, SEL_QUOTE_CAP);
+  assert.ok(sel.has("T0"));
+  assert.equal(sel.has("T1"), false);
+  assert.ok(sel.has("NEW"));
+  assert.equal(sel.get("T0")?.quote.price, 99);
+  assert.equal(sel.get("T0")?.at, 100); // timestamp refreshed with the quote
+});
+
+test("selQuoteFresh: fresh within the 60s TTL, stale past it, symbol case-insensitive", () => {
+  const sel = selQuoteUpsert(new Map<string, { quote: Q; at: number }>(), "FCEL", mkQuote(2), 10_000);
+  assert.equal(selQuoteFresh(sel, "fcel", 10_000 + SEL_QUOTE_STALE_MS), true);
+  assert.equal(selQuoteFresh(sel, "FCEL", 10_001 + SEL_QUOTE_STALE_MS), false); // re-selection refetches
+  assert.equal(selQuoteFresh(sel, "MISSING", 10_000), false);
+});
+
+test("inspector view contract: a loading treatment ONLY while a fetch is in flight — the permanent pulse is unreachable", () => {
+  assert.equal(inspectorQuoteView(true, false), "full");
+  assert.equal(inspectorQuoteView(true, true), "full"); // stale-refresh keeps the full body up
+  assert.equal(inspectorQuoteView(false, true), "loading"); // genuinely in flight — resolves by construction
+  // no quote + nothing in flight can NEVER present as loading: the ∅
+  // null-quote inspector body renders (thesis, levels, lifecycle, evidence,
+  // PUBLISH — live-price block absent-treated with RETRY QUOTE)
+  assert.equal(inspectorQuoteView(false, false), "noquote");
+});
+
 // --- publish + public feed (publish.ts) -------------------------------------
 const T0 = Date.UTC(2026, 0, 5, 15);
 
@@ -628,6 +769,39 @@ test("feed: serialized JSON carries ZERO source attribution; attribution is fixe
   assert.equal(card.pnl?.kind, "since_called"); // P&L only from the STATED trigger
   assert.equal(card.quote?.price, 121.5);
   assert.ok(card.statusHistory.length >= 2 && card.priceHistory.length === 1);
+});
+
+test("feed: identity prose scrub — a channel/video name inside thesis or level text never reaches the public feed", () => {
+  const idea = mkBriefIdea({
+    thesis: "Breakout continuation over 120 — Some Channel's favorite setup from Nightly prep.",
+    entry: { value: 120, type: "price", text: "over 120, the level Some Channel flagged" },
+  });
+  const t = newTrackedIdea(idea, T0);
+  const pub = applyPublish([], [t], t.id, T0 + 1);
+  const sources: IntelSource[] = [{
+    id: "c1", type: "channel", channelId: "UCsomechannelidxxxxxxxxx", channelTitle: "Some Channel",
+    title: "Some Channel", url: "https://youtube.com/@somechannel", enabled: true,
+    created: 0, lastChecked: 0, lastProcessed: 0, status: "active",
+  }];
+  const videos: IntelVideo[] = [{
+    videoId: "vid123", sourceId: "c1", channelTitle: "Some Channel", title: "Nightly prep",
+    publishedAt: 0, liveState: "uploaded", status: "analyzed", transcriptStatus: "available",
+    created: 0, updated: 0,
+  }];
+  const cards = buildFeedCards(pub.ok ? pub.entries : [], [t], {}, storeIdentityStrings(sources, videos));
+  assert.equal(cards.length, 1);
+  const json = JSON.stringify(cards);
+  assert.equal(/some channel/i.test(json), false, "channel name must not survive in feed prose");
+  assert.equal(/nightly prep/i.test(json), false, "video title must not survive in feed prose");
+  assert.equal(cards[0].thesis, "Breakout continuation over 120 — the source's favorite setup from the source.");
+  assert.equal(cards[0].statedLevels.trigger?.text, "over 120, the level the source flagged");
+  assert.equal(cards[0].ticker, "NVDA"); // tickers/structure untouched
+  assert.equal(cards[0].attribution, PUBLIC_ATTRIBUTION);
+  // owner-side tracker input untouched (redaction is a wire concern)
+  assert.ok(t.thesis.includes("Some Channel"));
+  // no identities threaded (store hiccup) → cards still build, keys still stripped
+  const unscrubbed = buildFeedCards(pub.ok ? pub.entries : [], [t]);
+  assert.equal(unscrubbed.length, 1);
 });
 
 test("feed: an evicted tracker row renders from the snapshot — stale-marked, nothing invented", () => {

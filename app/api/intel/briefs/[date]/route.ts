@@ -5,7 +5,7 @@ import { generateBrief } from "@/lib/intel/brief";
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { etDateKey } from "@/lib/intel/session";
 import { gateIntelMutationOrRespond } from "@/lib/user-scope";
-import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
+import { intelOwnerView, redactBriefForWire } from "@/lib/intel/redact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +21,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ date: string }
   // audit trail; every other reader gets the redacted view (tradecraft intact,
   // zero attribution). ownerView is the contract for which one this is.
   const [brief, ownerView] = await Promise.all([getBrief(resolveDate(date)), intelOwnerView()]);
-  return Response.json({ brief: brief ? (ownerView ? brief : redactBrief(brief)) : null, ownerView });
+  // redactBriefForWire = field deletion + the prose scrub over the store's
+  // identity strings (LLM-written brief prose can name a channel/video)
+  return Response.json({ brief: brief ? (ownerView ? brief : await redactBriefForWire(brief)) : null, ownerView });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ date: string }> }): Promise<Response> {

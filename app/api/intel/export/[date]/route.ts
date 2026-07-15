@@ -5,7 +5,7 @@
 import { getBrief } from "@/lib/intel/store";
 import { briefToMarkdown } from "@/lib/intel/brief";
 import { etDateKey } from "@/lib/intel/session";
-import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
+import { intelOwnerView, redactBriefForWire } from "@/lib/intel/redact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +15,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ date: string }
   const d = date === "today" ? etDateKey() : date;
   const [brief, ownerView] = await Promise.all([getBrief(d), intelOwnerView()]);
   if (!brief) return new Response("No brief for that date.", { status: 404 });
-  return new Response(briefToMarkdown(ownerView ? brief : redactBrief(brief)), {
+  // redactBriefForWire = field deletion + the prose scrub over the store's
+  // identity strings — the markdown export must not name a channel in prose
+  return new Response(briefToMarkdown(ownerView ? brief : await redactBriefForWire(brief)), {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "Content-Disposition": `attachment; filename="august-intel-${d}.md"`,

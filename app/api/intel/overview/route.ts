@@ -5,7 +5,7 @@ import { getBrief, intelStorageConfigured, listSources, listVideos } from "@/lib
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { youtubeApiConfigured } from "@/lib/intel/youtube";
 import { etClock, etDateKey, etNiceDate, marketSession, SESSION_LABEL } from "@/lib/intel/session";
-import { intelOwnerView, redactBrief } from "@/lib/intel/redact";
+import { intelOwnerView, redactBrief, storeIdentityStrings } from "@/lib/intel/redact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,10 +35,12 @@ export async function GET(req: Request): Promise<Response> {
     lastBriefAt: brief?.generatedAt ?? 0,
     lastProcessed,
     // Source privacy: sources + videos ARE the attribution (who is watched) —
-    // non-owners get none of them, and the brief only in its redacted form.
+    // non-owners get none of them, and the brief only in its redacted form
+    // (structural deletion + the prose scrub over the store's identity
+    // strings — LLM-written brief text can name a channel/video in prose).
     sources: ownerView ? sources : [],
     videos: ownerView ? videos : [],
-    brief: brief ? (ownerView ? brief : redactBrief(brief)) : null,
+    brief: brief ? (ownerView ? brief : redactBrief(brief, storeIdentityStrings(sources, videos))) : null,
     ownerView,
   });
 }

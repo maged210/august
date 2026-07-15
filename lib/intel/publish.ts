@@ -25,7 +25,7 @@ import {
   type TrackedLevel,
   type TrackedStatus,
 } from "./tracker";
-import { deepOmitKeys, SOURCE_KEYS } from "./redact";
+import { buildIdentityScrubber, deepMapStrings, deepOmitKeys, SOURCE_KEYS } from "./redact";
 
 /** Hard cap on published entries — oldest-out beyond this (caller logs). */
 export const PUBLISHED_CAP = 200;
@@ -266,11 +266,16 @@ function buildCard(e: PublishedEntry, live: TrackedIdea | undefined, quote: Feed
 /** Assemble the public feed cards: join published entries with live tracker
  *  state (snapshot fallback for evicted rows), attach quotes, strip every
  *  forbidden key defensively, and sort deterministically:
- *  TRIGGERED → ARMED → ACTIVE → terminal, each group newest-first, ties by id. */
+ *  TRIGGERED → ARMED → ACTIVE → terminal, each group newest-first, ties by id.
+ *  `knownIdentities` (the store's channel/video identity strings — see
+ *  storeIdentityStrings) feed the same prose scrub the redacted brief gets:
+ *  key deletion can't catch a channel name the LLM wrote INTO card prose
+ *  (thesis, stated-level text, status notes). */
 export function buildFeedCards(
   entries: PublishedEntry[],
   tracked: TrackedIdea[],
   quotes: Record<string, FeedQuote> = {},
+  knownIdentities: readonly string[] = [],
 ): FeedCard[] {
   const byId = new Map(tracked.map((t) => [t.id, t]));
   const cards = entries.map((e) =>
@@ -284,6 +289,9 @@ export function buildFeedCards(
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
   // Belt-and-braces: the cards are whitelist-built, but the wire payload must
-  // be PROVABLY attribution-free — strip the forbidden keys at any depth.
-  return deepOmitKeys(cards, FEED_FORBIDDEN_KEYS);
+  // be PROVABLY attribution-free — strip the forbidden keys at any depth,
+  // then scrub the known identity strings out of every remaining prose field.
+  const stripped = deepOmitKeys(cards, FEED_FORBIDDEN_KEYS);
+  const scrub = buildIdentityScrubber(knownIdentities);
+  return scrub ? deepMapStrings(stripped, scrub) : stripped;
 }

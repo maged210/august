@@ -8,8 +8,9 @@
 
 import { Redis } from "@upstash/redis";
 import { getQuoteWithSpark } from "@/lib/markets";
-import { logIntel } from "./store";
+import { listSources, listVideos, logIntel } from "./store";
 import { loadTracked } from "./trackerStore";
+import { storeIdentityStrings } from "./redact";
 import {
   applyPublish,
   applyUnpublish,
@@ -148,7 +149,14 @@ export async function getPublicFeed(): Promise<PublicFeed> {
   const now = Date.now();
   if (_feedCache && now - _feedCache.at < FEED_TTL_MS) return _feedCache.payload;
 
-  const [entries, tracked] = await Promise.all([loadPublished(), loadTracked()]);
+  // Identity strings for the prose scrub (channel/video names the LLM may
+  // have written INTO thesis/level/status prose — key deletion can't catch
+  // those). A store hiccup never blocks the feed — it just scrubs with what
+  // the cards themselves know (nothing: they carry no identity fields).
+  const identitiesP = Promise.all([listSources(), listVideos()])
+    .then(([s, v]) => storeIdentityStrings(s, v))
+    .catch((): string[] => []);
+  const [entries, tracked, identities] = await Promise.all([loadPublished(), loadTracked(), identitiesP]);
 
   // Opportunistic write-back: keep each snapshot's lastKnownStatus fresh while
   // its tracker row is still alive, so eviction later shows real last state.
@@ -179,7 +187,7 @@ export async function getPublicFeed(): Promise<PublicFeed> {
     }
   });
 
-  const ideas = buildFeedCards(refreshed.entries, tracked, quotes);
+  const ideas = buildFeedCards(refreshed.entries, tracked, quotes, identities);
   const payload: PublicFeed = {
     ok: true,
     attribution: PUBLIC_ATTRIBUTION,
