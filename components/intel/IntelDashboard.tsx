@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   BriefIdea,
   Chapter,
@@ -41,6 +41,15 @@ type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: numbe
 type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
 type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
+
+// GET /api/intel/role — server-derived owner signal. Until it lands the desk
+// renders the optimistic owner chrome (unconfigured auth = single-user desk,
+// unchanged); a resolved non-owner strips desk controls entirely. Data privacy
+// never depends on this flag — every mutation/read is gated server-side.
+type Role = { owner: boolean; authConfigured: boolean };
+
+// publish curation control for one tracked idea (owner-only; null hides it)
+type PublishCtl = { published: boolean; busy: boolean; onToggle: () => void };
 
 // /api/intel/desk payload (SPEC-wiring §4 #1) — each part independently
 // nullable; a null part means its component renders NOTHING (no placeholder).
@@ -290,7 +299,7 @@ function InspChart({ closes, live, trigger, tone }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng,
+  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner,
 }: {
   data: Overview;
   clock: string;
@@ -301,6 +310,8 @@ function PageHeader({
   onSync: () => void;
   onGenerateBrief: () => void;
   fng: DeskFng | null;
+  /** non-owner desks drop SOURCES + SYNC + BRIEF entirely (absent, not disabled) */
+  owner: boolean;
 }) {
   const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
   for (const idea of blotter) {
@@ -310,13 +321,14 @@ function PageHeader({
     else if (s === "ACTIVE") counts.ACTIVE++;
   }
 
-  const tabs: { key: Tab; label: string; fkey: string }[] = [
+  const allTabs: { key: Tab; label: string; fkey: string }[] = [
     { key: "BOARD", label: "BOARD", fkey: "F1" },
     { key: "BRIEF", label: "BRIEF", fkey: "F2" },
     { key: "SOURCES", label: "SOURCES", fkey: "F3" },
     { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
     { key: "ASK", label: "ASK", fkey: "F5" },
   ];
+  const tabs = allTabs.filter((t) => owner || t.key !== "SOURCES");
 
   // Redesign chrome (SPEC-desktop §2.1 + §2.2). Only REAL destinations ship in
   // the workspace tabs bar: INTEL (this route, active) + the AUGUST home at /.
@@ -341,10 +353,12 @@ function PageHeader({
               {t.label}
             </button>
           ))}
-          <button type="button" className="rd-fkey" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
-            <span className="rd-fkey-k">F6</span>
-            {busy === "sync" ? "SYNC…" : "SYNC"}
-          </button>
+          {owner && (
+            <button type="button" className="rd-fkey" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
+              <span className="rd-fkey-k">F6</span>
+              {busy === "sync" ? "SYNC…" : "SYNC"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -372,12 +386,16 @@ function PageHeader({
           <span className={`rd-count rd-count-arm${counts.ARMED ? "" : " rd-count-zero"}`}>{counts.ARMED} ARMED</span>
           <span className={`rd-count rd-count-act${counts.ACTIVE ? "" : " rd-count-zero"}`}>{counts.ACTIVE} ACTIVE</span>
           <span className="rd-bar2-div" aria-hidden="true" />
-          <button type="button" className="rd-btn" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
-            {busy === "sync" ? "SYNCING…" : "SYNC"}
-          </button>
-          <button type="button" className="rd-btn rd-btn-acc" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
-            {busy === "brief" ? "…" : "BRIEF"}
-          </button>
+          {owner && (
+            <button type="button" className="rd-btn" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
+              {busy === "sync" ? "SYNCING…" : "SYNC"}
+            </button>
+          )}
+          {owner && (
+            <button type="button" className="rd-btn rd-btn-acc" disabled={busy === "brief" || !data.config.ai} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
+              {busy === "brief" ? "…" : "BRIEF"}
+            </button>
+          )}
           <a className="rd-btn" href="/api/intel/export/today">EXPORT</a>
           <a className="rd-btn" href="/">← AUGUST</a>
         </div>
@@ -751,11 +769,14 @@ function DeltaCell({ live, trig, dir }: { live: number | null; trig: number | nu
 // ── BlotterRow (design grouped-board row; data logic unchanged) ──────────────
 
 function BlotterRow({
-  idea, tracked, selected, onSelect,
+  idea, tracked, selected, published, onSelect,
 }: {
   idea: BlotterIdea;
   tracked: TrackedIdea | null;
   selected: boolean;
+  /** owner curation state — the row carries the identity chip only; the
+   * PUBLISH/UNPUBLISH action lives in the inspector (row → select → act) */
+  published: boolean;
   onSelect: () => void;
 }) {
   const dir = idea.direction;
@@ -856,6 +877,7 @@ function BlotterRow({
           {ev ? <EvChip kind={ev} /> : <span className="rd-abs-dash" title="explicit idea · no verbatim level text">—</span>}
         </span>
         <span className="rd-c rd-c-src">
+          {published && <span className="rd-chip rd-chip-pub" title="published to the public feed">PUB</span>}
           {idea.videoId ? (
             <a
               href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
@@ -865,9 +887,9 @@ function BlotterRow({
             >
               ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)} · rank {idea.rankScore.toFixed(2)}
             </a>
-          ) : (
+          ) : idea.channelTitle ? (
             <span>{idea.channelTitle} · rank {idea.rankScore.toFixed(2)}</span>
-          )}
+          ) : null /* redacted payload — no attribution, no source row (recon convention) */}
         </span>
       </div>
     </div>
@@ -938,9 +960,11 @@ const BOARD_COLS = [
  * desktop board and the stage-8 mobile board. Buttons wired to the real
  * actions: ADD SOURCE opens the SOURCES tab, GENERATE BRIEF runs the real
  * handler (disabled without ANTHROPIC_API_KEY, same as the header). */
-function BoardEmpty({ busy, aiOn, onAddSource, onGenerateBrief, className }: {
+function BoardEmpty({ busy, aiOn, owner, onAddSource, onGenerateBrief, className }: {
   busy: string | null;
   aiOn: boolean;
+  /** non-owner desks have no source/brief actions — the empty state stays honest without them */
+  owner: boolean;
   onAddSource: () => void;
   onGenerateBrief: () => void;
   className?: string;
@@ -950,19 +974,23 @@ function BoardEmpty({ busy, aiOn, onAddSource, onGenerateBrief, className }: {
       <div className="rd-empty-glyph" aria-hidden="true">∅</div>
       <div className="rd-empty-title">NO IDEAS ON THE BOARD</div>
       <p className="rd-empty-copy">
-        No trade ideas have been extracted yet. Add a source or generate tonight&apos;s brief to populate the blotter.
+        {owner
+          ? <>No trade ideas have been extracted yet. Add a source or generate tonight&apos;s brief to populate the blotter.</>
+          : <>No trade ideas have been extracted yet.</>}
       </p>
-      <div className="rd-empty-btns">
-        <button type="button" className="rd-btn-lg rd-btn-lg-acc" onClick={onAddSource}>ADD SOURCE</button>
-        <button
-          type="button" className="rd-btn-lg"
-          disabled={busy === "brief" || !aiOn} aria-busy={busy === "brief"}
-          title={!aiOn ? "needs ANTHROPIC_API_KEY" : undefined}
-          onClick={onGenerateBrief}
-        >
-          {busy === "brief" ? "GENERATING…" : "GENERATE BRIEF"}
-        </button>
-      </div>
+      {owner && (
+        <div className="rd-empty-btns">
+          <button type="button" className="rd-btn-lg rd-btn-lg-acc" onClick={onAddSource}>ADD SOURCE</button>
+          <button
+            type="button" className="rd-btn-lg"
+            disabled={busy === "brief" || !aiOn} aria-busy={busy === "brief"}
+            title={!aiOn ? "needs ANTHROPIC_API_KEY" : undefined}
+            onClick={onGenerateBrief}
+          >
+            {busy === "brief" ? "GENERATING…" : "GENERATE BRIEF"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -990,7 +1018,7 @@ function FilterSeg({ filter, onFilter }: { filter: BlotterFilter; onFilter: (f: 
 }
 
 function BlotterTable({
-  ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, busy, aiOn, onAddSource, onGenerateBrief,
+  ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, busy, aiOn, owner, publishedIds, onAddSource, onGenerateBrief,
 }: {
   ideas: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
@@ -1001,13 +1029,16 @@ function BlotterTable({
   loading: boolean;
   busy: string | null;
   aiOn: boolean;
+  owner: boolean;
+  /** curated feed membership (owner-only; null until the publish list lands) */
+  publishedIds: Set<string> | null;
   onAddSource: () => void;
   onGenerateBrief: () => void;
 }) {
   if (ideas.length === 0) {
     if (loading) return <BoardLoading />;
     // rd-mhide: the stage-8 MobileBoard renders its own BoardEmpty <700px
-    return <BoardEmpty busy={busy} aiOn={aiOn} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} className="rd-mhide" />;
+    return <BoardEmpty busy={busy} aiOn={aiOn} owner={owner} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} className="rd-mhide" />;
   }
 
   const visible = visibleBlotter(ideas, trackedByIdeaId, filter);
@@ -1057,15 +1088,19 @@ function BlotterTable({
                 <span className="rd-group-hair" aria-hidden="true" />
                 <span className="rd-group-count">{rows.length} IDEA{rows.length !== 1 ? "S" : ""}</span>
               </div>
-              {rows.map((idea) => (
-                <BlotterRow
-                  key={idea.id}
-                  idea={idea}
-                  tracked={trackedByIdeaId.get(idea.id) ?? null}
-                  selected={selectedId === idea.id}
-                  onSelect={() => onSelect(idea.id)}
-                />
-              ))}
+              {rows.map((idea) => {
+                const t = trackedByIdeaId.get(idea.id) ?? null;
+                return (
+                  <BlotterRow
+                    key={idea.id}
+                    idea={idea}
+                    tracked={t}
+                    selected={selectedId === idea.id}
+                    published={!!(t && publishedIds?.has(t.id))}
+                    onSelect={() => onSelect(idea.id)}
+                  />
+                );
+              })}
             </Fragment>
           );
         })}
@@ -1129,10 +1164,12 @@ function RdSparkM({ closes, tone }: { closes: number[]; tone: ChartTone }) {
  * REUSED InspChart (real 1M daily closes — the design's own chart was seeded
  * and self-labeled illustrative, so the label here is the honest
  * PRICE · 1M · DAILY), the shared LEVELS fields, conf + source cite. */
-function MobileIdeaCard({ idea, tracked, open, onToggle }: {
+function MobileIdeaCard({ idea, tracked, open, publish, onToggle }: {
   idea: BlotterIdea;
   tracked: TrackedIdea | null;
   open: boolean;
+  /** owner curation — chip + 44px action in the expanded body; null hides it */
+  publish: PublishCtl | null;
   onToggle: () => void;
 }) {
   const dir = idea.direction;
@@ -1251,10 +1288,25 @@ function MobileIdeaCard({ idea, tracked, open, onToggle }: {
               >
                 ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
               </a>
-            ) : (
+            ) : idea.channelTitle ? (
               <span className="rd-msrc rd-msrc-plain">▸ {idea.channelTitle}</span>
-            )}
+            ) : null /* redacted payload — no attribution, no source row */}
           </div>
+          {publish && (
+            <div className="rd-mpub">
+              {publish.published && <span className="rd-chip rd-chip-pub">PUBLISHED</span>}
+              <button
+                type="button"
+                className={`rd-btn rd-btn-sm${publish.published ? "" : " rd-btn-pub"}`}
+                disabled={publish.busy}
+                aria-busy={publish.busy}
+                title={publish.published ? "remove from the public feed" : "publish to the public feed"}
+                onClick={publish.onToggle}
+              >
+                {publish.busy ? "…" : publish.published ? "UNPUBLISH" : "PUBLISH"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1263,7 +1315,7 @@ function MobileIdeaCard({ idea, tracked, open, onToggle }: {
 
 function MobileBoard({
   blotter, trackedByIdeaId, trackedList, filter, onFilter, brief, quotes,
-  loading, busy, aiOn, youtubeOk, trackerOk, onAddSource, onGenerateBrief,
+  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief,
 }: {
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
@@ -1277,6 +1329,9 @@ function MobileBoard({
   aiOn: boolean;
   youtubeOk: boolean;
   trackerOk: boolean | null;
+  owner: boolean;
+  /** owner curation control for a tracked record (null hides publish UI) */
+  publishCtl: (t: TrackedIdea | null) => PublishCtl | null;
   onAddSource: () => void;
   onGenerateBrief: () => void;
 }) {
@@ -1525,7 +1580,7 @@ function MobileBoard({
             </div>
           </div>
         ) : (
-          <BoardEmpty busy={busy} aiOn={aiOn} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} />
+          <BoardEmpty busy={busy} aiOn={aiOn} owner={owner} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} />
         )
       ) : rows.length === 0 ? (
         <div className="rd-board-empty rd-board-nomatch">
@@ -1537,15 +1592,19 @@ function MobileBoard({
         </div>
       ) : (
         <div className="rd-mlist">
-          {rows.map((idea) => (
-            <MobileIdeaCard
-              key={idea.id}
-              idea={idea}
-              tracked={trackedByIdeaId.get(idea.id) ?? null}
-              open={expandedId === idea.id}
-              onToggle={() => setExpandedId((c) => (c === idea.id ? null : idea.id))}
-            />
-          ))}
+          {rows.map((idea) => {
+            const t = trackedByIdeaId.get(idea.id) ?? null;
+            return (
+              <MobileIdeaCard
+                key={idea.id}
+                idea={idea}
+                tracked={t}
+                open={expandedId === idea.id}
+                publish={publishCtl(t)}
+                onToggle={() => setExpandedId((c) => (c === idea.id ? null : idea.id))}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -2004,9 +2063,9 @@ function OptionTicket({ option, briefStatus, onBack }: {
           >
             ▸ {option.channelTitle} @ {mmss(option.sourceStartSeconds)} · rank {option.rankScore}
           </a>
-        ) : (
+        ) : option.channelTitle ? (
           <span className="rd-insp-src">▸ {option.channelTitle} · rank {option.rankScore}</span>
-        )}
+        ) : null /* redacted payload — no attribution, no source row */}
       </div>
     </div>
   );
@@ -2188,11 +2247,13 @@ function buildLevelFields(
 /** idea-mode inspector body — design §2.6.3, every value wired to the real
  * idea/tracker/quote (quote is guaranteed by the caller: no quote → the
  * AWAITING ANALYSIS state renders instead) */
-function InspectorIdea({ idea, quote, tracked, variants }: {
+function InspectorIdea({ idea, quote, tracked, variants, publish }: {
   idea: BlotterIdea;
   quote: NonNullable<BlotterIdea["quote"]>;
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
+  /** owner curation — PUBLISHED chip + the PUBLISH/UNPUBLISH action (tracked ideas only) */
+  publish: PublishCtl | null;
 }) {
   const live = quote.price;
   const life = rowLife(idea, tracked);
@@ -2283,6 +2344,22 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
         )}
         {idea.__fav && <span className="rd-pchip rd-pchip-fact" title="creator favorite">FAV</span>}
         {idea.creatorDesignation.isPrediction && <span className="rd-pchip rd-pchip-fact">PREDICTION</span>}
+        {publish && publish.published && (
+          <span className="rd-chip rd-chip-pub" title="published to the public feed">PUBLISHED</span>
+        )}
+        {publish && (
+          <button
+            type="button"
+            className={`rd-btn rd-btn-sm${publish.published ? "" : " rd-btn-pub"}`}
+            disabled={publish.busy}
+            aria-busy={publish.busy}
+            aria-pressed={publish.published}
+            title={publish.published ? "remove from the public feed" : "publish to the public feed"}
+            onClick={publish.onToggle}
+          >
+            {publish.busy ? "…" : publish.published ? "UNPUBLISH" : "PUBLISH"}
+          </button>
+        )}
       </div>
 
       {/* thesis */}
@@ -2373,15 +2450,15 @@ function InspectorIdea({ idea, quote, tracked, variants }: {
           >
             ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)} · rank {idea.rankScore.toFixed(2)}
           </a>
-        ) : (
+        ) : idea.channelTitle ? (
           <span className="rd-insp-src">▸ {idea.channelTitle} · rank {idea.rankScore.toFixed(2)}</span>
-        )}
+        ) : null /* redacted payload — no attribution, no source row */}
       </div>
     </div>
   );
 }
 
-function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, onBackToIdea }: {
+function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, publish, onBackToIdea }: {
   idea: BlotterIdea | null;
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
@@ -2393,6 +2470,8 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
   mode: "idea" | "option";
   option: OptionBriefIdea | null;
   briefStatus: OptionsProviderStatus | null;
+  /** owner curation control for the selected tracked idea (null hides it) */
+  publish: PublishCtl | null;
   onBackToIdea: () => void;
 }) {
   // option mode only renders with a live option from the CURRENT brief —
@@ -2443,7 +2522,7 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
           </div>
         </div>
       ) : (
-        <InspectorIdea idea={idea} quote={idea.quote} tracked={tracked} variants={variants} />
+        <InspectorIdea idea={idea} quote={idea.quote} tracked={tracked} variants={variants} publish={publish} />
       )}
     </div>
   );
@@ -2840,7 +2919,7 @@ function TopStocksPanel({ blotter, trackedByIdeaId, onSelectIdea }: {
 
 function LeftPanel({
   brief, quotes, onReload,
-  onSync, onGenerateBrief, busy, lastBriefAt, aiOn,
+  onSync, onGenerateBrief, busy, lastBriefAt, aiOn, owner,
   sourceCount, videoCount, onGoSources,
   blotter, trackedByIdeaId, onSelectIdea, desk,
 }: {
@@ -2852,6 +2931,8 @@ function LeftPanel({
   busy: string | null;
   lastBriefAt: number;
   aiOn: boolean;
+  /** non-owner rails drop the mutation clusters (quick actions + CAPTURE) entirely */
+  owner: boolean;
   sourceCount: number;
   videoCount: number;
   onGoSources: () => void;
@@ -2864,20 +2945,24 @@ function LeftPanel({
   return (
     <div className="rd-lrail">
       {/* quick actions — per-op aria-busy + both-disabled-while-busy semantics
-          and the ai gating on BRIEF preserved exactly */}
-      <section className="rd-lsec">
-        <div className="rd-lp-actions">
-          <button type="button" className="rd-btn rd-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
-            {busy === "sync" ? "Syncing…" : "SYNC"}
-          </button>
-          <button type="button" className="rd-btn rd-btn-acc rd-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
-            {busy === "brief" ? "Generating…" : "BRIEF"}
-          </button>
-        </div>
-        {lastBriefAt > 0 && (
-          <div className="rd-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
-        )}
-      </section>
+          and the ai gating on BRIEF preserved exactly. Owner-only: sync/brief
+          are server-gated mutations; a non-owner rail simply starts at the
+          fold-ins. */}
+      {owner && (
+        <section className="rd-lsec">
+          <div className="rd-lp-actions">
+            <button type="button" className="rd-btn rd-lp-btn" disabled={!!busy} aria-busy={busy === "sync"} onClick={onSync}>
+              {busy === "sync" ? "Syncing…" : "SYNC"}
+            </button>
+            <button type="button" className="rd-btn rd-btn-acc rd-lp-btn" disabled={!!busy || !aiOn} aria-busy={busy === "brief"} onClick={onGenerateBrief}>
+              {busy === "brief" ? "Generating…" : "BRIEF"}
+            </button>
+          </div>
+          {lastBriefAt > 0 && (
+            <div className="rd-lp-age">brief {ago(lastBriefAt)}{!aiOn ? " · needs ANTHROPIC_API_KEY" : ""}</div>
+          )}
+        </section>
+      )}
 
       {/* stage-5/6 fold-ins in the design's order (sentiment → sectors → map
           → catalysts — the overview band precedes board content in the
@@ -2937,22 +3022,26 @@ function LeftPanel({
         </section>
       )}
 
-      {/* CAPTURE — one lightweight add action; management lives in SOURCES (F3) */}
-      <section className="rd-lsec">
-        <div className="rd-lsec-head"><span className="rd-lsec-h">CAPTURE</span></div>
-        <button type="button" className="rd-btn rd-cap-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
-          {addOpen ? "− CLOSE" : "+ ADD SOURCE"}
-        </button>
-        {addOpen && (
-          <div className="rd-cap-body">
-            <AddSource onReload={onReload} compact />
-            <div className="rd-cap-hint">processing continues in SOURCES</div>
-          </div>
-        )}
-        <button type="button" className="rd-cap-srcline" onClick={onGoSources}>
-          {sourceCount} SOURCE{sourceCount !== 1 ? "S" : ""} · {videoCount} VIDEO{videoCount !== 1 ? "S" : ""} → F3 SOURCES
-        </button>
-      </section>
+      {/* CAPTURE — one lightweight add action; management lives in SOURCES (F3).
+          Owner-only: source capture is a gated mutation and F3 doesn't exist
+          on a non-owner desk. */}
+      {owner && (
+        <section className="rd-lsec">
+          <div className="rd-lsec-head"><span className="rd-lsec-h">CAPTURE</span></div>
+          <button type="button" className="rd-btn rd-cap-add" aria-expanded={addOpen} onClick={() => setAddOpen((o) => !o)}>
+            {addOpen ? "− CLOSE" : "+ ADD SOURCE"}
+          </button>
+          {addOpen && (
+            <div className="rd-cap-body">
+              <AddSource onReload={onReload} compact />
+              <div className="rd-cap-hint">processing continues in SOURCES</div>
+            </div>
+          )}
+          <button type="button" className="rd-cap-srcline" onClick={onGoSources}>
+            {sourceCount} SOURCE{sourceCount !== 1 ? "S" : ""} · {videoCount} VIDEO{videoCount !== 1 ? "S" : ""} → F3 SOURCES
+          </button>
+        </section>
+      )}
     </div>
   );
 }
@@ -3078,7 +3167,9 @@ function LevelRow({ l }: { l: IntelLevel }) {
       </span>
       {l.videoId
         ? <a className="rd-cite" href={watchUrl(l.videoId, l.sourceStartSeconds)} target="_blank" rel="noreferrer">@{mmss(l.sourceStartSeconds)}</a>
-        : <span className="rd-cite">@{mmss(l.sourceStartSeconds)}</span>}
+        : l.sourceStartSeconds != null
+        ? <span className="rd-cite">@{mmss(l.sourceStartSeconds)}</span>
+        : null /* redacted payload — timestamps are attribution too */}
     </div>
   );
 }
@@ -3125,10 +3216,15 @@ function DrawerOptionRow({ o }: { o: OptionIdea }) {
 
 function ConsensusRow({ c }: { c: ConsensusItem }) {
   const cls = c.agreement === "conflict" ? "rd-chip-err" : c.agreement === "agree" ? "rd-chip-ok" : "rd-chip-dim";
+  // redacted payloads reduce sources to { explicitness } — the honest fallback
+  // is the real source COUNT, never invented names
+  const names = c.sources.map((s) => s.channelTitle).filter(Boolean).join(" · ");
   return (
     <div className="rd-consrow">
       <span className="rd-consrow-tkr">{c.ticker}</span>
-      <span className="rd-consrow-srcs">{c.sources.map((s) => s.channelTitle).join(" · ")}</span>
+      <span className="rd-consrow-srcs">
+        {names || `${c.sources.length} source${c.sources.length !== 1 ? "s" : ""}`}
+      </span>
       <span className={`rd-chip ${cls}`}>{c.agreement}</span>
     </div>
   );
@@ -3223,32 +3319,6 @@ function AddSource({ onReload, compact }: { onReload: () => Promise<void>; compa
   );
 }
 
-function SourceMonitor({ sources, onRemove }: { sources: IntelSource[]; onRemove: (id: string) => void }) {
-  return (
-    <div className="rd-card">
-      <div className="rd-card-h">Source Monitor · {sources.length}</div>
-      {sources.length === 0 ? <div className="rd-state">No sources yet.</div> : sources.map((s) => (
-        <div key={s.id} className="rd-irow">
-          {s.thumbnail ? <img className="rd-irow-thumb" src={s.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
-          <div className="rd-irow-main">
-            <div className="rd-irow-title">{s.title}</div>
-            <div className="rd-irow-meta">
-              <span>{s.type}</span>
-              <span className={`rd-chip ${s.status === "active" ? "rd-chip-ok" : "rd-chip-warn"}`}>{s.status}</span>
-              <span>checked {ago(s.lastChecked)}</span>
-              {s.error && <span className="rd-warn">{s.error}</span>}
-            </div>
-          </div>
-          <div className="rd-irow-actions">
-            <a className="rd-btn rd-btn-sm rd-btn-ghost" href={s.url} target="_blank" rel="noreferrer">View</a>
-            <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => onRemove(s.id)}>Remove</button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function statusBadge(v: IntelVideo) {
   if (v.liveState === "live") return <span className="rd-chip rd-chip-err">Live</span>;
   if (v.status === "analyzing") return <span className="rd-chip rd-chip-warn">Processing</span>;
@@ -3259,30 +3329,197 @@ function statusBadge(v: IntelVideo) {
   return <span className="rd-chip rd-chip-dim">{v.status}</span>;
 }
 
-function VideoLibrary({ videos, onOpen }: { videos: IntelVideo[]; onOpen: (id: string) => void }) {
+// ── SOURCES — channel-grouped management ─────────────────────────────────────
+// One card per monitored channel (thumb · title · honest status chip ·
+// checked-ago · enabled toggle → PATCH sources/[id] · remove → DELETE · video
+// count) with the channel's videos grouped beneath (collapsible; default open
+// while ≤3 channels are monitored). One-off video adds (v_… sources) group
+// under DIRECT ADDS — the add was explicit, so it stays there even when that
+// channel is also monitored. Chips are the same statusBadge/status vocabulary
+// the old flat lists used; counts are real; nothing is invented.
+
+/** per-group video-row cap — keeps a long library from swamping the tab; the
+ * remainder is stated honestly, never silently dropped */
+const CHAN_VID_CAP = 12;
+
+function VideoRow({ v, onOpen, showChannel, action }: {
+  v: IntelVideo;
+  onOpen: (id: string) => void;
+  /** DIRECT ADDS shows the channel name; channel groups already say it in the card head */
+  showChannel?: boolean;
+  action?: ReactNode;
+}) {
   return (
-    <div className="rd-card">
-      <div className="rd-card-h">Video Library · {videos.length}</div>
-      {videos.length === 0 ? <div className="rd-state">No videos yet — add a video source above.</div> : videos.slice(0, 20).map((v) => (
-        <div key={v.videoId} className="rd-irow clickable" onClick={() => onOpen(v.videoId)}>
-          {v.thumbnail ? <img className="rd-irow-thumb" src={v.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
-          <div className="rd-irow-main">
-            <div className="rd-irow-title">{v.title}</div>
-            <div className="rd-irow-meta">
-              <span>{v.channelTitle ?? ""}</span>
-              {statusBadge(v)}
-              {v.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
-              {typeof v.ideaCount === "number" && <span>{v.ideaCount} ideas{v.optionCount ? ` · ${v.optionCount} options` : ""} · {v.levelCount ?? 0} levels</span>}
-            </div>
-          </div>
-          <div className="rd-irow-actions"><span className="rd-btn rd-btn-sm rd-btn-ghost">Open</span></div>
+    <div className="rd-irow clickable" onClick={() => onOpen(v.videoId)}>
+      {v.thumbnail ? <img className="rd-irow-thumb" src={v.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
+      <div className="rd-irow-main">
+        <div className="rd-irow-title">{v.title}</div>
+        <div className="rd-irow-meta">
+          {showChannel && v.channelTitle && <span>{v.channelTitle}</span>}
+          {statusBadge(v)}
+          {v.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
+          {typeof v.ideaCount === "number" && <span>{v.ideaCount} ideas{v.optionCount ? ` · ${v.optionCount} options` : ""} · {v.levelCount ?? 0} levels</span>}
         </div>
-      ))}
+      </div>
+      <div className="rd-irow-actions">
+        <span className="rd-btn rd-btn-sm rd-btn-ghost">Open</span>
+        {action}
+      </div>
     </div>
   );
 }
 
-function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string; onClose: () => void; onProcessed: () => void; aiOn: boolean }) {
+function ChannelCard({ s, vids, defaultOpen, busy, onToggle, onRemove, onOpen }: {
+  s: IntelSource;
+  vids: IntelVideo[];
+  defaultOpen: boolean;
+  busy: boolean;
+  onToggle: (id: string, enabled: boolean) => void;
+  onRemove: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  // null = follow the default; a user toggle sticks for the session
+  const [openState, setOpenState] = useState<boolean | null>(null);
+  const open = openState ?? defaultOpen;
+  const shown = vids.slice(0, CHAN_VID_CAP);
+  return (
+    <div className="rd-card">
+      <div className="rd-chan-head">
+        {s.thumbnail ? <img className="rd-irow-thumb" src={s.thumbnail} alt="" /> : <span className="rd-irow-thumb" aria-hidden="true" />}
+        <div className="rd-irow-main">
+          <div className="rd-irow-title">{s.title}</div>
+          <div className="rd-irow-meta">
+            <span>channel</span>
+            <span className={`rd-chip ${s.status === "active" ? "rd-chip-ok" : s.status === "error" ? "rd-chip-err" : "rd-chip-dim"}`}>{s.status}</span>
+            <span>checked {ago(s.lastChecked)}</span>
+            <span>{vids.length} video{vids.length !== 1 ? "s" : ""}</span>
+            {s.error && <span className="rd-warn">{s.error}</span>}
+          </div>
+        </div>
+        <div className="rd-irow-actions">
+          <button
+            type="button"
+            className={`rd-btn rd-btn-sm rd-chan-toggle${s.enabled ? " on" : ""}`}
+            aria-pressed={s.enabled}
+            disabled={busy}
+            aria-busy={busy}
+            title={s.enabled ? "pause discovery for this channel" : "resume discovery for this channel"}
+            onClick={() => onToggle(s.id, !s.enabled)}
+          >
+            {s.enabled ? "MONITORING" : "PAUSED"}
+          </button>
+          <a className="rd-btn rd-btn-sm rd-btn-ghost" href={s.url} target="_blank" rel="noreferrer">View</a>
+          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => onRemove(s.id)}>Remove</button>
+        </div>
+      </div>
+      {vids.length > 0 ? (
+        <>
+          <button type="button" className="rd-chan-fold" aria-expanded={open} onClick={() => setOpenState(!open)}>
+            <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+            {vids.length} VIDEO{vids.length !== 1 ? "S" : ""}
+          </button>
+          {open && (
+            <div>
+              {shown.map((v) => <VideoRow key={v.videoId} v={v} onOpen={onOpen} />)}
+              {vids.length > CHAN_VID_CAP && (
+                <div className="rd-note rd-chan-more">+ {vids.length - CHAN_VID_CAP} older not shown</div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="rd-state rd-chan-none">No videos discovered yet.</div>
+      )}
+    </div>
+  );
+}
+
+function SourcesManager({ sources, videos, busySrc, onToggle, onRemove, onOpen }: {
+  sources: IntelSource[];
+  videos: IntelVideo[];
+  /** source id with a PATCH/DELETE in flight (disables that row's toggle) */
+  busySrc: string | null;
+  onToggle: (id: string, enabled: boolean) => void;
+  onRemove: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const channels = sources.filter((s) => s.type === "channel");
+  const srcById = new Map(sources.map((s) => [s.id, s] as const));
+
+  // partition: a video belongs to the channel source that owns it (sourceId);
+  // one-off adds (video-type source) stay DIRECT; orphans fall back to a
+  // channelId match before landing in DIRECT ADDS
+  const byChannel = new Map<string, IntelVideo[]>();
+  const direct: IntelVideo[] = [];
+  for (const v of [...videos].sort((a, b) => b.publishedAt - a.publishedAt)) {
+    const owning = srcById.get(v.sourceId);
+    const chan = owning?.type === "channel"
+      ? owning
+      : owning?.type === "video"
+        ? undefined
+        : channels.find((c) => c.channelId != null && c.channelId === v.channelId);
+    if (chan) {
+      const list = byChannel.get(chan.id);
+      if (list) list.push(v);
+      else byChannel.set(chan.id, [v]);
+    } else {
+      direct.push(v);
+    }
+  }
+  const directCapped = direct.slice(0, 20);
+
+  return (
+    <>
+      {channels.length === 0 ? (
+        <div className="rd-card">
+          <div className="rd-card-h">Channels · 0</div>
+          <div className="rd-state">No channels monitored yet — add a channel URL or @handle above.</div>
+        </div>
+      ) : (
+        channels.map((s) => (
+          <ChannelCard
+            key={s.id}
+            s={s}
+            vids={byChannel.get(s.id) ?? []}
+            defaultOpen={channels.length <= 3}
+            busy={busySrc === s.id}
+            onToggle={onToggle}
+            onRemove={onRemove}
+            onOpen={onOpen}
+          />
+        ))
+      )}
+      {direct.length > 0 && (
+        <div className="rd-card">
+          <div className="rd-card-h">Direct adds · {direct.length}</div>
+          {directCapped.map((v) => {
+            const src = srcById.get(v.sourceId);
+            return (
+              <VideoRow
+                key={v.videoId}
+                v={v}
+                onOpen={onOpen}
+                showChannel
+                action={src?.type === "video" ? (
+                  <button
+                    type="button"
+                    className="rd-btn rd-btn-sm rd-btn-ghost"
+                    onClick={(e) => { e.stopPropagation(); onRemove(src.id); }}
+                  >
+                    Remove
+                  </button>
+                ) : undefined}
+              />
+            );
+          })}
+          {direct.length > 20 && <div className="rd-note rd-chan-more">+ {direct.length - 20} older not shown</div>}
+        </div>
+      )}
+    </>
+  );
+}
+
+function VideoDrawer({ videoId, onClose, onProcessed, aiOn, owner }: { videoId: string; onClose: () => void; onProcessed: () => void; aiOn: boolean; owner: boolean }) {
   const [bundle, setBundle] = useState<{ video: IntelVideo; analysis: VideoAnalysis | null; chapters: Chapter[] } | null>(null);
   const [transcript, setTranscript] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3345,7 +3582,7 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
               {v?.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
               <a className="rd-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
-            {v?.status !== "analyzed" && (
+            {owner && v?.status !== "analyzed" && (
               <div className="rd-card rd-tx" style={{ marginTop: 12 }}>
                 <div className="rd-tx-step">
                   {a?.pass === "preliminary" ? "STEP 1 CONT. · PASTE FULL TRANSCRIPT" : "STEP 1 · PASTE TRANSCRIPT"}
@@ -3398,7 +3635,9 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn }: { videoId: string;
                 {visibleOptions.length > 0 && <div className="rd-card"><div className="rd-card-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
                 {visibleLevels.length > 0 && <div className="rd-card"><div className="rd-card-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
                 {a.catalysts.length > 0 && <div className="rd-card"><div className="rd-card-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-                <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
+                {owner && (
+                  <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
+                )}
               </>
             )}
           </>
@@ -3494,6 +3733,22 @@ export default function IntelDashboard() {
   // fetch lands; sections are simply absent until then (no spinners, no CLS
   // reservations — the rail is a vertical stack with a fixed mount order)
   const [desk, setDesk] = useState<DeskData | null>(null);
+  // GET /api/intel/role once at load. null = not yet resolved → optimistic
+  // owner chrome (unconfigured auth must render the unchanged single-user
+  // desk); a resolved non-owner strips SOURCES/SYNC/BRIEF/publish entirely.
+  const [role, setRole] = useState<Role | null>(null);
+  const owner = role?.owner ?? true;
+  // mirror for pollers (fetchTracker) so a known non-owner never spams a
+  // guaranteed-401 endpoint from the 30s interval
+  const ownerRef = useRef(true);
+  // curated public-feed membership (trackedIds) — null until the owner's
+  // publish listing lands; publish controls stay absent until then (never a
+  // guessed zero)
+  const [publishedIds, setPublishedIds] = useState<Set<string> | null>(null);
+  // trackedId with a publish POST/DELETE in flight
+  const [pubBusy, setPubBusy] = useState<string | null>(null);
+  // source id with a PATCH/DELETE in flight (SOURCES tab row toggle)
+  const [srcBusy, setSrcBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -3551,8 +3806,16 @@ export default function IntelDashboard() {
   }, []);
 
   const fetchTracker = useCallback(async () => {
+    if (!ownerRef.current) return; // tracker is owner-only — don't poll a guaranteed 401
     try {
       const r = await fetch("/api/intel/tracker", { cache: "no-store" });
+      // 401/403 = not the owner (tracker rows carry full attribution). That is
+      // an access boundary, not an outage — the chrome must not say OFFLINE.
+      if (r.status === 401 || r.status === 403) {
+        ownerRef.current = false;
+        setTrackerOk(null);
+        return;
+      }
       const j = await r.json();
       if (r.ok && Array.isArray(j.tracked)) {
         setTrackedList(j.tracked);
@@ -3574,6 +3837,84 @@ export default function IntelDashboard() {
       .then((j) => { if (Array.isArray(j.dates)) setHistoryDates(j.dates.slice(0, 14)); })
       .catch(() => {});
   }, [load, fetchMacroTape, fetchTracker]);
+
+  // role, once at dashboard load — then the owner's publish listing (curated
+  // feed membership). A failed role fetch keeps the optimistic owner default;
+  // every control it gates is enforced server-side regardless.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/intel/role", { cache: "no-store" });
+        const j = (await r.json()) as Partial<Role>;
+        if (!alive || !r.ok || typeof j.owner !== "boolean") return;
+        ownerRef.current = j.owner;
+        setRole({ owner: j.owner, authConfigured: !!j.authConfigured });
+        if (!j.owner) return;
+        const pr = await fetch("/api/intel/publish", { cache: "no-store" });
+        const pj = await pr.json().catch(() => null);
+        if (alive && pr.ok && Array.isArray(pj?.published)) {
+          setPublishedIds(new Set(pj.published.map((p: { trackedId: string }) => p.trackedId)));
+        }
+      } catch { /* role unknown — stay optimistic; server gates hold */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // a resolved non-owner has no SOURCES tab — leave it if we're on it
+  useEffect(() => {
+    if (role && !role.owner) setTab((t) => (t === "SOURCES" ? "BOARD" : t));
+  }, [role]);
+
+  // publish/unpublish one tracked idea — optimistic flip, revert on error
+  const togglePublish = useCallback(async (trackedId: string, currentlyPublished: boolean) => {
+    setPubBusy(trackedId);
+    const flip = (set: Set<string> | null, on: boolean) => {
+      const next = new Set(set ?? []);
+      if (on) next.add(trackedId);
+      else next.delete(trackedId);
+      return next;
+    };
+    setPublishedIds((prev) => flip(prev, !currentlyPublished));
+    try {
+      const r = await fetch("/api/intel/publish", {
+        method: currentlyPublished ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackedId }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.ok) throw new Error();
+    } catch {
+      setPublishedIds((prev) => flip(prev, currentlyPublished)); // revert
+    } finally {
+      setPubBusy(null);
+    }
+  }, []);
+
+  // enable/disable one source — optimistic flip, revert on error, reconcile
+  // the server-derived fields (status) with a reload on success
+  const toggleSource = useCallback(async (id: string, enabled: boolean) => {
+    setSrcBusy(id);
+    const flip = (to: boolean) =>
+      setData((prev) => prev
+        ? { ...prev, sources: prev.sources.map((s) => (s.id === id ? { ...s, enabled: to } : s)) }
+        : prev);
+    flip(enabled);
+    try {
+      const r = await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.ok) throw new Error();
+      await load();
+    } catch {
+      flip(!enabled); // revert
+    } finally {
+      setSrcBusy(null);
+    }
+  }, [load]);
 
   // desk fold-ins: once on mount + every 5 min — deliberately SEPARATE from
   // the 30s quotes poll (SPEC-wiring §4: server TTLs — fng 30m, sectors 15m,
@@ -3716,6 +4057,17 @@ export default function IntelDashboard() {
     ? trackedList.filter((t) => t.conflictKey === selectedTracked.conflictKey && t.id !== selectedTracked.id)
     : [];
 
+  // owner curation control for one tracked record — null (hidden) for
+  // non-owners, untracked ideas, and until the publish listing has landed
+  const publishCtl = (t: TrackedIdea | null): PublishCtl | null =>
+    owner && publishedIds !== null && t
+      ? {
+          published: publishedIds.has(t.id),
+          busy: pubBusy === t.id,
+          onToggle: () => togglePublish(t.id, publishedIds.has(t.id)),
+        }
+      : null;
+
   // inspector breadcrumb position — the selected row's 1-based index among the
   // currently visible rows in DISPLAY order (horizon groups), and the derived
   // denominator (SPEC-wiring §2.11: the design's /6 was hardcoded)
@@ -3772,6 +4124,7 @@ export default function IntelDashboard() {
           onSync={sync}
           onGenerateBrief={generateBrief}
           fng={desk?.fng ?? null}
+          owner={owner}
         />
         <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
         <LiveTape tape={fullTape} />
@@ -3799,6 +4152,7 @@ export default function IntelDashboard() {
               busy={busy}
               lastBriefAt={data.lastBriefAt}
               aiOn={config.ai}
+              owner={owner}
               sourceCount={sources.length}
               videoCount={videos.length}
               onGoSources={() => setTab("SOURCES")}
@@ -3825,13 +4179,26 @@ export default function IntelDashboard() {
                 aiOn={config.ai}
                 youtubeOk={config.youtube}
                 trackerOk={trackerOk}
+                owner={owner}
+                publishCtl={publishCtl}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
               />
-              {/* board header (SPEC-desktop §2.6.2) — real count, real cadence */}
+              {/* board header (SPEC-desktop §2.6.2) — real count, real cadence.
+                  The gold publish count is curation identity: always mounted on
+                  an owner desk (zero dims, never unmounts — no-CLS), an honest
+                  — until the publish listing lands, absent for non-owners. */}
               <div className="rd-bhead">
                 <span className="rd-bhead-title">TRADE BLOTTER</span>
                 <span className="rd-bhead-meta">{blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s</span>
+                {owner && (
+                  <span
+                    className={`rd-pub-count${(publishedIds?.size ?? 0) === 0 ? " zero" : ""}`}
+                    title="tracked ideas published to the public feed"
+                  >
+                    {publishedIds ? publishedIds.size : "—"} PUBLISHED
+                  </span>
+                )}
               </div>
               {/* legend — design glyphs; ◇ EXTRACTED is deliberately absent
                   (never emitted, SPEC-wiring §2.2); spark + ° honesty notes */}
@@ -3864,6 +4231,8 @@ export default function IntelDashboard() {
                 loading={busy === "sync" || busy === "brief"}
                 busy={busy}
                 aiOn={config.ai}
+                owner={owner}
+                publishedIds={publishedIds}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
               />
@@ -3882,6 +4251,7 @@ export default function IntelDashboard() {
                 mode={inspectorMode}
                 option={selectedOption}
                 briefStatus={brief?.options?.providerStatus ?? null}
+                publish={publishCtl(selectedTracked)}
                 onBackToIdea={() => setInspectorMode("idea")}
               />
             </div>
@@ -3923,8 +4293,8 @@ export default function IntelDashboard() {
           </div>
         )}
 
-        {/* ── SOURCES ── */}
-        {tab === "SOURCES" && (
+        {/* ── SOURCES ── (owner-only: the tab itself is absent on non-owner desks) */}
+        {tab === "SOURCES" && owner && (
           <div className="rd-tabview">
             <div className="rd-card rd-card-acc">
               <div className="rd-card-h">WORKFLOW</div>
@@ -3956,8 +4326,14 @@ export default function IntelDashboard() {
               )}
             </div>
             <AddSource onReload={load} />
-            <SourceMonitor sources={sources} onRemove={removeSource} />
-            <VideoLibrary videos={videos} onOpen={setOpenVideo} />
+            <SourcesManager
+              sources={sources}
+              videos={videos}
+              busySrc={srcBusy}
+              onToggle={toggleSource}
+              onRemove={removeSource}
+              onOpen={setOpenVideo}
+            />
           </div>
         )}
 
@@ -3986,7 +4362,7 @@ export default function IntelDashboard() {
         <AskBar ai={config.ai} />
 
         {openVideo && (
-          <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} />
+          <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} owner={owner} />
         )}
         </div>
       </div>

@@ -261,6 +261,11 @@
   --rd-ows-gold-bg: rgb(216 180 106 / 0.025);
   --rd-tv-bg: rgb(10 11 13 / 1);               /* TradingView chart shell */
   --rd-tv-overlay: rgb(10 11 13 / 0.92);
+
+  /* ---- publish curation (owner-only; gold = identity, not data) ---- */
+  --rd-pub-gold: #d8b46a;
+  --rd-pub-gold-bd: rgb(216 180 106 / 0.4);
+  --rd-pub-gold-bg: rgb(216 180 106 / 0.06);
 }
 
 /* ---- keyframes (§1.8, verbatim) ---- */
@@ -1428,6 +1433,54 @@ textarea.rd-input { resize: vertical; min-height: 110px; }
 .rd-irow-actions { display: flex; gap: 6px; }
 .rd-irow.clickable { cursor: pointer; }
 .rd-irow.clickable:hover { background: var(--rd-hover-item); }
+
+/* ---- SOURCES: channel-grouped management (channel card + video fold) ---- */
+.rd-chan-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.rd-chan-head .rd-irow-title { font-size: 12.5px; }
+.rd-chan-toggle { color: var(--rd-t-faint); }
+.rd-chan-toggle.on { color: var(--rd-bull); border-color: var(--rd-bull-soft30); background: var(--rd-bull-soft05); }
+.rd-chan-fold {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  margin-top: 10px; padding: 7px 0 0;
+  background: transparent; border: none; border-top: 1px solid var(--rd-hair-06);
+  cursor: pointer;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--rd-t-faint);
+}
+.rd-chan-fold:hover { color: var(--rd-t-secondary2); }
+.rd-chan-fold:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-chan-more { padding: 6px 0 2px; }
+.rd-chan-none { padding: 8px 0 0; }
+
+/* ---- PUBLISH curation chrome (owner-only; gold identity family) ---- */
+.rd-chip-pub {
+  color: var(--rd-pub-gold);
+  border-color: var(--rd-pub-gold-bd);
+  background: var(--rd-pub-gold-bg);
+}
+.rd-c-src .rd-chip-pub { margin-right: 6px; }
+.rd-btn-pub { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold-bd); background: var(--rd-pub-gold-bg); }
+.rd-btn-pub:hover { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold); }
+.rd-pub-count {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-pub-gold); border: 1px solid var(--rd-pub-gold-bd);
+  background: var(--rd-pub-gold-bg); border-radius: 2px; padding: 1px 7px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.rd-pub-count.zero { opacity: 0.4; } /* zero-count dims, never unmounts (no-CLS) */
+.rd-mpub {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--rd-hair-055);
+}
+.rd-mpub .rd-btn { flex: 1; }
+
+/* 44px touch targets — the SOURCES tab is a durable mobile action path, and
+   the mobile card's publish action sits outside .rd-tabview's blanket rule */
+@media (max-width: 700px) {
+  .rd-chan-fold { min-height: 44px; }
+  .rd-mpub .rd-btn { min-height: 44px; }
+}
 
 /* ---- idea cards (BRIEF/drawer bodies — inset card + token type ramp) ---- */
 .rd-idea {
@@ -2646,6 +2699,11 @@ a.rd-cite:hover { text-decoration: underline; }
   --rd-ows-gold-bg: rgb(138 108 46 / 0.05);
   --rd-tv-bg: rgb(248 247 243 / 1);
   --rd-tv-overlay: rgb(248 247 243 / 0.92);
+
+  /* ---- publish curation — gold ink (deep enough for 7.5px mono on paper) ---- */
+  --rd-pub-gold: #7c5f24;
+  --rd-pub-gold-bd: rgb(138 108 46 / 0.45);
+  --rd-pub-gold-bg: rgb(138 108 46 / 0.06);
 }
 
 /* mobile (<700px) light re-pins — the dark mobile block above re-pins
