@@ -592,6 +592,70 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 .rd-fchip:hover { color: var(--rd-t-secondary2); }
 .rd-fchip.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); }
 
+/* ---- DAY BOARDS rail (owner scope strip above the filter row): TODAY ·
+   prior brief dates · OVERALL. Existing tokens only — the light theme
+   re-pins the variables, so no separate DAY block is needed. ---- */
+.rd-dayrail {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.rd-dayrail::-webkit-scrollbar { display: none; }
+.rd-dayrail-lab {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap; flex-shrink: 0;
+}
+.rd-daychip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint); background: transparent;
+  border: 1px solid var(--rd-hair-08); border-radius: 2px;
+  padding: 4px 8px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.rd-daychip:hover { color: var(--rd-t-secondary2); border-color: var(--rd-hair-14); }
+.rd-daychip.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+.rd-daychip-n { color: var(--rd-t-dim); }
+.rd-daychip.on .rd-daychip-n { color: inherit; }
+.rd-daychip-n.zero { color: var(--rd-t-disabled); }
+/* phone instance — hidden on desktop (the desktop instance carries rd-mhide;
+   the <700px block near the end of this section shows this one) */
+.rd-dayrail-m { display: none; }
+
+/* ---- DAY BOARD table — same rd-row system, day column template
+   (STATUS TICKER DIR TF THESIS CREATED ALERTED SO-FAR SRC) ---- */
+.rd-day-min {
+  --rd-cols: 56px 46px 44px 50px minmax(150px, 1.5fr) 84px 84px minmax(150px, 1.1fr) minmax(120px, 1fr);
+  min-width: 900px;
+}
+.rd-c-day {
+  font-family: var(--rd-mono); font-size: 9.5px;
+  color: var(--rd-t-secondary2); white-space: nowrap;
+}
+.rd-c-sofar {
+  font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-sofar-lab { color: var(--rd-t-faint); font-size: 8px; letter-spacing: 0.04em; }
+
+/* ---- DAY facts block inside the mobile idea card (rd-mb tree, <700px) ---- */
+.rd-mday {
+  display: grid; grid-template-columns: auto 1fr; gap: 5px 12px;
+  margin: 10px 0 2px; padding: 9px 11px;
+  border: 1px solid var(--rd-hair-07); border-radius: 8px;
+  background: var(--rd-inset);
+}
+.rd-mday-l {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em;
+  color: var(--rd-t-ghost); align-self: center; white-space: nowrap;
+}
+.rd-mday-v { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary2); min-width: 0; }
+
+/* ---- DAY BOARDS rail, phone form (44px chips, horizontal scroll) ---- */
+@media (max-width: 700px) {
+  .rd-dayrail-m { display: flex; padding: 10px 16px 0; }
+  .rd-dayrail-m .rd-daychip { min-height: 44px; padding: 3px 12px; }
+}
+
 /* ---- board scroll frame: 17 real columns share one template ---- */
 .rd-board-wrap { overflow-x: auto; scrollbar-width: thin; }
 .rd-board-min {

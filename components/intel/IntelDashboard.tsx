@@ -24,6 +24,7 @@ import type {
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
 import { mfeMaeView, pnlView, type TrackedIdea, type TrackedStatus } from "@/lib/intel/tracker";
+import { dayAlerted, dayCreated, daySoFar } from "@/lib/intel/dayBoard";
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,18 @@ const etClockSec = () =>
   new Date().toLocaleTimeString("en-US", {
     timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
   });
+// compact ET stamp for the DAY BOARD's CREATED/ALERTED cells — "07-11 09:42"
+// (date kept: an idea can be ingested/alerted on a different day than boarded)
+const etStamp = (ms: number) => {
+  const d = new Date(ms);
+  const date = d
+    .toLocaleDateString("en-US", { timeZone: "America/New_York", month: "2-digit", day: "2-digit" })
+    .replace("/", "-");
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+  return `${date} ${time}`;
+};
 
 function deriveStatus(idea: BlotterIdea): IdeaStatus {
   const q = idea.quote;
@@ -1133,6 +1146,273 @@ function BlotterTable({
   );
 }
 
+// ── DAY BOARDS (owner control feature) ───────────────────────────────────────
+// One board per desk run (dated brief). The rail scopes the BOARD: TODAY
+// (default), any prior brief date, or OVERALL — the pre-existing cumulative
+// blotter, byte-identical. A day board answers the owner's three questions
+// per idea — CREATED / ALERTED / SO FAR — from the tracker record + that
+// date's stored brief (lib/intel/dayBoard.ts), honestly: absent data renders
+// the ∅ treatment, a date without a stored brief renders "no desk run", and
+// SO FAR is the tracker engine's pnlView labeled verbatim.
+
+type BoardScope = "TODAY" | "OVERALL" | string; // string = a YYYY-MM-DD brief date
+
+function BoardDateRail({ scope, dates, todayCount, overallCount, onScope, mobile }: {
+  scope: BoardScope;
+  /** prior brief dates, newest first (today's key excluded by the caller) */
+  dates: string[];
+  todayCount: number;
+  overallCount: number;
+  onScope: (s: BoardScope) => void;
+  /** phone instance (<700px only); the desktop instance carries rd-mhide */
+  mobile?: boolean;
+}) {
+  const chip = (key: BoardScope, label: string, count: number | null, title: string) => (
+    <button
+      key={key}
+      type="button"
+      className={`rd-daychip${scope === key ? " on" : ""}`}
+      aria-pressed={scope === key}
+      title={title}
+      onClick={() => onScope(key)}
+    >
+      {label}
+      {count !== null && <span className={`rd-daychip-n${count === 0 ? " zero" : ""}`}>{count}</span>}
+    </button>
+  );
+  return (
+    <div
+      className={`rd-dayrail${mobile ? " rd-dayrail-m" : " rd-mhide"}`}
+      role="group"
+      aria-label="Day boards — scope the board to one desk run"
+    >
+      <span className="rd-dayrail-lab">DAY BOARDS</span>
+      {chip("TODAY", "TODAY", todayCount, "today's desk run")}
+      {dates.map((d) => chip(d, d.slice(5), null, `desk run · ${d}`))}
+      {chip("OVERALL", "OVERALL", overallCount, "the cumulative blotter")}
+    </div>
+  );
+}
+
+/** one day-board row — same rd-row system as the blotter, day column set.
+ * CREATED/ALERTED/SO FAR come from lib/intel/dayBoard.ts (shared with the
+ * mobile card so the two surfaces can never disagree). */
+function DayRow({ idea, tracked, briefGeneratedAt, selected, published, onSelect }: {
+  idea: BlotterIdea;
+  tracked: TrackedIdea | null;
+  briefGeneratedAt: number | null;
+  selected: boolean;
+  published: boolean;
+  onSelect: () => void;
+}) {
+  const life = rowLife(idea, tracked);
+  const dirMeta = RD_DIR[idea.direction];
+  const created = dayCreated(idea.id, tracked, briefGeneratedAt);
+  const alerted = dayAlerted(tracked);
+  const pnl = daySoFar(tracked);
+  const pnlTitle =
+    pnl.kind === "since_called" ? `since called — vs stated trigger $${fmtPx(pnl.basis)}`
+    : pnl.kind === "since_first_mention" ? "° price since first mention (no stated trigger — not trade P&L)"
+    : pnl.reason;
+  return (
+    <div
+      className={`rd-row ${life.family}${selected ? " sel" : ""}${life.live ? " live" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return; // let the source link keep its keys
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); }
+      }}
+    >
+      <span className="rd-row-accent" aria-hidden="true" />
+      {life.live && <span className="rd-row-wash" aria-hidden="true" />}
+      {selected && <span className="rd-row-selwash" aria-hidden="true" />}
+      {selected && <span className="rd-row-ring" aria-hidden="true" />}
+      <div className="rd-row-grid">
+        <span className="rd-c">
+          <span className={`rd-life ${life.cls}`} title={life.title}>
+            <span className="rd-life-dot" aria-hidden="true" />
+            {life.label}
+            {life.conflict && <span className="rd-life-conflict" title="conflicting stated triggers from this source">!</span>}
+          </span>
+        </span>
+        <span className="rd-c rd-c-ticker">{idea.ticker}</span>
+        <span className={`rd-c rd-c-dir ${dirMeta.cls}`} title={dirMeta.title}>
+          <span className="rd-dir-g" aria-hidden="true">{dirMeta.glyph}</span>
+          {dirMeta.label}
+        </span>
+        <span className="rd-c rd-c-tf">{TF_FULL[idea.timeHorizon] ?? "—"}</span>
+        <span className="rd-c rd-c-thesis" title={idea.thesis}>{idea.thesis}</span>
+        <span
+          className="rd-c rd-c-day"
+          title={created
+            ? created.basis === "tracker_ingest"
+              ? "tracker ingest — when this mention entered the tracker (ET)"
+              : "desk run — when this date's brief was generated (ET)"
+            : undefined}
+        >
+          {created ? etStamp(created.at) : <AbsentCell text="unknown" />}
+        </span>
+        <span
+          className="rd-c rd-c-day"
+          title={alerted
+            ? `${alerted.reason}${alerted.price != null ? ` · @ ${rdPx(alerted.price)}` : ""}`
+            : tracked ? "no TRIGGERED transition recorded" : "no tracker record for this idea"}
+        >
+          {alerted ? etStamp(alerted.at) : <AbsentCell text={tracked ? "not alerted" : "not tracked"} />}
+        </span>
+        <span className="rd-c rd-c-sofar" title={pnlTitle}>
+          {pnl.kind === "since_called" ? (
+            <><b className={pnl.pct >= 0 ? "rd-pos" : "rd-neg"}>{fmtPct(pnl.pct)}</b><span className="rd-sofar-lab"> since called</span></>
+          ) : pnl.kind === "since_first_mention" ? (
+            <><b className={pnl.pct >= 0 ? "rd-pos" : "rd-neg"}>{fmtPct(pnl.pct)}°</b><span className="rd-sofar-lab"> since first mention</span></>
+          ) : (
+            <AbsentCell text={pnl.reason} />
+          )}
+        </span>
+        <span className="rd-c rd-c-src">
+          {published && <span className="rd-chip rd-chip-pub" title="published to the public feed">PUB</span>}
+          {idea.videoId ? (
+            <a
+              href={watchUrl(idea.videoId, idea.sourceStartSeconds)}
+              target="_blank" rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="open source at timestamp"
+            >
+              ▸ {idea.channelTitle} @ {mmss(idea.sourceStartSeconds)}
+            </a>
+          ) : idea.channelTitle ? (
+            <span>{idea.channelTitle}</span>
+          ) : null /* redacted payload — no attribution, no source row */}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const DAY_COLS = ["STATUS", "TICKER", "DIR", "TF", "THESIS", "CREATED", "ALERTED", "SO FAR", "SRC"];
+
+/** the desktop day board (rd-mhide — MobileBoard owns <700px). States, in
+ * order of honesty: loading (fetch in flight) → error (fetch failed, retry)
+ * → no stored brief ("no desk run") → 0-idea brief → filter miss → rows. */
+function DayBoard({ scopeKey, date, brief, ideas, trackedByIdeaId, filter, selectedId, onSelect, loading, error, onRetry, publishedIds }: {
+  scopeKey: "TODAY" | string;
+  date: string;
+  brief: DailyBrief | null;
+  ideas: BlotterIdea[];
+  trackedByIdeaId: Map<string, TrackedIdea>;
+  filter: BlotterFilter;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+  publishedIds: Set<string> | null;
+}) {
+  if (loading) {
+    return (
+      <div className="rd-mhide" role="status" aria-label={`Loading the ${date} desk run`}>
+        <div className="rd-load-strip">
+          <span className="rd-load-dot" aria-hidden="true" />
+          LOADING {date} DESK RUN…
+        </div>
+        {[0, 1, 2].map((r) => (
+          <div key={r} className="rd-skelrow" aria-hidden="true">
+            {SKEL_BARS.map((b, i) => (
+              <span
+                key={i}
+                className={`rd-skelbar${b.hi ? " hi" : ""}`}
+                style={{ width: b.w, height: b.h, animationDelay: `${SKEL_DELAYS[i]}s` }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rd-mhide" style={{ padding: "8px 16px" }}>
+        <div className="rd-state rd-state-err" role="alert">
+          Couldn&apos;t load the {date} desk run.{" "}
+          <button type="button" className="rd-btn rd-btn-sm" onClick={onRetry}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+  if (!brief) {
+    return (
+      <div className="rd-board-empty rd-mhide">
+        <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+        <div className="rd-empty-title">NO DESK RUN FOR THIS DATE</div>
+        <p className="rd-empty-copy">
+          {scopeKey === "TODAY"
+            ? <>No brief has been generated for today ({date}) yet.</>
+            : <>No brief was generated for {date} — there is no board for this date.</>}
+        </p>
+      </div>
+    );
+  }
+  const visible = visibleBlotter(ideas, trackedByIdeaId, filter);
+  return (
+    <div className="rd-mhide">
+      <div className="rd-group hero">
+        <span className="rd-group-tick rd-tick-today" aria-hidden="true" />
+        <span className="rd-group-label">DESK RUN · {scopeKey === "TODAY" ? `TODAY (${date})` : date}</span>
+        <span className="rd-group-sub">brief generated {etStamp(brief.generatedAt)} ET</span>
+        <span className="rd-group-hair" aria-hidden="true" />
+        <span className="rd-group-count">{ideas.length} IDEA{ideas.length !== 1 ? "S" : ""}</span>
+      </div>
+      {ideas.length === 0 ? (
+        <div className="rd-board-empty">
+          <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+          <div className="rd-empty-title">DESK RAN — NO BOARD IDEAS</div>
+          <p className="rd-empty-copy">The {date} brief holds no board ideas.</p>
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rd-board-empty rd-board-nomatch">
+          <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+          <div className="rd-empty-title">NO IDEAS MATCH</div>
+          <p className="rd-empty-copy">No ideas from this desk run in the {filter.toLowerCase()} state right now.</p>
+        </div>
+      ) : (
+        <div className="rd-board-wrap">
+          <div className="rd-day-min">
+            <div className="rd-colhead">
+              {DAY_COLS.map((c) => (
+                <span
+                  key={c}
+                  title={c === "SO FAR" ? "the tracker engine's P&L — since called vs stated trigger; ° = price since first mention"
+                    : c === "CREATED" ? "when the idea entered the desk — tracker ingest, else the desk run (ET)"
+                    : c === "ALERTED" ? "the tracker's TRIGGERED transition (ET)" : undefined}
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+            {visible.map((idea) => {
+              const t = trackedByIdeaId.get(idea.id) ?? null;
+              return (
+                <DayRow
+                  key={idea.id}
+                  idea={idea}
+                  tracked={t}
+                  briefGeneratedAt={brief.generatedAt}
+                  selected={selectedId === idea.id}
+                  published={!!(t && publishedIds?.has(t.id))}
+                  onSelect={() => onSelect(idea.id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── STAGE 8 — MOBILE BOARD (SPEC-mobile; <700px only, CSS-gated) ─────────────
 // The phone layout for the BOARD tab: summary carousel (Brief / Alerts /
 // At-the-Open) with scroll-bound dots, sticky segmented HORIZON control (the
@@ -1188,13 +1468,17 @@ function RdSparkM({ closes, tone }: { closes: number[]; tone: ChartTone }) {
  * REUSED InspChart (real 1M daily closes — the design's own chart was seeded
  * and self-labeled illustrative, so the label here is the honest
  * PRICE · 1M · DAILY), the shared LEVELS fields, conf + source cite. */
-function MobileIdeaCard({ idea, tracked, open, publish, onToggle }: {
+function MobileIdeaCard({ idea, tracked, open, publish, onToggle, dayGeneratedAt }: {
   idea: BlotterIdea;
   tracked: TrackedIdea | null;
   open: boolean;
   /** owner curation — chip + 44px action in the expanded body; null hides it */
   publish: PublishCtl | null;
   onToggle: () => void;
+  /** DAY BOARDS scope: the scoped brief's generatedAt — non-null renders the
+   * CREATED / ALERTED / SO FAR facts block (same lib/intel/dayBoard.ts
+   * derivations as the desktop DayRow, so the surfaces can never disagree) */
+  dayGeneratedAt: number | null;
 }) {
   const dir = idea.direction;
   const life = rowLife(idea, tracked);
@@ -1273,6 +1557,43 @@ function MobileIdeaCard({ idea, tracked, open, publish, onToggle }: {
       {open && (
         <div className="rd-mbody" id={bodyId}>
           <p className="rd-mthesis">{idea.thesis}</p>
+          {dayGeneratedAt !== null && (() => {
+            const created = dayCreated(idea.id, tracked, dayGeneratedAt);
+            const alerted = dayAlerted(tracked);
+            const pnl = daySoFar(tracked);
+            return (
+              <div className="rd-mday" role="group" aria-label="Day board facts — created, alerted, so far">
+                <span className="rd-mday-l">CREATED</span>
+                <span
+                  className="rd-mday-v"
+                  title={created
+                    ? created.basis === "tracker_ingest"
+                      ? "tracker ingest — when this mention entered the tracker (ET)"
+                      : "desk run — when this date's brief was generated (ET)"
+                    : undefined}
+                >
+                  {created ? etStamp(created.at) : <AbsentCell text="unknown" />}
+                </span>
+                <span className="rd-mday-l">ALERTED</span>
+                <span
+                  className="rd-mday-v"
+                  title={alerted ? `${alerted.reason}${alerted.price != null ? ` · @ ${rdPx(alerted.price)}` : ""}` : undefined}
+                >
+                  {alerted ? etStamp(alerted.at) : <AbsentCell text={tracked ? "not alerted" : "not tracked"} />}
+                </span>
+                <span className="rd-mday-l">SO FAR</span>
+                <span className="rd-mday-v">
+                  {pnl.kind === "since_called" ? (
+                    <><b className={pnl.pct >= 0 ? "rd-pos" : "rd-neg"}>{fmtPct(pnl.pct)}</b> since called</>
+                  ) : pnl.kind === "since_first_mention" ? (
+                    <><b className={pnl.pct >= 0 ? "rd-pos" : "rd-neg"}>{fmtPct(pnl.pct)}°</b> since first mention</>
+                  ) : (
+                    <AbsentCell text={pnl.reason} />
+                  )}
+                </span>
+              </div>
+            );
+          })()}
           <div className="rd-mchart-h">
             <span className="rd-mchart-lab">PRICE · 1M · DAILY</span>
             {delta && (
@@ -1337,9 +1658,19 @@ function MobileIdeaCard({ idea, tracked, open, publish, onToggle }: {
   );
 }
 
+/** DAY BOARDS scope handed to MobileBoard — null means OVERALL (the
+ * pre-existing behavior, unchanged). `brief`/`blotter` arrive already scoped. */
+type MobileDayScope = {
+  scope: "TODAY" | string;
+  date: string;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+};
+
 function MobileBoard({
   blotter, trackedByIdeaId, trackedList, filter, onFilter, brief, quotes,
-  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief,
+  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief, day,
 }: {
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
@@ -1358,6 +1689,7 @@ function MobileBoard({
   publishCtl: (t: TrackedIdea | null) => PublishCtl | null;
   onAddSource: () => void;
   onGenerateBrief: () => void;
+  day: MobileDayScope | null;
 }) {
   // design §5 state model: horizon default is the design's TODAY — shipped as
   // ALL so a board whose real ideas sit in other horizons never opens empty
@@ -1442,7 +1774,7 @@ function MobileBoard({
       >
         <section className="rd-mcard rd-mcard-brief" role="group" aria-roledescription="slide" aria-label="Tonight's brief, card 1 of 3">
           <div className="rd-mcar-h">
-            <span className="rd-mcar-title">TONIGHT&apos;S BRIEF</span>
+            <span className="rd-mcar-title">{day && day.scope !== "TODAY" ? <>BRIEF · {day.date}</> : <>TONIGHT&apos;S BRIEF</>}</span>
             {brief?.read60 && (
               /* the design's READ · 60s chip was a mock estimate — here it is
                  the REAL read60 digest toggle */
@@ -1477,6 +1809,14 @@ function MobileBoard({
                 </div>
               </div>
             </>
+          ) : day?.loading ? (
+            <p className="rd-mbrief-p rd-mabs">Loading the {day.date} desk run…</p>
+          ) : day?.error ? (
+            <p className="rd-mbrief-p rd-mabs">Couldn&apos;t load the {day.date} desk run.</p>
+          ) : day && day.scope !== "TODAY" ? (
+            <p className="rd-mbrief-p rd-mabs">
+              <span className="rd-abs-g" aria-hidden="true">∅</span> No desk run for {day.date}.
+            </p>
           ) : (
             <p className="rd-mbrief-p rd-mabs">
               <span className="rd-abs-g" aria-hidden="true">∅</span> No brief generated yet — add a source, then generate tonight&apos;s brief.
@@ -1591,7 +1931,24 @@ function MobileBoard({
 
       {/* ── idea cards ── */}
       {blotter.length === 0 ? (
-        loading ? (
+        day?.loading ? (
+          <div role="status" aria-label={`Loading the ${day.date} desk run`}>
+            <div className="rd-load-strip">
+              <span className="rd-load-dot" aria-hidden="true" />
+              LOADING {day.date} DESK RUN…
+            </div>
+            <div className="rd-mlist" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
+              ))}
+            </div>
+          </div>
+        ) : day?.error ? (
+          <div className="rd-state rd-state-err" role="alert" style={{ padding: "12px 16px" }}>
+            Couldn&apos;t load the {day.date} desk run.{" "}
+            <button type="button" className="rd-btn rd-btn-sm" onClick={day.onRetry}>Retry</button>
+          </div>
+        ) : loading ? (
           <div role="status" aria-label="Syncing sources and extracting ideas">
             <div className="rd-load-strip">
               <span className="rd-load-dot" aria-hidden="true" />
@@ -1602,6 +1959,18 @@ function MobileBoard({
                 <div key={i} className="rd-mskel" style={{ animationDelay: `${i * 0.12}s` }} />
               ))}
             </div>
+          </div>
+        ) : day && day.scope !== "TODAY" && !brief ? (
+          <div className="rd-board-empty">
+            <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+            <div className="rd-empty-title">NO DESK RUN FOR THIS DATE</div>
+            <p className="rd-empty-copy">No brief was generated for {day.date} — there is no board for this date.</p>
+          </div>
+        ) : day && day.scope !== "TODAY" && brief ? (
+          <div className="rd-board-empty">
+            <div className="rd-empty-glyph" aria-hidden="true">∅</div>
+            <div className="rd-empty-title">DESK RAN — NO BOARD IDEAS</div>
+            <p className="rd-empty-copy">The {day.date} brief holds no board ideas.</p>
           </div>
         ) : (
           <BoardEmpty busy={busy} aiOn={aiOn} owner={owner} onAddSource={onAddSource} onGenerateBrief={onGenerateBrief} />
@@ -1626,6 +1995,7 @@ function MobileBoard({
                 open={expandedId === idea.id}
                 publish={publishCtl(t)}
                 onToggle={() => setExpandedId((c) => (c === idea.id ? null : idea.id))}
+                dayGeneratedAt={day && brief ? brief.generatedAt : null}
               />
             );
           })}
@@ -3347,7 +3717,10 @@ function statusBadge(v: IntelVideo) {
   if (v.liveState === "live") return <span className="rd-chip rd-chip-err">Live</span>;
   if (v.status === "analyzing") return <span className="rd-chip rd-chip-warn">Processing</span>;
   if (v.status === "preliminary") return <span className="rd-chip rd-chip-warn">Preliminary</span>;
+  // an analyzed row that carries an error had a FAILED rerun — say so, don't hide it
+  if (v.status === "analyzed" && v.error) return <span className="rd-chip rd-chip-warn">Analyzed · rerun failed</span>;
   if (v.status === "analyzed") return <span className="rd-chip rd-chip-ok">Analyzed</span>;
+  if (v.status === "failed") return <span className="rd-chip rd-chip-err">Failed</span>;
   if (v.transcriptStatus === "pending" || v.transcriptStatus === "unavailable")
     return <span className="rd-chip rd-chip-dim">Transcript {v.transcriptStatus}</span>;
   return <span className="rd-chip rd-chip-dim">{v.status}</span>;
@@ -3573,6 +3946,18 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn, owner }: { videoId: 
     } finally { setBusy(false); }
   }, [transcript, videoId, load, onProcessed]);
 
+  // Shared by the failure banner's RETRY and the footer Reprocess action —
+  // both hit the existing reprocess route, then re-read the bundle (which now
+  // carries either the fresh analysis or the honest video.error).
+  const reprocess = useCallback(async () => {
+    setBusy(true); setErr(null);
+    try {
+      await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" });
+      await load();
+      onProcessed();
+    } finally { setBusy(false); }
+  }, [videoId, load, onProcessed]);
+
   const v = bundle?.video, a = bundle?.analysis, chapters = bundle?.chapters ?? [];
   const selectedChapter = selectedChapterSec !== null ? chapters.find((ch) => ch.startSeconds === selectedChapterSec) ?? null : null;
   const filter = <T extends { sourceStartSeconds: number }>(arr: T[]) =>
@@ -3606,6 +3991,18 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn, owner }: { videoId: 
               {v?.stale && <span className="rd-chip rd-chip-warn">Stale</span>}
               <a className="rd-cite" href={watchUrl(videoId)} target="_blank" rel="noreferrer">▸ open on YouTube</a>
             </div>
+            {/* HONESTY: a failed extraction surfaces its REAL stored reason here —
+                never a blank drawer — with a retry over the existing reprocess route. */}
+            {v && (v.error || v.status === "failed") && (
+              <div className="rd-state rd-state-err" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 0", marginBottom: 8 }}>
+                <span style={{ flex: "1 1 240px" }}>{v.error ?? "Extraction failed."}</span>
+                {owner && (
+                  <button type="button" className="rd-btn rd-btn-sm" disabled={busy} onClick={reprocess}>
+                    {busy ? "Retrying…" : "Retry"}
+                  </button>
+                )}
+              </div>
+            )}
             {owner && v?.status !== "analyzed" && (
               <div className="rd-card rd-tx" style={{ marginTop: 12 }}>
                 <div className="rd-tx-step">
@@ -3655,12 +4052,31 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn, owner }: { videoId: 
               <>
                 {a.overallSummary && <div className="rd-card"><div className="rd-card-h">Summary {a.pass === "preliminary" && <span className="rd-chip rd-chip-warn">Preliminary</span>}</div><p className="rd-body-p">{a.overallSummary}</p></div>}
                 {selectedChapter && <div className="rd-chap-filter"><span>Filtering:</span><b>{selectedChapter.title}</b><button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setSelectedChapterSec(null)}>Clear</button></div>}
-                {visibleIdeas.length > 0 && <div className="rd-card"><div className="rd-card-h">Trade Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)}</div>}
+                {/* IDEAS — the per-video view: only THIS video's extracted ideas
+                    (ticker · direction · thesis · stated levels · evidence timestamps).
+                    Always rendered for an analysis: a genuinely-empty extraction says
+                    "0 ideas extracted" honestly instead of vanishing. */}
+                <div className="rd-card">
+                  <div className="rd-card-h">Ideas · {visibleIdeas.length}{selectedChapter ? " (in chapter)" : ""}</div>
+                  {visibleIdeas.length === 0 ? (
+                    <div className="rd-state">
+                      {selectedChapter
+                        ? "No ideas in this chapter."
+                        : a.pass === "preliminary"
+                          ? "Preliminary pass — 0 ideas extracted so far."
+                          : "Analyzed — 0 ideas extracted from this video."}
+                    </div>
+                  ) : (
+                    visibleIdeas.map((i) => <IdeaCard key={i.id} idea={i} favorite={i.creatorDesignation.isFavoriteSetup} />)
+                  )}
+                </div>
                 {visibleOptions.length > 0 && <div className="rd-card"><div className="rd-card-h">Option Ideas · {visibleOptions.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleOptions.map((o) => <DrawerOptionRow key={o.id} o={o} />)}</div>}
                 {visibleLevels.length > 0 && <div className="rd-card"><div className="rd-card-h">Levels · {visibleLevels.length}{selectedChapter ? " (in chapter)" : ""}</div>{visibleLevels.map((l) => <LevelRow key={l.id} l={l} />)}</div>}
                 {a.catalysts.length > 0 && <div className="rd-card"><div className="rd-card-h">Catalysts</div>{a.catalysts.map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
                 {owner && (
-                  <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={async () => { setBusy(true); await fetch(`/api/intel/videos/${encodeURIComponent(videoId)}/reprocess`, { method: "POST" }); await load(); onProcessed(); setBusy(false); }}>Reprocess</button>
+                  <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" disabled={busy} onClick={reprocess}>
+                    {busy ? "Reprocessing…" : "Reprocess"}
+                  </button>
                 )}
               </>
             )}
@@ -3750,6 +4166,16 @@ export default function IntelDashboard() {
   // server-throttled, so polling this is cheap).
   const [trackedList, setTrackedList] = useState<TrackedIdea[]>([]);
   const [blotterFilter, setBlotterFilter] = useState<BlotterFilter>("ALL");
+  // DAY BOARDS (owner control): the board scope — TODAY (default), a prior
+  // brief date, or OVERALL (the pre-existing cumulative blotter, unchanged).
+  // Prior-date briefs load through the EXISTING GET /api/intel/briefs/[date]
+  // and are cached per date (briefs are immutable once stored; retry evicts).
+  const [boardScope, setBoardScope] = useState<BoardScope>("TODAY");
+  const [dayBrief, setDayBrief] = useState<DailyBrief | null>(null);
+  const [dayLoading, setDayLoading] = useState(false);
+  const [dayErr, setDayErr] = useState(false);
+  const [dayRetryN, setDayRetryN] = useState(0);
+  const dayCache = useRef<Map<string, DailyBrief | null>>(new Map());
   // when the overview fetch last failed (ET, with seconds) — the board error
   // state renders this real timestamp, never the design's sample ERR line
   const [errAt, setErrAt] = useState<string | null>(null);
@@ -4006,6 +4432,40 @@ export default function IntelDashboard() {
     finally { setHistoryLoading(false); }
   }, [selectedDate]);
 
+  // DAY BOARDS: fetch a prior date's stored brief when that scope is selected.
+  // TODAY reads the overview's brief directly; OVERALL fetches nothing. A
+  // failed fetch is an ERROR state (retry), never conflated with "no brief
+  // was stored" — the two render differently.
+  useEffect(() => {
+    if (boardScope === "TODAY" || boardScope === "OVERALL") { setDayLoading(false); setDayErr(false); return; }
+    const date = boardScope;
+    const cached = dayCache.current.get(date);
+    if (cached !== undefined) { setDayBrief(cached); setDayLoading(false); setDayErr(false); return; }
+    let alive = true;
+    setDayLoading(true); setDayErr(false); setDayBrief(null);
+    (async () => {
+      try {
+        const r = await fetch(`/api/intel/briefs/${encodeURIComponent(date)}`, { cache: "no-store" });
+        if (!r.ok) throw new Error();
+        const j = await r.json();
+        if (!alive) return;
+        const b: DailyBrief | null = j.brief ?? null;
+        dayCache.current.set(date, b);
+        setDayBrief(b);
+      } catch {
+        if (alive) { setDayBrief(null); setDayErr(true); }
+      } finally {
+        if (alive) setDayLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [boardScope, dayRetryN]);
+
+  const retryDay = useCallback(() => {
+    if (boardScope !== "TODAY" && boardScope !== "OVERALL") dayCache.current.delete(boardScope);
+    setDayRetryN((n) => n + 1);
+  }, [boardScope]);
+
   const removeSource = useCallback(async (id: string) => {
     await fetch(`/api/intel/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
     await load();
@@ -4066,17 +4526,36 @@ export default function IntelDashboard() {
   const { config, sources, videos, brief } = data;
   const displayBrief = selectedDate ? historyBrief : brief;
   const blotter = buildBlotter(brief, quotes);
-  const selectedIdea = blotter.find((i) => i.id === selectedId) ?? null;
+
+  // DAY BOARDS scope resolution — non-owner desks are pinned to OVERALL (the
+  // pre-day-boards behavior, byte-identical; the rail never renders for them).
+  // TODAY reads the overview's brief (it IS today's stored brief); a prior
+  // date reads the fetched dayBrief; OVERALL keeps the cumulative blotter.
+  const scope: BoardScope = owner ? boardScope : "OVERALL";
+  const isDayScope = scope !== "OVERALL";
+  const todayKey = data.clock.date;
+  const scopedDayBrief = scope === "TODAY" ? brief : scope === "OVERALL" ? null : dayBrief;
+  const dayIdeas = isDayScope ? buildBlotter(scopedDayBrief, quotes) : [];
+  const scopedIdeas = isDayScope ? dayIdeas : blotter;
+  const scopeDate = scope === "TODAY" ? todayKey : scope; // meaningless for OVERALL
+  const dayStateLoading = isDayScope && scope !== "TODAY" && dayLoading;
+  const dayStateErr = isDayScope && scope !== "TODAY" && dayErr;
+  const railDates = historyDates.filter((d) => d !== todayKey);
+  const selectedIdea = scopedIdeas.find((i) => i.id === selectedId) ?? null;
 
   // join blotter rows to tracker records through contributed idea ids
   const trackedByIdeaId = new Map<string, TrackedIdea>();
   for (const t of trackedList) for (const iid of t.ideaIds) trackedByIdeaId.set(iid, t);
   const selectedTracked = selectedIdea ? trackedByIdeaId.get(selectedIdea.id) ?? null : null;
 
-  // stage 7: the ticket's option, resolved from the CURRENT brief's option
+  // the brief the BOARD tab's panels render — the scoped day's brief under a
+  // day scope (TODAY === the overview brief), the current brief on OVERALL
+  const boardBrief = isDayScope ? scopedDayBrief : brief;
+
+  // stage 7: the ticket's option, resolved from the BOARD brief's option
   // sections (plays + candidates — the two lists the panel renders)
-  const optionPool: OptionBriefIdea[] = brief?.options
-    ? [...brief.options.bestCreatorPlays, ...brief.options.augustCandidates]
+  const optionPool: OptionBriefIdea[] = boardBrief?.options
+    ? [...boardBrief.options.bestCreatorPlays, ...boardBrief.options.augustCandidates]
     : [];
   const selectedOption = selectedOptionId
     ? optionPool.find((o) => o.id === selectedOptionId) ?? null
@@ -4099,10 +4578,12 @@ export default function IntelDashboard() {
   // inspector breadcrumb position — the selected row's 1-based index among the
   // currently visible rows in DISPLAY order (horizon groups), and the derived
   // denominator (SPEC-wiring §2.11: the design's /6 was hardcoded)
-  const visibleRows = visibleBlotter(blotter, trackedByIdeaId, blotterFilter);
-  const displayRows = BOARD_GROUPS.flatMap((g) =>
-    visibleRows.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g.key),
-  );
+  const visibleRows = visibleBlotter(scopedIdeas, trackedByIdeaId, blotterFilter);
+  const displayRows = isDayScope
+    ? visibleRows // the day board is flat, in brief order (favorites → rank)
+    : BOARD_GROUPS.flatMap((g) =>
+        visibleRows.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g.key),
+      );
   const selRowIdx = selectedIdea ? displayRows.findIndex((r) => r.id === selectedIdea.id) : -1;
 
   // compose watchlist tape items from blotter — one chip per symbol. Multiple
@@ -4191,17 +4672,29 @@ export default function IntelDashboard() {
               desk={desk}
             />
             <div className="rd-center">
+              {/* DAY BOARDS rail — phone instance (44px chips, display:none
+                  ≥701px), above the MobileBoard carousel; owner desk only */}
+              {owner && (
+                <BoardDateRail
+                  mobile
+                  scope={scope}
+                  dates={railDates}
+                  todayCount={blotter.length}
+                  overallCount={blotter.length}
+                  onScope={setBoardScope}
+                />
+              )}
               {/* stage 8 — the SPEC-mobile phone board (display:none ≥701px);
                   first in DOM so the mobile order is carousel → filter →
                   cards → options strip. Desktop board chrome below is hidden
                   <700px (rd-mhide + the stage-8 media block). */}
               <MobileBoard
-                blotter={blotter}
+                blotter={scopedIdeas}
                 trackedByIdeaId={trackedByIdeaId}
                 trackedList={trackedList}
                 filter={blotterFilter}
                 onFilter={setBlotterFilter}
-                brief={brief}
+                brief={boardBrief}
                 quotes={quotes}
                 loading={busy === "sync" || busy === "brief"}
                 busy={busy}
@@ -4212,14 +4705,27 @@ export default function IntelDashboard() {
                 publishCtl={publishCtl}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
+                day={isDayScope ? {
+                  scope: scope as "TODAY" | string,
+                  date: scopeDate,
+                  loading: dayStateLoading,
+                  error: dayStateErr,
+                  onRetry: retryDay,
+                } : null}
               />
               {/* board header (SPEC-desktop §2.6.2) — real count, real cadence.
                   The gold publish count is curation identity: always mounted on
                   an owner desk (zero dims, never unmounts — no-CLS), an honest
                   — until the publish listing lands, absent for non-owners. */}
               <div className="rd-bhead">
-                <span className="rd-bhead-title">TRADE BLOTTER</span>
-                <span className="rd-bhead-meta">{blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s</span>
+                <span className="rd-bhead-title">{isDayScope ? "DAY BOARD" : "TRADE BLOTTER"}</span>
+                <span className="rd-bhead-meta">
+                  {isDayScope
+                    ? dayStateLoading
+                      ? `${scopeDate} · LOADING…`
+                      : `${scope === "TODAY" ? `TODAY · ${todayKey}` : scopeDate} · ${scopedIdeas.length} IDEAS · CREATED → ALERTED → SO FAR`
+                    : `${blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s`}
+                </span>
                 {owner && (
                   <span
                     className={`rd-pub-count${(publishedIds?.size ?? 0) === 0 ? " zero" : ""}`}
@@ -4242,31 +4748,62 @@ export default function IntelDashboard() {
                 <span className="rd-leg">spark · 1M daily closes</span>
                 <span className="rd-leg">° price since first mention (not trade P&amp;L)</span>
               </div>
+              {/* DAY BOARDS rail — desktop instance, above the filter row;
+                  always mounted on an owner desk (no-CLS), counts dim at zero */}
+              {owner && (
+                <BoardDateRail
+                  scope={scope}
+                  dates={railDates}
+                  todayCount={blotter.length}
+                  overallCount={blotter.length}
+                  onScope={setBoardScope}
+                />
+              )}
               {/* tracker filter — TRACKED = level-anchored ideas only;
                   semantics + aria-pressed unchanged, design segmented look
                   (desktop placement; <700px it re-hosts inside MobileBoard) */}
               <div className="rd-filter-row" role="group" aria-label="Filter ideas by tracker state">
                 <FilterSeg filter={blotterFilter} onFilter={setBlotterFilter} />
               </div>
-              <BlotterTable
-                ideas={blotter}
-                trackedByIdeaId={trackedByIdeaId}
-                filter={blotterFilter}
-                selectedId={selectedId}
-                onSelect={(id) => {
-                  setSelectedId((c) => (c === id ? null : id));
-                  setInspectorMode("idea"); // design §5: a row click always shows the idea inspector
-                }}
-                loading={busy === "sync" || busy === "brief"}
-                busy={busy}
-                aiOn={config.ai}
-                owner={owner}
-                publishedIds={publishedIds}
-                onAddSource={() => setTab("SOURCES")}
-                onGenerateBrief={generateBrief}
-              />
+              {isDayScope ? (
+                <DayBoard
+                  scopeKey={scope as "TODAY" | string}
+                  date={scopeDate}
+                  brief={scopedDayBrief}
+                  ideas={dayIdeas}
+                  trackedByIdeaId={trackedByIdeaId}
+                  filter={blotterFilter}
+                  selectedId={selectedId}
+                  onSelect={(id) => {
+                    setSelectedId((c) => (c === id ? null : id));
+                    setInspectorMode("idea"); // same contract as the blotter: a row click inspects
+                  }}
+                  loading={dayStateLoading}
+                  error={dayStateErr}
+                  onRetry={retryDay}
+                  publishedIds={publishedIds}
+                />
+              ) : (
+                <BlotterTable
+                  ideas={blotter}
+                  trackedByIdeaId={trackedByIdeaId}
+                  filter={blotterFilter}
+                  selectedId={selectedId}
+                  onSelect={(id) => {
+                    setSelectedId((c) => (c === id ? null : id));
+                    setInspectorMode("idea"); // design §5: a row click always shows the idea inspector
+                  }}
+                  loading={busy === "sync" || busy === "brief"}
+                  busy={busy}
+                  aiOn={config.ai}
+                  owner={owner}
+                  publishedIds={publishedIds}
+                  onAddSource={() => setTab("SOURCES")}
+                  onGenerateBrief={generateBrief}
+                />
+              )}
               <OptionsIntelPanel
-                brief={brief}
+                brief={boardBrief}
                 onOpenTicket={(o) => { setSelectedOptionId(o.id); setInspectorMode("option"); }}
               />
             </div>
@@ -4279,7 +4816,7 @@ export default function IntelDashboard() {
                 rowCount={displayRows.length}
                 mode={inspectorMode}
                 option={selectedOption}
-                briefStatus={brief?.options?.providerStatus ?? null}
+                briefStatus={boardBrief?.options?.providerStatus ?? null}
                 publish={publishCtl(selectedTracked)}
                 onBackToIdea={() => setInspectorMode("idea")}
               />
