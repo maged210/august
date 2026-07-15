@@ -1,8 +1,8 @@
 // Unit tests for Market Intel's pure logic. Runs on Node's built-in test runner with
 // native TypeScript type-stripping (Node 23+/24). No test framework dependency is added.
 // Run with `npm test` (which adds tests/ts-resolve.mjs — a tiny in-thread resolve hook
-// that lets extensionless relative imports like "./dates" resolve to ".ts" under the
-// native runner). Modules under test avoid the "@/" path alias; functions that touch
+// that lets extensionless relative imports like "./dates" resolve to ".ts" and maps the
+// "@/" path alias to the repo root under the native runner). Functions that touch
 // live APIs/Redis are covered by tsc + the production build, not unit tests.
 
 import { test } from "node:test";
@@ -19,7 +19,15 @@ import { normalizeOptionIdea, numberSupported, type RawOptionIdea } from "../lib
 import { pickExpiration, passesLiquidity, effLiquidity, priceOf, convictionFor } from "../lib/intel/candidates.ts";
 import { mergeOptionSettings } from "../lib/intel/option-settings.ts";
 import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
-import type { BriefIdea, DailyBrief, IntelVideo, OptionIdea } from "../lib/intel/types.ts";
+import type { BriefIdea, DailyBrief, IntelVideo, OptionIdea, TradeIdea, VideoAnalysis } from "../lib/intel/types.ts";
+import { validateRawShape, ExtractionFailedError } from "../lib/intel/extract.ts";
+import {
+  ANALYZING_LOCK_MS,
+  deriveRowRepair,
+  failureRowPatch,
+  isProcessingLocked,
+  isStrictlyPoorer,
+} from "../lib/intel/pipeline.ts";
 import { redactBrief } from "../lib/intel/redact.ts";
 import {
   applyPublish,
@@ -714,4 +722,124 @@ test("decideVideoMerge: only same-channel same-title twins inside the 48h window
   assert.equal(decideVideoMerge(base, mkVideo({ videoId: "v5", title: "totally different show" })), null);
   assert.equal(decideVideoMerge(base, base), null); // same id is not a twin
   assert.equal(isSoftDuplicate(base, mkVideo({ videoId: "v6", publishedAt: T0 + SOFT_DUP_WINDOW_MS })), true); // boundary inclusive
+});
+
+// ── pipeline honesty: extraction failures are loud, never empty "analyzed" ──
+
+const mkAnalysis = (over: Partial<VideoAnalysis> = {}): VideoAnalysis => ({
+  videoId: "v_orig",
+  analysisVersion: "3",
+  marketDate: "2026-07-15",
+  publishedAt: "2026-07-15T12:00:00.000Z",
+  pass: "full",
+  overallSummary: "Creator sees chop into CPI.",
+  marketRegime: { label: "mixed", explanation: "", confidence: 0.5 },
+  claims: [],
+  tradeIdeas: [],
+  optionIdeas: [],
+  levels: [],
+  catalysts: [],
+  risks: [],
+  watchItems: [],
+  openQuestions: [],
+  warnings: [],
+  generatedAt: Date.now(),
+  ...over,
+});
+const stubIdeas = (n: number) => Array.from({ length: n }, () => ({} as TradeIdea));
+const stubLevels = (n: number) => Array.from({ length: n }, () => ({} as VideoAnalysis["levels"][number]));
+
+test("validateRawShape: well-formed tool input passes; empty-but-valid input passes (0-idea success is legal)", () => {
+  const good = validateRawShape({ overallSummary: "s", marketRegime: { label: "mixed" }, claims: [], tradeIdeas: [], levels: [], catalysts: [] });
+  assert.equal(good.ok, true);
+  // model genuinely found nothing — shape-valid; honesty is decided downstream
+  assert.equal(validateRawShape({ overallSummary: "quiet tape", claims: [], tradeIdeas: [], levels: [], catalysts: [] }).ok, true);
+});
+
+test("validateRawShape: truncation-mangled input (claims not an array) is a chunk failure, not a crash", () => {
+  // real-world crash from the logs: "(raw.claims ?? []).filter is not a function"
+  const bad = validateRawShape({ overallSummary: "s", claims: "SPY is heavy" });
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.equal(bad.reason, "claims_not_array");
+  const badIdeas = validateRawShape({ tradeIdeas: { ticker: "SPY" } });
+  assert.equal(badIdeas.ok, false);
+  if (!badIdeas.ok) assert.equal(badIdeas.reason, "tradeIdeas_not_array");
+});
+
+test("validateRawShape: non-object inputs are rejected", () => {
+  assert.equal(validateRawShape(null).ok, false);
+  assert.equal(validateRawShape("truncated json").ok, false);
+  assert.equal(validateRawShape([1, 2]).ok, false);
+  assert.equal(validateRawShape({ overallSummary: 42 }).ok, false);
+});
+
+test("ExtractionFailedError: carries the honest prefix + detail for the video row", () => {
+  const e = new ExtractionFailedError("all 2 extraction call(s) failed: output truncated (max_tokens)");
+  assert.ok(e instanceof Error);
+  assert.match(e.message, /^AI extraction failed — /);
+  assert.match(e.message, /max_tokens/);
+});
+
+test("isStrictlyPoorer: only the truncation signature (BOTH counts shrink) blocks an overwrite", () => {
+  assert.equal(isStrictlyPoorer({ ideas: 4, levels: 0 }, { ideas: 11, levels: 7 }), true); // observed clobber shape
+  assert.equal(isStrictlyPoorer({ ideas: 9, levels: 11 }, { ideas: 11, levels: 7 }), false); // legit re-extraction
+  assert.equal(isStrictlyPoorer({ ideas: 11, levels: 0 }, { ideas: 11, levels: 7 }), false); // equal ideas → allowed
+  assert.equal(isStrictlyPoorer({ ideas: 5, levels: 7 }, { ideas: 5, levels: 7 }), false); // identical
+});
+
+test("isProcessingLocked: a fresh analyzing row locks; a stale or settled row does not", () => {
+  const now = Date.now();
+  assert.equal(isProcessingLocked({ status: "analyzing", updated: now - 5_000 }, now), true);
+  assert.equal(isProcessingLocked({ status: "analyzing", updated: now - ANALYZING_LOCK_MS - 1 }, now), false); // crashed run must not wedge the video
+  assert.equal(isProcessingLocked({ status: "analyzed", updated: now }, now), false);
+  assert.equal(isProcessingLocked({ status: "failed", updated: now }, now), false);
+});
+
+test("failureRowPatch: extraction throws → failed status carrying the REAL reason", () => {
+  const p = failureRowPatch("AI extraction failed — all 2 extraction call(s) failed: api_error", false);
+  assert.equal(p.status, "failed");
+  assert.match(p.error, /api_error/);
+  const q = failureRowPatch(null, false);
+  assert.equal(q.status, "failed");
+  assert.equal(q.error, "Extraction produced no analysis.");
+});
+
+test("failureRowPatch: a failed RERUN keeps the surviving analysis but says so on the row", () => {
+  const p = failureRowPatch("AI extraction failed — output truncated (max_tokens)", true);
+  assert.equal(p.status, "analyzed"); // the good data is still stored — do not bury it
+  assert.match(p.error, /kept the existing analysis/i);
+  assert.match(p.error, /max_tokens/);
+});
+
+test("deriveRowRepair: analyzed row over a total-failure blob (no summary, all empty) → failed", () => {
+  const v = mkVideo({ status: "analyzed", ideaCount: 0, optionCount: 0, levelCount: 0 });
+  const blob = mkAnalysis({ overallSummary: "" });
+  const r = deriveRowRepair(v, blob);
+  assert.equal(r?.kind, "failed_extraction");
+  if (r?.kind === "failed_extraction") assert.match(r.error, /AI extraction failed/);
+});
+
+test("deriveRowRepair: genuinely-empty extraction (summary present, 0 ideas) is honest — NOT a failure", () => {
+  const v = mkVideo({ status: "analyzed", ideaCount: 0, optionCount: 0, levelCount: 0 });
+  const blob = mkAnalysis({ overallSummary: "Nothing actionable today." });
+  assert.equal(deriveRowRepair(v, blob), null); // analyzed + 0 ideas stays analyzed + 0 ideas
+});
+
+test("deriveRowRepair: drifted row counts are recomputed from the blob; missing blob repairs nothing", () => {
+  const v = mkVideo({ status: "analyzed", ideaCount: 0, optionCount: 0, levelCount: 0 });
+  const blob = mkAnalysis({ tradeIdeas: stubIdeas(5), levels: stubLevels(8) });
+  const r = deriveRowRepair(v, blob);
+  assert.equal(r?.kind, "recount");
+  if (r?.kind === "recount") assert.deepEqual(r.patch, { ideaCount: 5, optionCount: 0, levelCount: 8 });
+  assert.equal(deriveRowRepair(v, null), null); // never fabricate from an absent blob
+  assert.equal(deriveRowRepair(mkVideo({ status: "failed" }), blob), null); // only analyzed/preliminary rows
+});
+
+test("deriveRowRepair: idempotent — applying the recount patch yields no further repair", () => {
+  const blob = mkAnalysis({ tradeIdeas: stubIdeas(5), levels: stubLevels(8) });
+  const v = mkVideo({ status: "analyzed", ideaCount: 0, optionCount: 0, levelCount: 0 });
+  const r = deriveRowRepair(v, blob);
+  assert.equal(r?.kind, "recount");
+  const repaired = { ...v, ...(r?.kind === "recount" ? r.patch : {}) };
+  assert.equal(deriveRowRepair(repaired, blob), null);
 });

@@ -7,7 +7,7 @@ import { gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // multi Anthropic calls for fast + full pass
+export const maxDuration = 300; // multi Anthropic calls for fast + full pass (16K output cap + split retries)
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const rl = await checkRateLimit("intelProcess", getIp(req));

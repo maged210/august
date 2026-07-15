@@ -25,9 +25,26 @@ import type {
 import { ANALYSIS_VERSION } from "./types";
 import { filterValidTickers, normalizeTicker } from "./tickers";
 import { numberSupported, normalizeOptionIdea, type RawOptionIdea } from "./normalize";
+import { logIntel } from "./store";
 
 const MODEL = "claude-sonnet-4-6";
 const CHUNK_CHARS = 9000;
+// Output ceiling per extraction call. The record_intel JSON for a dense macro
+// video measures 5-7K tokens across ~2 chunks — the old 4000 cap truncated
+// mid-JSON and the failure was swallowed as an empty "analyzed" result.
+// 16000 is the safe non-streaming ceiling (model max is 128K with streaming).
+const MAX_OUTPUT_TOKENS = 16000;
+// A max_tokens-truncated chunk is retried as two half-chunks, at most this deep.
+const MAX_SPLIT_DEPTH = 2;
+
+/** Thrown by analyzeFullPass when EVERY extraction call failed — the pipeline
+ *  must record an honest failure, never an empty "analyzed" result. */
+export class ExtractionFailedError extends Error {
+  constructor(detail: string) {
+    super(`AI extraction failed — ${detail}`);
+    this.name = "ExtractionFailedError";
+  }
+}
 
 let _client: Anthropic | null = null;
 function client(): Anthropic | null {
@@ -210,7 +227,7 @@ OPTIONS (these channels trade options — capture them in optionIdeas, NOT just 
 - expirationText: copy their EXACT wording ("next Friday", "this week", "7/3"); the system resolves the date — you do not.
 - conviction: "lotto"/"speculative" for explicit lotto/speculative language, "high" for high-conviction language, else "standard"/"unspecified".`;
 
-type ChunkInput = { segments: TranscriptSegment[]; chapter?: Chapter; channelTitle?: string };
+type ChunkInput = { segments: TranscriptSegment[]; chapter?: Chapter; channelTitle?: string; videoId?: string };
 
 function formatSegments(segs: TranscriptSegment[]): string {
   return segs.map((s) => `[${s.id} @${Math.floor(s.startSeconds)}s] ${s.text}`).join("\n");
@@ -252,9 +269,26 @@ type RawExtraction = {
   openQuestions?: string[];
 };
 
-async function extractChunk(input: ChunkInput): Promise<RawExtraction | null> {
+/** PURE shape gate for the model's tool input. The old blind cast let a
+ *  truncation-mangled input (e.g. `claims` as a string) crash the whole pass
+ *  ("(raw.claims ?? []).filter is not a function"); now type garbage becomes a
+ *  logged chunk failure instead. Exported for tests. */
+export function validateRawShape(input: unknown): { ok: true; raw: RawExtraction } | { ok: false; reason: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, reason: "not_an_object" };
+  const o = input as Record<string, unknown>;
+  const arrayFields = ["claims", "tradeIdeas", "levels", "catalysts", "optionIdeas", "risks", "watchItems", "openQuestions"];
+  for (const f of arrayFields) {
+    if (o[f] !== undefined && o[f] !== null && !Array.isArray(o[f])) return { ok: false, reason: `${f}_not_array` };
+  }
+  if (o.overallSummary !== undefined && typeof o.overallSummary !== "string") return { ok: false, reason: "overallSummary_not_string" };
+  return { ok: true, raw: input as RawExtraction };
+}
+
+type ChunkOutcome = { ok: true; raw: RawExtraction } | { ok: false; reason: string };
+
+async function extractChunk(input: ChunkInput): Promise<ChunkOutcome> {
   const c = client();
-  if (!c) return null;
+  if (!c) return { ok: false, reason: "ai_unconfigured" };
   const chapterNote = input.chapter
     ? `\n\nThis chunk is from the chapter "${input.chapter.title}" (category: ${input.chapter.normalizedCategory}, ${input.chapter.creatorDefined ? "creator-defined" : "AUGUST-detected"}${input.chapter.priority === "high" ? ", HIGH-PRIORITY favorite/predictions segment" : ""}).`
     : "";
@@ -262,19 +296,48 @@ async function extractChunk(input: ChunkInput): Promise<RawExtraction | null> {
   try {
     const res = await c.messages.create({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: MAX_OUTPUT_TOKENS,
       system: SYSTEM_PROMPT + "\n\n" + EXTRACT_GUIDE,
       messages: [{ role: "user", content: user }],
       tools: [RECORD_TOOL],
       tool_choice: { type: "tool", name: "record_intel" },
     });
+    // A cap-truncated tool call is NOT a clean result — mid-JSON truncation was
+    // the root cause of empty/level-zeroed analyses masquerading as success.
+    if (res.stop_reason === "max_tokens") {
+      await logIntel("chunk_error", { videoId: input.videoId, reason: "max_tokens", segments: input.segments.length });
+      return { ok: false, reason: "output truncated (max_tokens)" };
+    }
     const block = res.content.find((b) => b.type === "tool_use");
-    if (!block || block.type !== "tool_use") return null;
-    return block.input as RawExtraction;
+    if (!block || block.type !== "tool_use") {
+      await logIntel("chunk_error", { videoId: input.videoId, reason: "no_tool_use", stop_reason: res.stop_reason ?? null });
+      return { ok: false, reason: `model returned no tool call (stop: ${res.stop_reason ?? "unknown"})` };
+    }
+    const shaped = validateRawShape(block.input);
+    if (!shaped.ok) {
+      await logIntel("chunk_error", { videoId: input.videoId, reason: "malformed_tool_input", detail: shaped.reason });
+      return { ok: false, reason: `malformed tool input (${shaped.reason})` };
+    }
+    return shaped;
   } catch (e) {
-    console.error("[intel.extract] chunk failed:", e instanceof Error ? e.message : e);
-    return null;
+    const msg = e instanceof Error ? e.message : String(e);
+    await logIntel("chunk_error", { videoId: input.videoId, reason: "api_error", error: msg.slice(0, 300) });
+    return { ok: false, reason: msg };
   }
+}
+
+/** Extract a chunk; when the output hits the token cap, split the chunk in two
+ *  and retry each half (bounded depth) — dense chunks produce less JSON each. */
+async function extractChunkResilient(input: ChunkInput, depth = 0): Promise<{ raws: RawExtraction[]; failures: string[] }> {
+  const out = await extractChunk(input);
+  if (out.ok) return { raws: [out.raw], failures: [] };
+  if (out.reason.includes("max_tokens") && depth < MAX_SPLIT_DEPTH && input.segments.length > 1) {
+    const mid = Math.ceil(input.segments.length / 2);
+    const a = await extractChunkResilient({ ...input, segments: input.segments.slice(0, mid) }, depth + 1);
+    const b = await extractChunkResilient({ ...input, segments: input.segments.slice(mid) }, depth + 1);
+    return { raws: [...a.raws, ...b.raws], failures: [...a.failures, ...b.failures] };
+  }
+  return { raws: [], failures: [out.reason] };
 }
 
 // --- validation (the anti-hallucination gate) -----------------------------
@@ -481,21 +544,27 @@ export async function analyzeFastPass(
   const baseMs = Date.parse(opts.publishedAt) || Date.now();
   const all = freshAll();
   let summary = "";
+  let okCalls = 0;
   let regime: MarketRegime = { label: "uncertain", explanation: "", confidence: 0.3 };
   for (const ch of priority) {
     const segs = segments.filter((s) => s.startSeconds < ch.endSeconds && s.endSeconds > ch.startSeconds);
     const useSegs = segs.length ? segs : segments; // no-timestamp fallback
-    const raw = await extractChunk({ segments: useSegs, chapter: ch, channelTitle: opts.channelTitle });
-    if (!raw) continue;
-    const v = await validateExtraction(raw, useSegs.length ? useSegs : segments, ch, warnings, baseMs);
-    all.claims.push(...v.claims);
-    all.tradeIdeas.push(...v.tradeIdeas);
-    all.optionIdeas.push(...v.optionIdeas);
-    all.levels.push(...v.levels);
-    all.catalysts.push(...v.catalysts);
-    if (!summary) summary = raw.overallSummary;
-    regime = raw.marketRegime ?? regime;
+    const { raws } = await extractChunkResilient({ segments: useSegs, chapter: ch, channelTitle: opts.channelTitle, videoId: opts.videoId });
+    for (const raw of raws) {
+      okCalls++;
+      const v = await validateExtraction(raw, useSegs.length ? useSegs : segments, ch, warnings, baseMs);
+      all.claims.push(...v.claims);
+      all.tradeIdeas.push(...v.tradeIdeas);
+      all.optionIdeas.push(...v.optionIdeas);
+      all.levels.push(...v.levels);
+      all.catalysts.push(...v.catalysts);
+      if (!summary) summary = raw.overallSummary;
+      regime = raw.marketRegime ?? regime;
+    }
   }
+  // Every fast-pass call failed → no preliminary analysis. NEVER assemble an
+  // empty one — the full pass (or its honest failure) decides the video's fate.
+  if (okCalls === 0) return null;
   return assemble(all, summary, regime, opts, "preliminary", warnings, []);
 }
 
@@ -517,20 +586,42 @@ export async function analyzeFullPass(
     const mid = segs[Math.floor(segs.length / 2)];
     return chapters.find((ch) => mid.startSeconds >= ch.startSeconds && mid.startSeconds < ch.endSeconds);
   };
+  let okCalls = 0;
+  const failures: string[] = [];
   for (const chunk of chunks) {
     const ch = findChapter(chunk);
-    const raw = await extractChunk({ segments: chunk, chapter: ch, channelTitle: opts.channelTitle });
-    if (!raw) continue;
-    const v = await validateExtraction(raw, chunk, ch, warnings, baseMs);
-    all.claims.push(...v.claims);
-    all.tradeIdeas.push(...v.tradeIdeas);
-    all.optionIdeas.push(...v.optionIdeas);
-    all.levels.push(...v.levels);
-    all.catalysts.push(...v.catalysts);
-    if (raw.overallSummary) summaries.push(raw.overallSummary);
-    if ((raw.marketRegime?.confidence ?? 0) > regime.confidence) regime = raw.marketRegime;
+    const { raws, failures: chunkFailures } = await extractChunkResilient({ segments: chunk, chapter: ch, channelTitle: opts.channelTitle, videoId: opts.videoId });
+    failures.push(...chunkFailures);
+    for (const raw of raws) {
+      okCalls++;
+      const v = await validateExtraction(raw, chunk, ch, warnings, baseMs);
+      all.claims.push(...v.claims);
+      all.tradeIdeas.push(...v.tradeIdeas);
+      all.optionIdeas.push(...v.optionIdeas);
+      all.levels.push(...v.levels);
+      all.catalysts.push(...v.catalysts);
+      if (raw.overallSummary) summaries.push(raw.overallSummary);
+      if ((raw.marketRegime?.confidence ?? 0) > regime.confidence) regime = raw.marketRegime;
+    }
+  }
+  // EVERY call failed → this is an extraction failure, not an empty analysis.
+  // Throwing routes the pipeline to an honest failed state with the real reason.
+  // (Distinct from "model succeeded and found nothing" — that carries a summary
+  // and assembles below as a legitimate 0-idea analysis.)
+  if (okCalls === 0 && chunks.length > 0) {
+    throw new ExtractionFailedError(`all ${chunks.length} extraction call(s) failed: ${summarizeFailures(failures)}`);
+  }
+  if (failures.length) {
+    warnings.push(`${failures.length} extraction call(s) failed (${summarizeFailures(failures)}) — analysis may be incomplete.`);
   }
   return assemble(all, summaries.join(" "), regime, opts, "full", warnings, []);
+}
+
+/** Dedupe + cap failure reasons for an honest but bounded error string. */
+function summarizeFailures(reasons: string[]): string {
+  const uniq = [...new Set(reasons)];
+  const shown = uniq.slice(0, 3).join("; ");
+  return uniq.length > 3 ? `${shown}; +${uniq.length - 3} more` : shown || "unknown";
 }
 
 type AllItems = { claims: Claim[]; tradeIdeas: TradeIdea[]; optionIdeas: OptionIdea[]; levels: IntelLevel[]; catalysts: IntelCatalyst[] };

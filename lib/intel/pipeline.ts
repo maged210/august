@@ -349,12 +349,55 @@ export type ProcessResult =
   | { ok: true; analysis: VideoAnalysis; preliminary?: VideoAnalysis }
   | { ok: false; error: string };
 
-export async function processManualTranscript(videoId: string, rawTranscript: string): Promise<ProcessResult> {
+/** How long an "analyzing" row locks out concurrent runs. Past this window a
+ *  crashed run's stale lock is ignored rather than wedging the video forever. */
+export const ANALYZING_LOCK_MS = 10 * 60_000;
+
+/** PURE: is this video currently locked by an in-flight analysis run?
+ *  Concurrent full_pass completions used to blob-overwrite each other
+ *  (last-writer-wins), letting a truncated late finisher clobber a richer
+ *  earlier result. */
+export function isProcessingLocked(v: Pick<IntelVideo, "status" | "updated">, now = Date.now()): boolean {
+  return v.status === "analyzing" && now - v.updated < ANALYZING_LOCK_MS;
+}
+
+/** PURE: a candidate analysis is strictly poorer than the stored one only when
+ *  BOTH counts shrink — that is the truncation signature. Fewer ideas but more
+ *  levels (or vice versa) is a legitimate re-extraction and may overwrite. */
+export function isStrictlyPoorer(
+  next: { ideas: number; levels: number },
+  prev: { ideas: number; levels: number },
+): boolean {
+  return next.ideas < prev.ideas && next.levels < prev.levels;
+}
+
+/** PURE: the honest video-row patch when a processing run produced no usable
+ *  analysis. With a surviving full analysis the row stays "analyzed" (the good
+ *  data is still there) but carries the failure; otherwise the row is failed. */
+export function failureRowPatch(
+  reason: string | null,
+  hadPriorFull: boolean,
+): { status: IntelVideo["status"]; error: string } {
+  const detail = reason ?? "Extraction produced no analysis.";
+  return hadPriorFull
+    ? { status: "analyzed", error: `Reprocess failed — kept the existing analysis. (${detail})` }
+    : { status: "failed", error: detail };
+}
+
+export async function processManualTranscript(
+  videoId: string,
+  rawTranscript: string,
+  procOpts?: { force?: boolean },
+): Promise<ProcessResult> {
   if (!intelligenceConfigured()) return { ok: false, error: "ai_unconfigured" };
   let video = await getVideo(videoId);
   if (!video) {
     video = await upsertVideoFromMeta(`v_${videoId}`, videoId);
     if (!video) return { ok: false, error: "video_not_found" };
+  }
+  if (!procOpts?.force && isProcessingLocked(video)) {
+    await logIntel("process_skipped_concurrent", { videoId });
+    return { ok: false, error: "already_processing" };
   }
 
   const parsed = parseManualTranscript(rawTranscript);
@@ -383,42 +426,74 @@ export async function processManualTranscript(videoId: string, rawTranscript: st
     stale: isStale(video.publishedAt),
   };
 
+  // Overwrite guard baseline: the FULL analysis that existed before this run.
+  // A rerun may improve on it; a strictly-poorer (truncation-shaped) result
+  // must never clobber it unless explicitly forced.
+  const prior = await getAnalysis(videoId);
+  const priorFull = prior && prior.pass === "full" ? prior : null;
+  const guardedPoorer = (a: VideoAnalysis): boolean =>
+    !procOpts?.force &&
+    !!priorFull &&
+    isStrictlyPoorer(
+      { ideas: a.tradeIdeas.length, levels: a.levels.length },
+      { ideas: priorFull.tradeIdeas.length, levels: priorFull.levels.length },
+    );
+
+  const stampRow = (a: VideoAnalysis, status: IntelVideo["status"]) => {
+    video!.status = status;
+    video!.summary = a.overallSummary || video!.summary;
+    video!.ideaCount = a.tradeIdeas.length;
+    video!.optionCount = a.optionIdeas.length;
+    video!.levelCount = a.levels.length;
+    video!.tickers = [...new Set(a.tradeIdeas.map((t) => t.ticker))];
+    video!.analysisVersion = ANALYSIS_VERSION;
+    video!.marketDate = opts.marketDate;
+    video!.error = undefined; // a successful save clears any stale failure
+  };
+
   // Fast pass (priority chapters) — publish a preliminary brief immediately.
   let preliminary: VideoAnalysis | undefined;
   try {
     const fp = await analyzeFastPass(segments, chapters, opts);
     if (fp) {
-      preliminary = await enrich(fp);
-      await saveAnalysis(videoId, preliminary);
-      video.status = "preliminary";
-      video.summary = preliminary.overallSummary;
-      video.ideaCount = preliminary.tradeIdeas.length;
-      video.optionCount = preliminary.optionIdeas.length;
-      video.levelCount = preliminary.levels.length;
-      video.tickers = [...new Set(preliminary.tradeIdeas.map((t) => t.ticker))];
-      video.analysisVersion = ANALYSIS_VERSION;
-      video.marketDate = opts.marketDate;
-      await saveVideo(video);
-      await logIntel("fast_pass", { videoId, ideas: preliminary.tradeIdeas.length });
+      const enrichedFp = await enrich(fp);
+      if (guardedPoorer(enrichedFp)) {
+        await logIntel("analysis_overwrite_skipped", {
+          videoId, pass: "preliminary",
+          next: { ideas: enrichedFp.tradeIdeas.length, levels: enrichedFp.levels.length },
+          prev: { ideas: priorFull!.tradeIdeas.length, levels: priorFull!.levels.length },
+        });
+      } else {
+        preliminary = enrichedFp;
+        await saveAnalysis(videoId, preliminary);
+        stampRow(preliminary, "preliminary");
+        await saveVideo(video);
+        await logIntel("fast_pass", { videoId, ideas: preliminary.tradeIdeas.length });
+      }
     }
   } catch (e) {
     await logIntel("fast_pass_error", { videoId, error: e instanceof Error ? e.message : String(e) });
   }
 
   // Full pass — entire transcript for context/contradictions.
+  let fullErr: string | null = null;
   try {
     const full = await analyzeFullPass(segments, chapters, opts);
     if (full) {
       const enriched = await enrich(full);
+      if (guardedPoorer(enriched)) {
+        // The stored analysis is strictly richer — keep it, say so, stay honest.
+        await logIntel("analysis_overwrite_skipped", {
+          videoId, pass: "full",
+          next: { ideas: enriched.tradeIdeas.length, levels: enriched.levels.length },
+          prev: { ideas: priorFull!.tradeIdeas.length, levels: priorFull!.levels.length },
+        });
+        stampRow(priorFull!, "analyzed");
+        await saveVideo(video);
+        return { ok: true, analysis: priorFull!, preliminary };
+      }
       await saveAnalysis(videoId, enriched);
-      video.status = "analyzed";
-      video.summary = enriched.overallSummary || video.summary;
-      video.ideaCount = enriched.tradeIdeas.length;
-      video.optionCount = enriched.optionIdeas.length;
-      video.levelCount = enriched.levels.length;
-      video.tickers = [...new Set(enriched.tradeIdeas.map((t) => t.ticker))];
-      video.analysisVersion = ANALYSIS_VERSION;
-      video.marketDate = opts.marketDate;
+      stampRow(enriched, "analyzed");
       await saveVideo(video);
       await logIntel("full_pass", { videoId, ideas: enriched.tradeIdeas.length, levels: enriched.levels.length });
       const src = await getSource(video.sourceId);
@@ -429,23 +504,88 @@ export async function processManualTranscript(videoId: string, rawTranscript: st
       return { ok: true, analysis: enriched, preliminary };
     }
   } catch (e) {
-    await logIntel("full_pass_error", { videoId, error: e instanceof Error ? e.message : String(e) });
+    fullErr = e instanceof Error ? e.message : String(e);
+    await logIntel("full_pass_error", { videoId, error: fullErr });
   }
 
   if (preliminary) return { ok: true, analysis: preliminary, preliminary };
-  video.status = "failed";
-  video.error = "Extraction produced no analysis.";
+  // No usable analysis came out of this run: record the honest outcome — the
+  // real reason on the row, "failed" status unless a prior full analysis
+  // survives (then the row stays analyzed but carries the failure note).
+  const patch = failureRowPatch(fullErr, !!priorFull);
+  video.status = patch.status;
+  video.error = patch.error;
   await saveVideo(video);
   return { ok: false, error: "extraction_failed" };
 }
 
 /** Re-run extraction from the stored transcript (e.g. after a version bump). */
-export async function reprocessVideo(videoId: string): Promise<ProcessResult> {
+export async function reprocessVideo(videoId: string, procOpts?: { force?: boolean }): Promise<ProcessResult> {
   const segs = await getTranscript(videoId);
   if (!segs?.length) return { ok: false, error: "no_transcript" };
   // Rebuild the raw text from segments so processManualTranscript can re-run uniformly.
   const raw = segs.map((s) => `${Math.floor(s.startSeconds / 60)}:${String(Math.floor(s.startSeconds % 60)).padStart(2, "0")} ${s.text}`).join("\n");
-  return processManualTranscript(videoId, raw);
+  return processManualTranscript(videoId, raw, procOpts);
+}
+
+// --- row repair (one-shot, idempotent, derived ONLY from surviving blobs) --
+
+export type RowRepair =
+  | { kind: "recount"; patch: Pick<IntelVideo, "ideaCount" | "optionCount" | "levelCount"> }
+  | { kind: "failed_extraction"; error: string };
+
+/** PURE repair decision for one video row against its stored analysis blob.
+ *  Two damage shapes the truncation-era pipeline left behind:
+ *    - a row stamped analyzed whose blob is the total-failure signature (no
+ *      summary, no claims/ideas/levels/catalysts — a real model reply always
+ *      carries a summary) → the honest state is "failed";
+ *    - row counts drifting from the blob (concurrent overwrites) → recount.
+ *  Derives ONLY from the blob; a missing blob repairs nothing (never fabricate). */
+export function deriveRowRepair(video: IntelVideo, analysis: VideoAnalysis | null): RowRepair | null {
+  if (video.status !== "analyzed" && video.status !== "preliminary") return null;
+  if (!analysis) return null;
+  const ideas = analysis.tradeIdeas?.length ?? 0;
+  const levels = analysis.levels?.length ?? 0;
+  const options = analysis.optionIdeas?.length ?? 0;
+  const claims = analysis.claims?.length ?? 0;
+  const catalysts = analysis.catalysts?.length ?? 0;
+  const totalFailure = !analysis.overallSummary && ideas === 0 && levels === 0 && options === 0 && claims === 0 && catalysts === 0;
+  if (totalFailure) {
+    return {
+      kind: "failed_extraction",
+      error: "AI extraction failed — every extraction call returned nothing (row was wrongly stamped analyzed). Reprocess to retry.",
+    };
+  }
+  if (video.ideaCount !== ideas || video.levelCount !== levels || (video.optionCount ?? 0) !== options) {
+    return { kind: "recount", patch: { ideaCount: ideas, optionCount: options, levelCount: levels } };
+  }
+  return null;
+}
+
+/** Idempotent sweep applying deriveRowRepair across the library. Runs from the
+ *  same hygiene path as the twin sweep; a clean library is a read-only pass. */
+export async function repairAnalysisRows(): Promise<number> {
+  let repaired = 0;
+  for (const v of await listVideos()) {
+    if (v.status !== "analyzed" && v.status !== "preliminary") continue;
+    const a = await getAnalysis(v.videoId);
+    const r = deriveRowRepair(v, a);
+    if (!r) continue;
+    if (r.kind === "failed_extraction") {
+      v.status = "failed";
+      v.error = r.error;
+      v.ideaCount = 0;
+      v.optionCount = 0;
+      v.levelCount = 0;
+    } else {
+      Object.assign(v, r.patch);
+    }
+    await saveVideo(v);
+    await logIntel("analysis_row_repaired", { videoId: v.videoId, kind: r.kind });
+    repaired++;
+  }
+  if (repaired) await logIntel("analysis_row_repair_sweep", { repaired });
+  return repaired;
 }
 
 // --- sync channels for new uploads (needs YOUTUBE_API_KEY) ----------------
@@ -453,9 +593,11 @@ export type SyncResult = { checked: number; discovered: number; details: string[
 
 export async function syncSources(): Promise<SyncResult> {
   // Idempotent hygiene pass first: merge any livestream/VOD twins already in
-  // the library so discovery below starts from a clean slate.
+  // the library so discovery below starts from a clean slate, then repair any
+  // analysis rows whose counts/status drifted from their stored blobs.
   try {
     await sweepVideoTwins();
+    await repairAnalysisRows();
   } catch {
     /* best-effort — sync must not fail on hygiene */
   }

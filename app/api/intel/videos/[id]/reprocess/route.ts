@@ -5,7 +5,7 @@ import { gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300; // full-size extraction output (16K cap) + split retries
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const rl = await checkRateLimit("intelProcess", getIp(req));
