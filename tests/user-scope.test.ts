@@ -10,6 +10,7 @@ import {
   FEEDS_KEY,
   ONBOARDED_FLAG,
   OWNER_EMAIL,
+  deriveIntelMutateGate,
   deriveIntelRole,
   USERS_INDEX_KEY,
   USER_SEED,
@@ -124,58 +125,146 @@ test("AuthRequiredError carries a stable code and name", () => {
   assert.ok(err instanceof Error);
 });
 
-// ── deriveIntelRole: the four GET /api/intel/role gate paths ────────────────
+// ── deriveIntelRole: the GET /api/intel/role gate paths (prod-aware) ─────────
 
-test("deriveIntelRole: unconfigured auth keeps the single-user owner desk", () => {
-  // The unconfigured fallback must be untouched: owner chrome, no sign-in
-  // affordance (signedIn: false — there is no session system to sign into).
-  assert.deepEqual(deriveIntelRole({ configured: false, email: null }), {
+test("deriveIntelRole: unconfigured auth in dev/test keeps the single-user owner desk", () => {
+  // The single-user fallback must be BYTE-IDENTICAL to before: owner chrome, no
+  // sign-in affordance (signedIn: false — there is no session system to sign
+  // into). This is the whole of local dev and must never change.
+  assert.deepEqual(deriveIntelRole({ configured: false, email: null, production: false }), {
     owner: true,
     authConfigured: false,
     signedIn: false,
   });
 });
 
-test("deriveIntelRole: configured + signed out → visitor with a sign-in path", () => {
-  assert.deepEqual(deriveIntelRole({ configured: true, email: null }), {
+test("deriveIntelRole: unconfigured auth in PRODUCTION → visitor (FAILS CLOSED)", () => {
+  // A deploy that lost its auth env must NOT hand the desk to the public: the
+  // role signal reports a plain visitor until auth is configured + owner in.
+  assert.deepEqual(deriveIntelRole({ configured: false, email: null, production: true }), {
     owner: false,
-    authConfigured: true,
+    authConfigured: false,
     signedIn: false,
   });
 });
 
+test("deriveIntelRole: configured + signed out → visitor with a sign-in path", () => {
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelRole({ configured: true, email: null, production }),
+      { owner: false, authConfigured: true, signedIn: false },
+      `production=${production}`,
+    );
+  }
+});
+
 test("deriveIntelRole: configured + non-owner session → signed-in visitor", () => {
-  assert.deepEqual(deriveIntelRole({ configured: true, email: "viv@example.com" }), {
-    owner: false,
-    authConfigured: true,
-    signedIn: true,
-  });
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelRole({ configured: true, email: "viv@example.com", production }),
+      { owner: false, authConfigured: true, signedIn: true },
+      `production=${production}`,
+    );
+  }
 });
 
 test("deriveIntelRole: configured + owner session → owner desk", () => {
-  assert.deepEqual(deriveIntelRole({ configured: true, email: OWNER_EMAIL }), {
-    owner: true,
-    authConfigured: true,
-    signedIn: true,
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelRole({ configured: true, email: OWNER_EMAIL, production }),
+      { owner: true, authConfigured: true, signedIn: true },
+      `production=${production}`,
+    );
+  }
+});
+
+// ── deriveIntelMutateGate: the WRITE gate paths (prod-aware) ─────────────────
+
+test("deriveIntelMutateGate: unconfigured auth in dev/test stays OPEN (single-user)", () => {
+  // The unconfigured write path in local dev must be untouched — a solo dev
+  // deploy with no auth configured stays fully usable by the person running it.
+  assert.deepEqual(deriveIntelMutateGate({ configured: false, email: null, production: false }), {
+    ok: true,
   });
 });
 
-test("deriveIntelRole: owner stays in lockstep with checkIntelMutateAllowed", () => {
-  // Contract: role.owner === gate.ok for every session shape — the desk's
-  // owner chrome and the server's mutation gate must never disagree.
-  const cases: { configured: boolean; email: string | null; gateOk: boolean }[] = [
-    { configured: false, email: null, gateOk: true },
-    { configured: true, email: null, gateOk: false },
-    { configured: true, email: "viv@example.com", gateOk: false },
-    { configured: true, email: OWNER_EMAIL, gateOk: true },
-  ];
-  for (const c of cases) {
-    assert.equal(
-      deriveIntelRole({ configured: c.configured, email: c.email }).owner,
-      c.gateOk,
-      JSON.stringify(c),
+test("deriveIntelMutateGate: unconfigured auth in PRODUCTION → denied (FAILS CLOSED)", () => {
+  // The core of this change on the write side: a secretless production deploy
+  // must NOT accept open writes to the shared desk. 403 → gateIntelMutationOrRespond
+  // answers owner_only, the shape every mutate route already handles.
+  assert.deepEqual(deriveIntelMutateGate({ configured: false, email: null, production: true }), {
+    ok: false,
+    status: 403,
+  });
+});
+
+test("deriveIntelMutateGate: configured + signed out → 401, in every environment", () => {
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelMutateGate({ configured: true, email: null, production }),
+      { ok: false, status: 401 },
+      `production=${production}`,
     );
   }
+});
+
+test("deriveIntelMutateGate: configured + non-owner → 403, in every environment", () => {
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelMutateGate({ configured: true, email: "viv@example.com", production }),
+      { ok: false, status: 403 },
+      `production=${production}`,
+    );
+  }
+});
+
+test("deriveIntelMutateGate: configured + owner → allowed, in every environment", () => {
+  for (const production of [false, true]) {
+    assert.deepEqual(
+      deriveIntelMutateGate({ configured: true, email: OWNER_EMAIL, production }),
+      { ok: true },
+      `production=${production}`,
+    );
+  }
+});
+
+test("intel gates: role.owner stays in lockstep with the write gate across the FULL matrix", () => {
+  // Contract: role.owner === mutateGate.ok for every input, production included
+  // — the desk's owner chrome and the server's mutation gate share
+  // unconfiguredIsOwner and must never disagree (the fail-closed prod row is
+  // exactly the row a drift would reopen).
+  const emails: (string | null)[] = [null, "viv@example.com", OWNER_EMAIL];
+  for (const configured of [false, true]) {
+    for (const email of emails) {
+      for (const production of [false, true]) {
+        const read = { configured, email, production };
+        assert.equal(
+          deriveIntelRole(read).owner,
+          deriveIntelMutateGate(read).ok,
+          JSON.stringify(read),
+        );
+      }
+    }
+  }
+});
+
+test("intel gates: unconfigured-in-production is the ONLY row that fails closed vs dev", () => {
+  // Pins the blast radius: threading `production` changes exactly one input —
+  // unconfigured auth — and leaves every configured path identical. Mirrors the
+  // attribution-gate blast-radius test in tests/intel.test.ts (unconfigured
+  // means "no session", so email is always null on that row).
+  const inputs = [
+    { configured: true, email: OWNER_EMAIL },
+    { configured: true, email: "viv@example.com" },
+    { configured: true, email: null },
+    { configured: false, email: null },
+  ];
+  const diverged = inputs.filter(
+    (i) =>
+      JSON.stringify(deriveIntelMutateGate({ ...i, production: true })) !==
+      JSON.stringify(deriveIntelMutateGate({ ...i, production: false })),
+  );
+  assert.deepEqual(diverged, [{ configured: false, email: null }]);
 });
 
 // ── watchlist validation ─────────────────────────────────────────────────────

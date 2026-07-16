@@ -141,16 +141,52 @@ export async function resolveUserOr401(): Promise<
 
 export type IntelGate = { ok: true } | { ok: false; status: 401 | 403 };
 
-/** Owner check for the MUTATING intel routes (sources add/remove, sync,
- *  transcript, reprocess, brief generation, settings). ONLY enforced when auth
- *  is configured — unconfigured keeps today's open single-user behavior.
- *  Reads stay public regardless. */
-export async function checkIntelMutateAllowed(): Promise<IntelGate> {
-  const { configured, email } = await readSession();
-  if (!configured) return { ok: true };
-  if (!email) return { ok: false, status: 401 };
-  if (email !== OWNER_EMAIL) return { ok: false, status: 403 };
+/** The single-user fallback's ONE decision, shared by the role signal, the
+ *  WRITE gate, and the attribution (READ) gate so the three can never drift
+ *  apart again: when auth is UNCONFIGURED, the caller is the owner in dev/test
+ *  (byte-identical to pre-multi-user single-user behavior) but a VISITOR in
+ *  production. A deployed environment that lost its auth env vars (AUTH_SECRET
+ *  dropped, an env group unlinked, a secretless preview build) must never hand
+ *  the desk — its controls, its writes, or its source attribution — to the
+ *  public; the hole stays closed until auth is actually configured and the
+ *  owner signs in. `production` is NODE_ENV === "production" at call time. */
+function unconfiguredIsOwner(production: boolean): boolean {
+  return !production;
+}
+
+/** PURE derivation of the WRITE gate — kept pure (like deriveIntelAttributionGate
+ *  and deriveIntelRole) so its paths are unit-testable without a session or an
+ *  env mutation. Fails closed in production exactly like the read gate:
+ *
+ *    unconfigured, dev/test    → ok      (single-user fallback, unchanged)
+ *    unconfigured, PRODUCTION  → 403     (FAIL CLOSED — owner_only)
+ *    configured, signed out    → 401
+ *    configured, non-owner     → 403
+ *    configured, owner         → ok                                          */
+export function deriveIntelMutateGate(read: {
+  configured: boolean;
+  email: string | null;
+  production: boolean;
+}): IntelGate {
+  if (!read.configured) {
+    return unconfiguredIsOwner(read.production) ? { ok: true } : { ok: false, status: 403 };
+  }
+  if (!read.email) return { ok: false, status: 401 };
+  if (read.email !== OWNER_EMAIL) return { ok: false, status: 403 };
   return { ok: true };
+}
+
+/** Owner check for the MUTATING intel routes (sources add/remove, sync,
+ *  transcript, reprocess, brief generation, settings). Enforced when auth is
+ *  configured; when unconfigured it stays open ONLY in dev/test (single-user
+ *  fallback) and FAILS CLOSED in production (see unconfiguredIsOwner). Reads
+ *  stay public regardless. NODE_ENV is read at CALL time, never captured at
+ *  module load — the test suite drives the pure derivation. */
+export async function checkIntelMutateAllowed(): Promise<IntelGate> {
+  return deriveIntelMutateGate({
+    ...(await readSession()),
+    production: process.env.NODE_ENV === "production",
+  });
 }
 
 /** Route helper mirroring resolveUserOr401 for the intel mutation gate. */
@@ -175,25 +211,23 @@ export async function gateIntelMutationOrRespond(): Promise<Response | null> {
 // attribution surface (overview, briefs, briefs/[date], export, ask, sources,
 // videos) inherits these semantics without restating them.
 //
-// The two gates agree on every input EXCEPT ONE: auth unconfigured IN
-// PRODUCTION.
+// The read gate and the write gate now agree on EVERY input — including auth
+// unconfigured in production, where BOTH fail closed. They share one decision,
+// unconfiguredIsOwner(production), so they can never drift apart again.
 //
-//   WHY: the single-user fallback resolves "no auth env → you are the owner".
-//   That is right for WRITES (a solo deploy with no auth configured must still
-//   be usable by the person running it) and right for READS in dev/test (the
-//   desk works out of the box, byte-identical to pre-multi-user behavior).
-//   But in a DEPLOYED environment that same rule means one missing env var —
-//   AUTH_SECRET dropped from the deploy, an env group unlinked, a fresh
-//   preview built without secrets — silently serves full source attribution to
-//   the entire public. Source privacy is the product's promise; a config
-//   accident must never be the thing that breaks it.
+//   WHY fail closed: the single-user fallback resolves "no auth env → you are
+//   the owner". That is right in dev/test (the desk works out of the box,
+//   byte-identical to pre-multi-user behavior). But in a DEPLOYED environment
+//   that same rule means one missing env var — AUTH_SECRET dropped from the
+//   deploy, an env group unlinked, a fresh preview built without secrets —
+//   silently hands the entire public the desk UI, its writes, AND full source
+//   attribution. Source privacy and owner-only curation are the product's
+//   promise; a config accident must never be the thing that breaks either.
 //
-//   SO: privacy fails CLOSED. Production + unconfigured auth → redacted, until
-//   auth is actually configured. Losing attribution in your own deploy is a
-//   visible, recoverable annoyance; leaking who you watch is neither.
-//
-//   Scoped to the READ boundary on purpose — the write gate's semantics are
-//   unchanged (see checkIntelMutateAllowed above).
+//   SO: production + unconfigured auth → everyone is a visitor / redacted,
+//   until auth is actually configured and the owner signs in. Losing the desk
+//   in your own deploy is a visible, recoverable annoyance; leaking who you
+//   watch (or handing over open writes) is neither.
 
 /** PURE derivation of the attribution/read boundary — kept pure (like
  *  deriveIntelRole) so all five paths are unit-testable without a session or
@@ -209,7 +243,9 @@ export function deriveIntelAttributionGate(read: {
   email: string | null;
   production: boolean;
 }): IntelGate {
-  if (!read.configured) return read.production ? { ok: false, status: 403 } : { ok: true };
+  if (!read.configured) {
+    return unconfiguredIsOwner(read.production) ? { ok: true } : { ok: false, status: 403 };
+  }
   if (!read.email) return { ok: false, status: 401 };
   if (read.email !== OWNER_EMAIL) return { ok: false, status: 403 };
   return { ok: true };
@@ -253,19 +289,24 @@ export type IntelRoleSignal = {
 };
 
 /** PURE derivation of the role signal from a session read — kept out of the
- *  route module so the four gate paths stay unit-testable (route files may
- *  only export route fields). Must stay in lockstep with
- *  checkIntelMutateAllowed: owner === gate.ok for every input.
+ *  route module so the gate paths stay unit-testable (route files may only
+ *  export route fields). Must stay in lockstep with checkIntelMutateAllowed:
+ *  owner === gate.ok for every input (the fail-closed prod row included). Both
+ *  share unconfiguredIsOwner(production) so they cannot drift apart.
  *
- *    auth unconfigured        → { owner: true,  authConfigured: false, signedIn: false }
+ *    unconfigured, dev/test   → { owner: true,  authConfigured: false, signedIn: false }
+ *    unconfigured, PRODUCTION → { owner: false, authConfigured: false, signedIn: false }  (FAIL CLOSED)
  *    configured, signed out   → { owner: false, authConfigured: true,  signedIn: false }
  *    configured, non-owner    → { owner: false, authConfigured: true,  signedIn: true  }
  *    configured, owner        → { owner: true,  authConfigured: true,  signedIn: true  } */
 export function deriveIntelRole(read: {
   configured: boolean;
   email: string | null;
+  production: boolean;
 }): IntelRoleSignal {
-  if (!read.configured) return { owner: true, authConfigured: false, signedIn: false };
+  if (!read.configured) {
+    return { owner: unconfiguredIsOwner(read.production), authConfigured: false, signedIn: false };
+  }
   return {
     owner: read.email === OWNER_EMAIL,
     authConfigured: true,
@@ -274,9 +315,13 @@ export function deriveIntelRole(read: {
 }
 
 /** Session-backed role signal — the one reader behind GET /api/intel/role and
- *  the /feed page's owner-only OPEN DESK link. */
+ *  the /feed page's owner-only OPEN DESK link. NODE_ENV is read at CALL time,
+ *  never captured at module load — the test suite drives the pure derivation. */
 export async function getIntelRoleSignal(): Promise<IntelRoleSignal> {
-  return deriveIntelRole(await readSession());
+  return deriveIntelRole({
+    ...(await readSession()),
+    production: process.env.NODE_ENV === "production",
+  });
 }
 
 // ---------------------------------------------------------------------------

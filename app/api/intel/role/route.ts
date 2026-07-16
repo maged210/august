@@ -5,9 +5,13 @@
 // and, when auth is configured but no session exists, a SIGN IN path.
 //
 // Shape is additive/backward-compatible ({ owner, authConfigured } callers
-// keep working; `signedIn` is new):
+// keep working; `signedIn` is new). The unconfigured row FAILS CLOSED in
+// production (see unconfiguredIsOwner in lib/user-scope): a deploy missing its
+// auth env must not hand the desk to the public — everyone is a visitor until
+// auth is configured and the owner signs in.
 //
-//   auth unconfigured        → { owner: true,  authConfigured: false, signedIn: false }
+//   unconfigured, dev/test   → { owner: true,  authConfigured: false, signedIn: false }
+//   unconfigured, PRODUCTION → { owner: false, authConfigured: false, signedIn: false }
 //   configured, signed out   → { owner: false, authConfigured: true,  signedIn: false }
 //   configured, non-owner    → { owner: false, authConfigured: true,  signedIn: true  }
 //   configured, owner        → { owner: true,  authConfigured: true,  signedIn: true  }
