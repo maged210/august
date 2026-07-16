@@ -3320,6 +3320,15 @@ body {
   .surface {
     gap: 14px;
   }
+  /* Deck dots: the word-label is hidden on phones, leaving only a 6px mark, so
+     the tap target was ~21x30px. Grow the hit area to 44px without moving the
+     mark (extra padding is transparent; the flex row centers the mark). */
+  .deck-dot {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+    padding: 4px;
+  }
 }
 
 /* ---- reduced motion: nonessential animation off, instantly ---- */
@@ -3399,6 +3408,11 @@ body {
 
 /* Chat composer: a soft accent halo + faint lift when focused. */
 .composer-form {
+  /* Flex child of .composer-row: without this it keeps min-width:auto and
+     refuses to shrink below its content, so on a phone the pill bled off both
+     screen edges ("ay something to AUGUST"). min-width:0 lets it shrink to the
+     row; the input already carries min-w-0 flex-1. */
+  min-width: 0;
   transition:
     border-color var(--dur-med) var(--ease),
     box-shadow var(--dur-med) var(--ease);
@@ -3476,22 +3490,15 @@ body {
   z-index: 1;
 }
 
-/* Optical centring — the fixed chrome is bottom-heavy (word-rail + composer
-   band ≈128px vs ~40px of top chrome), which left the orb reading low. Lift
-   the whole orb block (canvas + telemetry + centre label together — they must
-   never separate) by half that imbalance. THE tunable: */
-.presence-surface {
-  --presence-lift: clamp(24px, 5vh, 44px);
-}
-.presence-surface .presence-3d,
-.presence-surface .telemetry {
-  transform: translateY(calc(var(--presence-lift) * -1));
-}
-/* Inside the brief's right-hand stack the pulse keeps its own dock geometry —
-   the lift applies only to the orb composition. */
-.presence-stack {
-  --presence-lift: 0px;
-}
+/* The old optical-centring lift (translateY on .presence-3d + .telemetry) is
+   GONE. It was written for the retired full-surface presence composition, where
+   the canvas and the telemetry lattice were the whole surface and had to rise
+   together above a bottom-heavy chrome. .telemetry is no longer mounted at all
+   (see app/page.tsx — BootHud/FrameTicks/PresenceTelemetry are retired), so the
+   rule's only surviving effect was to lift the LANDING's WebGL canvas ~24-44px
+   off the CSS orb circle it is supposed to fill — the crystal and the circle
+   rendered as two separate, overlapping orbs. The landing centres its own orb
+   block (.hl-orb) in normal flow; nothing needs the lift. */
 
 /* Radial telemetry overlay — decorative, non-interactive, fades in on boot. */
 .telemetry {
@@ -4020,14 +4027,24 @@ button.pulse-line:focus-visible {
   --up: #1b7f4d;
   --down: #b4483e;
   --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
-  --orb-bg: radial-gradient(circle at 36% 32%, #3a332a 0%, #16130e 46%, #060505 74%);
-  --orb-glow:
-    0 0 70px rgba(201, 169, 106, 0.38),
-    0 26px 50px -18px rgba(30, 22, 8, 0.35),
-    inset -18px -26px 55px rgba(0, 0, 0, 0.8),
-    inset 8px 12px 40px rgba(201, 169, 106, 0.14);
-  --ring: rgba(170, 140, 80, 0.22);
-  --halo: rgba(201, 169, 106, 0.16);
+  /* DAY: NOTHING behind the crystal. .hl-orb-core sits BEHIND the transparent
+     WebGL canvas, so whatever it paints shows through every gap in the stone's
+     silhouette. It used to be the design's near-black sphere gradient
+     (#3a332a → #060505) with hard black inset shadows: on #f5f4f1 paper that IS
+     the hole, and no amount of crystal can rescue a black disc drawn around it.
+     A softer warm pool was tried and is also wrong — any box-shadow on a
+     border-radius:50% element paints a blurred copy of the circle, i.e. a filled
+     disc, which reads as a saucer parked under the jewel. The page itself is the
+     ground the stone lies on (that is the whole point of a body that reflects the
+     room), and .hl-orb-halo/.hl-orb-ring still carry the design's gold bloom and
+     circle. So: no body, no shadow.
+     (NIGHT keeps the design's sphere gradient below — on the dark stage the disc
+     IS the stage, not a hole in it, and the orb reads right there.) */
+  --orb-bg: none;
+  --orb-glow: none;
+  /* No --ring / --halo on DAY: both elements are night-only now (see .hl-orb-ring
+     and .hl-orb-halo), so a value here would be a dead token inviting someone to
+     "fix" the missing ring by re-lighting it. NIGHT/GOTHAM declare their own. */
   --chip-hover: #c9a96a;
 
   position: absolute;
@@ -4181,7 +4198,17 @@ button.pulse-line:focus-visible {
   white-space: nowrap;
 }
 
-/* — the orb: halo + ring + gradient circle under the living WebGL sphere -- */
+/* — the orb ---------------------------------------------------------------
+   NIGHT/GOTHAM: halo + ring + gradient circle behind the living WebGL crystal —
+   the design's searchlight stage, and it reads right, because a glow needs a void
+   to glow into.
+   DAY: none of it. Just the stone on the page, plus its contact shadow. Every
+   layer here is a light SOURCE faked in CSS, and you cannot light a white page
+   with one — on paper they detached from a stone that (unlike the old sphere)
+   doesn't fill the circle, and read as a saucer under a floating jewel. Each is
+   gated to the dark stages below rather than dimmed to near-zero: a transparent
+   halo still burns an animated composite layer, and a dead --halo/--ring token
+   just invites someone to switch it back on. --------------------------------- */
 .hl-orb {
   margin-top: 6vh;
   width: 190px;
@@ -4189,7 +4216,68 @@ button.pulse-line:focus-visible {
   position: relative;
   flex: none;
 }
+/* DAY: the stone's CONTACT SHADOW — the only thing on the page besides the stone,
+   and the only one that survives the question "would this exist if you put a real
+   gem on a real sheet of paper?". Everything else the old glowing sphere left
+   behind (the halo annulus, the bloom disc, the corona hairs) answers no, and is
+   gone. Deliberately NOT a box-shadow on a border-radius:50% element: that paints
+   a blurred copy of the CIRCLE, i.e. the filled saucer this whole pass exists to
+   kill. It's an ink ellipse, wider than it is tall, sitting BELOW the mass and
+   under-hanging it — a diffuse pool, not a halo. ::before (not ::after) so it
+   paints under the canvas in tree order without touching z-index.
+
+   `top` IS THE CONTACT. A contact shadow's whole job is contact: detached, it
+   stops grounding the stone and starts reading as a hovering jewel over an
+   unrelated smudge — the same optical failure as the saucer, just smaller. This
+   was measured, not eyeballed. The gradient (closest-side ellipse on a 132×28
+   box → radii 66×14, fading out at 78%) puts its first visible ink 91.9px below
+   `top`, i.e. at `top - 91.9` from the orb centre. The stone's underside, swept
+   over 120 tumble orientations, sits at a median of 67px from centre (p25 64,
+   p75 69; it ranges 60→93 because a shard can point straight down, so no single
+   anchor touches at EVERY pose). At the old top:166px the ink began at dy 75 —
+   below the stone in 95% of poses, leaving a band of clean 243 paper between the
+   stone and its own shadow. 156px puts the onset at dy≈64: in contact at the
+   median pose, tucked under (harmlessly hidden — the ellipse paints behind the
+   canvas) when a shard points down, and short only in the ~16% narrowest poses.
+   The visible crescent stays the same size (~19px); it just touches now. */
+.hl-orb::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 156px;
+  width: 132px;
+  height: 28px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    closest-side ellipse at 50% 50%,
+    rgba(28, 24, 16, 0.16) 0%,
+    rgba(28, 24, 16, 0.08) 44%,
+    rgba(28, 24, 16, 0) 78%
+  );
+  pointer-events: none;
+}
+/* NIGHT/GOTHAM: no contact shadow — an ink pool on a black stage is invisible at
+   best, and there the stone is lit in a void, not lying on anything. */
+:root[data-theme="dark"] .home-landing .hl-orb::before,
+:root[data-theme="batman"] .home-landing .hl-orb::before {
+  display: none;
+}
+/* THE HALO IS NIGHT-ONLY. It is an OUTSET box-shadow on a 202px border-box with
+   no background of its own, so what it actually paints is an ANNULUS: the shadow
+   is clipped out of the very circle it surrounds. On the dark stage the black
+   sphere filled that circle, so the ring read as a bloom coming off the body and
+   the trick worked. The crystal doesn't fill it — it reflects the room through
+   the gaps — so the annulus detached and read as a warm gold plate rim with a
+   jewel floating over it (measured on paper at rgb ~228,220,202: R−B +26 of gold
+   on ground that is supposed to be #f5f4f1 paper). And a bloom is a dark-stage
+   idea anyway: nothing glows on white. So on DAY there is no halo element at all
+   — not a transparent one still burning an animated composite layer. */
 .hl-orb-halo {
+  display: none;
+}
+:root[data-theme="dark"] .home-landing .hl-orb-halo,
+:root[data-theme="batman"] .home-landing .hl-orb-halo {
+  display: block;
   position: absolute;
   inset: -6px;
   border-radius: 50%;
@@ -4205,7 +4293,18 @@ button.pulse-line:focus-visible {
     opacity: 1;
   }
 }
+/* THE RING IS NIGHT-ONLY TOO. Same story as the halo: a 234px gold hairline
+   circle was the outline of the glowing sphere's stage, and it survives the
+   crystal as a hoop drawn 22px off a stone that doesn't touch it — a plate rim
+   with a jewel sitting in the middle of it, or a target reticle. Measured on
+   paper it is the last warm thing left on the ground (R−B +22 against the page's
+   own +4). The reference is the stone and nothing else, so on DAY: gone. */
 .hl-orb-ring {
+  display: none;
+}
+:root[data-theme="dark"] .home-landing .hl-orb-ring,
+:root[data-theme="batman"] .home-landing .hl-orb-ring {
+  display: block;
   position: absolute;
   inset: -22px;
   border: 1px solid var(--ring);
@@ -4430,7 +4529,11 @@ button.pulse-line:focus-visible {
 /* — mobile: 44px targets, tighter chrome ----------------------------------- */
 @media (max-width: 700px) {
   .hl-top {
-    padding: 18px 20px;
+    /* Draw under the notch (viewportFit:cover) but keep the wordmark, clock,
+       SIGN IN and controls clear of the iOS status bar. */
+    padding: calc(env(safe-area-inset-top, 0px) + 18px)
+      calc(env(safe-area-inset-right, 0px) + 20px) 18px
+      calc(env(safe-area-inset-left, 0px) + 20px);
   }
   .hl-top-right {
     flex-direction: column;
@@ -4473,7 +4576,10 @@ button.pulse-line:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hl-orb-halo {
+  /* Must out-specify the night/gotham halo rule above, which is where the
+     animation is now declared — a bare .hl-orb-halo here would lose to it. */
+  :root[data-theme="dark"] .home-landing .hl-orb-halo,
+  :root[data-theme="batman"] .home-landing .hl-orb-halo {
     animation: none;
   }
 }

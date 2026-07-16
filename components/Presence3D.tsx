@@ -18,73 +18,152 @@ type Props = {
   /**
    * Override the orb's on-screen radius as a fraction of min(container w, h).
    * The home landing mounts the canvas in a small fixed square around the
-   * design's 190px orb circle and needs the sphere to fill it; the default
+   * design's 190px orb circle and needs the crystal to fill it; the default
    * keeps the original full-surface presence sizing (0.18, 0.13 compact).
    */
   orbFraction?: number;
 };
 
-// Per-theme look, tuned to the home design (docs/design/AUGUST Home.dc.html):
-// the sphere stays a glossy near-black everywhere; the energy is warm gold
-// (#C9A96A / #E8C27A family) — luminous on the night stage (additive), gold
-// ink on the day's off-white stage (normal blending). Batman keeps its own
-// searchlight-gold signature untouched.
+// ── THE TINT KNOB ────────────────────────────────────────────────────────────
+// The crystal is a METAL: its albedo tints every reflection, so this one colour
+// IS the gem's colour. Deep sapphire, per the reference (polished chrome-glass
+// in a saturated blue). Every theme reads its crystalTint from here, so this
+// single line swaps the whole presence to AUGUST's gold: 0xc9a96a.
+// (Per-theme divergence stays available — each LOOK entry has its own
+// crystalTint field — but by default all three share this one token.)
+const CRYSTAL_TINT = 0x2f62b4;
+
+// Per-theme look, tuned to the home design (docs/design/AUGUST Home.dc.html).
+// The body is a faceted CRYSTAL (see buildCrystal): a reflection-dominated
+// metal that takes its colour from the room, which is why envRoom below is
+// per-theme and load-bearing — on the day stage the room IS the paper page, so
+// the crystal reads as a jewel lying on it instead of a hole punched in it.
+// The energy around it stays warm gold (#C9A96A / #E8C27A family) — luminous on
+// the night stage (additive), gold ink on the day's off-white stage (normal
+// blending). Batman keeps its own searchlight-gold signature untouched.
 const LOOK = {
   // NIGHT (design applyTheme() night values): warm gold light on near-black.
   // These intensities are the gold palette's own tuning — the earlier "+15-20%
   // brightness pass" numbers were tuned against the retired steel palette and
-  // would over-drive gold, which already reads hotter. ringOpacity is carried
-  // over from that pass (the rings are new here). Tune HERE, not inline.
+  // would over-drive gold, which already reads hotter. Tune HERE, not inline.
   dark: {
-    sphere: 0x12100c,
+    crystalTint: CRYSTAL_TINT,
+    crystalMetalness: 0.95, // near-metal: the env IS the material
+    crystalRoughness: 0.14, // crisp specular streaks along the facet edges
+    crystalIridescence: 0.3, // a cheap gem shimmer on the grazing facets
+    crystalSpike: 1.0, // shard reach into the body→rim headroom: 1 = CRYSTAL_TIP_FILL
     rim: new THREE.Color(0xe8c27a),
     corona: new THREE.Color(0xc9a96a),
     glow: new THREE.Color(0x8a744a),
     additive: true,
-    rimIntensity: 1.0,
+    rimIntensity: 0.72,
     glowOpacity: 0.45,
     coronaOpacity: 0.52,
-    ringOpacity: 0.55,
-    envIntensity: 1.0,
+    envIntensity: 2.6,
     exposure: 1.12,
+    // The night room: the mood's own ambient top (MOOD_LIGHT.envTop, hence
+    // `top: null`) over the existing searchlight-on-black falloff, PLUS a softbox.
+    // The old room had no source in the band the front facets actually reflect,
+    // which was fine for a near-black sphere but leaves a mirror-finish stone
+    // reflecting pure black — a murky, unreadable lump. The box is the searchlight
+    // itself: it lets the facets show while the gold rim/corona/halo keep the
+    // signature. A faint cool bounce stops the underside going to a dead pit.
+    envRoom: {
+      top: null,
+      mid: "#131922",
+      floor: "#04060a",
+      bounce: "36,44,58",
+      bounceA: 0.5,
+      box: { a: 0.85, r: 96, squash: 0.46, dx: -66, dy: -50 },
+      shade: null,
+    },
   },
-  // DAY: dark warm sphere on the off-white stage, corona/rim as dark-gold ink
-  // (normal blending — additive gold would wash out against #F5F4F1).
+  // DAY: the PAPER ROOM. A mirror-finish body shows whatever surrounds it, so on
+  // the off-white stage the surround must be the page: bright warm-white above,
+  // paper mid-tones around, and a real floor bounce off the page itself. That is
+  // what stops the crystal being the near-black hole the old lit sphere was.
   light: {
-    sphere: 0x16130e,
+    crystalTint: CRYSTAL_TINT,
+    crystalMetalness: 0.94,
+    crystalRoughness: 0.08, // crisper than night: the paper room's streaks are the read
+    crystalIridescence: 0.3,
+    crystalSpike: 0.9, // shorter shards on paper — a jewel, not a caltrop (tips ~95%)
     rim: new THREE.Color(0xa2823f),
     corona: new THREE.Color(0x8b6f3e),
     glow: new THREE.Color(0xc9a96a),
     additive: false,
-    rimIntensity: 0.95,
-    glowOpacity: 0.2,
-    coronaOpacity: 0.45,
-    ringOpacity: 0.5,
-    envIntensity: 1.2,
-    exposure: 1.0,
+    rimIntensity: 0.34, // ink rim stays a whisper — the facets carry the edge
+    // DAY HAS NO ENERGY LAYER. Both of these are light SOURCES — a bloom billboard
+    // and an eruption of filaments off the rim — and a light source is a dark-stage
+    // idea: you cannot glow on white. Dimming them didn't make them honest, it made
+    // them faint: the bloom billboard laid a pale gold disc behind a stone that
+    // (unlike the old sphere) doesn't fill its circle, so it detached into a plate
+    // under a floating jewel, and the filaments read as hairs/lint around it. The
+    // owner's reference is the stone on plain paper and nothing else. At 0 both
+    // meshes are also skipped outright (applyLook sets .visible) — two fewer
+    // transparent draws per frame on the theme most people boot into.
+    // (NIGHT/GOTHAM keep theirs: there the glow IS a searchlight in a void.)
+    glowOpacity: 0,
+    coronaOpacity: 0,
+    envIntensity: 2.6, // the room is the whole trick — let it in
+    exposure: 1.06,
+    // The paper room needs CONTRAST, not just brightness: a mirror in an evenly
+    // bright room reflects one flat tone everywhere and the gem dies as a matte
+    // blob (which is exactly what a paper-white room gave). So the day room is a
+    // real room — a hot warm-white ceiling, a warm mid-grey wall, a darker floor,
+    // a softbox, and a shadow pool opposite it — which is what puts bright streaks
+    // on the facets, deep blue in the recesses, and a blowout or two on the edges.
+    // Note the wall is mid, not paper-white: that mid-grey/warm ground is exactly
+    // what the reference's crystal sits on and takes its colour from. It cannot
+    // read as a hole — a hole is near-black, and every facet here lands between
+    // pale sky-blue and deep navy, with the page's own bounce under it.
+    envRoom: {
+      top: "#fffdf8",
+      mid: "#a8a293",
+      floor: "#6d675b",
+      bounce: "226,218,198", // the page throwing warm light back up under the stone
+      bounceA: 0.85,
+      box: { a: 1, r: 92, squash: 0.42, dx: -70, dy: -54 },
+      shade: { c: "58,54,46", a: 0.9, r: 150 },
+    },
   },
   // Gotham: the same dark-stage physics with the energy in signal gold —
   // a searchlight against black, slightly dimmer than the steel look.
   batman: {
-    sphere: 0x0a0a0c,
+    crystalTint: CRYSTAL_TINT,
+    crystalMetalness: 0.97,
+    crystalRoughness: 0.07, // the sharpest, hardest read of the three
+    crystalIridescence: 0.16,
+    crystalSpike: 1.06, // Gotham runs its shards a hair longer — the sharpest read (tips ~98%)
     rim: new THREE.Color(0xe8d08a),
     corona: new THREE.Color(0xd6b25a),
     glow: new THREE.Color(0xa8905e),
     additive: true,
-    rimIntensity: 0.95,
+    rimIntensity: 0.68,
     glowOpacity: 0.45,
     coronaOpacity: 0.5,
-    ringOpacity: 0.5, // Gotham rides a hair under the night rings, per its dimmer brief
-    envIntensity: 1.0,
+    envIntensity: 2.5,
     exposure: 1.1,
+    // Gotham's room rides a hair colder and darker than night's, per its brief.
+    envRoom: {
+      top: null,
+      mid: "#0f141b",
+      floor: "#030304",
+      bounce: "30,36,48",
+      bounceA: 0.42,
+      box: { a: 0.82, r: 90, squash: 0.44, dx: -66, dy: -50 },
+      shade: null,
+    },
   },
 } as const;
 
 // --- Mood lighting matrix ------------------------------------------------------
-// The mood never touches the orb's body (the sphere stays the same glossy
-// near-black everywhere) — it re-temperatures the LIGHT playing over it: the
-// key/fill lights, the rim + ring tint, the corona filaments, the halo, and the
-// studio-environment blobs the gloss reflects. One entry per mood; rim/corona/
+// The mood never touches the crystal's own tint (that is CRYSTAL_TINT's job, and
+// it is one stone across every mood) — it re-temperatures the LIGHT playing over
+// it: the key/fill lights, the rim tint, the corona filaments, the halo, and the
+// studio-environment blobs the stone reflects. Since the crystal is a mirror,
+// those env blobs are now most of what a mood change actually re-colours.
+// One entry per mood; rim/corona/
 // glow come per theme (luminous on the dark stage, ink on the light one), and
 // STEEL is the reference rig. Rather than repeating LOOK's rim/corona/glow here
 // and hoping the two stay in lock-step, applyLook reads steel's straight FROM
@@ -180,23 +259,236 @@ const KEY_DIST = 7; // key/fill light distance (world units; only direction matt
 const KEY_INTENSITY = 1.1; // key light strength — drives the specular shaping
 const FILL_INTENSITY = 0.35; // dim steel counter-light: a trace of form on the shadow side
 const FILL_DIR = new THREE.Vector3(2.6, -1.8, 3.0).normalize(); // fill from lower screen-right
-const SPHERE_METALNESS = 0.22; // dielectric-leaning so grazing reflections brighten the limb (metal tinted them black)
-const SPHERE_ROUGHNESS = 0.3; // smears the env key into a lit hemisphere; the clearcoat keeps the gloss
 const ENV_KEY_RADIUS = 190; // env key-blob radius (px on the 512×256 env) — bigger = broader surface gradient
 const ENV_WASH_RADIUS = 320; // radius of the wide soft wash around the key (hemisphere shading)
 const ENV_KEY_WASH = 0.16; // strength of that wash — lifts the lit half, leaves a terminator
 const ENV_DRIFT_SPEED = 0.035; // env reflection slew (rad/s ≈ 2°/s) — the specular catch never parks
-const ROTATION_SPEED = 0.011; // base ring drift (rad/s ≈ 0.63°/s — barely perceptible)
-const RING_SPEED_STEP = 0.004; // per-ring speed differential (≈0.23°/s) → slow parallax slip
-const RING_RADII = [1.1, 1.16, 1.23]; // ring radii as multiples of the orb radius
-const RING_TILT_BASE = 0.34; // first ring inclination off the equator (rad ≈ 19°)
-const RING_INCLINATION_STEP = 0.11; // added inclination per ring, alternating sign (≈ 6.3°)
-const RING_TILT_SKEW = 0.12; // small z-lean step per ring so no two rings share an axis
-const RING_ARCS = 2; // arcs per ring — the gaps are what make the slow rotation visible
-const RING_ARC_SPAN = 2.35; // arc length (rad ≈ 135°); the remainder is gap
-const RING_SEGMENTS = 96; // line segments per arc
-const RING_PHASE_STEP = 2.1; // per-ring start offset (rad) so the gaps never align
-const RING_FAR_DIM = 0.25; // far-side segment brightness (near side = 1) — front/back depth cue
+// WHERE THE STONE LOOKS. With EquirectangularReflectionMapping a facet whose
+// normal faces the camera reflects direction +z, which lands at u≈0.75, v≈0.5 on
+// the equirect — the band BEHIND the camera, at the horizon. The pre-existing key
+// blob sits at (150,64), i.e. off to the side: fine as a light source for a matte
+// sphere, but a mirror-finish crystal shows the room, and the room the FRONT
+// facets actually see is here. Anything meant to be seen ON the stone (the
+// softbox, the shadow pool) is painted relative to this point.
+const ENV_BEHIND_X = 384;
+const ENV_HORIZON_Y = 128;
+
+// --- The crystal ---------------------------------------------------------------
+// A faceted crystalline solid: roughly spherical in mass, built from hard angular
+// planes, with a handful of genuine shards. Procedural and DETERMINISTIC — a
+// seeded PRNG, never Math.random — so the same stone renders every load, across
+// SSR/HMR and between themes. Tune HERE, not inline.
+const CRYSTAL_SEED = 0x41554755; // "AUGU" — the stone's identity; change it, get a different stone
+const CRYSTAL_DETAIL = 2; // icosphere subdivisions → 20·(detail+1)² = 180 facets, 92 unique
+// vertices (plenty at ~190px, and ~99% fewer triangles than the 128×128 sphere it replaces)
+const CRYSTAL_LUMPS = 6; // low-frequency swells → an irregular mass, not a ball
+const CRYSTAL_LUMP_MIN = 0.05; // per-lump radial amplitude range (× radius). Kept tight
+const CRYSTAL_LUMP_MAX = 0.13; // and high-exponent (below) — broad soft swells read as a
+const CRYSTAL_LUMP_POW_MIN = 2.6; // melted blob; narrow ones cut the mass into planes
+const CRYSTAL_LUMP_POW_MAX = 6;
+const CRYSTAL_SHARDS = 6; // protruding spikes, per the reference's silhouette
+const CRYSTAL_SHARD_MIN = 0.4; // shard length range (× BODY radius), before LOOK.crystalSpike
+const CRYSTAL_SHARD_MAX = 0.72;
+const CRYSTAL_SHARD_FOCUS = 30; // falloff exponent — higher = narrower, sharper shard. Below
+// ~20 the falloff is still ~0.6 at the neighbouring vertex (the icosphere's vertex spacing is
+// ~21° at detail 2) and the "shard" smears into a soft bump instead of a spike.
+const CRYSTAL_SHARD_SPREAD = 0.85; // min angle (rad ≈ 49°) between shards, so they never clump
+// THE TWO FILL TARGETS, both as a fraction of R_ORB — which orbFrac pins to the
+// landing's 95px circle radius (HomeLanding: "the sphere's on-screen radius must
+// equal the circle's 95px"). Both are measured on the TRUE extent of the finished
+// hull, squash included, so what they promise is what lands on screen:
+//   BODY = the mass's own farthest point (no shard). The old smooth sphere sat at
+//          0.98 in every direction; a stone cannot, and chasing that number is how
+//          you get a ball. 0.8 is measured, not guessed: it puts the mean radius at
+//          ~72% of R_ORB (64% before) while the shards still visibly protrude. 0.84
+//          was tried and rejected — bigger, but the silhouette rounds off and the
+//          shards stop reading, which is the "regular ball" failure.
+//   TIP  = the longest shard tip, i.e. the whole silhouette's reach. Left a hair
+//          under 1 so the rim shell (×1.012) and the breathing still land inside.
+const CRYSTAL_BODY_FILL = 0.8;
+const CRYSTAL_TIP_FILL = 0.97;
+const CRYSTAL_SQUASH = [1.06, 0.93, 1.01]; // anisotropic scale — kills any regular-polyhedron read
+const CRYSTAL_REST = [0.38, 0.72, 0.16]; // resting euler (rad) — the face it shows at reduced motion
+
+// --- State motion --------------------------------------------------------------
+// The states are read off the TUMBLE: the facets doing the work is the whole
+// point of a faceted body. Rates in rad/s.
+const TUMBLE_IDLE = 0.085; // slow, deliberate — a stone turning over
+const TUMBLE_LISTEN = 0.14; // base while listening…
+const TUMBLE_LISTEN_GAIN = 1.5; // …plus this × mic amplitude: it visibly reacts to a voice
+const TUMBLE_THINK = 0.5; // searching — fast, and it hunts (see THINK_SWEEP)
+const TUMBLE_THINK_SWEEP = 0.85; // rad/s of the sweep sine: speed swells and eases = purposeful
+const TUMBLE_SPEAK = 0.16; // speaking rides the pulse more than the spin
+const TUMBLE_SPEAK_GAIN = 0.7;
+const TUMBLE_WOBBLE = 0.42; // cross-axis rate (× the yaw rate) → a real tumble, not a turntable
+const SHIMMER_GAIN = 0.55; // amplitude → envMapIntensity lift: the gem catches light as it speaks
+
+// Deterministic PRNG (mulberry32). Seeded per call, so buildCrystal is pure:
+// identical geometry on server, client, and every HMR pass.
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * The stone. An icosphere displaced by a few low-frequency lumps (the irregular
+ * mass) plus a handful of narrow shards, then squashed anisotropically so it can
+ * never read as a regular polyhedron. Displacement is a pure function of each
+ * vertex's ORIGINAL direction, so the duplicated corners of the non-indexed
+ * icosphere all move identically and the hull stays watertight; flatShading then
+ * makes every triangle a crisp plane.
+ *
+ * Shard axes are snapped to real vertex directions — a narrow falloff aimed
+ * between vertices would only be sampled at the corners and smear into a bump
+ * instead of a spike.
+ *
+ * FILL. Two independent targets, hit exactly rather than approached: the body's
+ * true extent lands on CRYSTAL_BODY_FILL·radius (a plain uniform fit), and the
+ * shards are then scaled by one solved multiplier `k` so the longest tip lands on
+ * `tipFill`·radius. Both extents are the real max of |vertex| over the finished,
+ * squashed hull — NOT the old `bodyMax * squashMax` bound, which multiplied the
+ * farthest body direction by the largest squash axis as though they coincided.
+ * They don't, so that bound overshot and the fit divided it back out of the whole
+ * stone: the body landed at ~64% mean radius and the longest tip at 83.7% of a
+ * circle the old sphere filled to 98.2%. Solving on the true extents is also what
+ * lets `spikeScale` mean something honest — the shards' REACH into the headroom
+ * between body and rim — instead of an absolute length that silently resized the
+ * whole silhouette per theme.
+ */
+function buildCrystal(radius: number, spikeScale: number) {
+  const geo = new THREE.IcosahedronGeometry(radius, CRYSTAL_DETAIL);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const rnd = mulberry32(CRYSTAL_SEED);
+
+  const randomAxis = () => {
+    // Uniform on the sphere (inverse-CDF on cos φ) — no polar clustering.
+    const z = rnd() * 2 - 1;
+    const th = rnd() * Math.PI * 2;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    return new THREE.Vector3(Math.cos(th) * r, Math.sin(th) * r, z);
+  };
+
+  const lumps = Array.from({ length: CRYSTAL_LUMPS }, () => ({
+    axis: randomAxis(),
+    amp: CRYSTAL_LUMP_MIN + rnd() * (CRYSTAL_LUMP_MAX - CRYSTAL_LUMP_MIN),
+    pow: CRYSTAL_LUMP_POW_MIN + rnd() * (CRYSTAL_LUMP_POW_MAX - CRYSTAL_LUMP_POW_MIN),
+  }));
+
+  // Unique vertex directions (the icosphere is non-indexed → heavy duplication).
+  const dirs: THREE.Vector3[] = [];
+  const seen = new Set<string>();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    const k = `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    dirs.push(v.clone());
+  }
+
+  // Shard axes: seeded picks from the real vertex set, spread apart.
+  const shards: Array<{ axis: THREE.Vector3; len: number }> = [];
+  for (let guard = 0; guard < 400 && shards.length < CRYSTAL_SHARDS; guard++) {
+    const cand = dirs[Math.floor(rnd() * dirs.length)];
+    if (shards.some((s) => s.axis.angleTo(cand) < CRYSTAL_SHARD_SPREAD)) continue;
+    shards.push({
+      axis: cand.clone(),
+      len: CRYSTAL_SHARD_MIN + rnd() * (CRYSTAL_SHARD_MAX - CRYSTAL_SHARD_MIN),
+    });
+  }
+
+  // Pass 1: split the radial profile into its body and shard halves, and record
+  // the squash gain along each vertex's OWN direction — |d ⊙ SQUASH| — so both
+  // extents below are the hull's real reach, not a bound.
+  const d = new THREE.Vector3();
+  const bodyProf = new Float32Array(pos.count);
+  const shardProf = new Float32Array(pos.count);
+  const gain = new Float32Array(pos.count);
+  let bodyExtent = 0;
+  for (let i = 0; i < pos.count; i++) {
+    d.fromBufferAttribute(pos, i).normalize();
+    let bodyR = 1;
+    for (const l of lumps) bodyR += l.amp * Math.pow(Math.max(0, d.dot(l.axis)), l.pow);
+    let shardR = 0;
+    for (const s of shards) {
+      shardR += s.len * Math.pow(Math.max(0, d.dot(s.axis)), CRYSTAL_SHARD_FOCUS);
+    }
+    const q = Math.hypot(d.x * CRYSTAL_SQUASH[0], d.y * CRYSTAL_SQUASH[1], d.z * CRYSTAL_SQUASH[2]);
+    bodyProf[i] = bodyR;
+    shardProf[i] = shardR;
+    gain[i] = q;
+    bodyExtent = Math.max(bodyExtent, bodyR * q);
+  }
+
+  // The theme's shard character: how far into the body→rim headroom the longest
+  // tip reaches. 1 = CRYSTAL_TIP_FILL; paper runs shorter, Gotham longer. Clamped
+  // so no LOOK edit can ever push a tip through the rim or invert it into the body.
+  const tipFill = Math.min(
+    0.985,
+    Math.max(
+      CRYSTAL_BODY_FILL + 0.01,
+      CRYSTAL_BODY_FILL + (CRYSTAL_TIP_FILL - CRYSTAL_BODY_FILL) * spikeScale,
+    ),
+  );
+  // Fit the BODY's true extent to CRYSTAL_BODY_FILL of the orb radius…
+  const fit = (radius * CRYSTAL_BODY_FILL) / bodyExtent;
+  // …then solve the one shard multiplier that puts the longest tip on tipFill.
+  // max_i (body + k·shard)·gain is a max of lines in k, so it rises monotonically
+  // from bodyExtent (k=0) — bisection is exact to float precision and, since every
+  // input is seeded, deterministic. k is solved per build, not stored.
+  const tipTarget = (tipFill / CRYSTAL_BODY_FILL) * bodyExtent;
+  const reach = (m: number) => {
+    let far = 0;
+    for (let i = 0; i < pos.count; i++) far = Math.max(far, (bodyProf[i] + m * shardProf[i]) * gain[i]);
+    return far;
+  };
+  let lo = 0;
+  let hi = 8; // reach(8) overshoots any reachable target by ~5×; bracket assured
+  for (let it = 0; it < 40; it++) {
+    const mid = (lo + hi) / 2;
+    if (reach(mid) < tipTarget) lo = mid;
+    else hi = mid;
+  }
+  const shardK = (lo + hi) / 2;
+
+  for (let i = 0; i < pos.count; i++) {
+    d.fromBufferAttribute(pos, i).normalize();
+    const r = (bodyProf[i] + shardK * shardProf[i]) * fit;
+    pos.setXYZ(i, d.x * r * CRYSTAL_SQUASH[0], d.y * r * CRYSTAL_SQUASH[1], d.z * r * CRYSTAL_SQUASH[2]);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * The gold fresnel shell that hugs the crystal's silhouette (AUGUST's signature
+ * edge on the night stage). Same hull, nudged out — but with RADIAL normals
+ * rather than the facet normals: a per-facet fresnel on a flat-shaded hull
+ * resolves to flat blocky patches, where normalize(position) on a star-shaped
+ * body gives the smooth silhouette-hugging wrap the rim is actually after.
+ */
+function buildRimShell(crystal: THREE.BufferGeometry, scale: number) {
+  const shell = crystal.clone();
+  shell.scale(scale, scale, scale);
+  const p = shell.attributes.position as THREE.BufferAttribute;
+  const n = new Float32Array(p.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    n[i * 3] = v.x;
+    n[i * 3 + 1] = v.y;
+    n[i * 3 + 2] = v.z;
+  }
+  shell.setAttribute("normal", new THREE.BufferAttribute(n, 3));
+  return shell;
+}
 // --- Starfield — the space backdrop behind the orb (presence slide only) ------
 // One THREE.Points cloud on a REAR spherical cap centred on the view axis: the
 // drift is a roll around that axis, so no star can ever migrate in front of the
@@ -209,7 +501,11 @@ const STARS = {
   capDeg: 57, // rear-cap half-angle off the view axis — overfills every viewport
   size: 1.7, // point size (CSS px; scaled by devicePixelRatio, capped at 2)
   opacity: 0.32, // dark-stage base opacity (variance dims individual stars below this)
-  opacityLight: 0.14, // light stage — faint ink specks (normal blending, see applyLook)
+  // The day stage has no sky to put stars in: on #f5f4f1 paper the specks read
+  // as grit scattered around the stone, which is the opposite of a jewel lying
+  // clean on a page. The cloud stays built (one flip back to night restores it) —
+  // it just isn't drawn on paper.
+  opacityLight: 0,
   brightMin: 0.45, // per-star brightness floor, 0..1 of the cloud colour
   driftDegPerSec: 0.1, // roll drift — barely perceptible (<0.2°/s per the brief)
   twinkle: 0.12, // ± fraction of the slow whole-cloud opacity sine
@@ -300,27 +596,71 @@ export default function Presence3D({
 
     const disposables: Array<{ dispose: () => void }> = [];
 
-    // --- Studio environment (gives the glossy sphere its specular catch + depth).
-    // A dark equirect with a bright soft key blob upper-left → the white highlight
-    // that reads as polished glass. One env serves both themes (it's the sphere's
-    // own reflection; the page background is separate) — but it IS mood-tinted:
-    // rebuilt from MOOD_LIGHT's env colours whenever the mood changes (rare, ~ms).
+    // --- The ROOM. This is the whole trick, and it is THEME-AWARE.
+    // The crystal is a mirror-finish metal: it has almost no colour of its own on
+    // screen — it shows whatever surrounds it. So the environment decides whether
+    // it belongs on the page. On the DAY stage the room must BE the paper page
+    // (bright warm-white above, paper mid-tones around, the page bouncing warm
+    // light back up from below) — that is what makes the crystal a jewel lying on
+    // the page rather than a hole punched through it. On the night stages the room
+    // stays the existing searchlight-on-black rig, mood-tinted from MOOD_LIGHT.
+    // Rebuilt only when the theme or the mood actually changes (rare, ~ms).
     let envRT: THREE.WebGLRenderTarget | null = null;
-    let envMoodApplied: Mood | null = null;
-    const applyEnv = (m: Mood) => {
-      if (envMoodApplied === m) return;
-      envMoodApplied = m;
+    let envApplied: string | null = null;
+    const applyEnv = (t: Theme, m: Mood) => {
+      if (envApplied === `${t}|${m}`) return;
+      envApplied = `${t}|${m}`;
       const ML = MOOD_LIGHT[m];
+      const room = LOOK[t].envRoom;
       const envCanvas = document.createElement("canvas");
       envCanvas.width = 512;
       envCanvas.height = 256;
       const ex = envCanvas.getContext("2d")!;
       const amb = ex.createLinearGradient(0, 0, 0, 256);
-      amb.addColorStop(0, ML.envTop);
-      amb.addColorStop(0.5, "#0a0e14");
-      amb.addColorStop(1, "#04060a");
+      // `top: null` on the night rooms = defer to the mood's own ambient top.
+      amb.addColorStop(0, room.top ?? ML.envTop);
+      amb.addColorStop(0.5, room.mid);
+      amb.addColorStop(1, room.floor);
       ex.fillStyle = amb;
       ex.fillRect(0, 0, 512, 256);
+      // Floor bounce: the surface under the stone throws light back up into its
+      // lower facets, so the underside never goes to a dead pit. On the day stage
+      // this is literally the page doing it.
+      if (room.bounce) {
+        const bounce = ex.createRadialGradient(256, 256, 0, 256, 256, 300);
+        bounce.addColorStop(0, `rgba(${room.bounce},${room.bounceA})`);
+        bounce.addColorStop(1, `rgba(${room.bounce},0)`);
+        ex.fillStyle = bounce;
+        ex.fillRect(0, 128, 512, 128);
+      }
+      // The SOFTBOX — the source the front facets actually see (see ENV_BEHIND_X).
+      // Elongated, so facets catch a streak rather than a dot. This is what makes
+      // the stone read as polished rather than matte, on every stage.
+      const bx = ENV_BEHIND_X + room.box.dx;
+      const by = ENV_HORIZON_Y + room.box.dy;
+      const boxGrad = ex.createRadialGradient(bx, by, 0, bx, by, room.box.r);
+      boxGrad.addColorStop(0, `rgba(255,253,247,${room.box.a})`);
+      boxGrad.addColorStop(0.55, `rgba(252,248,238,${room.box.a * 0.55})`);
+      boxGrad.addColorStop(1, "rgba(250,246,236,0)");
+      ex.save();
+      ex.translate(bx, by);
+      ex.scale(1, room.box.squash);
+      ex.translate(-bx, -by);
+      ex.fillStyle = boxGrad;
+      ex.fillRect(0, 0, 512, 256);
+      ex.restore();
+      // The SHADOW SIDE (day): a dark pool opposite the softbox, so the recesses
+      // have somewhere dark to pool. Contrast is what reads as polish. The night
+      // rooms are already dark everywhere and don't need one.
+      if (room.shade) {
+        const sx = ENV_BEHIND_X + 110;
+        const sy = ENV_HORIZON_Y + 70;
+        const shadeGrad = ex.createRadialGradient(sx, sy, 0, sx, sy, room.shade.r);
+        shadeGrad.addColorStop(0, `rgba(${room.shade.c},${room.shade.a})`);
+        shadeGrad.addColorStop(1, `rgba(${room.shade.c},0)`);
+        ex.fillStyle = shadeGrad;
+        ex.fillRect(0, 0, 512, 256);
+      }
       // Wide soft wash around the key first: it smears into a lit hemisphere with
       // a real terminator on the sphere, instead of a lone hot dot on black.
       const wash = ex.createRadialGradient(150, 64, 0, 150, 64, ENV_WASH_RADIUS);
@@ -350,7 +690,7 @@ export default function Presence3D({
       envRT?.dispose();
       envRT = next;
     };
-    applyEnv(moodRef.current);
+    applyEnv(themeRef.current, moodRef.current);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.35));
     const keyLight = new THREE.DirectionalLight(0xdfe8f2, KEY_INTENSITY);
@@ -364,34 +704,47 @@ export default function Presence3D({
 
     const root = new THREE.Group();
     scene.add(root);
+    // The stone tumbles inside `root`; root itself keeps the breathing/drift, so
+    // the corona and halo never inherit the spin.
+    const body = new THREE.Group();
+    root.add(body);
 
-    // --- The orb: a polished, deep, glossy near-black sphere. The physical
-    // material + env map do the depth; clearcoat gives the wet glass sheen.
-    const sphereGeo = new THREE.SphereGeometry(R_ORB, 128, 128);
-    // Two-lobe shading: a rougher dielectric base smears the env into a soft lit
-    // hemisphere (curvature), while the low-roughness clearcoat keeps the crisp
-    // drifting catch-light. High metalness tinted every reflection near-black —
-    // that is what flattened the ball into a disc.
-    const sphereMat = new THREE.MeshPhysicalMaterial({
-      color: LOOK[themeRef.current].sphere,
-      metalness: SPHERE_METALNESS,
-      roughness: SPHERE_ROUGHNESS,
+    // --- The crystal: a faceted, polished, reflection-dominated stone.
+    // Chrome-glass, NOT clear glass: high metalness + low roughness + a real
+    // envMap, so the tint colours the reflections and the facet edges throw the
+    // bright specular streaks the reference lives on. Deliberately NOT
+    // MeshPhysicalMaterial.transmission — this canvas is transparent and composited
+    // over the page, so there is nothing behind the crystal IN THE SCENE for
+    // transmission to refract: it would sample the empty (alpha-0) backdrop and
+    // read as a grey smudge, not as glass over paper. Reflecting a room we author
+    // (see applyEnv) is both cheaper and the only honest way to get the gem here.
+    // flatShading makes every triangle a crisp plane — the hard facets.
+    const L0 = LOOK[themeRef.current];
+    let crystalGeo = buildCrystal(R_ORB, L0.crystalSpike);
+    const crystalMat = new THREE.MeshPhysicalMaterial({
+      color: L0.crystalTint,
+      metalness: L0.crystalMetalness,
+      roughness: L0.crystalRoughness,
+      flatShading: true,
       clearcoat: 1,
-      clearcoatRoughness: 0.12,
-      envMapIntensity: LOOK[themeRef.current].envIntensity,
+      clearcoatRoughness: 0.08,
+      iridescence: L0.crystalIridescence,
+      iridescenceIOR: 1.6,
+      iridescenceThicknessRange: [110, 420],
+      envMapIntensity: L0.envIntensity,
     });
-    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-    root.add(sphere);
-    disposables.push(sphereGeo, sphereMat);
+    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+    body.add(crystal);
+    disposables.push(crystalMat);
 
-    // --- Shading shell (was: flat fresnel rim): still bright at the silhouette,
-    // nothing at centre — but the rim now follows the key light (bright over the
-    // lit hemisphere, falling to a floor on the shadow side), and two whisper-level
-    // lambert sheens (key + fill) put a curvature gradient across the ball itself.
+    // --- Shading shell: AUGUST's gold edge, now hugging the CRYSTAL's silhouette
+    // rather than a ghost sphere around it (a sphere shell over a faceted body
+    // would have shown as a halo ball wider than the stone). Still bright at the
+    // silhouette, nothing at centre, and shaded by the key so there is a lit limb
+    // and a shadowed one. It rides inside `body`, so it tumbles WITH the crystal.
     // The camera never rotates here, so view space == world space and the light
     // directions can be passed as plain normalized positions.
-    const L0 = LOOK[themeRef.current];
-    const rimGeo = new THREE.SphereGeometry(R_ORB * 1.012, 96, 96);
+    let rimGeo = buildRimShell(crystalGeo, 1.012);
     const rimMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -434,8 +787,10 @@ export default function Presence3D({
         }`,
     });
     const rim = new THREE.Mesh(rimGeo, rimMat);
-    root.add(rim);
-    disposables.push(rimGeo, rimMat);
+    body.add(rim);
+    // crystalGeo/rimGeo are rebuilt when a theme's crystalSpike differs, so they
+    // are disposed by hand (see rebuildCrystal + cleanup), not via `disposables`.
+    disposables.push(rimMat);
 
     // --- Outer glow billboard: the soft bloom halo behind the orb.
     const glowCanvas = document.createElement("canvas");
@@ -598,65 +953,14 @@ export default function Presence3D({
     root.add(corona);
     disposables.push(coronaGeo, coronaMat);
 
-    // --- Mechanical rings: three thin arc pairs orbiting the sphere on slightly
-    // different inclinations, spinning at slow opposing speeds. The sphere writes
-    // depth, so their far halves duck BEHIND the orb, and near segments render
-    // brighter than far ones (vDepth) — parallax + occlusion is what turns the
-    // disc into a volume. ~1.2k line verts total; no fog pass, no post.
-    const ringMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false, // keep them out of the depth buffer…
-      // …but depthTest stays ON so the sphere occludes the far half.
-      blending: L0.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      uniforms: {
-        uColor: { value: L0.rim.clone() },
-        uOpacity: { value: L0.ringOpacity },
-        uFarDim: { value: RING_FAR_DIM },
-      },
-      vertexShader: `
-        varying float vDepth;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vec4 c = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-          // view-space z relative to the orb centre, normalized by ring radius → 0 far, 1 near
-          vDepth = clamp((mv.z - c.z) / max(length(position), 1e-3) * 0.5 + 0.5, 0.0, 1.0);
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: `
-        precision mediump float;
-        varying float vDepth;
-        uniform vec3 uColor; uniform float uOpacity; uniform float uFarDim;
-        void main() {
-          gl_FragColor = vec4(uColor, uOpacity * mix(uFarDim, 1.0, vDepth));
-        }`,
-    });
-    const rings: Array<{ mesh: THREE.LineSegments; speed: number }> = [];
-    RING_RADII.forEach((mult, i) => {
-      const r = R_ORB * mult;
-      const gap = (Math.PI * 2 - RING_ARCS * RING_ARC_SPAN) / RING_ARCS;
-      const pts: number[] = [];
-      for (let a = 0; a < RING_ARCS; a++) {
-        const start = i * RING_PHASE_STEP + a * (RING_ARC_SPAN + gap);
-        for (let s = 0; s < RING_SEGMENTS; s++) {
-          const a0 = start + (s / RING_SEGMENTS) * RING_ARC_SPAN;
-          const a1 = start + ((s + 1) / RING_SEGMENTS) * RING_ARC_SPAN;
-          pts.push(Math.cos(a0) * r, 0, Math.sin(a0) * r, Math.cos(a1) * r, 0, Math.sin(a1) * r);
-        }
-      }
-      const ringGeo = new THREE.BufferGeometry();
-      ringGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts), 3));
-      const ring = new THREE.LineSegments(ringGeo, ringMat);
-      // Static inclination lives on a parent group; the ring spins in-plane inside
-      // it, so the composition holds while the arcs travel front-to-back.
-      const tilt = new THREE.Group();
-      tilt.rotation.x = (i % 2 ? -1 : 1) * (RING_TILT_BASE + i * RING_INCLINATION_STEP);
-      tilt.rotation.z = (i - 1) * RING_TILT_SKEW;
-      tilt.add(ring);
-      root.add(tilt);
-      rings.push({ mesh: ring, speed: (i % 2 ? -1 : 1) * (ROTATION_SPEED + (i - 1) * RING_SPEED_STEP) });
-      disposables.push(ringGeo);
-    });
-    disposables.push(ringMat);
+    // --- Mechanical rings: REMOVED (they were merged in from the desk line).
+    // Three orbital arc pairs read fine on a big presence surface, but the ONLY
+    // mount is the landing's 190px circle (HomeLanding, orbFraction), where they
+    // compressed into gold spikes fringing the orb — the artefact the owner
+    // rejected. They are also now redundant AND in conflict: the crystal grows its
+    // own shards, and arcs sweeping through them fight that silhouette. Gated off
+    // per-LOOK would leave an unreachable rig behind an always-false flag, so they
+    // are gone; git has them at 2882d16 if a future big-surface mount wants them.
 
     // --- Look application (no rebuild): the theme swaps blend modes, opacities
     // and exposure; the mood retargets every light colour. Colours move through
@@ -673,6 +977,25 @@ export default function Presence3D({
     let themedOnce = false; // fade only on real theme flips, never the boot apply
     let moodedOnce = false; // snap the boot mood apply; later changes get the lerp
     let fadeTimer = 0;
+    let spikeApplied: number = L0.crystalSpike; // widened: LOOK is `as const`
+
+    // Themes carry their own shard character (LOOK.crystalSpike), which is baked
+    // into the vertices — so a theme flip that actually changes it re-cuts the
+    // stone. Deterministic (same seed) → the same crystal, longer or shorter
+    // shards; ~1ms for 320 facets, and only on a real change.
+    const rebuildCrystal = (spike: number) => {
+      if (spike === spikeApplied) return;
+      spikeApplied = spike;
+      const nextCrystal = buildCrystal(R_ORB, spike);
+      const nextRim = buildRimShell(nextCrystal, 1.012);
+      crystal.geometry = nextCrystal;
+      rim.geometry = nextRim;
+      crystalGeo.dispose();
+      rimGeo.dispose();
+      crystalGeo = nextCrystal;
+      rimGeo = nextRim;
+    };
+
     const applyLook = (cause: "mount" | "theme" | "mood") => {
       const t = themeRef.current;
       const L = LOOK[t];
@@ -687,9 +1010,13 @@ export default function Presence3D({
       const steelRef = moodRef.current === "steel";
       const C = t === "light" ? ML.light : ML.dark;
       renderer.toneMappingExposure = L.exposure;
-      sphereMat.color.set(L.sphere);
-      sphereMat.envMapIntensity = L.envIntensity;
-      sphereMat.needsUpdate = true;
+      rebuildCrystal(L.crystalSpike);
+      crystalMat.color.set(L.crystalTint);
+      crystalMat.metalness = L.crystalMetalness;
+      crystalMat.roughness = L.crystalRoughness;
+      crystalMat.iridescence = L.crystalIridescence;
+      crystalMat.envMapIntensity = L.envIntensity;
+      crystalMat.needsUpdate = true;
       const blend = L.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
       rimMat.uniforms.uIntensity.value = L.rimIntensity;
       rimMat.blending = blend;
@@ -699,9 +1026,12 @@ export default function Presence3D({
       coronaMat.uniforms.uOpacity.value = L.coronaOpacity * ML.energy;
       coronaMat.blending = blend;
       coronaMat.needsUpdate = true;
-      ringMat.uniforms.uOpacity.value = L.ringOpacity;
-      ringMat.blending = blend;
-      ringMat.needsUpdate = true;
+      // A LOOK that zeroes the energy layer (day) means it, so don't draw it at
+      // all: the render loop keeps writing their opacity/uniforms either way, and
+      // an opacity-0 transparent mesh still costs a draw. Kept off the LOOK table
+      // as a derived fact — one source of truth (the opacity), no flag to desync.
+      glow.visible = L.glowOpacity > 0;
+      corona.visible = L.coronaOpacity > 0;
       // Stars: luminous dust on the dark stages (dark AND batman), faint ink
       // specks on the light one.
       starBase = t === "light" ? STARS.opacityLight : STARS.opacity;
@@ -709,8 +1039,9 @@ export default function Presence3D({
       starMat.opacity = starBase;
       starMat.blending = blend;
       starMat.needsUpdate = true;
+      stars.visible = starBase > 0; // day zeroes them (STARS.opacityLight) — same deal
       moodEnergy = ML.energy;
-      // Retarget the light colours (rings share the rim tint) + re-tint the env.
+      // Retarget the light colours + rebuild the room (theme AND mood decide it).
       if (steelRef) {
         tint.rim.copy(L.rim);
         tint.corona.copy(L.corona);
@@ -722,14 +1053,13 @@ export default function Presence3D({
       }
       tint.key.setHex(ML.key);
       tint.fill.setHex(ML.fill);
-      applyEnv(moodRef.current);
+      applyEnv(t, moodRef.current);
       // Mood changes drift through the render loop's lerp; everything else
       // (mount, boot-time persisted mood, theme flips) lands instantly.
       if (cause !== "mood" || !moodedOnce) {
         rimMat.uniforms.uColor.value.copy(tint.rim);
         coronaMat.uniforms.uColor.value.copy(tint.corona);
         glowMat.color.copy(tint.glow);
-        ringMat.uniforms.uColor.value.copy(tint.rim);
         keyLight.color.copy(tint.key);
         fillLight.color.copy(tint.fill);
       }
@@ -763,9 +1093,15 @@ export default function Presence3D({
     let easedGlow = 1;
     let easedAmp = 0;
     let easedScale = 1;
+    // Accumulated tumble angle. The states change the RATE, so the angle is
+    // integrated rather than derived from t — a state flip changes the speed
+    // without ever snapping the stone to a new orientation.
+    let spin = 0;
     const reduced =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Reduced motion is a still, well-lit crystal: park it on the resting face.
+    body.rotation.set(CRYSTAL_REST[0], CRYSTAL_REST[1], CRYSTAL_REST[2]);
 
     const render = () => {
       if (!rafOn) {
@@ -786,21 +1122,31 @@ export default function Presence3D({
       easedAmp += (rawAmp - easedAmp) * (1 - Math.exp(-dt * ampRate));
       const amp = easedAmp;
 
-      // State → energy level (multiplier on the corona/glow/rim).
+      // State → energy (drives corona/glow/rim), scale, and the TUMBLE RATE. On a
+      // faceted body the tumble is the loudest signal there is: each state turns
+      // the stone with its own character, so a glance tells you which one it's in.
       let energyTarget = 1;
       let scaleTarget = 1;
+      let spinRate = TUMBLE_IDLE; // idle: slow and deliberate, the facets doing the work
       switch (st) {
         case "listening":
+          // The voice literally drives it: louder in the mic = faster, bigger.
           energyTarget = 1.15 + amp * 0.7;
-          scaleTarget = 1.012;
+          scaleTarget = 1.012 + amp * 0.03;
+          spinRate = TUMBLE_LISTEN + amp * TUMBLE_LISTEN_GAIN;
           break;
         case "thinking":
+          // Searching: fast, but it swells and eases rather than running flat —
+          // the stone is hunting for something, not idling on a turntable.
           energyTarget = 1.3 + 0.1 * Math.sin(t * 1.6);
           scaleTarget = 1.008;
+          spinRate = TUMBLE_THINK * (0.55 + 0.45 * Math.sin(t * TUMBLE_THINK_SWEEP));
           break;
         case "speaking":
+          // Speaking pulses: the envelope drives scale first, spin second.
           energyTarget = 1.15 + amp * 1.0;
-          scaleTarget = 1.02;
+          scaleTarget = 1.02 + amp * 0.05;
+          spinRate = TUMBLE_SPEAK + amp * TUMBLE_SPEAK_GAIN;
           break;
         default:
           energyTarget = 1;
@@ -825,7 +1171,6 @@ export default function Presence3D({
       rimMat.uniforms.uColor.value.lerp(tint.rim, ck);
       coronaMat.uniforms.uColor.value.lerp(tint.corona, ck);
       glowMat.color.lerp(tint.glow, ck);
-      ringMat.uniforms.uColor.value.lerp(tint.rim, ck);
       keyLight.color.lerp(tint.key, ck);
       fillLight.color.lerp(tint.fill, ck);
 
@@ -845,13 +1190,26 @@ export default function Presence3D({
           starBase * (1 + Math.sin(t * STARS.twinkleHz * Math.PI * 2) * STARS.twinkle);
       }
 
+      // Shimmer: the voice lifts how hard the room burns into the facets, so the
+      // stone visibly catches light as it reacts — the reflection-side of the
+      // amplitude response that the scale pulse handles geometrically.
+      crystalMat.envMapIntensity = L.envIntensity * (1 + amp * SHIMMER_GAIN);
+
       // Slow breathing + a gentle drift at idle.
       const breathe = reduced ? 0 : Math.sin(t * 0.62) * 0.011 + Math.sin(t * 0.29) * 0.006;
       root.scale.setScalar(easedScale + breathe + amp * (reduced ? 0.01 : 0.04));
       if (!reduced) {
         root.rotation.z = Math.sin(t * 0.07) * 0.03;
         root.position.y = Math.sin(t * 0.45) * 0.03;
-        sphere.rotation.y = t * 0.04;
+        // THE TUMBLE — integrate the state's rate, then turn the stone on two axes
+        // at an irrational-ish ratio so it never settles into a repeating turntable
+        // loop and always presents fresh facets to the key.
+        spin += dt * spinRate;
+        body.rotation.set(
+          CRYSTAL_REST[0] + spin * TUMBLE_WOBBLE,
+          CRYSTAL_REST[1] + spin,
+          CRYSTAL_REST[2] + Math.sin(spin * 0.31) * 0.22,
+        );
         // Keep the orb awake: drift the specular catch by easing the key light in a
         // slow orbit and turning the reflection environment.
         keyLight.position.set(
@@ -862,9 +1220,6 @@ export default function Presence3D({
         // The shell's shading tracks the orbiting key, so rim + sheen drift with it.
         rimMat.uniforms.uKeyDir.value.copy(keyLight.position).normalize();
         scene.environmentRotation.y = t * ENV_DRIFT_SPEED;
-        // Ring parallax: in-plane spins at slow opposing differential speeds; the
-        // arcs travel front-to-back, dimming as they pass behind the sphere.
-        for (const rg of rings) rg.mesh.rotation.y = t * rg.speed;
       }
 
       renderer.render(scene, camera);
@@ -918,6 +1273,9 @@ export default function Presence3D({
       ro.disconnect();
       applyLookRef.current = null;
       envRT?.dispose();
+      // Hand-managed (rebuildCrystal swaps them), so they aren't in `disposables`.
+      crystalGeo.dispose();
+      rimGeo.dispose();
       disposables.forEach((d) => {
         try {
           d.dispose();
@@ -926,6 +1284,14 @@ export default function Presence3D({
         }
       });
       renderer.dispose();
+      // dispose() frees the GL resources but NOT the drawing context itself, so
+      // every mount/unmount used to strand one: Chrome caps live contexts per
+      // process (~16) and starts evicting the oldest ("Too many active WebGL
+      // contexts"), which kills the orb on a page that mounts the landing enough
+      // times. forceContextLoss() is the documented way to hand the context back.
+      // After dispose(), since that has already removed three's own
+      // webglcontextlost listener.
+      renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [amplitudeRef, orbFraction]);
