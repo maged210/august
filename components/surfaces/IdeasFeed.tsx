@@ -311,12 +311,15 @@ function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // drag-to-dismiss on the handle (pointer events cover touch + mouse)
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+  // Drag-to-dismiss engages ONLY from the grip handle and the pinned ticker
+  // header (pointer events cover touch + mouse; both carry touch-action:none).
+  // The scrollable body has NO drag handlers and touch-action:pan-y — scrolling
+  // mid-content can never move or dismiss the sheet.
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     dragY.current = { start: e.clientY, delta: 0 };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
-  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     if (!dragY.current || !sheetRef.current) return;
     const delta = Math.max(0, e.clientY - dragY.current.start);
     dragY.current.delta = delta;
@@ -349,28 +352,36 @@ function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
         >
           <span className="if-sheet-grip" aria-hidden="true" />
         </button>
-        <div className="if-sheet-body">
-          <div className="if-sh-head">
-            <span className="if-sh-tkr">{card.ticker}</span>
-            <span className={`if-dir ${dir.cls}`} title={dir.title}>
-              <span className="if-dir-g" aria-hidden="true">
-                {dir.glyph}
+        {/* ticker header — pinned outside the scroller; a drag surface like the
+            handle so a swipe-down on it dismisses (the body below only scrolls) */}
+        <div
+          className="if-sh-head"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+        >
+          <span className="if-sh-tkr">{card.ticker}</span>
+          <span className={`if-dir ${dir.cls}`} title={dir.title}>
+            <span className="if-dir-g" aria-hidden="true">
+              {dir.glyph}
+            </span>
+            {dir.label}
+          </span>
+          <span className={`if-life ${life.chip}`}>
+            <span className="if-life-dot" aria-hidden="true" />
+            {life.label}
+            {card.conflict && (
+              <span className="if-life-conflict" title="conflicting stated triggers exist for this idea">
+                !
               </span>
-              {dir.label}
-            </span>
-            <span className={`if-life ${life.chip}`}>
-              <span className="if-life-dot" aria-hidden="true" />
-              {life.label}
-              {card.conflict && (
-                <span className="if-life-conflict" title="conflicting stated triggers exist for this idea">
-                  !
-                </span>
-              )}
-            </span>
-            {card.stale && (
-              <span className="if-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
             )}
-          </div>
+          </span>
+          {card.stale && (
+            <span className="if-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
+          )}
+        </div>
+        <div className="if-sheet-body">
           <div className="if-sh-meta">
             {TF_LABEL[card.timeframe] ?? card.timeframe} · FIRST MENTION {fmtDate(card.firstMentionAt)} · PUBLISHED{" "}
             {fmtDate(card.publishedAt)}

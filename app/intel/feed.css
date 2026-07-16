@@ -366,8 +366,22 @@
   animation: ifFade 160ms ease-out;
 }
 :where(.intel-embed-frame) .if-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-  max-width: 620px; margin: 0 auto; max-height: 84%;
+  position: fixed; left: 0; right: 0; z-index: 61;
+  /* one-knob geometry:
+     --if-dock-clear lifts the sheet clear of any chrome the HOST paints over
+       the frame's bottom edge (the home shell's composer dock — a SIBLING
+       layer above the frame that no z-index inside the transform-contained
+       frame can ever climb over). Defaults to 0px, so on the standalone
+       /feed page (no dock; the body padding already clears the home
+       indicator) the sheet stays a true edge-pinned bottom sheet.
+     --if-sheet-gap-top is the scrim reveal kept above the card. */
+  bottom: var(--if-dock-clear, 0px);
+  max-width: 620px; margin: 0 auto;
+  /* the cap: the whole card must fit the VISIBLE frame — never taller than
+     the panel minus the top reveal and the dock band, so the card is fully
+     seeable and everything below the fold is reached by the body's own
+     scroll, never by content sliding under the dock. */
+  max-height: calc(100% - var(--if-sheet-gap-top, 48px) - var(--if-dock-clear, 0px));
   display: flex; flex-direction: column;
   background: var(--rd-card, #0b0d10);
   border: 1px solid var(--rd-hair-12, rgba(255, 255, 255, 0.12));
@@ -386,13 +400,25 @@
   background: var(--rd-hair-14, rgba(255, 255, 255, 0.14));
 }
 :where(.intel-embed-frame) .if-sheet-body {
+  flex: 1 1 auto;
   overflow-y: auto; overscroll-behavior: contain;
+  /* the body is the ONLY scroller in the sheet: pan-y keeps touch scrolling
+     native here while the handle + pinned header above (touch-action: none)
+     own the drag-to-dismiss gesture — a mid-content scroll can never dismiss. */
+  touch-action: pan-y;
   /* the sheet is pinned to the bottom edge — its content must clear the home
      indicator (inset + the base 28px). */
-  padding: 2px 18px calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 28px); min-height: 0;
+  padding: 10px 18px calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 28px); min-height: 0;
 }
+/* ticker header — PINNED below the grip, outside the scroller, and a second
+   drag-to-dismiss surface (same pointer handlers as the handle). */
 :where(.intel-embed-frame) .if-sh-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  flex-shrink: 0;
+  padding: 0 18px 12px;
+  border-bottom: 1px solid var(--rd-hair-06, rgba(255, 255, 255, 0.06));
+  touch-action: none; cursor: grab;
+  -webkit-user-select: none; user-select: none;
 }
 :where(.intel-embed-frame) .if-sh-tkr {
   font-family: var(--rd-mono, "IBM Plex Mono", monospace);
@@ -482,6 +508,46 @@
   font-family: var(--rd-mono, "IBM Plex Mono", monospace);
   font-size: 8.5px; letter-spacing: 0.1em;
   color: var(--rd-t-faint2, #646b73); text-align: center;
+}
+
+/* ---- HOME DECK EMBED: clear the composer dock --------------------------------
+   Inside the home shell (main.stage-vignette — app/page.tsx, the only place
+   this class exists) the composer dock (.dock-wrap: fixed, z-20, bottom pad
+   32/40px + safe-area + the ~60px composer row) paints OVER the panel's
+   bottom band whenever a conversation is live or the deck sits on World/
+   Comms. The frame's transform is the sheet's containing block, so the sheet
+   can NEVER stack above that dock — instead it becomes a floating card lifted
+   clear of the band. The knob below is the dock band's measured height:
+   composer row (~62px) + its status pill (~15px + 12px gap) + the 40px
+   desktop / 32px phone bottom pad ≈ 129px, rounded up — plus the safe-area
+   inset phones add beneath it. (The expanded reply card and the voice bar
+   can stand taller than this band; they are dismissible reading chrome, not
+   the persistent input, and no fixed reserve could cover a 32vh card.)
+   Standalone /feed never matches .stage-vignette, so it keeps the 0px
+   default (true bottom sheet, body padding clears the home indicator). */
+:where(.stage-vignette) .intel-embed-frame {
+  --if-dock-clear: calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 132px);
+  /* the TOP band is home chrome too: .deck-indicators (fixed, z-30, top-center,
+     safe-top + 18px, ~44px tall on phones) paints over the frame exactly like
+     the dock does — a capped sheet whose grip rode up under it handed the
+     drag/tap to the deck nav (measured: band bottom = safe-top + 62px). Keep
+     the sheet's top reveal below that band; standalone /feed has no deck nav
+     and keeps the 48px default. */
+  --if-sheet-gap-top: calc(var(--rd-safe-top, env(safe-area-inset-top, 0px)) + 72px);
+}
+:where(.stage-vignette) .intel-embed-frame .if-sheet {
+  /* floating card: close the bottom edge (the base rule opens it for the
+     edge-pinned standalone sheet) and shadow both directions */
+  border-bottom: 1px solid var(--rd-hair-12, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  box-shadow:
+    0 -18px 44px var(--rd-shadow-70, rgba(0, 0, 0, 0.7)),
+    0 12px 30px var(--rd-shadow-70, rgba(0, 0, 0, 0.7));
+}
+:where(.stage-vignette) .intel-embed-frame .if-sheet-body {
+  /* the clearance already carries the safe-area inset — a floating card only
+     needs its own base padding, not the home-indicator allowance */
+  padding-bottom: 20px;
 }
 
 /* ---- motion ------------------------------------------------------------------ */
