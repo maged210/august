@@ -22,6 +22,19 @@
   --rd-live: #74b08a;      /* live ◉ dots · tape dot · TODAY tick */
   --rd-live-rgb: 116, 176, 138;
 
+  /* ---- device safe-area insets (notch / home indicator) ----
+     Defined ONCE here and reused by every desk chrome site below AND by the
+     public feed (feed.css), which inherits this scope via .intel-embed-frame.
+     env() resolves to 0 off-device, so these are inert on desktop. globals.css
+     owns the app-shell insets; this is the /intel + /feed desk-local mirror of
+     the same calc(env(safe-area-inset-*, 0px) + Npx) convention — kept out of
+     globals.css on purpose. Left/right are 0 in portrait but wired for
+     landscape safety. */
+  --rd-safe-top: env(safe-area-inset-top, 0px);
+  --rd-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --rd-safe-left: env(safe-area-inset-left, 0px);
+  --rd-safe-right: env(safe-area-inset-right, 0px);
+
   /* ---- accent ramp — locked Cyan default (§1.2) ---- */
   --rd-acc: #5fb0ad;
   --rd-acc-rgb: 95, 176, 173;
@@ -1687,6 +1700,25 @@ textarea.rd-input { resize: vertical; min-height: 110px; }
 @media (max-width: 700px) {
   .rd-chan-fold { min-height: 44px; }
   .rd-mpub .rd-btn { min-height: 44px; }
+
+  /* readable source/video rows on phones (the "videos down there"): the desktop
+     11.5px nowrap title + 8px meta + 7.5px chips are unreadable at arm's length.
+     The title gets a phone size and wraps to 2 lines then ellipses (line-clamp)
+     instead of a hard single-line truncation, so long headlines stay legible;
+     meta + chips lift to a legible floor. Colors ride the existing rd- tokens,
+     so DAY DESK (paper) and dark both inherit unchanged. Rows stay >=44px; the
+     thumbnail and the 44px Open/Remove (.rd-tabview .rd-btn) are untouched.
+     Scoped to this mobile block so desktop is undisturbed. */
+  .rd-irow { min-height: 44px; }
+  .rd-irow-title {
+    font-size: 13.5px; line-height: 1.32; white-space: normal;
+    display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; line-clamp: 2;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .rd-chan-head .rd-irow-title { font-size: 14px; } /* channel name = row heading */
+  .rd-irow-meta { font-size: 11px; gap: 5px 8px; margin-top: 5px; }
+  .rd-irow-meta .rd-chip { font-size: 9.5px; } /* all-caps + letterspaced: OK a touch smaller */
 }
 
 /* ---- idea cards (BRIEF/drawer bodies — inset card + token type ramp) ---- */
@@ -1875,7 +1907,11 @@ a.rd-cite:hover { text-decoration: underline; }
 /* ---- ASK AUGUST band (§2.7 treatments on the pinned bar) ---- */
 .rd-askbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-  padding: 10px 16px;
+  /* clear the home indicator: bottom pad = inset + the base 10px; left/right
+     inset for landscape. env() is 0 off-device so desktop is unchanged. The
+     embedded (deck-panel) variant resets this below — the home shell owns its
+     own bottom inset there. */
+  padding: 10px calc(var(--rd-safe-right) + 16px) calc(var(--rd-safe-bottom) + 10px) calc(var(--rd-safe-left) + 16px);
   background: var(--rd-askbar-bg);
   border-top: 1px solid var(--rd-hair-08);
   backdrop-filter: blur(8px);
@@ -2300,6 +2336,12 @@ a.rd-cite:hover { text-decoration: underline; }
     background: var(--rd-mbar1-bg);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--rd-hair-06);
+    /* clear the status bar / notch: the blur tint fills the inset band and the
+       brand row + wstabs + fkeys all sit below it (the sticky top stays 0 so
+       the tint still reaches the screen edge). left/right for landscape. */
+    padding-top: var(--rd-safe-top);
+    padding-left: calc(var(--rd-safe-left) + 10px);
+    padding-right: calc(var(--rd-safe-right) + 10px);
   }
   /* LIVE pill mobile form (§10): 8px, radius 20, brighter green, soft bg */
   .rd-livechip {
@@ -2436,9 +2478,10 @@ a.rd-cite:hover { text-decoration: underline; }
   }
   .rd-mdot-v.on { width: 16px; border-radius: 2px; background: var(--rd-acc); }
 
-  /* ---- sticky segmented horizon control (§4.4; top = real 77px header) ---- */
+  /* ---- sticky segmented horizon control (§4.4; top = real 77px header +
+     the top safe-area inset the sticky bar1 now reserves) ---- */
   .rd-mseg-wrap {
-    position: sticky; top: 77px; z-index: 9;
+    position: sticky; top: calc(var(--rd-safe-top) + 77px); z-index: 9;
     padding: 14px 16px 11px;
     background: var(--rd-mseg-wrap-grad);
   }
@@ -2657,6 +2700,10 @@ a.rd-cite:hover { text-decoration: underline; }
   position: sticky;
   bottom: var(--rd-embed-dock);
   margin-bottom: var(--rd-embed-dock);
+  /* neutralize the standalone safe-area padding — inside the deck the home
+     shell (globals.css) already reserves the home indicator, so this pins to
+     the panel edge with the original 10px/16px band (no double-count). */
+  padding: 10px 16px;
 }
 
 /* ==========================================================================

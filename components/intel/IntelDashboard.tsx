@@ -5759,7 +5759,12 @@ export default function IntelDashboard() {
         {signedOut && (
           <div className="rd-owner-hint">Owner? Sign in to manage sources and publish.</div>
         )}
-        <div className="rd-disc" style={{ paddingBottom: 64 }}>
+        {/* bottom reserve clears the fixed ASK bar. On a phone that bar is now
+            ~10 + 44(shell) + (34 home-indicator inset + 10) ≈ 99px tall, so the
+            old flat 64 hid the last row behind it. Reserve = inset + 88px keeps
+            the disclaimer + last idea row visible above the bar on-device, and
+            is inert extra clearance on desktop (env() = 0, bar ≈ 54px). */}
+        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)" }}>
           AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>
 

@@ -34,7 +34,15 @@
 :where(.intel-embed-frame) .if-head {
   display: flex; align-items: center; gap: 9px;
   width: 100%; max-width: 620px; margin: 0 auto;
-  padding: 13px 16px 9px;
+  /* clear the status bar / notch: the sticky .if-chrome blur wraps this row +
+     the pills, so its tint fills the inset band while the wordmark + count
+     chips drop below it — and the pills (next block) sit fully below in turn.
+     Tokens inherited from .intel-embed-frame (tokens.css); the env() fallback
+     keeps it correct even if the feed is ever mounted outside that scope. */
+  padding: calc(var(--rd-safe-top, env(safe-area-inset-top, 0px)) + 13px)
+           calc(var(--rd-safe-right, env(safe-area-inset-right, 0px)) + 16px)
+           9px
+           calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
 }
 :where(.intel-embed-frame) .if-brand-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
@@ -87,7 +95,11 @@
 :where(.intel-embed-frame) .if-pills {
   display: flex; overflow-x: auto; scrollbar-width: none;
   width: 100%; max-width: 620px; margin: 0 auto;
-  padding: 0 16px 10px;
+  /* pills already clear the status bar (the .if-head above carries the top
+     inset); left/right insets keep them off the notch in landscape. */
+  padding: 0 calc(var(--rd-safe-right, env(safe-area-inset-right, 0px)) + 16px)
+           10px
+           calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
 }
 :where(.intel-embed-frame) .if-pills::-webkit-scrollbar { display: none; }
 :where(.intel-embed-frame) .if-pillseg {
@@ -113,7 +125,12 @@
 /* ---- the card list ---------------------------------------------------------- */
 :where(.intel-embed-frame) .if-list {
   width: 100%; max-width: 620px; margin: 0 auto;
-  padding: 14px 16px 28px;
+  /* bottom pad clears the home indicator so the last card rests above it;
+     left/right insets for landscape. env() fallback = out-of-scope safety. */
+  padding: 14px
+           calc(var(--rd-safe-right, env(safe-area-inset-right, 0px)) + 16px)
+           calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 28px)
+           calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
   display: flex; flex-direction: column; gap: 12px;
 }
 
@@ -370,7 +387,9 @@
 }
 :where(.intel-embed-frame) .if-sheet-body {
   overflow-y: auto; overscroll-behavior: contain;
-  padding: 2px 18px 28px; min-height: 0;
+  /* the sheet is pinned to the bottom edge — its content must clear the home
+     indicator (inset + the base 28px). */
+  padding: 2px 18px calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 28px); min-height: 0;
 }
 :where(.intel-embed-frame) .if-sh-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
