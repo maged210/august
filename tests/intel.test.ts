@@ -22,6 +22,12 @@ import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
 import type { BriefIdea, DailyBrief, IntelSource, IntelVideo, OptionIdea, TradeIdea, VideoAnalysis } from "../lib/intel/types.ts";
 import { validateRawShape, ExtractionFailedError } from "../lib/intel/extract.ts";
 import {
+  COLLAPSE_MIN_HIDDEN,
+  COLLAPSE_MIN_HIDDEN_PX,
+  capPlan,
+  heightOverflows,
+} from "../lib/intel/collapse.ts";
+import {
   ANALYZING_LOCK_MS,
   deriveRowRepair,
   failureRowPatch,
@@ -1163,4 +1169,66 @@ test("attribution wiring: every attribution-bearing READ route rides the attribu
         "the write gate is NOT a substitute: it resolves unconfigured→open in production",
     );
   }
+});
+
+// ── SHOW MORE collapse math (presentation only — never a data cut) ───────────
+// The primitive lives in the client component; this is its whole decidable
+// core. The rule under test is the one that keeps the chrome honest: a control
+// that hides almost nothing is noise, so it does not appear — and when it does
+// appear, the number it names is the exact number hidden, never rounded.
+
+test("capPlan: a list under the cap renders whole with no control", () => {
+  for (const total of [0, 1, 4, 5]) {
+    const p = capPlan(total, 5, false);
+    assert.deepEqual(p, { shown: total, hidden: 0, control: false }, `total=${total}`);
+  }
+});
+
+test("capPlan: hiding exactly one item is noise — render everything, no control", () => {
+  // "SHOW MORE · 1 MORE" costs a row of chrome to save a row of content
+  assert.deepEqual(capPlan(6, 5, false), { shown: 6, hidden: 0, control: false });
+  assert.deepEqual(capPlan(9, 8, false), { shown: 9, hidden: 0, control: false });
+});
+
+test("capPlan: the count is the REAL number hidden", () => {
+  assert.deepEqual(capPlan(7, 5, false), { shown: 5, hidden: 2, control: true });
+  assert.deepEqual(capPlan(12, 5, false), { shown: 5, hidden: 7, control: true });
+  assert.equal(capPlan(COLLAPSE_MIN_HIDDEN + 5, 5, false).hidden, COLLAPSE_MIN_HIDDEN);
+});
+
+test("capPlan: expanding reveals exactly the rest — nothing more, nothing less", () => {
+  const total = 12, cap = 5;
+  const collapsed = capPlan(total, cap, false);
+  const expanded = capPlan(total, cap, true);
+  assert.equal(collapsed.shown, cap);
+  assert.equal(expanded.shown, total);
+  assert.equal(collapsed.shown + collapsed.hidden, total, "the count must account for every row");
+  assert.equal(expanded.control, true, "expanded still offers SHOW LESS");
+});
+
+test("capPlan: a filtered set caps on what SURVIVED the filter", () => {
+  // filter first, then cap: the board caps the visible rows, so "n MORE"
+  // names what THIS filter is hiding — not what the unfiltered day holds
+  const dayTotal = 12;
+  const afterFilter = 6; // e.g. only the ARMED ones
+  assert.deepEqual(capPlan(afterFilter, 5, false), { shown: 6, hidden: 0, control: false });
+  assert.notEqual(capPlan(afterFilter, 5, false).hidden, dayTotal - 5);
+});
+
+test("capPlan: a non-positive cap never truncates", () => {
+  assert.deepEqual(capPlan(9, 0, false), { shown: 9, hidden: 0, control: false });
+});
+
+test("heightOverflows: unmeasured content is assumed to overflow", () => {
+  // the clamp is applied from the first paint and released after measurement,
+  // so short prose never flashes clipped
+  assert.equal(heightOverflows(null, 260), true);
+});
+
+test("heightOverflows: a sliver of height is never worth a control", () => {
+  assert.equal(heightOverflows(260, 260), false, "exactly at the cap");
+  assert.equal(heightOverflows(280, 260), false, "under the one-line floor");
+  assert.equal(heightOverflows(260 + COLLAPSE_MIN_HIDDEN_PX - 1, 260), false);
+  assert.equal(heightOverflows(260 + COLLAPSE_MIN_HIDDEN_PX, 260), true);
+  assert.equal(heightOverflows(900, 260), true, "a real wall folds");
 });

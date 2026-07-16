@@ -1,6 +1,16 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { signIn } from "next-auth/react";
 import type {
   BriefIdea,
@@ -21,6 +31,7 @@ import type {
   ValueField,
   VideoAnalysis,
 } from "@/lib/intel/types";
+import { capPlan, heightOverflows } from "@/lib/intel/collapse";
 import { SymbolProvider } from "./symbolContext";
 import OptionsWorkspace from "./OptionsWorkspace";
 import { mfeMaeView, pnlView, type TrackedIdea, type TrackedStatus } from "@/lib/intel/tracker";
@@ -158,6 +169,147 @@ const etStamp = (ms: number) => {
   });
   return `${date} ${time}`;
 };
+
+// ── RdMore — the desk's ONE collapse primitive ───────────────────────────────
+// Every "SHOW MORE · n MORE" on /intel is this component. Presentation only:
+// it changes how much is on screen, never what exists. Section headers keep
+// reporting the TRUE total ("12 IDEAS") next to a board showing 5 — the count
+// is the honest number, the cap is the courtesy.
+//
+// COUNT mode caps a list at `cap` ITEMS (row groups, card stacks). HEIGHT mode
+// caps a prose blob at `cap` PX (brief prose). Trivial overflow is never
+// truncated — one hidden item, or a sliver of height, renders whole with no
+// control (lib/intel/collapse.ts owns both thresholds).
+//
+// The HEIGHT cut fades with a MASK, not a colored gradient overlay. A mask
+// fades the CONTENT to whatever is actually behind it, so the fade is exact on
+// the dark stage and on the DAY DESK paper, over --rd-card and over the mobile
+// card's gradient alike — with no color token to mis-pin and, by construction,
+// nothing to band. (A gradient overlay would have to name a surface per site
+// and would band the moment a site's surface wasn't flat.) Browsers without
+// mask support degrade to a hard cut: still capped, still expandable.
+
+type RdMoreProps<T> =
+  | {
+      mode: "count";
+      /** max items rendered while collapsed */
+      cap: number;
+      items: readonly T[];
+      /** must return a keyed node — the primitive does not key for you */
+      render: (item: T, index: number) => ReactNode;
+      /** plural noun for the control's accessible name ("ideas", "videos") */
+      noun: string;
+      /** class for the element wrapping the shown items — pass the caller's own
+       * list container class so its layout (flex gaps etc.) is preserved */
+      listClassName?: string;
+      children?: never;
+    }
+  | {
+      mode: "height";
+      /** collapsed height cap, px */
+      cap: number;
+      noun: string;
+      listClassName?: string;
+      children: ReactNode;
+      items?: never;
+      render?: never;
+    };
+
+function RdMore<T>(props: RdMoreProps<T>) {
+  const { mode, cap, noun, listClassName } = props;
+  const [expanded, setExpanded] = useState(false);
+  const [contentPx, setContentPx] = useState<number | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  const regionId = `rd-more-${useId().replace(/:/g, "")}`;
+
+  // HEIGHT mode measures its own content so a short block never gets a control.
+  // useLayoutEffect (not useEffect) so the clamp is released BEFORE paint —
+  // short prose must never flash clipped. Safe under SSR: the dashboard renders
+  // its skeleton until the overview lands, so no RdMore ever renders on the
+  // server. The observer keeps the measurement true as live content re-renders.
+  useLayoutEffect(() => {
+    if (mode !== "height") return;
+    const el = innerRef.current;
+    if (!el) return;
+    // An element inside a display:none subtree has NO box, and the desk always
+    // has one: the mobile tree is hidden ≥701px, the desktop rail below it. A
+    // no-box read is "not measured yet" (null), NOT "0 tall" — recording 0
+    // would latch the block permanently un-clamped the moment the viewport
+    // crossed the breakpoint into showing it.
+    const measure = () => setContentPx(el.offsetHeight > 0 ? el.offsetHeight : null);
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    // A ResizeObserver cannot watch a box that doesn't exist, so it can't be
+    // trusted to announce the display:none → visible crossing — and that
+    // crossing is always a viewport change. Belt and braces.
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [mode]);
+
+  // one plan per render — COUNT reads it for both the cap and the count the
+  // control names, so they can never drift apart
+  const plan = props.mode === "count" ? capPlan(props.items.length, cap, expanded) : null;
+  const control = plan ? plan.control : heightOverflows(contentPx, cap);
+
+  const foot = control ? (
+    <div className="rd-more-foot">
+      <button
+        type="button"
+        className="rd-more-btn"
+        aria-expanded={expanded}
+        aria-controls={regionId}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="rd-more-caret" aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+        {expanded ? (
+          <>SHOW LESS</>
+        ) : plan ? (
+          <>
+            SHOW MORE <span className="rd-more-sep" aria-hidden="true">·</span>
+            <span className="rd-more-n">{plan.hidden} MORE</span>
+          </>
+        ) : (
+          <>SHOW MORE</>
+        )}
+        <span className="sr-only">
+          {expanded ? ` — collapse ${noun}` : plan ? ` ${noun}` : ` — expand ${noun}`}
+        </span>
+      </button>
+    </div>
+  ) : null;
+
+  if (props.mode === "count") {
+    const shown = plan && plan.shown < props.items.length ? props.items.slice(0, plan.shown) : props.items;
+    return (
+      <>
+        <div className={listClassName} id={regionId}>
+          {shown.map((item, i) => props.render(item, i))}
+        </div>
+        {foot}
+      </>
+    );
+  }
+
+  // HEIGHT: the clip owns the cap; the inner wrapper keeps its natural height
+  // so `offsetHeight` is the true content height even while clipped.
+  const clamped = control && !expanded;
+  return (
+    <>
+      <div
+        className={`rd-more-clip${clamped ? " clipped" : ""}${listClassName ? ` ${listClassName}` : ""}`}
+        id={regionId}
+        style={{ maxHeight: clamped ? cap : control && contentPx !== null ? contentPx : undefined }}
+      >
+        <div ref={innerRef}>{props.children}</div>
+      </div>
+      {foot}
+    </>
+  );
+}
 
 function deriveStatus(idea: BlotterIdea): IdeaStatus {
   const q = idea.quote;
@@ -1328,6 +1480,13 @@ function DayRow({ idea, tracked, briefGeneratedAt, selected, published, onSelect
 
 const DAY_COLS = ["STATUS", "TICKER", "DIR", "TF", "THESIS", "CREATED", "ALERTED", "SO FAR", "SRC"];
 
+// How many rows a day group shows before SHOW MORE — TODAY and every past day
+// alike, desktop rows and phone cards alike (one number, one behaviour). Five
+// is the owner's ask and it is the right shape: a desk day's ideas are already
+// ordered favourites → rank, so the top 5 are the ones worth the fold, and a
+// 12-idea day collapses from a screen of scrolling to a glanceable block.
+const DAY_ROW_CAP = 5;
+
 /** the day-board column header — shared by the TODAY board and every PAST
  * day group so the two sections can never label a column differently */
 function DayColHead() {
@@ -1416,20 +1575,29 @@ function DayBoard({ date, brief, ideas, trackedByIdeaId, filter, selectedId, onS
         <div className="rd-board-wrap">
           <div className="rd-day-min">
             <DayColHead />
-            {visible.map((idea) => {
-              const t = trackedByIdeaId.get(idea.id) ?? null;
-              return (
-                <DayRow
-                  key={idea.id}
-                  idea={idea}
-                  tracked={t}
-                  briefGeneratedAt={brief.generatedAt}
-                  selected={selectedId === idea.id}
-                  published={!!(t && publishedIds?.has(t.id))}
-                  onSelect={() => onSelect(idea.id)}
-                />
-              );
-            })}
+            {/* the cap applies to the FILTERED set — filter first, then cap, so
+                "n MORE" always names what THIS filter is actually hiding. The
+                group header above keeps reporting the true unfiltered total. */}
+            <RdMore
+              mode="count"
+              cap={DAY_ROW_CAP}
+              noun={`ideas from the ${date} desk run`}
+              items={visible}
+              render={(idea) => {
+                const t = trackedByIdeaId.get(idea.id) ?? null;
+                return (
+                  <DayRow
+                    key={idea.id}
+                    idea={idea}
+                    tracked={t}
+                    briefGeneratedAt={brief.generatedAt}
+                    selected={selectedId === idea.id}
+                    published={!!(t && publishedIds?.has(t.id))}
+                    onSelect={() => onSelect(idea.id)}
+                  />
+                );
+              }}
+            />
           </div>
         </div>
       )}
@@ -1512,20 +1680,30 @@ function PastDayGroup({ date, open, fetchState, quotes, trackedByIdeaId, filter,
             <span className="rd-abs-g" aria-hidden="true">∅</span> no ideas from this desk run in the {filter.toLowerCase()} state
           </div>
         ) : (
-          visible.map((idea) => {
-            const t = trackedByIdeaId.get(idea.id) ?? null;
-            return (
-              <DayRow
-                key={idea.id}
-                idea={idea}
-                tracked={t}
-                briefGeneratedAt={brief.generatedAt}
-                selected={selectedDayKey === date && selectedId === idea.id}
-                published={!!(t && publishedIds?.has(t.id))}
-                onSelect={() => onSelect(idea.id)}
-              />
-            );
-          })
+          /* per-group cap with its own independent state — RdMore is mounted
+             per day, so expanding 07-11 leaves 07-10 capped. A collapsed day
+             renders no RdMore at all, so the lazy per-date fetch is untouched:
+             still nothing fetched until the header is expanded. */
+          <RdMore
+            mode="count"
+            cap={DAY_ROW_CAP}
+            noun={`ideas from the ${date} desk run`}
+            items={visible}
+            render={(idea) => {
+              const t = trackedByIdeaId.get(idea.id) ?? null;
+              return (
+                <DayRow
+                  key={idea.id}
+                  idea={idea}
+                  tracked={t}
+                  briefGeneratedAt={brief.generatedAt}
+                  selected={selectedDayKey === date && selectedId === idea.id}
+                  published={!!(t && publishedIds?.has(t.id))}
+                  onSelect={() => onSelect(idea.id)}
+                />
+              );
+            }}
+          />
         )
       )}
     </section>
@@ -1617,6 +1795,10 @@ function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLo
 // mobile spark colors ride the same CHART_LINE/MSPARK_FILL variables — the
 // <700px media block re-pins --rd-bull/--rd-amber to the brighter SPEC-mobile
 // §2.1 hues, so the tone keys resolve to the mobile palette here.
+
+/** the carousel's posture paragraph, px — ≈6 lines at 14px/1.5. The three
+ * summary cards share a row height, so this is the one that can't run long. */
+const MOBILE_POSTURE_CAP = 126;
 
 type HorizonKey = "ALL" | "TODAY" | "SWING" | "LONG";
 // design segments → REAL timeframe groups (SPEC-mobile §4.4 mapping, expressed
@@ -1986,10 +2168,16 @@ function MobileBoard({
           </div>
           {brief ? (
             <>
+              {/* the carousel cards share a row height, so one discursive
+                  posture line stretches all three. Clamp it; the mask fades to
+                  the card's own gradient with no colour to pin. read60 is
+                  already a digest and is never clamped. */}
               {read60 && brief.read60 ? (
                 <p className="rd-mbrief-p">{brief.read60}</p>
               ) : brief.posture ? (
-                <p className="rd-mbrief-p">{brief.posture}</p>
+                <RdMore mode="height" cap={MOBILE_POSTURE_CAP} noun="tonight's posture">
+                  <p className="rd-mbrief-p">{brief.posture}</p>
+                </RdMore>
               ) : (
                 <p className="rd-mbrief-p rd-mabs">
                   <span className="rd-abs-g" aria-hidden="true">∅</span> No posture line in tonight&apos;s brief.
@@ -2149,8 +2337,15 @@ function MobileBoard({
           </p>
         </div>
       ) : (
-        <div className="rd-mlist">
-          {rows.map((idea) => {
+        /* same cap as the desktop TODAY group, over the same filtered rows —
+           the two surfaces can never disagree about what is hidden */
+        <RdMore
+          mode="count"
+          cap={DAY_ROW_CAP}
+          noun="ideas"
+          listClassName="rd-mlist"
+          items={rows}
+          render={(idea) => {
             const t = trackedByIdeaId.get(idea.id) ?? null;
             return (
               <MobileIdeaCard
@@ -2163,8 +2358,8 @@ function MobileBoard({
                 dayGeneratedAt={day && brief ? brief.generatedAt : null}
               />
             );
-          })}
-        </div>
+          }}
+        />
       )}
 
       {/* ── PAST IDEAS (day stack, phone form): 44px collapsible date headers,
@@ -2237,8 +2432,15 @@ function MobileBoard({
                       <span className="rd-abs-g" aria-hidden="true">∅</span> No ideas from this desk run in the {filter.toLowerCase()} state.
                     </div>
                   ) : (
-                    <div className="rd-mlist">
-                      {dayVisible.map((idea) => {
+                    /* per-day cap, independent state — mounted per day inside
+                       the open branch, so a collapsed day still fetches nothing */
+                    <RdMore
+                      mode="count"
+                      cap={DAY_ROW_CAP}
+                      noun={`ideas from ${d.date}`}
+                      listClassName="rd-mlist"
+                      items={dayVisible}
+                      render={(idea) => {
                         const t = trackedByIdeaId.get(idea.id) ?? null;
                         const cardKey = `${d.date}:${idea.id}`;
                         return (
@@ -2252,8 +2454,8 @@ function MobileBoard({
                             dayGeneratedAt={dayBrief.generatedAt}
                           />
                         );
-                      })}
-                    </div>
+                      }}
+                    />
                   )
                 )}
               </section>
@@ -2373,6 +2575,12 @@ function OptxRow({ o, candidate, onOpen }: {
   );
 }
 
+/** CREATOR PLAYS / AUGUST CANDIDATES row cap. The panel is already behind its
+ * own collapsed toggle and is explicitly "secondary", so it gets the same 5 as
+ * a day group — two folded sections beat one long scroll inside a strip that
+ * was never meant to be the main event. */
+const OPTX_CAP = 5;
+
 function OptionsIntelPanel({ brief, onOpenTicket }: {
   brief: DailyBrief | null;
   onOpenTicket: (o: OptionBriefIdea) => void;
@@ -2410,7 +2618,15 @@ function OptionsIntelPanel({ brief, onOpenTicket }: {
                     <span className="rd-optx-sect-hair" aria-hidden="true" />
                     <span className="rd-optx-sect-note">stated in transcript</span>
                   </div>
-                  {bestCreatorPlays.map((o) => <OptxRow key={o.id} o={o} candidate={false} onOpen={onOpenTicket} />)}
+                  {/* the section header's PLAY/CANDIDATE counts above stay the
+                      true totals; these caps only fold the rows */}
+                  <RdMore
+                    mode="count"
+                    cap={OPTX_CAP}
+                    noun="creator plays"
+                    items={bestCreatorPlays}
+                    render={(o) => <OptxRow key={o.id} o={o} candidate={false} onOpen={onOpenTicket} />}
+                  />
                 </>
               )}
               {candCount > 0 && (
@@ -2420,7 +2636,13 @@ function OptionsIntelPanel({ brief, onOpenTicket }: {
                     <span className="rd-optx-sect-hair" aria-hidden="true" />
                     <span className="rd-optx-sect-note">AUGUST-generated · not creator-stated</span>
                   </div>
-                  {augustCandidates.map((o) => <OptxRow key={o.id} o={o} candidate onOpen={onOpenTicket} />)}
+                  <RdMore
+                    mode="count"
+                    cap={OPTX_CAP}
+                    noun="AUGUST candidates"
+                    items={augustCandidates}
+                    render={(o) => <OptxRow key={o.id} o={o} candidate onOpen={onOpenTicket} />}
+                  />
                 </>
               )}
             </div>
@@ -3578,13 +3800,30 @@ function UsMapPanel({ blotter, trackedByIdeaId, quotes }: {
  * life chip (borderless variant) · ticker · dir glyph · live px · ›. The life
  * chip reuses rowLife so the rail can never disagree with the board; clicking
  * a row selects that idea on the board. Zero ideas → the section is absent. */
+// ── LEFT RAIL caps ───────────────────────────────────────────────────────────
+// The rail is 252px wide and scrolls the whole page's height; every one of its
+// sections is a candidate wall. Caps are generous enough that a normal desk day
+// never sees a control, tight enough that a fat brief can't own the viewport.
+
+/** TOP STOCKS: the rail's job is the shortlist, so 5 keeps the section a
+ * glance; the rest of the ranked list is one tap away (was silently cut). */
+const TOP_STOCKS_CAP = 5;
+/** TONIGHT'S BRIEF prose blob (posture + digest fields + BULL/BEAR), px.
+ * ≈12 lines — a terse brief clears it untouched; a discursive one folds. */
+const RAIL_BRIEF_CAP = 260;
+/** AT THE OPEN level rows — 5 gates is what fits above the fold beside the
+ * brief; was a silent .slice(0, 10). */
+const RAIL_OPEN_CAP = 5;
+
 function TopStocksPanel({ blotter, trackedByIdeaId, onSelectIdea }: {
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
   onSelectIdea: (id: string) => void;
 }) {
-  const top = [...blotter].sort((a, b) => b.rankScore - a.rankScore).slice(0, 5);
-  if (top.length === 0) return null;
+  // ranked, in full — the cap below is presentation, not a data cut (this was
+  // a silent .slice(0, 5); ranks 6+ existed and the rail never admitted it)
+  const ranked = [...blotter].sort((a, b) => b.rankScore - a.rankScore);
+  if (ranked.length === 0) return null;
   return (
     <section className="rd-lsec">
       <div className="rd-ts-card">
@@ -3593,29 +3832,35 @@ function TopStocksPanel({ blotter, trackedByIdeaId, onSelectIdea }: {
           <span className="rd-ts-hair" aria-hidden="true" />
           <span className="rd-ts-note">click → plan</span>
         </div>
-        {top.map((idea, i) => {
-          const life = rowLife(idea, trackedByIdeaId.get(idea.id) ?? null);
-          const dirMeta = RD_DIR[idea.direction];
-          return (
-            <button
-              key={idea.id}
-              type="button"
-              className="rd-ts-row"
-              onClick={() => onSelectIdea(idea.id)}
-              title={`${idea.ticker} · ${RD_DIR_LABEL[idea.direction]} · rank ${idea.rankScore.toFixed(2)} — open on the board`}
-            >
-              <span className="rd-ts-rank">{i + 1}</span>
-              <span className={`rd-ts-life ${life.family}`} title={life.title}>
-                <span className="rd-life-dot" aria-hidden="true" />
-                {life.label}
-              </span>
-              <span className="rd-ts-tkr">{idea.ticker}</span>
-              <span className={`rd-ts-dirg ${dirMeta.cls}`} aria-hidden="true">{dirMeta.glyph}</span>
-              <span className="rd-ts-px">{idea.quote ? rdPx(idea.quote.price) : "—"}</span>
-              <span className="rd-ts-go" aria-hidden="true">›</span>
-            </button>
-          );
-        })}
+        <RdMore
+          mode="count"
+          cap={TOP_STOCKS_CAP}
+          noun="ranked stocks"
+          items={ranked}
+          render={(idea, i) => {
+            const life = rowLife(idea, trackedByIdeaId.get(idea.id) ?? null);
+            const dirMeta = RD_DIR[idea.direction];
+            return (
+              <button
+                key={idea.id}
+                type="button"
+                className="rd-ts-row"
+                onClick={() => onSelectIdea(idea.id)}
+                title={`${idea.ticker} · ${RD_DIR_LABEL[idea.direction]} · rank ${idea.rankScore.toFixed(2)} — open on the board`}
+              >
+                <span className="rd-ts-rank">{i + 1}</span>
+                <span className={`rd-ts-life ${life.family}`} title={life.title}>
+                  <span className="rd-life-dot" aria-hidden="true" />
+                  {life.label}
+                </span>
+                <span className="rd-ts-tkr">{idea.ticker}</span>
+                <span className={`rd-ts-dirg ${dirMeta.cls}`} aria-hidden="true">{dirMeta.glyph}</span>
+                <span className="rd-ts-px">{idea.quote ? rdPx(idea.quote.price) : "—"}</span>
+                <span className="rd-ts-go" aria-hidden="true">›</span>
+              </button>
+            );
+          }}
+        />
       </div>
     </section>
   );
@@ -3687,40 +3932,55 @@ function LeftPanel({
       {brief && (
         <section className="rd-lsec">
           <div className="rd-lsec-head"><span className="rd-lsec-h">TONIGHT&apos;S BRIEF</span></div>
-          {brief.posture && <p className="rd-digest-p">{brief.posture}</p>}
-          <dl className="rd-digest-dl">
-            {brief.watchAtOpen && (
-              <div className="rd-digest-f"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
+          {/* ONE clamp over the whole prose blob (posture + the three digest
+              fields + BULL/BEAR), not one per field: the rail's wall is the
+              blob, and four separate controls would BE the wall. 260px ≈ 12
+              lines of 11–12px prose — a short brief never sees a control. */}
+          <RdMore mode="height" cap={RAIL_BRIEF_CAP} noun="tonight's brief">
+            {brief.posture && <p className="rd-digest-p">{brief.posture}</p>}
+            <dl className="rd-digest-dl">
+              {brief.watchAtOpen && (
+                <div className="rd-digest-f"><dt>At open</dt><dd>{brief.watchAtOpen}</dd></div>
+              )}
+              {brief.whatMattersTomorrow && (
+                <div className="rd-digest-f"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>
+              )}
+              {brief.invalidation && (
+                <div className="rd-digest-f"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>
+              )}
+            </dl>
+            {(brief.bullCase || brief.bearCase) && (
+              <div className="rd-digest-bb">
+                <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL</div><p>{brief.bullCase || "—"}</p></div>
+                <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR</div><p>{brief.bearCase || "—"}</p></div>
+              </div>
             )}
-            {brief.whatMattersTomorrow && (
-              <div className="rd-digest-f"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>
-            )}
-            {brief.invalidation && (
-              <div className="rd-digest-f"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>
-            )}
-          </dl>
-          {(brief.bullCase || brief.bearCase) && (
-            <div className="rd-digest-bb">
-              <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL</div><p>{brief.bullCase || "—"}</p></div>
-              <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR</div><p>{brief.bearCase || "—"}</p></div>
-            </div>
-          )}
+          </RdMore>
           {brief.levels.length > 0 && (
             <>
               <div className="rd-open-label">AT THE OPEN</div>
-              {brief.levels.slice(0, 10).map((l) => {
-                const { label, cls } = atOpenState(l, quotes);
-                return (
-                  <div key={l.id} className="rd-open-row">
-                    <span className="rd-open-tkr">{l.instrument}</span>
-                    <span className="rd-open-cond">
-                      {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
-                      {l.level != null && <b>${l.level}</b>}
-                    </span>
-                    <span className={`rd-open-st ${cls || "rd-open-ns"}`}>{label}</span>
-                  </div>
-                );
-              })}
+              {/* was a silent .slice(0, 10) — levels 11+ existed and the rail
+                  simply never said so. The cap now names what it holds back
+                  and hands over every level on request (honesty law). */}
+              <RdMore
+                mode="count"
+                cap={RAIL_OPEN_CAP}
+                noun="levels"
+                items={brief.levels}
+                render={(l) => {
+                  const { label, cls } = atOpenState(l, quotes);
+                  return (
+                    <div key={l.id} className="rd-open-row">
+                      <span className="rd-open-tkr">{l.instrument}</span>
+                      <span className="rd-open-cond">
+                        {l.type === "resistance" ? "clears" : l.type === "support" ? "holds" : l.type}
+                        {l.level != null && <b>${l.level}</b>}
+                      </span>
+                      <span className={`rd-open-st ${cls || "rd-open-ns"}`}>{label}</span>
+                    </div>
+                  );
+                }}
+              />
             </>
           )}
         </section>
@@ -4048,7 +4308,12 @@ function statusBadge(v: IntelVideo) {
 
 /** per-group video-row cap — keeps a long library from swamping the tab; the
  * remainder is stated honestly, never silently dropped */
-const CHAN_VID_CAP = 12;
+// ── SOURCES tab caps ─────────────────────────────────────────────────────────
+// Both lists were hard slices with a "+ N older not shown" dead end. Six is a
+// tighter cap than the old 12/20 but strictly MORE honest: nothing is out of
+// reach any more, and a channel card stays a card instead of a column.
+const CHAN_VID_CAP = 6;
+const DIRECT_VID_CAP = 6;
 
 function VideoRow({ v, onOpen, showChannel, action }: {
   v: IntelVideo;
@@ -4089,7 +4354,6 @@ function ChannelCard({ s, vids, defaultOpen, busy, onToggle, onRemove, onOpen }:
   // null = follow the default; a user toggle sticks for the session
   const [openState, setOpenState] = useState<boolean | null>(null);
   const open = openState ?? defaultOpen;
-  const shown = vids.slice(0, CHAN_VID_CAP);
   return (
     <div className="rd-card">
       <div className="rd-chan-head">
@@ -4127,12 +4391,16 @@ function ChannelCard({ s, vids, defaultOpen, busy, onToggle, onRemove, onOpen }:
             {vids.length} VIDEO{vids.length !== 1 ? "S" : ""}
           </button>
           {open && (
-            <div>
-              {shown.map((v) => <VideoRow key={v.videoId} v={v} onOpen={onOpen} />)}
-              {vids.length > CHAN_VID_CAP && (
-                <div className="rd-note rd-chan-more">+ {vids.length - CHAN_VID_CAP} older not shown</div>
-              )}
-            </div>
+            /* was slice(12) + a dead-end "+ N older not shown" note — the note
+               told you what you were missing and gave you no way to see it.
+               Same count, now a control that hands the rest over. */
+            <RdMore
+              mode="count"
+              cap={CHAN_VID_CAP}
+              noun={`videos from ${s.title}`}
+              items={vids}
+              render={(v) => <VideoRow key={v.videoId} v={v} onOpen={onOpen} />}
+            />
           )}
         </>
       ) : (
@@ -4174,8 +4442,6 @@ function SourcesManager({ sources, videos, busySrc, onToggle, onRemove, onOpen }
       direct.push(v);
     }
   }
-  const directCapped = direct.slice(0, 20);
-
   return (
     <>
       {channels.length === 0 ? (
@@ -4199,28 +4465,34 @@ function SourcesManager({ sources, videos, busySrc, onToggle, onRemove, onOpen }
       )}
       {direct.length > 0 && (
         <div className="rd-card">
+          {/* header count stays the TRUE total — the cap below never touches it */}
           <div className="rd-card-h">Direct adds · {direct.length}</div>
-          {directCapped.map((v) => {
-            const src = srcById.get(v.sourceId);
-            return (
-              <VideoRow
-                key={v.videoId}
-                v={v}
-                onOpen={onOpen}
-                showChannel
-                action={src?.type === "video" ? (
-                  <button
-                    type="button"
-                    className="rd-btn rd-btn-sm rd-btn-ghost"
-                    onClick={(e) => { e.stopPropagation(); onRemove(src.id); }}
-                  >
-                    Remove
-                  </button>
-                ) : undefined}
-              />
-            );
-          })}
-          {direct.length > 20 && <div className="rd-note rd-chan-more">+ {direct.length - 20} older not shown</div>}
+          <RdMore
+            mode="count"
+            cap={DIRECT_VID_CAP}
+            noun="direct adds"
+            items={direct}
+            render={(v) => {
+              const src = srcById.get(v.sourceId);
+              return (
+                <VideoRow
+                  key={v.videoId}
+                  v={v}
+                  onOpen={onOpen}
+                  showChannel
+                  action={src?.type === "video" ? (
+                    <button
+                      type="button"
+                      className="rd-btn rd-btn-sm rd-btn-ghost"
+                      onClick={(e) => { e.stopPropagation(); onRemove(src.id); }}
+                    >
+                      Remove
+                    </button>
+                  ) : undefined}
+                />
+              );
+            }}
+          />
         </div>
       )}
     </>
@@ -4398,6 +4670,20 @@ function VideoDrawer({ videoId, onClose, onProcessed, aiOn, owner }: { videoId: 
   );
 }
 
+// ── BRIEF tab caps ───────────────────────────────────────────────────────────
+// The tab is a 1000px reading column, so it can carry more per fold than the
+// rail — but it stacks six cards, and un-capped it is the page's longest wall.
+
+/** the five narrative fields, px (≈10 rows at the tab's measure) */
+const BRIEF_PROSE_CAP = 300;
+/** BULL/BEAR, px — two columns clamped together at ≈8 lines each */
+const BRIEF_BULLBEAR_CAP = 200;
+/** IdeaCards are tall (thesis + levels + source line); 6 is ~one fold */
+const BRIEF_IDEA_CAP = 6;
+/** the thin reference rows (levels / catalysts / consensus) — 8 single-line
+ * rows read as a table, more reads as a list to scroll past */
+const BRIEF_LIST_CAP = 8;
+
 function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief | null; ai: boolean; onOpenVideo: (id: string) => void; historical?: boolean }) {
   const [read60, setRead60] = useState(false);
   if (!brief) {
@@ -4417,25 +4703,96 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
         </div>
         {brief.read60 && read60 && <p className="rd-read60">{brief.read60}</p>}
         {!brief.grounded && <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>}
-        {!read60 && <dl style={{ margin: 0 }}>
-          {brief.posture && <div className="rd-briefrow"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
-          {brief.whatChanged && <div className="rd-briefrow"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
-          {brief.whatMattersTomorrow && <div className="rd-briefrow"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
-          {brief.watchAtOpen && <div className="rd-briefrow"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
-          {brief.invalidation && <div className="rd-briefrow"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
-        </dl>}
+        {/* the five narrative fields are the tab's longest prose — one clamp
+            over the whole dl (not five), 300px ≈ 10 rows of the wider tab
+            measure. read60 is already a digest, so it is never clamped. */}
+        {!read60 && (
+          <RdMore mode="height" cap={BRIEF_PROSE_CAP} noun="the brief narrative">
+            <dl style={{ margin: 0 }}>
+              {brief.posture && <div className="rd-briefrow"><dt>Posture</dt><dd>{brief.posture}</dd></div>}
+              {brief.whatChanged && <div className="rd-briefrow"><dt>What changed</dt><dd>{brief.whatChanged}</dd></div>}
+              {brief.whatMattersTomorrow && <div className="rd-briefrow"><dt>Tomorrow</dt><dd>{brief.whatMattersTomorrow}</dd></div>}
+              {brief.watchAtOpen && <div className="rd-briefrow"><dt>At the open</dt><dd>{brief.watchAtOpen}</dd></div>}
+              {brief.invalidation && <div className="rd-briefrow"><dt>Invalidation</dt><dd>{brief.invalidation}</dd></div>}
+            </dl>
+          </RdMore>
+        )}
         {!read60 && (brief.bullCase || brief.bearCase) && (
-          <div className="rd-bullbear">
-            <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL CASE</div><div className="rd-bb-p">{brief.bullCase || "—"}</div></div>
-            <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR CASE</div><div className="rd-bb-p">{brief.bearCase || "—"}</div></div>
-          </div>
+          /* ONE clamp across BOTH columns — clamping each side separately
+             would give two controls and let the columns disagree in height */
+          <RdMore mode="height" cap={BRIEF_BULLBEAR_CAP} noun="the bull and bear cases">
+            <div className="rd-bullbear">
+              <div className="rd-bb rd-bb-bull"><div className="rd-bb-h">BULL CASE</div><div className="rd-bb-p">{brief.bullCase || "—"}</div></div>
+              <div className="rd-bb rd-bb-bear"><div className="rd-bb-h">BEAR CASE</div><div className="rd-bb-p">{brief.bearCase || "—"}</div></div>
+            </div>
+          </RdMore>
         )}
       </div>
-      {brief.creatorFavorites.length > 0 && <div className="rd-card"><div className="rd-card-h">Creator Favorites</div>{brief.creatorFavorites.map((i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />)}</div>}
-      <div className="rd-card"><div className="rd-card-h">Top Trade Ideas</div>{brief.topIdeas.length === 0 ? <div className="rd-state">No ideas extracted yet.</div> : brief.topIdeas.map((i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />)}</div>
-      {brief.levels.length > 0 && <div className="rd-card"><div className="rd-card-h">Levels &amp; Triggers</div>{brief.levels.slice(0, 24).map((l) => <LevelRow key={l.id} l={l} />)}</div>}
-      {brief.catalysts.length > 0 && <div className="rd-card"><div className="rd-card-h">Catalyst Map</div>{brief.catalysts.slice(0, 20).map((c, i) => <CatalystRow key={i} c={c} />)}</div>}
-      {brief.consensus.length > 0 && <div className="rd-card"><div className="rd-card-h">Consensus &amp; Conflicts</div>{brief.consensus.slice(0, 20).map((c) => <ConsensusRow key={c.ticker} c={c} />)}</div>}
+      {brief.creatorFavorites.length > 0 && (
+        <div className="rd-card">
+          <div className="rd-card-h">Creator Favorites</div>
+          <RdMore
+            mode="count"
+            cap={BRIEF_IDEA_CAP}
+            noun="creator favourites"
+            items={brief.creatorFavorites}
+            render={(i) => <IdeaCard key={i.id} idea={i} favorite onOpenVideo={onOpenVideo} />}
+          />
+        </div>
+      )}
+      <div className="rd-card">
+        <div className="rd-card-h">Top Trade Ideas</div>
+        {brief.topIdeas.length === 0 ? (
+          <div className="rd-state">No ideas extracted yet.</div>
+        ) : (
+          <RdMore
+            mode="count"
+            cap={BRIEF_IDEA_CAP}
+            noun="trade ideas"
+            items={brief.topIdeas}
+            render={(i) => <IdeaCard key={i.id} idea={i} onOpenVideo={onOpenVideo} />}
+          />
+        )}
+      </div>
+      {/* the three reference lists below were silent slices (24 / 20 / 20).
+          Capping them at 8 with a real count both breaks the wall AND stops
+          the tab quietly dropping rows 25+ / 21+ on the floor. */}
+      {brief.levels.length > 0 && (
+        <div className="rd-card">
+          <div className="rd-card-h">Levels &amp; Triggers</div>
+          <RdMore
+            mode="count"
+            cap={BRIEF_LIST_CAP}
+            noun="levels"
+            items={brief.levels}
+            render={(l) => <LevelRow key={l.id} l={l} />}
+          />
+        </div>
+      )}
+      {brief.catalysts.length > 0 && (
+        <div className="rd-card">
+          <div className="rd-card-h">Catalyst Map</div>
+          <RdMore
+            mode="count"
+            cap={BRIEF_LIST_CAP}
+            noun="catalysts"
+            items={brief.catalysts}
+            render={(c, i) => <CatalystRow key={i} c={c} />}
+          />
+        </div>
+      )}
+      {brief.consensus.length > 0 && (
+        <div className="rd-card">
+          <div className="rd-card-h">Consensus &amp; Conflicts</div>
+          <RdMore
+            mode="count"
+            cap={BRIEF_LIST_CAP}
+            noun="consensus rows"
+            items={brief.consensus}
+            render={(c) => <ConsensusRow key={c.ticker} c={c} />}
+          />
+        </div>
+      )}
     </>
   );
 }

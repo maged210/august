@@ -437,6 +437,61 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 }
 
 /* ==========================================================================
+   RdMore — the desk's ONE collapse primitive ("SHOW MORE · n MORE")
+   Used by every capped list and every clamped prose blob on /intel; there is
+   no per-site variant. Theme-invariant by construction: the control rides the
+   text/hairline ramps (which re-pin under data-theme="light"), and the HEIGHT
+   cut fades with a MASK — the content fades to whatever surface is actually
+   behind it, so there is no color here to mis-pin on paper and nothing that
+   can band. No hex, no per-site surface prop.
+   ========================================================================== */
+
+/* footer control — a real <button>, full-bleed so the hit area is the whole
+   strip. Sits BELOW the capped region: expanding grows the section downward
+   and nothing above it moves (no-CLS). */
+.rd-more-foot {
+  display: flex;
+  border-top: 1px solid var(--rd-hair-05);
+}
+.rd-more-btn {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0;
+  padding: 7px 16px;
+  font-family: var(--rd-mono); font-size: 8.5px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--rd-t-faint);
+  background: none; border: 0; cursor: pointer; white-space: nowrap;
+}
+.rd-more-btn:hover { color: var(--rd-t-chip); background: var(--rd-acc-soft06); }
+.rd-more-btn:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-more-caret { font-size: 8px; color: var(--rd-t-ghost); }
+.rd-more-btn:hover .rd-more-caret { color: var(--rd-acc); }
+.rd-more-sep { color: var(--rd-t-absent); }
+/* the count — the REAL number hidden, never a rounded "several" */
+.rd-more-n { color: var(--rd-t-dim3); }
+.rd-more-btn:hover .rd-more-n { color: var(--rd-acc); }
+
+/* HEIGHT mode clip. `clipped` carries the mask; the cap itself is an inline
+   max-height (measured, per site). The inner wrapper keeps its natural height
+   so the primitive can measure real overflow and drop the control when a block
+   is short. */
+.rd-more-clip { overflow: hidden; }
+/* the stops below are ALPHA STENCIL values, not colors — 1 keeps the content,
+   0 fades it out to the surface behind. Nothing here is a surface hex. */
+.rd-more-clip.clipped {
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 1) calc(100% - 44px), rgb(0 0 0 / 0));
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 1) calc(100% - 44px), rgb(0 0 0 / 0));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rd-more-clip { transition: max-height 260ms cubic-bezier(0.4, 0, 0.2, 1); }
+}
+
+/* 44px touch target on phones (design's mobile control floor) */
+@media (max-width: 700px) {
+  .rd-more-btn { min-height: 44px; padding: 7px 16px; font-size: 9px; }
+}
+
+/* ==========================================================================
    BAR 3 — operational status (h 25px, §2.3)
    design uses overflow:hidden; we allow horizontal scroll (hidden scrollbar)
    so no status fact is unreachable on narrow screens — visually identical
