@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts"
+    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
@@ -17,6 +17,7 @@
     "lightweight-charts": "^5.2.0",
     "maplibre-gl": "^5.24.0",
     "next": "^15.1.0",
+    "next-auth": "^5.0.0-beta.31",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.184.0",
@@ -28,8 +29,11 @@
     "@types/react-dom": "^19.0.0",
     "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.20",
+    "d3-geo": "^3.1.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.0"
+    "topojson-client": "^3.1.0",
+    "typescript": "^5.7.0",
+    "us-atlas": "^3.0.1"
   }
 }

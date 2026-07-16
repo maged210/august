@@ -3,14 +3,18 @@
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { intelligenceConfigured } from "@/lib/intel/extract";
 import { processManualTranscript } from "@/lib/intel/pipeline";
+import { gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // multi Anthropic calls for fast + full pass
+export const maxDuration = 300; // multi Anthropic calls for fast + full pass (16K output cap + split retries)
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const rl = await checkRateLimit("intelProcess", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+  // Intel data is SHARED; mutating it is OWNER-only (no-op when auth unconfigured).
+  const denied = await gateIntelMutationOrRespond();
+  if (denied) return denied;
   if (!intelligenceConfigured()) return Response.json({ ok: false, error: "ai_unconfigured" }, { status: 501 });
 
   const { id } = await ctx.params;

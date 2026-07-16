@@ -3,6 +3,7 @@
 // in Upstash (keyed by endpoint → dedupe + multi-device); nothing secret is here.
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { pushConfigured, saveSubscription, type PushSub } from "@/lib/push";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("push", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+
+  // Session → namespace (stage 2): a device subscribes for THIS user (also in
+  // the middleware matcher; this is the in-route defense-in-depth).
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
 
   // Not configured (no Upstash / no VAPID) → 501 so the client can report cleanly.
   if (!pushConfigured()) return new Response("Push not configured", { status: 501 });
@@ -32,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
     return new Response("Invalid subscription.", { status: 400 });
   }
 
-  await saveSubscription({
+  await saveSubscription(user.email, {
     endpoint: sub.endpoint,
     keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
     expirationTime: sub.expirationTime ?? null,

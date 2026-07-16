@@ -1,29 +1,34 @@
 // The command deck's surfaces, in order. Shared by the deck, the indicators,
-// and the go_to_screen tool. Four surfaces — the market DESK is a deck slide
-// again (it briefly lived at a standalone /intel page; that route now just
-// redirects into the deck).
-export const SCREENS = ["presence", "desk", "world", "comms"] as const;
+// and the go_to_screen tool. Four surfaces. The second slide embeds the full
+// intel desk. /intel also remains a real standalone page (its own chrome and
+// sign-in affordances) — the deck slide and that route are two hosts for the
+// same dashboard, NOT a redirect. The slide's id stays "markets" so
+// go_to_screen, watcher deep links, and saved "?screen=markets" URLs keep working.
+export const SCREENS = ["presence", "markets", "world", "comms"] as const;
 export type ScreenId = (typeof SCREENS)[number];
 
 export const SCREEN_LABELS: Record<ScreenId, string> = {
   presence: "Presence",
-  desk: "Desk",
+  // the second surface embeds the full /intel desk — the label follows what is
+  // actually on the slide, while the id stays "markets" (see above)
+  markets: "Intel",
   world: "World",
   comms: "Comms",
 };
 
 // Legacy / spoken names that should still resolve to a live surface. "command"
-// merged into WORLD long ago; the market words (markets/intel/tape — spoken to
-// AUGUST, in a watcher deep link, or a stale bookmark) all mean the DESK slide.
+// merged into WORLD long ago; the market words (desk/intel/tape — spoken to
+// AUGUST, in a watcher deep link, a pulse delta's nav, or a stale bookmark) all
+// mean the second slide, which is keyed "markets".
 const SCREEN_ALIASES: Record<string, ScreenId> = {
   command: "world",
   globe: "world",
   news: "world",
   home: "presence",
   orb: "presence",
-  markets: "desk",
-  intel: "desk",
-  tape: "desk",
+  desk: "markets",
+  intel: "markets",
+  tape: "markets",
 };
 
 export function screenIndex(id: string): number {

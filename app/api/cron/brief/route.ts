@@ -1,12 +1,23 @@
 import { timingSafeEqual } from "node:crypto";
+import { authConfigured } from "@/auth";
+import { hasStoredGoogleTokens } from "@/lib/gmail";
 import { getOrCompileBrief, type MorningBrief } from "@/lib/morningbrief";
 import { sendToAll } from "@/lib/push";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { listKnownUsers } from "@/lib/user-scope";
 
 // Morning Brief — Vercel Cron endpoint. Hit once daily (~6 AM ET, see vercel.json)
-// to pre-compile the brief with overnight context so it's waiting when Maged opens
-// the app. Force-recompiles (the whole point is fresh overnight synthesis) and
-// writes to the Upstash day-cache.
+// to pre-compile the brief with overnight context so it's waiting on app open.
+// Force-recompiles (the whole point is fresh overnight synthesis) and writes to
+// the Upstash day-cache.
+//
+// MULTI-USER (stage 2): with auth unconfigured this compiles the ONE legacy
+// brief exactly as before. With auth configured it iterates the known users
+// (users:index, populated at first sign-in) and compiles for each user who has
+// a Google connection in their namespace — SEQUENTIALLY, capped at the first
+// 10 (free-tier honesty: each compile is a multi-organ fetch + a model call;
+// past ~10 users this needs a queue, not a bigger loop). Each user's push goes
+// only to their own devices.
 //
 // AUTH: Vercel sends `Authorization: Bearer <CRON_SECRET>` on the scheduled
 // request when CRON_SECRET is set. We REQUIRE it in production so the
@@ -15,7 +26,11 @@ import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 // misconfigured/authorized caller can't loop forced compiles.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // organ fetches + synthesis can take several seconds
+// Sequential per-user compiles: ~10 × (organ fetches + synthesis). 300s is the
+// Fluid Compute ceiling on Hobby; the single-user path stays well under 60s.
+export const maxDuration = 300;
+
+const MAX_BRIEF_USERS = 10;
 
 function tokensMatch(provided: string, expected: string): boolean {
   const a = Buffer.from(provided);
@@ -55,16 +70,16 @@ export async function GET(req: Request): Promise<Response> {
   const rl = await checkRateLimit("brief", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
-  try {
-    const brief = await getOrCompileBrief({ force: true });
-
-    // Capstone: fire a push so AUGUST reaches Maged off-screen the moment the brief
-    // is fresh. Fully DECOUPLED — wrapped so a push failure (or absent VAPID/subs)
-    // never fails the compile; url opens the app and surfaces the brief with its
-    // one-tap play control (iOS blocks autoplay, so playback stays user-initiated).
+  // Compile + push for ONE namespace (email null = the legacy single-user
+  // store). The push is fully DECOUPLED — wrapped so a push failure (or absent
+  // VAPID/subs) never fails the compile; url opens the app and surfaces the
+  // brief with its one-tap play control (iOS blocks autoplay, so playback
+  // stays user-initiated).
+  const compileFor = async (email: string | null) => {
+    const brief = await getOrCompileBrief(email, { force: true });
     let pushed: Awaited<ReturnType<typeof sendToAll>> | null = null;
     try {
-      pushed = await sendToAll({
+      pushed = await sendToAll(email, {
         title: "AUGUST",
         body: buildTeaser(brief),
         url: "/?brief=1",
@@ -73,16 +88,51 @@ export async function GET(req: Request): Promise<Response> {
     } catch (e) {
       console.error("[cron/brief] push failed:", e instanceof Error ? e.message : e);
     }
+    return { date: brief.date, sources: brief.sources, grounded: brief.grounded, pushed };
+  };
 
-    return new Response(
-      JSON.stringify({ ok: true, date: brief.date, sources: brief.sources, grounded: brief.grounded, pushed }),
-      { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "compile_failed";
-    return new Response(JSON.stringify({ ok: false, error: msg }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+  // Single-user fallback (auth unconfigured): the ONE legacy compile, as ever.
+  if (!authConfigured) {
+    try {
+      const r = await compileFor(null);
+      return new Response(JSON.stringify({ ok: true, ...r }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "compile_failed";
+      return new Response(JSON.stringify({ ok: false, error: msg }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
   }
+
+  // Multi-user: sequential compiles for users with a Google connection in
+  // their namespace (the brief's personal organs need it; users without one
+  // are skipped and compile on-demand via POST /api/brief instead).
+  const users = (await listKnownUsers()).slice(0, MAX_BRIEF_USERS);
+  const compiled: Record<string, unknown>[] = [];
+  let skipped = 0;
+  for (const email of users) {
+    try {
+      if (!(await hasStoredGoogleTokens(email))) {
+        skipped++;
+        continue;
+      }
+      const r = await compileFor(email);
+      compiled.push({ user: email, ...r });
+    } catch (err) {
+      compiled.push({
+        user: email,
+        error: err instanceof Error ? err.message : "compile_failed",
+      });
+    }
+  }
+  console.log(
+    `[cron/brief] multi-user: users=${users.length} compiled=${compiled.length} skipped=${skipped}`,
+  );
+  return new Response(
+    JSON.stringify({ ok: true, mode: "multi-user", users: users.length, skipped, compiled }),
+    { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
+  );
 }

@@ -7,8 +7,14 @@
 // web-push runs on Node (crypto for VAPID JWT signing + aes128gcm payload
 // encryption) — the routes that import this MUST be `runtime = "nodejs"`, never Edge.
 
+// MULTI-USER (stage 2): device subscriptions are PER USER — each store call
+// takes the session email and scopes its hash through scopeKey (null email =
+// single-user fallback = the legacy hash, unchanged). sendBroadcast fans out
+// across the legacy hash + every known user, deduped by endpoint.
+
 import webpush from "web-push";
 import { Redis } from "@upstash/redis";
+import { listKnownUsers, scopeKey } from "./user-scope";
 
 // PushSubscription.toJSON() shape from the browser. expirationTime is informational.
 export type PushSub = {
@@ -17,10 +23,11 @@ export type PushSub = {
   expirationTime?: number | null;
 };
 
-// One Redis hash, field = endpoint (the natural unique key) → subscription JSON.
-// Dedupes automatically (re-subscribing the same device overwrites its field) and
-// supports multiple devices (one field each).
+// One Redis hash PER USER, field = endpoint (the natural unique key) →
+// subscription JSON. Dedupes automatically (re-subscribing the same device
+// overwrites its field) and supports multiple devices (one field each).
 const SUBS_KEY = "august:push:subs";
+const subsKey = (email: string | null) => scopeKey(email, SUBS_KEY);
 
 let _redis: Redis | null | undefined;
 function getRedis(): Redis | null {
@@ -61,12 +68,12 @@ export function pushConfigured(): boolean {
   );
 }
 
-/** Store (upsert) a device subscription, keyed by its endpoint. */
-export async function saveSubscription(sub: PushSub): Promise<void> {
+/** Store (upsert) a device subscription for this user, keyed by its endpoint. */
+export async function saveSubscription(email: string | null, sub: PushSub): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.hset(SUBS_KEY, {
+    await redis.hset(subsKey(email), {
       [sub.endpoint]: {
         endpoint: sub.endpoint,
         keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
@@ -78,12 +85,12 @@ export async function saveSubscription(sub: PushSub): Promise<void> {
   }
 }
 
-/** All stored device subscriptions. */
-export async function listSubscriptions(): Promise<PushSub[]> {
+/** This user's stored device subscriptions. */
+export async function listSubscriptions(email: string | null): Promise<PushSub[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
-    const all = await redis.hgetall<Record<string, PushSub>>(SUBS_KEY);
+    const all = await redis.hgetall<Record<string, PushSub>>(subsKey(email));
     return all ? Object.values(all) : [];
   } catch (err) {
     console.error("[push] listSubscriptions failed:", err instanceof Error ? err.message : err);
@@ -92,11 +99,11 @@ export async function listSubscriptions(): Promise<PushSub[]> {
 }
 
 /** Remove a dead subscription (called on a 404/410 from the push service). */
-export async function removeSubscription(endpoint: string): Promise<void> {
+export async function removeSubscription(email: string | null, endpoint: string): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.hdel(SUBS_KEY, endpoint);
+    await redis.hdel(subsKey(email), endpoint);
   } catch (err) {
     console.error("[push] removeSubscription failed:", err instanceof Error ? err.message : err);
   }
@@ -111,19 +118,19 @@ export type SendResult = {
   failed: number;
 };
 
-/** Fan out a notification to every stored device. web-push auto-encrypts the JSON
- *  payload; a 404/410 means the subscription is gone, so we prune it. Other errors
- *  (400/401/403/413/429/5xx) keep the subscription and are logged. */
-export async function sendToAll(payload: PushPayload): Promise<SendResult> {
-  if (!ensureVapid()) return { configured: false, total: 0, sent: 0, pruned: 0, failed: 0 };
-  const subs = await listSubscriptions();
+// The shared dispatch loop: each target knows which user's hash it came from so
+// a dead endpoint (404/410) is pruned from the RIGHT store.
+async function dispatch(
+  targets: { email: string | null; sub: PushSub }[],
+  payload: PushPayload,
+): Promise<SendResult> {
   const body = JSON.stringify(payload);
   let sent = 0;
   let pruned = 0;
   let failed = 0;
 
   await Promise.all(
-    subs.map(async (sub) => {
+    targets.map(async ({ email, sub }) => {
       try {
         await webpush.sendNotification(sub as webpush.PushSubscription, body, {
           TTL: 60, // seconds the push service retains it if the device is offline
@@ -133,7 +140,7 @@ export async function sendToAll(payload: PushPayload): Promise<SendResult> {
       } catch (err) {
         const code = (err as { statusCode?: number })?.statusCode;
         if (code === 404 || code === 410) {
-          await removeSubscription(sub.endpoint); // Gone → prune
+          await removeSubscription(email, sub.endpoint); // Gone → prune
           pruned++;
         } else {
           failed++;
@@ -143,5 +150,34 @@ export async function sendToAll(payload: PushPayload): Promise<SendResult> {
     }),
   );
 
-  return { configured: true, total: subs.length, sent, pruned, failed };
+  return { configured: true, total: targets.length, sent, pruned, failed };
+}
+
+/** Fan out a notification to every device THIS USER has stored. web-push
+ *  auto-encrypts the JSON payload; a 404/410 means the subscription is gone, so
+ *  we prune it. Other errors (400/401/403/413/429/5xx) keep the subscription
+ *  and are logged. */
+export async function sendToAll(email: string | null, payload: PushPayload): Promise<SendResult> {
+  if (!ensureVapid()) return { configured: false, total: 0, sent: 0, pruned: 0, failed: 0 };
+  const subs = await listSubscriptions(email);
+  return dispatch(subs.map((sub) => ({ email, sub })), payload);
+}
+
+/** Fan out to EVERY stored device across the legacy hash and every known user,
+ *  deduped by endpoint (the owner migration copies legacy subs into the owner's
+ *  namespace, so the same device can appear in both — it must get ONE push).
+ *  Used only by the PUSH_SEND_SECRET-guarded test endpoint. */
+export async function sendBroadcast(payload: PushPayload): Promise<SendResult> {
+  if (!ensureVapid()) return { configured: false, total: 0, sent: 0, pruned: 0, failed: 0 };
+  const emails: (string | null)[] = [null, ...(await listKnownUsers())];
+  const seen = new Set<string>();
+  const targets: { email: string | null; sub: PushSub }[] = [];
+  for (const email of emails) {
+    for (const sub of await listSubscriptions(email)) {
+      if (seen.has(sub.endpoint)) continue;
+      seen.add(sub.endpoint);
+      targets.push({ email, sub });
+    }
+  }
+  return dispatch(targets, payload);
 }

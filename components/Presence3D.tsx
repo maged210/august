@@ -5,7 +5,7 @@ import * as THREE from "three";
 import type { Mood } from "@/lib/tools";
 
 export type AugustState = "boot" | "idle" | "listening" | "thinking" | "speaking";
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "batman";
 export type { Mood };
 
 type Props = {
@@ -15,40 +15,68 @@ type Props = {
   theme?: Theme;
   /** Accent mood — re-temperatures the orb's light rig (see MOOD_LIGHT). */
   mood?: Mood;
+  /**
+   * Override the orb's on-screen radius as a fraction of min(container w, h).
+   * The home landing mounts the canvas in a small fixed square around the
+   * design's 190px orb circle and needs the sphere to fill it; the default
+   * keeps the original full-surface presence sizing (0.18, 0.13 compact).
+   */
+  orbFraction?: number;
 };
 
-// Per-theme look. The sphere stays a glossy near-black in BOTH themes (the
-// reference); what changes is the corona/rim/glow — luminous cyan-steel on the
-// dark stage, dark ink on the off-white one — and their blend mode (additive vs
-// normal) so the energy reads as light on black and as ink on white.
+// Per-theme look, tuned to the home design (docs/design/AUGUST Home.dc.html):
+// the sphere stays a glossy near-black everywhere; the energy is warm gold
+// (#C9A96A / #E8C27A family) — luminous on the night stage (additive), gold
+// ink on the day's off-white stage (normal blending). Batman keeps its own
+// searchlight-gold signature untouched.
 const LOOK = {
-  // Brightness pass: rim/glow/corona lifted ~15-20% over the reference (rings a
-  // touch too) so the orb carries more presence — tune HERE, not inline.
+  // NIGHT (design applyTheme() night values): warm gold light on near-black.
+  // These intensities are the gold palette's own tuning — the earlier "+15-20%
+  // brightness pass" numbers were tuned against the retired steel palette and
+  // would over-drive gold, which already reads hotter. ringOpacity is carried
+  // over from that pass (the rings are new here). Tune HERE, not inline.
   dark: {
-    sphere: 0x0a0d12,
-    rim: new THREE.Color(0x9fc3e8),
-    corona: new THREE.Color(0x8fb6dc),
-    glow: new THREE.Color(0x6e8ca8),
+    sphere: 0x12100c,
+    rim: new THREE.Color(0xe8c27a),
+    corona: new THREE.Color(0xc9a96a),
+    glow: new THREE.Color(0x8a744a),
     additive: true,
-    rimIntensity: 1.15,
-    glowOpacity: 0.58,
-    coronaOpacity: 0.64,
+    rimIntensity: 1.0,
+    glowOpacity: 0.45,
+    coronaOpacity: 0.52,
     ringOpacity: 0.55,
     envIntensity: 1.0,
-    exposure: 1.15,
+    exposure: 1.12,
   },
+  // DAY: dark warm sphere on the off-white stage, corona/rim as dark-gold ink
+  // (normal blending — additive gold would wash out against #F5F4F1).
   light: {
-    sphere: 0x0b0e13,
-    rim: new THREE.Color(0x2b3a4c),
-    corona: new THREE.Color(0x39414b),
-    glow: new THREE.Color(0x2a3340),
+    sphere: 0x16130e,
+    rim: new THREE.Color(0xa2823f),
+    corona: new THREE.Color(0x8b6f3e),
+    glow: new THREE.Color(0xc9a96a),
     additive: false,
-    rimIntensity: 1.05,
-    glowOpacity: 0.19,
-    coronaOpacity: 0.49,
+    rimIntensity: 0.95,
+    glowOpacity: 0.2,
+    coronaOpacity: 0.45,
     ringOpacity: 0.5,
-    envIntensity: 1.25,
+    envIntensity: 1.2,
     exposure: 1.0,
+  },
+  // Gotham: the same dark-stage physics with the energy in signal gold —
+  // a searchlight against black, slightly dimmer than the steel look.
+  batman: {
+    sphere: 0x0a0a0c,
+    rim: new THREE.Color(0xe8d08a),
+    corona: new THREE.Color(0xd6b25a),
+    glow: new THREE.Color(0xa8905e),
+    additive: true,
+    rimIntensity: 0.95,
+    glowOpacity: 0.45,
+    coronaOpacity: 0.5,
+    ringOpacity: 0.5, // Gotham rides a hair under the night rings, per its dimmer brief
+    envIntensity: 1.0,
+    exposure: 1.1,
   },
 } as const;
 
@@ -58,8 +86,12 @@ const LOOK = {
 // key/fill lights, the rim + ring tint, the corona filaments, the halo, and the
 // studio-environment blobs the gloss reflects. One entry per mood; rim/corona/
 // glow come per theme (luminous on the dark stage, ink on the light one), and
-// STEEL is the reference rig — its values repeat LOOK verbatim, keep them in
-// lock-step. env* are the equirect studio colours: the ambient top of the
+// STEEL is the reference rig. Rather than repeating LOOK's rim/corona/glow here
+// and hoping the two stay in lock-step, applyLook reads steel's straight FROM
+// LOOK — so LOOK is the single source of truth for the default mood and steel's
+// dark/light triplets below are inert reference values (the pre-gold steel
+// palette, kept for provenance). Only ember/phosphor/graphite drive colour from
+// this table. env* are the equirect studio colours: the ambient top of the
 // gradient, then "r,g,b" strings for the key blob core, its mid falloff, the
 // wide wash, and the low counter-fill blob. "energy" scales corona/halo
 // presence — graphite runs a touch dimmer, per its near-mono brief.
@@ -193,7 +225,13 @@ const KEY_POS = new THREE.Vector3(
   Math.cos(LIGHT_AZIMUTH) * Math.cos(LIGHT_ELEVATION),
 ).multiplyScalar(KEY_DIST);
 
-export default function Presence3D({ state, amplitudeRef, theme = "dark", mood = "steel" }: Props) {
+export default function Presence3D({
+  state,
+  amplitudeRef,
+  theme = "dark",
+  mood = "steel",
+  orbFraction,
+}: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const themeRef = useRef<Theme>(theme);
@@ -235,7 +273,8 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
     // fraction PresenceTelemetry keys its lattice to (keep these in lock-step) — by
     // deriving the camera distance per resize. min() (not h) so it shrinks on
     // portrait; a smaller fraction on compact screens leaves room for the readouts.
-    const orbFrac = (w: number, h: number) => (Math.min(w, h) < 540 ? 0.13 : 0.18);
+    const orbFrac = (w: number, h: number) =>
+      orbFraction ?? (Math.min(w, h) < 540 ? 0.13 : 0.18);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 100);
@@ -638,7 +677,15 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       const t = themeRef.current;
       const L = LOOK[t];
       const ML = MOOD_LIGHT[moodRef.current];
-      const C = t === "dark" ? ML.dark : ML.light;
+      // STEEL is the reference rig, and the matrix below documents its colours as
+      // "LOOK verbatim, keep them in lock-step". So read them straight FROM LOOK
+      // instead of duplicating them: that keeps LOOK authoritative for the default
+      // mood (the gold palette, and batman's searchlight signature — which has no
+      // MOOD_LIGHT triplet of its own) rather than letting a stale copy overwrite
+      // it at mount. The other moods re-temperature the light as designed; batman
+      // is a dark stage, so it rides their DARK triplet, never the light ink one.
+      const steelRef = moodRef.current === "steel";
+      const C = t === "light" ? ML.light : ML.dark;
       renderer.toneMappingExposure = L.exposure;
       sphereMat.color.set(L.sphere);
       sphereMat.envMapIntensity = L.envIntensity;
@@ -655,17 +702,24 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       ringMat.uniforms.uOpacity.value = L.ringOpacity;
       ringMat.blending = blend;
       ringMat.needsUpdate = true;
-      // Stars: luminous dust on the dark stage, faint ink specks on the light one.
-      starBase = t === "dark" ? STARS.opacity : STARS.opacityLight;
-      starMat.color.set(t === "dark" ? STARS.colorDark : STARS.colorLight);
+      // Stars: luminous dust on the dark stages (dark AND batman), faint ink
+      // specks on the light one.
+      starBase = t === "light" ? STARS.opacityLight : STARS.opacity;
+      starMat.color.set(t === "light" ? STARS.colorLight : STARS.colorDark);
       starMat.opacity = starBase;
       starMat.blending = blend;
       starMat.needsUpdate = true;
       moodEnergy = ML.energy;
       // Retarget the light colours (rings share the rim tint) + re-tint the env.
-      tint.rim.setHex(C.rim);
-      tint.corona.setHex(C.corona);
-      tint.glow.setHex(C.glow);
+      if (steelRef) {
+        tint.rim.copy(L.rim);
+        tint.corona.copy(L.corona);
+        tint.glow.copy(L.glow);
+      } else {
+        tint.rim.setHex(C.rim);
+        tint.corona.setHex(C.corona);
+        tint.glow.setHex(C.glow);
+      }
       tint.key.setHex(ML.key);
       tint.fill.setHex(ML.fill);
       applyEnv(moodRef.current);
@@ -703,7 +757,9 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
 
     let raf = 0;
     let rafOn = false; // the loop runs only while the orb is near-view in a visible tab
-    const clock = new THREE.Clock();
+    // THREE.Clock is deprecated (r184 warns in console); Timer is the drop-in
+    // replacement — update() once per frame, then read delta/elapsed.
+    const timer = new THREE.Timer();
     let easedGlow = 1;
     let easedAmp = 0;
     let easedScale = 1;
@@ -719,8 +775,9 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       raf = requestAnimationFrame(render);
       sizeTo(); // keep the canvas matched to the container, even while backgrounded
       if (typeof document !== "undefined" && document.hidden) return;
-      const dt = Math.min(0.05, clock.getDelta());
-      const t = clock.elapsedTime;
+      timer.update();
+      const dt = Math.min(0.05, timer.getDelta());
+      const t = timer.getElapsed();
       const st = stateRef.current;
       const L = LOOK[themeRef.current];
 
@@ -821,7 +878,7 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
     const startLoop = () => {
       if (rafOn) return;
       rafOn = true;
-      clock.getDelta(); // swallow the paused gap so eases don't jump
+      timer.update(); // swallow the paused gap so eases don't jump
       raf = requestAnimationFrame(render);
     };
     const stopLoop = () => {
@@ -871,7 +928,7 @@ export default function Presence3D({ state, amplitudeRef, theme = "dark", mood =
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, [amplitudeRef]);
+  }, [amplitudeRef, orbFraction]);
 
   return <div ref={mountRef} className="presence-3d" />;
 }

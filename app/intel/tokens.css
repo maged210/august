@@ -1,0 +1,2889 @@
+/* ==========================================================================
+   /intel REDESIGN — design tokens + stage-1 chrome (rd- namespace)
+   Source of truth: docs/design/SPEC-desktop.md §1 (TOKENS) + §2.1–2.4 (bars),
+   values copied exactly. Everything here is scoped under .intel-root so no
+   other route inherits it. The `cinematic` class (on the .intel-root node,
+   ALWAYS ON for now) gates the illumination layers — Flat/Minimal presets can
+   be shipped later by removing/limiting that class.
+   New classes use the rd- prefix so they can never collide with the current
+   bl- skin, which keeps rendering below this chrome during the staged reskin.
+   ========================================================================== */
+
+.intel-root,
+.intel-embed-frame { /* the embed frame sits OUTSIDE .intel-root but paints the stage color — it shares the token scope so no desk color lives outside the variables */
+  /* ---- P palette (semantic colors, SPEC-desktop §1.4) ---- */
+  --rd-bull: #6fa085;      /* bullish · TRIGGERED · positive */
+  --rd-bear: #cd7e6d;      /* bearish · INVALIDATED · errors */
+  --rd-amber: #bfa05a;     /* ARMED · NEUTRAL dir · warnings */
+  --rd-blue: #6aa0c8;      /* ACTIVE · DIRECT evidence · quoted */
+  --rd-teal: #5fb0ad;      /* EXTRACTED evidence (== Cyan accent) */
+  --rd-inferred: #9a8fb0;  /* INFERRED evidence · ~ glyphs */
+  --rd-lo: #646b73;        /* EXPIRED · low-emphasis */
+  --rd-live: #74b08a;      /* live ◉ dots · tape dot · TODAY tick */
+  --rd-live-rgb: 116, 176, 138;
+
+  /* ---- accent ramp — locked Cyan default (§1.2) ---- */
+  --rd-acc: #5fb0ad;
+  --rd-acc-rgb: 95, 176, 173;
+  --rd-acc-soft06: rgba(95, 176, 173, 0.06);
+  --rd-acc-soft12: rgba(95, 176, 173, 0.12);
+  --rd-acc-soft25: rgba(95, 176, 173, 0.25);
+  --rd-acc-soft40: rgba(95, 176, 173, 0.42); /* named 40, alpha 0.42 per spec */
+
+  /* ---- stage / surface colors (§1.5) ---- */
+  --rd-stage: #050608;          /* page bg */
+  --rd-frame: #08090b;          /* frame · Bar 4 · overview band */
+  --rd-bar1-bg: #0a0c0f;        /* app nav · group headers */
+  --rd-bar3-bg: #070809;        /* status bar · ASK band · inputs */
+  --rd-tape-label-bg: #0b0e12;  /* LIVE TAPE pill */
+  --rd-card: #0b0d10;           /* cards · blotter column header */
+  --rd-legend-bg: #090b0e;      /* legend + loading strips */
+  --rd-btn-bg: #0e1116;         /* neutral buttons · inactive fkey chip */
+  --rd-inset: #0a0c0f;          /* inspector stat strip · chart · rows */
+
+  /* ---- hairlines (§1.5) ---- */
+  --rd-hair-045: rgba(255, 255, 255, 0.045);
+  --rd-hair-05: rgba(255, 255, 255, 0.05);
+  --rd-hair-06: rgba(255, 255, 255, 0.06);
+  --rd-hair-07: rgba(255, 255, 255, 0.07);
+  --rd-hair-08: rgba(255, 255, 255, 0.08);
+  --rd-hair-09: rgba(255, 255, 255, 0.09);
+  --rd-hair-10: rgba(255, 255, 255, 0.1);
+  --rd-hair-12: rgba(255, 255, 255, 0.12);
+  --rd-hair-13: rgba(255, 255, 255, 0.13);
+  --rd-hair-14: rgba(255, 255, 255, 0.14);
+
+  /* ---- text ramp (§1.5) ---- */
+  --rd-t-brightest: #eef1f4;   /* live prices */
+  --rd-t-primary: #e9ebee;     /* tickers · H1 */
+  --rd-t-chip: #dfe3e7;        /* date chip · hero group label */
+  --rd-t-body: #c4cad0;        /* thesis · source titles */
+  --rd-t-secondary: #aeb4bb;   /* setup col */
+  --rd-t-secondary2: #aab1b9;  /* buttons · status values */
+  --rd-t-muted: #9aa1a9;       /* section headers */
+  --rd-t-dim: #8b929a;         /* tape px · sub-labels */
+  --rd-t-dim2: #868d95;
+  --rd-t-dim3: #7e858d;        /* fkey labels · tape badge */
+  --rd-t-dim4: #7a818a;
+  --rd-t-faint: #6b727a;       /* legend · counters */
+  --rd-t-faint2: #646b73;
+  --rd-t-faint3: #5a616a;
+  --rd-t-ghost: #565c63;       /* micro-labels */
+  --rd-t-disabled: #4d535a;    /* absent n/s · disclaimer */
+  --rd-t-absent: #3a4047;      /* ∅ glyph · — */
+  --rd-t-empty: #33393f;       /* big empty-state ∅ */
+
+  /* ---- misc literals (§1.5 Misc row) ---- */
+  --rd-tape-sym: #cdd3d9;      /* tape sym · NOW value */
+  --rd-tape-div: #454b52;      /* tape divider */
+  --rd-val-amber: #cdb892;     /* amber status values */
+  --rd-val-green: #9ec3ab;     /* green DATA value */
+  --rd-accbtn-text: #e3edf6;   /* accent-button text */
+  --rd-retry-text: #e7c2b8;    /* retry button text */
+
+  /* ---- fonts (§1.6) — variables injected by next/font on this node ---- */
+  --rd-mono: var(--rd-font-mono, "IBM Plex Mono"), monospace;
+  --rd-sans: var(--rd-font-sans, "Hanken Grotesk"), sans-serif;
+
+  /* ---- illumination values at Cinematic (§1.3); layers gated below ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(95, 176, 173, 0.16), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(95, 176, 173, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(95, 176, 173, 0.55), 0 0 22px -8px rgba(95, 176, 173, 0.6);
+  --rd-live-wash: rgba(116, 176, 138, 0.045);
+  --rd-status-glow: 0 0 16px -3px rgba(116, 176, 138, 0.85);
+
+  /* ========================================================================
+     DESK PALETTE — themeable (stage A). Every remaining color the desk
+     renders flows through the variables below (values are the CURRENT dark
+     literals, moved verbatim — zero visual change). A later theme overrides
+     exactly this section (plus the ramps above) per palette. Alpha values
+     are part of each token on purpose: rgba() strings are tokenized whole.
+     Ordered by category. -------------------------------------------------- */
+
+  /* ---- stage / surfaces / shadows ---- */
+  --rd-panel-grad: linear-gradient(180deg, #0c0f13, #0a0c0f);  /* bar2 · mobile idea card */
+  --rd-askbar-bg: rgba(7, 8, 9, 0.92);
+  --rd-thumb-grad: linear-gradient(135deg, #16202b, #0c1116);  /* source-row thumb placeholder */
+  --rd-scrim: rgba(0, 0, 0, 0.55);                             /* video + contract drawer scrims */
+  --rd-mbar1-bg: rgba(7, 8, 10, 0.86);                         /* mobile sticky bar1 blur tint */
+  --rd-mcard-grad: linear-gradient(180deg, #0d1014, #0a0c10);  /* mobile carousel card */
+  --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(7, 8, 10, 0.96) 70%, rgba(7, 8, 10, 0));
+  --rd-mseg-bg: #0a0c10;
+  --rd-mseg-on-grad: linear-gradient(180deg, #171c23, #11151b);
+  --rd-shadow-70: rgba(0, 0, 0, 0.7);                          /* mobile card drop shadows */
+  --rd-edge-03: rgba(255, 255, 255, 0.03);                     /* inset top-edge highlights */
+  --rd-edge-035: rgba(255, 255, 255, 0.035);
+  --rd-edge-04: rgba(255, 255, 255, 0.04);
+
+  /* ---- text (value renderers + misc literals) ---- */
+  --rd-cell-quoted: #bcd3e6;      /* mkQuoted value text */
+  --rd-cell-inferred: #b3a9c4;    /* mkInferred value text · option ref inf */
+  --rd-cell-narr: #9fb6cc;        /* mkNarr value text */
+  --rd-blue-lt: #8aa6c4;          /* chart TRIG label · option ref value */
+  --rd-px-blue: #a9c1d4;          /* at-the-open condition price · mobile gate px */
+  --rd-tile-label: #c7ccd2;       /* §1.5 misc literal: sector name · map label */
+  --rd-opt-violet: #c9a3d6;       /* option-ticket crumb + chip */
+  --rd-plan-entry-text: #c9e0d3;
+  --rd-plan-exit-text: #e7c2b8;
+  --rd-plan-tp-text: #bcd3e6;
+
+  /* ---- mobile text ramp (SPEC-mobile literals; render <700px only) ---- */
+  --rd-mt-bright: #f0f2f4;        /* mobile ticker · seg control on */
+  --rd-mt-brightest: #f4f6f8;     /* mobile live px */
+  --rd-mt-body2: #b4bac1;         /* mobile brief paragraph */
+  --rd-mt-faint4: #5f6770;        /* mobile delta-none · conf label */
+  --rd-mt-disc: #42474e;          /* mobile disclaimer */
+  --rd-mnew-text: #08110b;        /* NEW pill text (on bull bg) */
+  --rd-mtile-trig-l: #7a8a80;     /* summary tile labels */
+  --rd-mtile-arm-l: #8a8270;
+  --rd-mtile-act-l: #72808a;
+
+  /* ---- hairlines / white overlays / states ---- */
+  --rd-hair-055: rgba(255, 255, 255, 0.055);  /* mobile body/foot separators */
+  --rd-hover-row: rgba(255, 255, 255, 0.02);
+  --rd-hover-item: rgba(255, 255, 255, 0.03);
+  --rd-hover-btn: rgba(255, 255, 255, 0.07);
+  --rd-skel-bg: rgba(255, 255, 255, 0.06);    /* shimmer skeletons */
+  --rd-skel-hi: rgba(255, 255, 255, 0.07);
+  --rd-mdot-bg: rgba(255, 255, 255, 0.2);     /* carousel dot (off) */
+
+  /* ---- accent / selection ---- */
+  --rd-acc-soft04: rgba(95, 176, 173, 0.04);  /* transcript capture card */
+  --rd-sel-ring-flat: inset 0 0 0 1px rgba(95, 176, 173, 0.4); /* non-cinematic row ring */
+
+  /* ---- semantic soft ramps (hue = palette color above, alpha per use) ---- */
+  --rd-bull-soft05: rgba(111, 160, 133, 0.05);
+  --rd-bull-soft08: rgba(111, 160, 133, 0.08);
+  --rd-bull-soft28: rgba(111, 160, 133, 0.28);
+  --rd-bull-soft30: rgba(111, 160, 133, 0.3);
+  --rd-bull-soft32: rgba(111, 160, 133, 0.32);
+  --rd-bull-dim: #5f8a72;                      /* TARGET level label */
+  --rd-bear-soft03: rgba(205, 126, 109, 0.03);
+  --rd-bear-soft05: rgba(205, 126, 109, 0.05);
+  --rd-bear-soft10: rgba(205, 126, 109, 0.1);
+  --rd-bear-soft18: rgba(205, 126, 109, 0.18);
+  --rd-bear-soft28: rgba(205, 126, 109, 0.28);
+  --rd-bear-soft40: rgba(205, 126, 109, 0.4);
+  --rd-bear-soft50: rgba(205, 126, 109, 0.5);  /* mobile INVAL chip border */
+  --rd-bear-dim: #9c6457;                      /* INVALIDATION level label */
+  --rd-amber-soft08: rgba(191, 160, 90, 0.08);
+  --rd-amber-soft25: rgba(191, 160, 90, 0.25);
+  --rd-amber-soft30: rgba(191, 160, 90, 0.3);
+  --rd-amber-soft35: rgba(191, 160, 90, 0.35);
+  --rd-blue-soft05: rgba(106, 160, 200, 0.05);
+  --rd-blue-soft14: rgba(106, 160, 200, 0.14);
+  --rd-blue-soft20: rgba(106, 160, 200, 0.2);  /* mobile ACT tile border */
+  --rd-blue-soft25: rgba(106, 160, 200, 0.25);
+  --rd-blue-soft28: rgba(106, 160, 200, 0.28);
+  --rd-blue-soft30: rgba(106, 160, 200, 0.3);
+  --rd-blue-soft50: rgba(106, 160, 200, 0.5);  /* mobile ACTIVE chip border */
+  --rd-blue-dim: #5f86a3;                      /* ENTRY/CATALYST level label · options CP */
+  --rd-inferred-soft35: rgba(154, 143, 176, 0.35);
+  --rd-inferred-soft50: rgba(154, 143, 176, 0.5);
+  --rd-live-soft05: rgba(116, 176, 138, 0.05); /* mobile row wash */
+  --rd-live-soft12: rgba(116, 176, 138, 0.12); /* TRIGGERED chip fill */
+  --rd-lo-soft50: rgba(100, 107, 115, 0.5);    /* mobile EXPIRED chip border */
+
+  /* ---- mobile bright bull/amber soft ramps (SPEC-mobile §2.1 hues) ---- */
+  --rd-mbull-soft05: rgba(111, 191, 147, 0.05);
+  --rd-mbull-soft06: rgba(111, 191, 147, 0.06);
+  --rd-mbull-soft12: rgba(111, 191, 147, 0.12);
+  --rd-mbull-soft20: rgba(111, 191, 147, 0.2);
+  --rd-mbull-soft32: rgba(111, 191, 147, 0.32);
+  --rd-mbull-soft50: rgba(111, 191, 147, 0.5);
+  --rd-mbull-soft70: rgba(111, 191, 147, 0.7);
+  --rd-mamber-soft05: rgba(199, 154, 82, 0.05);
+  --rd-mamber-soft20: rgba(199, 154, 82, 0.2);
+  --rd-mamber-soft50: rgba(199, 154, 82, 0.5);
+
+  /* ---- charts / sparks (JSX SVG strokes + fills read these) ---- */
+  --rd-chart-grid: rgba(255, 255, 255, 0.035);
+  --rd-chart-trigline: rgba(106, 160, 200, 0.55); /* dashed stated-trigger line */
+  --rd-chart-line-bull: var(--rd-bull);           /* §3.6 favored/direction line colors */
+  --rd-chart-line-amber: var(--rd-amber);
+  --rd-chart-line-bear: var(--rd-bear);
+  --rd-chart-fill-bull: rgba(111, 160, 133, 0.1); /* line color at the design's 0.1 area alpha */
+  --rd-chart-fill-amber: rgba(191, 160, 90, 0.1);
+  --rd-chart-fill-bear: rgba(205, 126, 109, 0.1);
+  --rd-mspark-fill-bull: rgba(111, 191, 147, 0.13); /* mobile spark area (mobile hues, §10) */
+  --rd-mspark-fill-amber: rgba(199, 154, 82, 0.13);
+  --rd-mspark-fill-bear: rgba(205, 126, 109, 0.13);
+  --rd-chart-scrim-72: rgba(10, 12, 15, 0.72);    /* H/L · TRIG · LIVE label backdrops */
+  --rd-chart-scrim-85: rgba(10, 12, 15, 0.85);
+  --rd-chart-scrim-90: rgba(10, 12, 15, 0.9);
+
+  /* ---- map (§2.5d) ---- */
+  --rd-map-state-fill: rgba(106, 160, 200, 0.055);
+  --rd-map-state-stroke: rgba(138, 166, 196, 0.28);
+  --rd-map-dot-up: #6fa085;
+  --rd-map-dot-dn: #c58575;
+
+  /* ---- sentiment gauge + F&G bands (§2.5a) ---- */
+  --rd-gauge-seg-1: #b06a58;
+  --rd-gauge-seg-2: #c68a5e;
+  --rd-gauge-seg-3: #ad9158;
+  --rd-gauge-seg-4: #6fa085;
+  --rd-gauge-seg-5: #74b08a;
+  --rd-gauge-needle: #e9ebee;
+  --rd-fng-xfear: #cd7e6d;
+  --rd-fng-xfear-bd: rgba(205, 126, 109, 0.42);
+  --rd-fng-xfear-bg: rgba(205, 126, 109, 0.09);
+  --rd-fng-fear: #c68a5e;
+  --rd-fng-fear-bd: rgba(198, 138, 94, 0.42);
+  --rd-fng-fear-bg: rgba(198, 138, 94, 0.09);
+  --rd-fng-neutral: #bfa05a;
+  --rd-fng-neutral-bd: rgba(191, 160, 90, 0.42);
+  --rd-fng-neutral-bg: rgba(191, 160, 90, 0.09);
+  --rd-fng-greed: #6fa085;
+  --rd-fng-greed-bd: rgba(111, 160, 133, 0.42);
+  --rd-fng-greed-bg: rgba(111, 160, 133, 0.09);
+  --rd-fng-xgreed: #74b08a;
+  --rd-fng-xgreed-bd: rgba(116, 176, 138, 0.42);
+  --rd-fng-xgreed-bg: rgba(116, 176, 138, 0.09);
+
+  /* ---- sector heat map (§2.6.2b; tile alpha is data-driven at runtime,
+     so the hue ships as an rgb triplet like --rd-acc-rgb/--rd-live-rgb) ---- */
+  --rd-sec-up-rgb: 111, 158, 131;
+  --rd-sec-dn-rgb: 197, 133, 117;
+  --rd-sec-up-text-hi: #c3e4d1;
+  --rd-sec-up-text: #93c1a6;
+  --rd-sec-dn-text-hi: #ecbcb0;
+  --rd-sec-dn-text: #d3a396;
+  --rd-sec-swatch-grad: linear-gradient(90deg, #b06a58, #4a4f55 50%, #5a9e79);
+
+  /* ---- OPTIONS workspace legacy skin (intel.css badges, optx cards, tvchart) ---- */
+  --rd-ows-bull: #7fb88a;
+  --rd-ows-bear: #d98b8b;
+  --rd-ows-watch: #cbb274;
+  --rd-ows-pred: #9aaed8;
+  --rd-ows-stale: #c98b6a;
+  --rd-ows-gold-bd: rgb(216 180 106 / 0.22);   /* candidate-generator cards */
+  --rd-ows-gold-bg: rgb(216 180 106 / 0.025);
+  --rd-tv-bg: rgb(10 11 13 / 1);               /* TradingView chart shell */
+  --rd-tv-overlay: rgb(10 11 13 / 0.92);
+
+  /* ---- publish curation (owner-only; gold = identity, not data) ---- */
+  --rd-pub-gold: #d8b46a;
+  --rd-pub-gold-bd: rgb(216 180 106 / 0.4);
+  --rd-pub-gold-bg: rgb(216 180 106 / 0.06);
+}
+
+/* ---- keyframes (§1.8, verbatim) ---- */
+@keyframes augPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes augShimmer { 0%, 100% { opacity: 0.28; } 50% { opacity: 0.6; } }
+@keyframes augTape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+/* §1.8 global scrollbar restyle deliberately NOT ported this stage — a scoped
+   `::-webkit-scrollbar` rule here would out-cascade the old skin's hidden
+   scrollbars (.bl-* strips). Re-add when the bl- skin is retired. */
+
+/* ==========================================================================
+   ILLUMINATION LAYERS — gated by the .cinematic root class (§1.3)
+   ========================================================================== */
+
+.rd-ambient { display: none; }
+.cinematic .rd-ambient {
+  display: block;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 240px;
+  background: var(--rd-ambient-grad);
+  pointer-events: none;
+  z-index: 0;
+}
+.rd-topglow { display: none; }
+.cinematic .rd-topglow {
+  display: block;
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 1px;
+  background: var(--rd-topline);
+}
+
+/* ==========================================================================
+   BAR 1 — app nav + function keys (h 33px, §2.1)
+   ========================================================================== */
+
+.rd-bar1 {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 16px; height: 33px;
+  border-bottom: 1px solid var(--rd-hair-07);
+  background: var(--rd-bar1-bg);
+}
+.rd-bar1-left { display: flex; align-items: center; gap: 13px; height: 100%; }
+.rd-brand {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.22em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-brand-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  background: radial-gradient(circle at 35% 30%, var(--rd-acc), var(--rd-bar1-bg) 75%);
+  box-shadow: 0 0 8px -1px var(--rd-acc-soft40);
+}
+.rd-bar1-div { width: 1px; height: 15px; background: var(--rd-hair-10); flex-shrink: 0; }
+.rd-wstabs { display: flex; align-items: stretch; gap: 1px; height: 33px; }
+.rd-wstab {
+  display: inline-flex; align-items: center;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint); padding: 0 11px;
+  border-bottom: 2px solid transparent; background: transparent;
+  text-decoration: none; white-space: nowrap;
+}
+.rd-wstab.on {
+  color: var(--rd-t-primary);
+  border-bottom-color: var(--rd-acc);
+  background: var(--rd-acc-soft06);
+}
+a.rd-wstab:hover { color: var(--rd-t-secondary2); }
+.rd-fkeys { display: flex; align-items: center; gap: 9px; }
+.rd-fkey {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.05em;
+  color: var(--rd-t-dim4);
+  background: none; border: none; padding: 0; cursor: pointer; white-space: nowrap;
+}
+.rd-fkey:hover { color: var(--rd-t-secondary2); }
+.rd-fkey:disabled { opacity: 0.5; cursor: default; }
+.rd-fkey-k {
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 600;
+  border-radius: 2px; padding: 1px 4px;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-10);
+}
+.rd-fkey-k.on {
+  color: var(--rd-acc);
+  background: var(--rd-acc-soft12);
+  border-color: var(--rd-acc-soft40);
+}
+
+/* ==========================================================================
+   BAR 2 — title + counts + actions (h 42px, §2.2)
+   ========================================================================== */
+
+.rd-bar2 {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 0 16px; height: 42px;
+  border-bottom: 1px solid var(--rd-hair-08);
+  background: var(--rd-panel-grad);
+}
+.rd-bar2-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rd-title {
+  margin: 0; font-family: var(--rd-mono); font-weight: 600; font-size: 15px;
+  letter-spacing: 0.2em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-livechip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.12em;
+  color: var(--rd-bull); padding: 2px 7px;
+  border: 1px solid var(--rd-bull-soft32); border-radius: 2px; white-space: nowrap;
+}
+.rd-livechip-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-bull);
+  animation: augPulse 2s ease-in-out infinite;
+}
+.rd-meta {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+  /* narrow-desktop give: the meta may shrink (its F&G chip truncates first)
+     and clips at the hard floor — it must never collide with .rd-bar2-right */
+  min-width: 0; overflow: hidden;
+}
+.rd-datechip {
+  color: var(--rd-t-chip); letter-spacing: 0.08em; padding: 2px 7px;
+  border: 1px solid var(--rd-hair-14); border-radius: 2px; white-space: nowrap;
+  flex-shrink: 0; /* the date never truncates — the F&G chip gives first */
+}
+/* the DESK text — FIRST in the shrink order: it ellipsizes before the F&G
+   chip gives anything (session + tracked-count are echoed by the status bar
+   and the board header; the chip's reading has no other bar2 home) */
+.rd-meta-t {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex-shrink: 400;
+}
+.rd-bar2-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-count {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.08em;
+  padding: 3px 9px; border: 1px solid; border-radius: 2px; white-space: nowrap;
+}
+.rd-count-trig { color: var(--rd-bull); border-color: var(--rd-bull-soft30); background: var(--rd-bull-soft08); }
+.rd-count-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-bull);
+  animation: augPulse 2s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-count-arm { color: var(--rd-amber); border-color: var(--rd-amber-soft30); }
+.rd-count-act { color: var(--rd-blue); border-color: var(--rd-blue-soft30); }
+/* zero-count pills stay mounted (no CLS when counts land): dimmed on mobile,
+   hidden on desktop — same contract as the old bl-sp-zero */
+.rd-count-zero { opacity: 0.35; }
+@media (min-width: 701px) { .rd-count-zero { display: none; } }
+.rd-bar2-div { width: 1px; height: 17px; background: var(--rd-hair-10); margin: 0 2px; flex-shrink: 0; }
+.rd-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.05em;
+  color: var(--rd-t-secondary2);
+  background: var(--rd-btn-bg); border: 1px solid var(--rd-hair-10);
+  border-radius: 2px; padding: 6px 11px; cursor: pointer;
+  text-decoration: none; white-space: nowrap;
+}
+.rd-btn:hover { color: var(--rd-t-chip); }
+.rd-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-btn-acc {
+  color: var(--rd-accbtn-text);
+  background: var(--rd-acc-soft12);
+  border-color: var(--rd-acc-soft40);
+}
+
+/* ==========================================================================
+   BAR 3 — operational status (h 25px, §2.3)
+   design uses overflow:hidden; we allow horizontal scroll (hidden scrollbar)
+   so no status fact is unreachable on narrow screens — visually identical
+   ========================================================================== */
+
+.rd-sb {
+  display: flex; align-items: center; padding: 0 16px; height: 25px;
+  border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-bar3-bg);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.rd-sb::-webkit-scrollbar { display: none; }
+.rd-sb-item {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 13px;
+  border-right: 1px solid var(--rd-hair-05);
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.04em;
+  white-space: nowrap; flex-shrink: 0;
+}
+.rd-sb-label { color: var(--rd-t-ghost); letter-spacing: 0.1em; }
+.rd-sb-plain { color: var(--rd-t-secondary2); }
+.rd-sb-ok { color: var(--rd-val-green); }
+.rd-sb-amber { color: var(--rd-val-amber); }
+.rd-sb-now { margin-left: auto; border-right: none; padding-right: 0; }
+.rd-sb-clockval { color: var(--rd-tape-sym); }
+/* fixed ch-slots: volatile values never shift their neighbors between polls */
+.rd-slot6 { display: inline-block; min-width: 6ch; }
+.rd-slot7 { display: inline-block; min-width: 7ch; }
+.rd-sb-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.rd-dot-ok { background: var(--rd-bull); }
+.rd-dot-glow { box-shadow: 0 0 6px -1px var(--rd-bull); }
+.rd-dot-amber { background: var(--rd-amber); }
+.rd-dot-idle { background: var(--rd-t-ghost); }
+
+/* ==========================================================================
+   BAR 4 — live ticker tape (h 30px, §2.4)
+   fixed 30px height keeps the no-CLS reservation the old 23px min-height gave
+   ========================================================================== */
+
+.rd-tape {
+  display: flex; align-items: stretch; height: 30px; min-height: 30px;
+  border-bottom: 1px solid var(--rd-hair-07);
+  background: var(--rd-frame);
+  overflow: hidden;
+}
+.rd-tape-badge {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 0 14px; border-right: 1px solid var(--rd-hair-09);
+  background: var(--rd-tape-label-bg);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-dim3); white-space: nowrap;
+}
+.rd-tape-badge-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-live);
+  box-shadow: 0 0 6px -1px var(--rd-live);
+  animation: augPulse 2.2s ease-in-out infinite;
+}
+.rd-tape-scroll { flex: 1; overflow: hidden; position: relative; }
+.rd-tape-track {
+  display: flex; align-items: center; width: max-content; height: 30px;
+  animation: augTape 64s linear infinite;
+}
+.rd-tape-scroll:hover .rd-tape-track { animation-play-state: paused; }
+.rd-tape-run { display: flex; align-items: center; height: 30px; }
+.rd-tape-divider {
+  display: inline-flex; align-items: center; padding: 0 16px;
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.16em;
+  color: var(--rd-tape-div); white-space: nowrap;
+}
+.rd-tape-q {
+  display: inline-flex; align-items: center; gap: 7px; padding: 0 15px;
+  border-right: 1px solid var(--rd-hair-045);
+  font-family: var(--rd-mono); font-size: 10.5px; white-space: nowrap;
+}
+.rd-tape-sym { color: var(--rd-tape-sym); font-weight: 500; }
+.rd-tape-px { color: var(--rd-t-dim); }
+.rd-tape-inst { font-size: 9.5px; }
+.rd-tape-up { color: var(--rd-bull); }
+.rd-tape-dn { color: var(--rd-bear); }
+.rd-tape-watchtail { font-size: 8px; letter-spacing: 0.06em; }
+.rd-tape-await {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 15px;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-tape-track { animation: none; }
+  .rd-tape-dup { display: none; } /* single copy; region becomes scrollable */
+  .rd-tape-scroll { overflow-x: auto; scrollbar-width: none; }
+  .rd-tape-scroll::-webkit-scrollbar { display: none; }
+}
+
+/* ==========================================================================
+   LOADING SKELETON — augShimmer treatment (§2.6.2 / §4), chrome-shaped
+   ========================================================================== */
+
+.rd-skel-bar {
+  background: var(--rd-skel-hi);
+  border-bottom: 1px solid var(--rd-hair-05);
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
+.rd-skel-row {
+  height: 32px; border-radius: 2px; margin-bottom: 6px;
+  background: var(--rd-skel-bg);
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   STAGE 2 — THE BOARD (grouped blotter, SPEC-desktop §2.6.2 + SPEC-wiring §2)
+   Presentation only: grouped rows, accent rails, evidence cells/chips, the
+   Δ→TRIG rail, sparks, board states. All values copied from SPEC-desktop;
+   the bl- skin below remains untouched for the not-yet-reskinned surfaces.
+   ========================================================================== */
+
+/* ---- board header ---- */
+.rd-bhead {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 10px 16px 9px;
+}
+.rd-bhead-title {
+  font-family: var(--rd-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.18em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-bhead-meta {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- legend row (§2.6.2 item 1) ---- */
+.rd-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 6px 16px;
+  border-top: 1px solid var(--rd-hair-06); border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-legend-bg);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint);
+}
+.rd-leg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.rd-leg-g { font-size: 9px; }
+.rd-leg-live { color: var(--rd-live); }
+.rd-leg-quote { color: var(--rd-blue); }
+.rd-leg-abs { color: var(--rd-t-disabled); }
+.rd-leg-inf { color: var(--rd-inferred); }
+.rd-leg-div { width: 1px; height: 10px; background: var(--rd-hair-10); flex-shrink: 0; }
+
+/* ---- filter chips (segmented look; ALL/TRACKED/… semantics unchanged) ---- */
+.rd-filter-row {
+  display: flex; padding: 6px 16px;
+  border-bottom: 1px solid var(--rd-hair-06);
+  overflow-x: auto; scrollbar-width: none;
+}
+.rd-filter-row::-webkit-scrollbar { display: none; }
+.rd-filter-seg {
+  display: flex; border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  overflow: hidden; flex-shrink: 0;
+}
+.rd-fchip {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint); background: transparent;
+  border: none; border-right: 1px solid var(--rd-hair-08);
+  padding: 5px 9px; cursor: pointer; white-space: nowrap;
+}
+.rd-fchip:last-child { border-right: none; }
+.rd-fchip:hover { color: var(--rd-t-secondary2); }
+.rd-fchip.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); }
+
+/* ---- DAY BOARDS rail (owner scope strip above the filter row): TODAY ·
+   prior brief dates · OVERALL. Existing tokens only — the light theme
+   re-pins the variables, so no separate DAY block is needed. ---- */
+.rd-dayrail {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.rd-dayrail::-webkit-scrollbar { display: none; }
+.rd-dayrail-lab {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap; flex-shrink: 0;
+}
+.rd-daychip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint); background: transparent;
+  border: 1px solid var(--rd-hair-08); border-radius: 2px;
+  padding: 4px 8px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.rd-daychip:hover { color: var(--rd-t-secondary2); border-color: var(--rd-hair-14); }
+.rd-daychip.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+.rd-daychip-n { color: var(--rd-t-dim); }
+.rd-daychip.on .rd-daychip-n { color: inherit; }
+.rd-daychip-n.zero { color: var(--rd-t-disabled); }
+/* phone instance — hidden on desktop (the desktop instance carries rd-mhide;
+   the <700px block near the end of this section shows this one) */
+.rd-dayrail-m { display: none; }
+
+/* ---- DAY BOARD table — same rd-row system, day column template
+   (STATUS TICKER DIR TF THESIS CREATED ALERTED SO-FAR SRC) ---- */
+.rd-day-min {
+  --rd-cols: 56px 46px 44px 50px minmax(150px, 1.5fr) 84px 84px minmax(150px, 1.1fr) minmax(120px, 1fr);
+  min-width: 900px;
+}
+.rd-c-day {
+  font-family: var(--rd-mono); font-size: 9.5px;
+  color: var(--rd-t-secondary2); white-space: nowrap;
+}
+.rd-c-sofar {
+  font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-sofar-lab { color: var(--rd-t-faint); font-size: 8px; letter-spacing: 0.04em; }
+
+/* ---- DAY facts block inside the mobile idea card (rd-mb tree, <700px) ---- */
+.rd-mday {
+  display: grid; grid-template-columns: auto 1fr; gap: 5px 12px;
+  margin: 10px 0 2px; padding: 9px 11px;
+  border: 1px solid var(--rd-hair-07); border-radius: 8px;
+  background: var(--rd-inset);
+}
+.rd-mday-l {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em;
+  color: var(--rd-t-ghost); align-self: center; white-space: nowrap;
+}
+.rd-mday-v { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary2); min-width: 0; }
+
+/* ---- DAY STACK: PAST IDEAS section (owner default view, below TODAY) ---- */
+/* a day group whose rows are all filtered out DIMS — never vanishes (no-CLS) */
+.rd-group-dim > * { opacity: 0.45; }
+/* past-day group header — the rd-group anatomy on a real <button> */
+.rd-dayg-h {
+  width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit;
+  border-left: 0; border-right: 0;
+}
+.rd-dayg-h:hover .rd-group-label { color: var(--rd-t-chip); }
+.rd-dayg-h:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-dayg-caret {
+  font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-faint);
+  width: 10px; flex-shrink: 0;
+}
+/* one-line day states (error / absent / filter miss) inside the day table */
+.rd-dayg-state {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 16px; border-bottom: 1px solid var(--rd-hair-05);
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint);
+}
+/* PAST IDEAS section divider — bhead metrics over a hairline */
+.rd-past-head { border-top: 1px solid var(--rd-hair-06); margin-top: 14px; padding-top: 12px; }
+.rd-past-older { padding: 10px 16px 14px; }
+/* skeleton rows sized like real day rows (rd-row-grid: 8px pad + ~13px cell)
+   so a loading day reserves the space its rows will take (no-CLS) */
+.rd-skelrow-day { padding: 8.5px 16px; }
+
+/* ---- DAY BOARDS rail, phone form (44px chips, horizontal scroll) +
+   PAST IDEAS phone form (44px collapsible date headers over the card idiom,
+   inside the .rd-mb tree — <700px only) ---- */
+@media (max-width: 700px) {
+  .rd-dayrail-m { display: flex; padding: 10px 16px 0; }
+  .rd-dayrail-m .rd-daychip { min-height: 44px; padding: 3px 12px; }
+
+  .rd-mpast { margin-top: 20px; }
+  .rd-mpast-head {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 0 16px 8px;
+  }
+  .rd-mpast-title {
+    font-family: var(--rd-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.18em; color: var(--rd-t-muted); white-space: nowrap;
+  }
+  .rd-mpast-meta {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+    color: var(--rd-t-ghost); white-space: nowrap;
+  }
+  .rd-mpast-h {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    min-height: 44px; padding: 6px 16px; text-align: left; cursor: pointer;
+    background: var(--rd-bar1-bg);
+    border: 0; border-top: 1px solid var(--rd-hair-05);
+    border-bottom: 1px solid var(--rd-hair-07);
+  }
+  .rd-mpast-h:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+  .rd-mpast-h.dim > * { opacity: 0.45; } /* zero-match day dims, never vanishes */
+  .rd-mpast-caret { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-faint); flex-shrink: 0; }
+  .rd-mpast-date {
+    font-family: var(--rd-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; color: var(--rd-t-muted); white-space: nowrap;
+  }
+  .rd-mpast-sub {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+    color: var(--rd-t-ghost); white-space: nowrap;
+  }
+  .rd-mpast-n {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+    color: var(--rd-t-faint); white-space: nowrap; flex-shrink: 0;
+  }
+  .rd-mpast-older { padding: 10px 16px; }
+  .rd-mpast-older .rd-btn { min-height: 44px; width: 100%; }
+}
+
+/* ---- board scroll frame: 17 real columns share one template ---- */
+.rd-board-wrap { overflow-x: auto; scrollbar-width: thin; }
+.rd-board-min {
+  /* STATUS TICKER DIR TF THESIS ENTRY TRIGGER INVALID TARGET LIVE Δ→TRIG P&L AGE SPARK CONF EVID SRC */
+  --rd-cols: 56px 46px 44px 50px minmax(140px, 1.6fr) minmax(104px, 1.1fr) 70px 72px 62px 70px 74px 54px 34px 56px 54px 62px minmax(110px, 1fr);
+  min-width: 1290px;
+}
+
+/* ---- column header (§2.6.2 item 2) ---- */
+.rd-colhead {
+  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--rd-hair-08);
+  background: var(--rd-card);
+}
+.rd-colhead span {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); white-space: nowrap; overflow: hidden;
+}
+
+/* ---- horizon group headers (§2.6.2 item 3) ---- */
+.rd-group {
+  display: flex; align-items: center; gap: 9px; padding: 7px 16px;
+  background: var(--rd-bar1-bg);
+  border-top: 1px solid var(--rd-hair-05); border-bottom: 1px solid var(--rd-hair-07);
+}
+.rd-group-tick { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.rd-tick-today { background: var(--rd-live); }
+.rd-group.hero .rd-tick-today { box-shadow: 0 0 7px -1px var(--rd-live); }
+.rd-tick-swing { background: var(--rd-blue); }
+.rd-tick-long { background: var(--rd-t-dim4); }
+.rd-group-label {
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-group.hero .rd-group-label { color: var(--rd-t-chip); }
+.rd-group-sub {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-group-hair { flex: 1; height: 1px; background: var(--rd-hair-05); min-width: 8px; }
+.rd-group-count {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint); white-space: nowrap;
+}
+
+/* ---- idea rows: 4 stacked layers + content grid (§2.6.2 item 4) ---- */
+.rd-row { position: relative; cursor: pointer; }
+.rd-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-row-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+.rd-row.sel .rd-row-accent, .rd-row.live .rd-row-accent { width: 3px; }
+/* accent + badge families share the life color ramp */
+.rd-row.lc-trig .rd-row-accent, .rd-row.lc-tgt .rd-row-accent { background: var(--rd-bull); }
+.rd-row.lc-arm .rd-row-accent { background: var(--rd-amber); }
+.rd-row.lc-act .rd-row-accent { background: var(--rd-blue); }
+.rd-row.lc-inval .rd-row-accent { background: var(--rd-bear); }
+.rd-row.lc-exp .rd-row-accent, .rd-row.lc-watch .rd-row-accent { background: var(--rd-lo); }
+.rd-row-wash { display: none; }
+.cinematic .rd-row-wash {
+  display: block; position: absolute; inset: 0;
+  background: var(--rd-live-wash); pointer-events: none;
+}
+.rd-row-selwash { position: absolute; inset: 0; background: var(--rd-acc-soft06); pointer-events: none; }
+/* selection ring — Cinematic two-part form; single inset ring otherwise (§1.3) */
+.rd-row-ring {
+  position: absolute; inset: 0; pointer-events: none;
+  box-shadow: var(--rd-sel-ring-flat);
+}
+.cinematic .rd-row-ring { box-shadow: var(--rd-sel-ring); }
+.rd-row-grid {
+  position: relative;
+  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
+  padding: 8px 16px; /* Standard density rowPad */
+  border-bottom: 1px solid var(--rd-hair-05);
+}
+.rd-row:hover .rd-row-grid { background: var(--rd-hover-row); }
+
+/* ---- cells ---- */
+.rd-c { min-width: 0; }
+.rd-c-ticker {
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary); white-space: nowrap;
+}
+.rd-c-dir {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.02em; white-space: nowrap;
+}
+.rd-dir-g { font-size: 7px; }
+.rd-dir-bull { color: var(--rd-bull); }
+.rd-dir-bear { color: var(--rd-bear); }
+.rd-dir-neut { color: var(--rd-amber); }
+.rd-c-tf {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.02em;
+  color: var(--rd-t-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-thesis {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.01em;
+  color: var(--rd-t-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-live {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-brightest); white-space: nowrap;
+}
+.rd-live-dot-g { color: var(--rd-live); font-size: 8.5px; animation: augPulse 2.4s ease-in-out infinite; }
+.rd-c-pnl, .rd-c-age {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-pos { color: var(--rd-bull); }
+.rd-neg { color: var(--rd-bear); }
+.rd-c-conf {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-conf-bar {
+  width: 30px; height: 3px; background: var(--rd-hair-08);
+  border-radius: 2px; overflow: hidden; flex-shrink: 0;
+}
+.rd-conf-fill { display: block; height: 100%; background: var(--rd-acc); }
+.rd-c-src {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-c-src a { color: var(--rd-acc); text-decoration: none; }
+.rd-c-src a:hover { text-decoration: underline; }
+.rd-c-src > span { color: var(--rd-t-faint); }
+.rd-spark { display: block; overflow: visible; }
+
+/* ---- life/status chips (§2.6.2 cell 1) ---- */
+.rd-life {
+  display: inline-flex; align-items: center; gap: 4px; width: fit-content;
+  font-family: var(--rd-mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 6px; border: 1px solid currentColor; border-radius: 2px;
+  background: transparent; white-space: nowrap;
+}
+.rd-life-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.rd-life-trig { color: var(--rd-bull); background: var(--rd-live-soft12); }
+.cinematic .rd-life-trig { box-shadow: var(--rd-status-glow); }
+.rd-life-tgt { color: var(--rd-bull); background: var(--rd-live-soft12); }
+.rd-life-arm { color: var(--rd-amber); }
+.rd-life-act { color: var(--rd-blue); }
+.rd-life-inval { color: var(--rd-bear); }
+.rd-life-exp { color: var(--rd-lo); }
+.rd-life-watch { color: var(--rd-lo); }
+.rd-life-conflict { color: var(--rd-amber); font-weight: 700; margin-left: 1px; }
+
+/* ---- evidence chips (§3.4, exact) — .rd-ev-extracted kept for a future
+   third provenance level; it is never emitted today (SPEC-wiring §2.2) ---- */
+.rd-ev {
+  display: inline-flex; align-items: center; gap: 3px; width: fit-content;
+  font-family: var(--rd-mono); font-size: 7px; font-weight: 600; letter-spacing: 0.05em;
+  padding: 1px 5px; border-radius: 2px; white-space: nowrap;
+}
+.rd-ev-g { font-size: 6.5px; }
+.rd-ev-direct { color: var(--rd-blue); border: 1px solid var(--rd-blue); background: var(--rd-blue-soft14); }
+.rd-ev-extracted { color: var(--rd-teal); border: 1px solid var(--rd-teal); background: transparent; }
+.rd-ev-inferred { color: var(--rd-inferred); border: 1px dashed var(--rd-inferred); background: transparent; }
+
+/* ---- value-cell renderers (§3.4 mkQuoted / mkInferred / mkNarr / ABSENT) ---- */
+.rd-cell {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--rd-mono); font-size: 10.5px; min-width: 0; max-width: 100%;
+}
+.rd-cell-g { font-size: 8.5px; flex-shrink: 0; }
+.rd-g-quote { color: var(--rd-blue); }
+.rd-g-inf { color: var(--rd-inferred); }
+.rd-cell-qv {
+  color: var(--rd-cell-quoted); text-decoration: underline dotted; text-underline-offset: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-cell-iv { color: var(--rd-cell-inferred); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-cell-nv { color: var(--rd-cell-narr); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-abs {
+  font-family: var(--rd-sans); font-style: italic; font-size: 10px;
+  color: var(--rd-t-disabled); white-space: nowrap;
+}
+.rd-abs-g { font-style: normal; color: var(--rd-t-absent); }
+.rd-abs-dash { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-absent); }
+
+/* ---- Δ→TRIG cell: value + PAST/TO label + the rail (pos 4–96%) ---- */
+.rd-delta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-delta-val { font-family: var(--rd-mono); font-size: 10.5px; white-space: nowrap; }
+.rd-delta-label { font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.08em; white-space: nowrap; opacity: 0.85; }
+.rd-delta-past { color: var(--rd-bull); }
+.rd-delta-to { color: var(--rd-amber); }
+.rd-delta-plain { color: var(--rd-t-secondary2); }
+.rd-rail {
+  position: relative; display: block; height: 3px; width: 64px; max-width: 100%;
+  background: var(--rd-hair-08); border-radius: 2px; margin-top: 1px;
+}
+.rd-rail-fill { position: absolute; top: 0; bottom: 0; background: currentColor; opacity: 0.4; border-radius: 2px; }
+.rd-rail-dot { position: absolute; top: 50%; width: 5px; height: 5px; border-radius: 50%; transform: translate(-50%, -50%); }
+.rd-rail-trig { background: var(--rd-blue); }
+.rd-rail-live { background: var(--rd-live); }
+
+/* ---- board states (§2.12, verbatim treatments) ---- */
+.rd-board-empty { padding: 64px 22px; text-align: center; border-top: 1px solid var(--rd-hair-06); }
+/* the empty state fills the blotter slot so filtering to zero matches never
+   collapses the column and jumps the OPTIONS INTEL panel (old-skin contract) */
+.rd-center .rd-board-empty { flex: 1; }
+.rd-empty-glyph { font-family: var(--rd-mono); font-size: 30px; color: var(--rd-t-empty); margin-bottom: 14px; }
+.rd-empty-title { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.18em; color: var(--rd-t-dim); margin-bottom: 9px; }
+.rd-empty-copy {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-faint2); max-width: 42ch; margin: 0 auto 18px;
+}
+.rd-board-nomatch .rd-empty-copy { margin-bottom: 0; }
+.rd-empty-btns { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.rd-btn-lg {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-secondary2); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-12); border-radius: 2px;
+  padding: 8px 15px; cursor: pointer;
+}
+.rd-btn-lg:hover { color: var(--rd-t-chip); }
+.rd-btn-lg:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-btn-lg-acc { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+
+.rd-board-error {
+  padding: 56px 22px; text-align: center;
+  border-top: 1px solid var(--rd-bear-soft18);
+  background: var(--rd-bear-soft03);
+}
+.rd-err-glyph { font-family: var(--rd-mono); font-size: 26px; color: var(--rd-bear); margin-bottom: 14px; }
+.rd-err-title { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.16em; color: var(--rd-bear); margin-bottom: 9px; }
+.rd-err-copy {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-dim); max-width: 46ch; margin: 0 auto 8px;
+}
+.rd-err-line { font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em; color: var(--rd-t-ghost); margin-bottom: 18px; }
+.rd-btn-retry {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-retry-text); background: var(--rd-bear-soft10);
+  border: 1px solid var(--rd-bear-soft40); border-radius: 2px;
+  padding: 8px 15px; cursor: pointer;
+}
+
+.rd-load-strip {
+  display: flex; align-items: center; gap: 9px; padding: 8px 16px;
+  border-top: 1px solid var(--rd-hair-06); border-bottom: 1px solid var(--rd-hair-06);
+  background: var(--rd-legend-bg);
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.14em; color: var(--rd-t-dim);
+}
+.rd-load-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--rd-acc);
+  animation: augPulse 1s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-skelrow {
+  display: flex; align-items: center; gap: 6px; padding: 11px 16px;
+  border-bottom: 1px solid var(--rd-hair-05); overflow: hidden;
+}
+.rd-skelbar {
+  display: inline-block; border-radius: 2px;
+  background: var(--rd-skel-bg);
+  animation: augShimmer 1.4s ease-in-out infinite; flex-shrink: 0;
+}
+.rd-skelbar.hi { background: var(--rd-skel-hi); }
+
+/* ==========================================================================
+   MOBILE (<700px) — keep every real action reachable; the fkeys strip is the
+   tab navigation, so it tiles full-width with 44px touch targets (same
+   contract the old .bl-head-tab strip honored)
+   ========================================================================== */
+
+@media (max-width: 700px) {
+  .rd-bar1 { height: auto; flex-wrap: wrap; padding: 0 10px; gap: 0 10px; }
+  .rd-bar1-left { height: 33px; }
+  .rd-fkeys { order: 2; width: 100%; gap: 0; }
+  .rd-fkey { flex: 1; justify-content: center; min-height: 44px; padding: 0 2px; }
+  .rd-fkey-k { display: none; }
+
+  .rd-bar2 { height: auto; flex-wrap: wrap; padding: 8px 10px; gap: 6px 8px; }
+  .rd-meta { display: none; }
+  .rd-bar2-right { flex-wrap: wrap; width: 100%; }
+  .rd-bar2-div { display: none; }
+  .rd-bar2-right .rd-btn { min-height: 44px; flex: 1; }
+
+  /* ---- STAGE 8: the desktop board chrome (column table, legend, blotter
+     header, filter row) has no phone design — hidden here; the SPEC-mobile
+     card board (.rd-mb block, end of this file) owns <700px. The old stage-2
+     flex-reflow rules were deleted with it (they styled a now-hidden tree). ---- */
+  .rd-bhead, .rd-legend, .rd-filter-row { display: none; }
+  .rd-mhide { display: none !important; }
+
+  /* tracker status chips (re-hosted inside .rd-mstatus) + board-state
+     buttons keep real tap targets */
+  .rd-fchip { min-height: 44px; padding: 3px 12px; }
+  .rd-btn-lg, .rd-btn-retry { min-height: 44px; }
+}
+
+/* ==========================================================================
+   STAGE 3 — THE INSPECTOR (SPEC-desktop §2.6.3 idea mode + §2.12 states,
+   exact values re-read from the design file). Presentation only: the data
+   stays idea/tracker/quote-driven. Desktop-only column — .bl-right is hidden
+   <1100px by the old skin's rule, which stays in force.
+   ========================================================================== */
+
+/* the inspector column keeps its slot/scroll behavior; its contents carry the
+   design's own header/body paddings (column shell lives in the stage-4 grid) */
+
+.rd-insp { min-width: 0; }
+.rd-insp-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 16px 9px;
+  border-bottom: 1px solid var(--rd-hair-06);
+}
+.rd-insp-title {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-insp-crumb {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.rd-insp-body { padding: 14px 16px 16px; }
+
+/* ---- title row ---- */
+.rd-insp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rd-insp-idrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+.rd-insp-ticker {
+  font-family: var(--rd-mono); font-weight: 600; font-size: 21px;
+  letter-spacing: 0.04em; color: var(--rd-t-primary);
+}
+/* life-chip size variants over the stage-2 base: title row (lg) + timeline (sm) */
+.rd-life-lg { font-size: 9px; letter-spacing: 0.12em; padding: 3px 8px; gap: 6px; }
+.rd-life-lg .rd-life-dot { width: 5px; height: 5px; }
+.rd-life-sm { font-size: 7px; letter-spacing: 0.05em; padding: 1px 5px; }
+.rd-insp-liveblk { text-align: right; flex-shrink: 0; }
+.rd-insp-livelabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-insp-liveprice {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 1px;
+  font-family: var(--rd-mono); font-size: 17px; color: var(--rd-t-brightest);
+  white-space: nowrap;
+}
+.rd-insp-liveprice .rd-live-dot-g { font-size: 11px; }
+/* live block when the row has NO quote (selection fetch failed / empty):
+   the ∅ absent treatment stacked over the explicit RETRY QUOTE action */
+.rd-insp-noquote {
+  display: inline-flex; flex-direction: column; align-items: flex-end;
+  gap: 4px; margin-top: 2px;
+}
+.rd-insp-noquote .rd-abs { font-size: 11px; }
+
+/* ---- stat strip ---- */
+.rd-insp-stats {
+  display: flex; align-items: stretch; margin-top: 11px;
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); overflow: hidden;
+}
+.rd-insp-stat { flex: 1; min-width: 0; padding: 6px 9px; border-right: 1px solid var(--rd-hair-05); }
+.rd-insp-stat:last-child { border-right: none; }
+.rd-insp-stat-label {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); margin-bottom: 2px; white-space: nowrap;
+}
+.rd-insp-stat-val {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-secondary2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* DIR stat takes the direction color (two-class so it outranks the base) */
+.rd-insp-stat-val.rd-dir-bull { color: var(--rd-bull); }
+.rd-insp-stat-val.rd-dir-bear { color: var(--rd-bear); }
+.rd-insp-stat-val.rd-dir-neut { color: var(--rd-amber); }
+
+/* ---- posture chips ---- */
+.rd-insp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.rd-pchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em;
+  padding: 3px 8px; border: 1px solid currentColor; border-radius: 2px; white-space: nowrap;
+}
+.rd-pchip-fact { color: var(--rd-t-dim4); border-color: var(--rd-hair-12); }
+/* evidence-chip posture variant over the stage-2 base */
+.rd-ev-lg { font-size: 9px; font-weight: 500; letter-spacing: 0.1em; padding: 3px 8px; gap: 5px; }
+.rd-ev-lg .rd-ev-g { font-size: 8px; }
+
+/* ---- thesis ---- */
+.rd-insp-thesis {
+  margin: 12px 0 0; font-family: var(--rd-sans); font-size: 13px;
+  line-height: 1.5; color: var(--rd-t-body);
+}
+
+/* ---- section micro-labels ---- */
+.rd-insp-seclabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em;
+  color: var(--rd-t-ghost);
+}
+.rd-plan-head { margin: 14px 0 7px; }
+.rd-lev-head { margin: 16px 0 0; }
+
+/* ---- trade plan ---- */
+.rd-plan { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+.rd-plan-box { border: 1px solid; border-radius: 2px; padding: 8px 10px; min-width: 0; }
+.rd-plan-entry { border-color: var(--rd-bull-soft28); background: var(--rd-bull-soft05); }
+.rd-plan-exit { border-color: var(--rd-bear-soft28); background: var(--rd-bear-soft05); }
+.rd-plan-tp { border-color: var(--rd-blue-soft28); background: var(--rd-blue-soft05); }
+.rd-plan-lab {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em;
+  margin-bottom: 4px; white-space: nowrap;
+}
+.rd-plan-entry .rd-plan-lab { color: var(--rd-bull); }
+.rd-plan-exit .rd-plan-lab { color: var(--rd-bear); }
+.rd-plan-tp .rd-plan-lab { color: var(--rd-blue); }
+.rd-plan-val { font-family: var(--rd-mono); font-size: 11.5px; overflow-wrap: break-word; }
+.rd-plan-entry .rd-plan-val { color: var(--rd-plan-entry-text); }
+.rd-plan-exit .rd-plan-val { color: var(--rd-plan-exit-text); }
+.rd-plan-tp .rd-plan-val { color: var(--rd-plan-tp-text); }
+/* plan-box absent cells run at the design's 11px (base .rd-abs is 10px) */
+.rd-plan-box .rd-abs { font-size: 11px; }
+
+/* ---- price action header ---- */
+.rd-pa-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; margin: 15px 0 0;
+}
+.rd-pa-sub {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.03em;
+  color: var(--rd-t-faint); margin-top: 2px; white-space: nowrap;
+}
+.rd-pa-right { text-align: right; }
+.rd-pa-deltalabel {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.14em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-pa-deltaval { font-family: var(--rd-mono); font-size: 16px; margin-top: 1px; white-space: nowrap; }
+.rd-pa-deltatag { font-size: 7.5px; letter-spacing: 0.08em; }
+.rd-notrig {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.05em;
+  color: var(--rd-t-faint2); padding: 5px 9px;
+  border: 1px dashed var(--rd-hair-13); border-radius: 2px; white-space: nowrap;
+}
+.rd-notrig-g { color: var(--rd-inferred); }
+
+/* ---- chart (352×92) ---- */
+.rd-chart {
+  position: relative; margin-top: 8px;
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); overflow: hidden;
+}
+.rd-chart svg { display: block; width: 100%; height: 92px; }
+.rd-chart-h, .rd-chart-l {
+  position: absolute; left: 6px;
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.04em;
+  color: var(--rd-t-faint2); background: var(--rd-chart-scrim-72);
+  padding: 0 2px; white-space: nowrap;
+}
+.rd-chart-h { top: 4px; }
+.rd-chart-l { bottom: 4px; }
+.rd-chart-trig {
+  position: absolute; left: 50%; transform: translateX(-50%) translateY(-50%);
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.03em;
+  color: var(--rd-blue-lt); background: var(--rd-chart-scrim-85); padding: 0 3px; white-space: nowrap;
+}
+.rd-chart-live {
+  position: absolute; right: 6px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-brightest);
+  background: var(--rd-chart-scrim-90); padding: 1px 5px;
+  border: 1px solid var(--rd-hair-12); border-radius: 2px; white-space: nowrap;
+}
+.rd-chart-live-dot { color: var(--rd-live); font-size: 7px; }
+.rd-chart-noseries { height: 92px; display: flex; align-items: center; justify-content: center; }
+
+/* ---- LEVELS grid ---- */
+.rd-lev-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px;
+  margin-top: 9px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-lev-f { min-width: 0; }
+.rd-lev-lab { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rd-lev-lab-t {
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 500;
+  letter-spacing: 0.11em; white-space: nowrap;
+}
+.rd-lev-entry .rd-lev-lab-t, .rd-lev-cat .rd-lev-lab-t { color: var(--rd-blue-dim); }
+.rd-lev-trigger .rd-lev-lab-t { color: var(--rd-t-dim3); }
+.rd-lev-inval .rd-lev-lab-t { color: var(--rd-bear-dim); }
+.rd-lev-target .rd-lev-lab-t { color: var(--rd-bull-dim); }
+/* inspector-scale variants of the shared cell renderers (§3.4: 12px/10px
+   glyphed, 11.5px absent, chips at ls .07em / 7px glyph) — values may wrap */
+.rd-lev-f .rd-cell { font-size: 12px; }
+.rd-lev-f .rd-cell-g { font-size: 10px; }
+.rd-lev-f .rd-cell-qv, .rd-lev-f .rd-cell-iv, .rd-lev-f .rd-cell-nv {
+  white-space: normal; overflow: visible; text-overflow: clip;
+}
+.rd-lev-f .rd-abs { font-size: 11.5px; white-space: normal; }
+.rd-lev-f .rd-ev { letter-spacing: 0.07em; }
+.rd-lev-f .rd-ev-g { font-size: 7px; }
+.rd-lev-plain { font-family: var(--rd-sans); font-size: 12px; line-height: 1.4; color: var(--rd-t-body); }
+
+/* ---- footer: confidence + source cite ---- */
+.rd-insp-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-insp-conf {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.13em;
+  color: var(--rd-t-faint2);
+}
+.rd-insp-conf-bar {
+  width: 70px; height: 4px; background: var(--rd-hair-08);
+  border-radius: 2px; overflow: hidden;
+}
+.rd-insp-conf-fill { display: block; height: 100%; background: var(--rd-acc); }
+.rd-insp-conf-pct { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-muted); letter-spacing: normal; }
+.rd-insp-src {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  color: var(--rd-acc); text-decoration: none; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.rd-insp-src:hover { text-decoration: underline; }
+
+/* ---- LIFECYCLE (kept real panel, rd- skin) ---- */
+.rd-lifec { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--rd-hair-06); }
+.rd-lifec-head { display: flex; align-items: center; gap: 6px; }
+.rd-lifec-stale {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-amber); border: 1px solid var(--rd-amber-soft35);
+  border-radius: 2px; padding: 1px 5px;
+}
+.rd-tl { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; }
+.rd-tl-step {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim);
+}
+.rd-tl-when { color: var(--rd-t-ghost); }
+.rd-tl-px { color: var(--rd-t-secondary2); }
+.rd-lifec-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+.rd-lifec-num {
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 6px 9px; min-width: 0;
+}
+.rd-lifec-note {
+  font-family: var(--rd-mono); font-size: 8px; line-height: 1.5;
+  color: var(--rd-t-faint2); margin-top: 6px;
+}
+.rd-lifec-spark { margin-top: 10px; }
+.rd-lifec-spark svg { display: block; width: 100%; }
+.rd-lifec-sparkmeta {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.05em;
+  color: var(--rd-t-ghost); margin-top: 3px;
+}
+.rd-lifec-vars { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--rd-amber-soft25); }
+.rd-lifec-varhead {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-amber); margin-bottom: 4px;
+}
+.rd-lifec-var {
+  display: flex; align-items: center; gap: 7px; padding: 2px 0;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim);
+}
+
+/* ---- inspector states (§2.12, design values verbatim) ---- */
+.rd-insp-state { padding: 60px 16px; text-align: center; }
+.rd-insp-state-glyph {
+  font-family: var(--rd-mono); font-size: 24px; color: var(--rd-t-empty);
+  margin-bottom: 12px;
+}
+.rd-insp-state-title {
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.14em;
+  color: var(--rd-t-faint);
+}
+.rd-insp-state-copy {
+  font-family: var(--rd-sans); font-size: 11.5px; color: var(--rd-t-ghost);
+  margin: 8px auto 0; max-width: 30ch;
+}
+.rd-insp-pulse {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--rd-acc); animation: augPulse 1s ease-in-out infinite;
+}
+.rd-insp-loading .rd-insp-state-title { margin-top: 12px; }
+.rd-insp-shimmers { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.rd-shim {
+  height: 10px; background: var(--rd-skel-bg); border-radius: 2px;
+  animation: augShimmer 1.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   STAGE 4 — LEFT RAIL + BRIEF/SOURCES/ASK RETHEME
+   Left rail per SPEC-desktop §2.6 (main grid 252/fluid/384, sections at the
+   Standard secPad 12px 16px) + §2.6.1/§2.6.2-item-6 treatments. The tab
+   bodies (BRIEF/SOURCES/drawer) have no desktop design — they are restyled
+   by APPLYING THE TOKEN SYSTEM only: mono/sans stacks, the text ramp,
+   hairlines, 2–3px radii, the design's card/row/button/input treatments.
+   ========================================================================== */
+
+/* ---- main grid (§2.6): LEFT RAIL 252 · BOARD fluid · INSPECTOR 384 ---- */
+.rd-main {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr) 384px;
+  gap: 0;
+  min-height: calc(100vh - 120px);
+}
+.rd-lrail {
+  border-right: 1px solid var(--rd-hair-07);
+  overflow-y: auto; padding: 0 0 60px; min-width: 0;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+.rd-center {
+  overflow: hidden; display: flex; flex-direction: column; min-width: 0;
+  border-right: 1px solid var(--rd-hair-07);
+}
+.rd-inspcol {
+  overflow-y: auto; padding: 0 0 60px; min-width: 0;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+@media (max-width: 1100px) {
+  .rd-main { grid-template-columns: 240px minmax(0, 1fr); }
+  .rd-inspcol { display: none; }
+  .rd-center { border-right: none; }
+}
+
+/* ---- rail sections (§2.6.1: secPad 12px 16px, hairline-07 dividers) ---- */
+.rd-lsec { padding: 12px 16px; border-bottom: 1px solid var(--rd-hair-07); }
+.rd-lsec:last-child { border-bottom: none; }
+.rd-lsec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+.rd-lsec-h {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
+}
+
+/* ---- quick actions (kept real controls, design button treatment) ---- */
+.rd-lp-actions { display: flex; gap: 7px; }
+.rd-lp-btn { flex: 1; padding: 7px 4px; }
+.rd-lp-age {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); margin-top: 8px;
+}
+
+/* ---- TOP STOCKS card (§2.6.2 item 6, adapted to the 252px rail) ---- */
+.rd-ts-card {
+  background: var(--rd-card); border: 1px solid var(--rd-hair-07);
+  border-radius: 3px; padding: 12px 13px;
+}
+.rd-ts-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rd-ts-title {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.16em;
+  color: var(--rd-t-muted); white-space: nowrap;
+}
+.rd-ts-hair { flex: 1; height: 1px; background: var(--rd-hair-05); min-width: 6px; }
+.rd-ts-note {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-ts-row {
+  display: grid; grid-template-columns: 14px 42px 1fr 14px auto 10px;
+  gap: 7px; align-items: center; width: 100%;
+  padding: 6px 5px; border: none; border-top: 1px solid var(--rd-hair-05);
+  background: none; cursor: pointer; text-align: left; border-radius: 0;
+}
+.rd-ts-row:hover { background: var(--rd-hover-item); }
+.rd-ts-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-ts-rank { font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-ghost); }
+.rd-ts-life {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 600;
+  letter-spacing: 0.04em; white-space: nowrap; min-width: 0; overflow: hidden;
+}
+/* borderless life chip takes the accent-family color ramp (rowLife.family) */
+.rd-ts-life.lc-trig, .rd-ts-life.lc-tgt { color: var(--rd-bull); }
+.rd-ts-life.lc-arm { color: var(--rd-amber); }
+.rd-ts-life.lc-act { color: var(--rd-blue); }
+.rd-ts-life.lc-inval { color: var(--rd-bear); }
+.rd-ts-life.lc-exp, .rd-ts-life.lc-watch { color: var(--rd-lo); }
+.rd-ts-tkr {
+  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-ts-dirg { font-family: var(--rd-mono); font-size: 9px; text-align: center; }
+.rd-ts-px {
+  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-brightest);
+  text-align: right; white-space: nowrap;
+}
+.rd-ts-go { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-ghost); text-align: right; }
+
+/* ---- TONIGHT'S BRIEF digest (§2.6.1 first section, real fields) ---- */
+.rd-digest-p {
+  font-family: var(--rd-sans); font-size: 12px; line-height: 1.5;
+  color: var(--rd-t-secondary); margin: 0 0 11px;
+}
+.rd-digest-dl { margin: 0; }
+.rd-digest-f {
+  display: grid; grid-template-columns: 76px 1fr; gap: 6px;
+  padding: 5px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-digest-f dt {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--rd-t-ghost); padding-top: 1px;
+}
+.rd-digest-f dd {
+  margin: 0; font-family: var(--rd-sans); font-size: 11px;
+  line-height: 1.4; color: var(--rd-t-body);
+}
+.rd-digest-bb { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
+.rd-digest-bb .rd-bb-p, .rd-digest-bb p { font-size: 11px; line-height: 1.45; margin: 0; }
+
+/* BULL/BEAR block — token translation (no desktop design for this element) */
+.rd-bb { min-width: 0; padding-left: 8px; }
+.rd-bb-bull { border-left: 2px solid var(--rd-bull); }
+.rd-bb-bear { border-left: 2px solid var(--rd-bear); }
+.rd-bb-h {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+.rd-bb-bull .rd-bb-h { color: var(--rd-bull); }
+.rd-bb-bear .rd-bb-h { color: var(--rd-bear); }
+.rd-bb p, .rd-bb-p {
+  font-family: var(--rd-sans); font-size: 12.5px; line-height: 1.5;
+  color: var(--rd-t-body); margin: 0;
+}
+
+/* ---- AT THE OPEN (design rows: 38px 1fr auto, hairline-06 tops) ---- */
+.rd-open-label {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.14em;
+  color: var(--rd-t-faint3); margin: 12px 0 7px;
+}
+.rd-open-row {
+  display: grid; grid-template-columns: 38px 1fr auto; gap: 7px;
+  align-items: center; padding: 5px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-open-tkr { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-tape-sym); }
+.rd-open-cond { font-family: var(--rd-sans); font-size: 10.5px; color: var(--rd-t-dim4); min-width: 0; }
+.rd-open-cond b {
+  font-family: var(--rd-mono); font-weight: 400; color: var(--rd-px-blue); margin-left: 4px;
+}
+.rd-open-st { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em; white-space: nowrap; }
+.rd-open-ok { color: var(--rd-bull); font-weight: 600; }
+.rd-open-broken { color: var(--rd-bear); font-weight: 600; }
+.rd-open-wait { color: var(--rd-amber); }
+.rd-open-ns { color: var(--rd-t-absent); }
+
+/* ---- CAPTURE ---- */
+.rd-cap-add { width: 100%; }
+.rd-cap-body { margin-top: 8px; }
+.rd-cap-hint {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.04em;
+  color: var(--rd-acc); opacity: 0.85; margin-top: 6px;
+}
+.rd-cap-srcline {
+  display: block; width: 100%; margin-top: 12px; padding: 8px 0 2px;
+  background: none; border: none; border-top: 1px solid var(--rd-hair-06);
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint); cursor: pointer; text-align: left;
+}
+.rd-cap-srcline:hover { color: var(--rd-t-chip); }
+
+/* ==========================================================================
+   STAGE 4 — token-system components for the BRIEF / SOURCES / ASK bodies
+   ========================================================================== */
+
+/* ---- button variants over the stage-1 .rd-btn base ---- */
+.rd-btn-sm { padding: 4px 9px; font-size: 9.5px; }
+.rd-btn-ghost { background: transparent; border-color: transparent; color: var(--rd-t-dim); }
+.rd-btn-ghost:hover { color: var(--rd-t-chip); }
+
+/* ---- cards (design card shell: #0b0d10, hairline-07, radius 3px) ---- */
+.rd-card {
+  background: var(--rd-card); border: 1px solid var(--rd-hair-07);
+  border-radius: 3px; padding: 14px 16px; margin-bottom: 12px;
+}
+.rd-card-acc { border-color: var(--rd-acc-soft25); }
+.rd-card-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 0 0 10px;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--rd-t-muted);
+}
+
+/* ---- states / notes / banners ---- */
+.rd-state { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-faint); padding: 12px 0; }
+.rd-state-err { color: var(--rd-bear); }
+.rd-warn { color: var(--rd-val-amber); }
+.rd-note { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-ghost); }
+.rd-banner {
+  margin: 6px 16px; font-family: var(--rd-mono); font-size: 10.5px;
+  letter-spacing: 0.02em; color: var(--rd-t-secondary2);
+}
+
+/* ---- inputs (design input shell: #070809, hairline-10, radius 2px) ---- */
+.rd-input {
+  width: 100%; background: var(--rd-bar3-bg);
+  border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  color: var(--rd-t-body); font-family: var(--rd-mono);
+  font-size: 12px; line-height: 1.5; padding: 8px 10px;
+}
+.rd-input::placeholder { color: var(--rd-t-ghost); }
+.rd-input:focus { outline: none; border-color: var(--rd-acc-soft40); }
+.rd-input:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+textarea.rd-input { resize: vertical; min-height: 110px; }
+.rd-add-ta { min-height: 68px; resize: none; }
+.rd-add-ta-sm { font-size: 10.5px; min-height: 48px; }
+.rd-add-results { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.rd-add-result {
+  font-family: var(--rd-mono); font-size: 10px; padding: 4px 8px;
+  border-radius: 2px; background: var(--rd-inset);
+  border: 1px solid var(--rd-hair-06);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-add-ok { color: var(--rd-bull); }
+.rd-add-exist { color: var(--rd-t-faint); }
+.rd-add-err { color: var(--rd-bear); }
+
+/* ---- mini chips (token mini-chip; dashed inf mirrors the INFERRED chip) ---- */
+.rd-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; padding: 1px 5px;
+  border: 1px solid currentColor; border-radius: 2px;
+  white-space: nowrap; vertical-align: middle;
+}
+.rd-chip-ok { color: var(--rd-bull); }
+.rd-chip-err { color: var(--rd-bear); }
+.rd-chip-warn { color: var(--rd-amber); }
+.rd-chip-info { color: var(--rd-blue); }
+.rd-chip-dim { color: var(--rd-t-faint); }
+.rd-chip-inf { color: var(--rd-inferred); border-style: dashed; }
+.rd-chip-fav { color: var(--rd-val-amber); background: var(--rd-amber-soft08); }
+
+/* ---- source/video rows (design SOURCE MONITOR row treatment §2.6.1) ---- */
+.rd-irow {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px;
+  align-items: center; padding: 8px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-irow-thumb {
+  width: 44px; height: 30px; border-radius: 2px; object-fit: cover;
+  background: var(--rd-thumb-grad);
+  border: 1px solid var(--rd-hair-10); display: block;
+}
+.rd-irow-main { min-width: 0; }
+.rd-irow-title {
+  font-family: var(--rd-sans); font-size: 11.5px; font-weight: 500;
+  color: var(--rd-t-body); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-irow-meta {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint2); margin-top: 4px;
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.rd-irow-actions { display: flex; gap: 6px; }
+.rd-irow.clickable { cursor: pointer; }
+.rd-irow.clickable:hover { background: var(--rd-hover-item); }
+
+/* ---- SOURCES: channel-grouped management (channel card + video fold) ---- */
+.rd-chan-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.rd-chan-head .rd-irow-title { font-size: 12.5px; }
+.rd-chan-toggle { color: var(--rd-t-faint); }
+.rd-chan-toggle.on { color: var(--rd-bull); border-color: var(--rd-bull-soft30); background: var(--rd-bull-soft05); }
+.rd-chan-fold {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  margin-top: 10px; padding: 7px 0 0;
+  background: transparent; border: none; border-top: 1px solid var(--rd-hair-06);
+  cursor: pointer;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--rd-t-faint);
+}
+.rd-chan-fold:hover { color: var(--rd-t-secondary2); }
+.rd-chan-fold:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-chan-more { padding: 6px 0 2px; }
+.rd-chan-none { padding: 8px 0 0; }
+
+/* ---- PUBLISH curation chrome (owner-only; gold identity family) ---- */
+.rd-chip-pub {
+  color: var(--rd-pub-gold);
+  border-color: var(--rd-pub-gold-bd);
+  background: var(--rd-pub-gold-bg);
+}
+.rd-c-src .rd-chip-pub { margin-right: 6px; }
+.rd-btn-pub { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold-bd); background: var(--rd-pub-gold-bg); }
+.rd-btn-pub:hover { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold); }
+.rd-pub-count {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--rd-pub-gold); border: 1px solid var(--rd-pub-gold-bd);
+  background: var(--rd-pub-gold-bg); border-radius: 2px; padding: 1px 7px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.rd-pub-count.zero { opacity: 0.4; } /* zero-count dims, never unmounts (no-CLS) */
+.rd-mpub {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--rd-hair-055);
+}
+.rd-mpub .rd-btn { flex: 1; }
+
+/* 44px touch targets — the SOURCES tab is a durable mobile action path, and
+   the mobile card's publish action sits outside .rd-tabview's blanket rule */
+@media (max-width: 700px) {
+  .rd-chan-fold { min-height: 44px; }
+  .rd-mpub .rd-btn { min-height: 44px; }
+}
+
+/* ---- idea cards (BRIEF/drawer bodies — inset card + token type ramp) ---- */
+.rd-idea {
+  border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 10px 12px; margin-bottom: 8px;
+}
+.rd-idea-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rd-idea-tkr {
+  font-family: var(--rd-mono); font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--rd-t-primary);
+}
+.rd-idea-name { font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim); }
+.rd-idea-thesis {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.5;
+  color: var(--rd-t-body); margin: 8px 0;
+}
+.rd-idea-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 14px; margin-top: 8px;
+}
+.rd-idea-f { font-size: 11.5px; min-width: 0; }
+.rd-idea-f > span:first-child {
+  display: block; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--rd-t-ghost); margin-bottom: 2px;
+}
+.rd-idea-f b { font-family: var(--rd-sans); font-weight: 500; color: var(--rd-t-body); }
+.rd-opt-contract {
+  font-family: var(--rd-mono); font-size: 11px; letter-spacing: 0.02em;
+  color: var(--rd-t-secondary2); margin: 6px 0;
+}
+.rd-cite {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  color: var(--rd-acc); text-decoration: none;
+  display: inline-flex; gap: 5px; align-items: center;
+}
+a.rd-cite:hover { text-decoration: underline; }
+.rd-idea .rd-cite { margin-top: 8px; }
+.rd-body-p {
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.55;
+  color: var(--rd-t-body); margin: 0;
+}
+
+/* ---- brief card internals ---- */
+.rd-read60 {
+  font-family: var(--rd-sans); font-size: 14px; line-height: 1.55;
+  color: var(--rd-t-primary); margin: 0 0 12px;
+}
+.rd-briefrow {
+  display: grid; grid-template-columns: 110px 1fr; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--rd-hair-06);
+}
+.rd-briefrow dt {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--rd-t-ghost); padding-top: 2px;
+}
+.rd-briefrow dd {
+  margin: 0; font-family: var(--rd-sans); font-size: 13px;
+  line-height: 1.5; color: var(--rd-t-body);
+}
+.rd-bullbear { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 640px) { .rd-bullbear { grid-template-columns: 1fr; } }
+
+/* ---- levels / catalysts / consensus rows ---- */
+.rd-lvlrow {
+  display: grid; grid-template-columns: 56px auto 1fr auto; gap: 10px;
+  padding: 6px 0; border-top: 1px solid var(--rd-hair-06);
+  align-items: center; font-size: 12px;
+}
+.rd-lvlrow-tkr { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-tape-sym); }
+.rd-lvlrow-val {
+  font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim);
+  min-width: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.rd-lvlrow-val b { font-family: var(--rd-mono); font-weight: 500; color: var(--rd-t-body); }
+.rd-catrow { padding: 7px 0; border-top: 1px solid var(--rd-hair-06); font-family: var(--rd-sans); font-size: 12px; color: var(--rd-t-dim); }
+.rd-catrow b { color: var(--rd-t-primary); font-weight: 500; }
+.rd-catrow-time { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-ghost); margin-left: 6px; }
+.rd-catrow-tkrs { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-faint); }
+.rd-consrow {
+  display: grid; grid-template-columns: 56px 1fr auto; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--rd-hair-06);
+  align-items: center; font-size: 12px;
+}
+.rd-consrow-tkr { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-tape-sym); }
+.rd-consrow-srcs { font-family: var(--rd-sans); font-size: 11px; color: var(--rd-t-dim); min-width: 0; }
+
+/* ---- brief history bar ---- */
+.rd-hist-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--rd-hair-08);
+}
+.rd-hist-today { flex-shrink: 0; }
+.rd-hist-label {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--rd-t-ghost); flex-shrink: 0;
+}
+.rd-hist-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.rd-datepill {
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  padding: 4px 10px; border-radius: 2px;
+  border: 1px solid var(--rd-hair-10); background: transparent;
+  color: var(--rd-t-dim); cursor: pointer;
+}
+.rd-datepill:hover { color: var(--rd-t-chip); border-color: var(--rd-hair-14); }
+.rd-datepill.on { color: var(--rd-accbtn-text); background: var(--rd-acc-soft12); border-color: var(--rd-acc-soft40); }
+.rd-hist-empty { font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-ghost); }
+
+/* ---- SOURCES workflow hub ---- */
+.rd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.rd-step { display: flex; align-items: center; gap: 10px; font-family: var(--rd-sans); font-size: 12.5px; color: var(--rd-t-body); }
+.rd-step-n {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 700;
+  width: 20px; height: 20px; border-radius: 2px;
+  border: 1px solid var(--rd-acc-soft40); color: var(--rd-acc);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* ---- tab view container ---- */
+.rd-tabview { max-width: 1000px; margin: 0 auto; padding: 20px 16px 80px; width: 100%; }
+
+/* ---- video drawer ---- */
+.rd-drawer-scrim { position: fixed; inset: 0; background: var(--rd-scrim); z-index: 40; }
+.rd-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 96vw);
+  background: var(--rd-frame); border-left: 1px solid var(--rd-hair-10);
+  z-index: 41; overflow-y: auto; padding: 18px 16px;
+  scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent;
+}
+.rd-drawer-x {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; color: var(--rd-t-dim);
+  font-size: 16px; cursor: pointer; padding: 8px;
+}
+.rd-drawer-x:hover { color: var(--rd-t-primary); }
+.rd-drawer-kicker { font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.16em; color: var(--rd-t-ghost); }
+.rd-drawer-title {
+  margin: 4px 0 6px; font-family: var(--rd-sans); font-size: 16px;
+  font-weight: 600; color: var(--rd-t-primary); line-height: 1.3;
+}
+.rd-shim-block { display: block; margin: 10px 0; }
+
+/* transcript capture card (STEP 1 semantics kept, accent treatment) */
+.rd-tx { border-color: var(--rd-acc-soft25); background: var(--rd-acc-soft04); }
+.rd-tx-step {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--rd-acc); margin-bottom: 8px;
+}
+.rd-tx-how {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.03em;
+  color: var(--rd-t-faint); margin-bottom: 10px;
+}
+.rd-tx-ta { min-height: 90px; }
+.rd-tx-btn { font-size: 11px; padding: 8px 18px; }
+
+/* chapters */
+.rd-chap {
+  display: flex; gap: 10px; padding: 6px 4px; align-items: baseline;
+  font-family: var(--rd-sans); font-size: 12px; color: var(--rd-t-secondary);
+  border-top: 1px solid var(--rd-hair-06); cursor: pointer;
+}
+.rd-chap:hover { color: var(--rd-t-primary); }
+.rd-chap:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-chap.active {
+  background: var(--rd-acc-soft06);
+  box-shadow: inset 0 0 0 1px var(--rd-acc-soft25);
+  border-radius: 2px;
+}
+.rd-chap-t { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-acc); min-width: 52px; text-decoration: none; }
+.rd-chap-t:hover { text-decoration: underline; }
+.rd-chap-hi { color: var(--rd-val-amber); }
+.rd-chap-cat {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--rd-t-ghost);
+  margin-left: auto; white-space: nowrap;
+}
+.rd-chap-filter {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim);
+}
+.rd-chap-filter b { color: var(--rd-t-primary); font-weight: 500; }
+
+/* ---- ASK AUGUST band (§2.7 treatments on the pinned bar) ---- */
+.rd-askbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  padding: 10px 16px;
+  background: var(--rd-askbar-bg);
+  border-top: 1px solid var(--rd-hair-08);
+  backdrop-filter: blur(8px);
+  display: flex; gap: 13px; align-items: center;
+}
+.rd-askbar-label {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.16em; color: var(--rd-t-muted); flex-shrink: 0;
+}
+.rd-askbar-shell {
+  flex: 1; display: flex; align-items: center; gap: 9px; min-width: 0;
+  border: 1px solid var(--rd-acc-soft25); border-radius: 2px;
+  background: var(--rd-inset); padding: 0 12px;
+}
+.rd-askbar-shell:focus-within { border-color: var(--rd-acc-soft40); }
+.rd-askbar-prompt { font-family: var(--rd-mono); font-size: 13px; color: var(--rd-acc); flex-shrink: 0; }
+.rd-askbar-input {
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
+  font-family: var(--rd-mono); font-size: 11.5px; color: var(--rd-t-body);
+  padding: 9px 0;
+}
+.rd-askbar-input::placeholder { color: var(--rd-t-ghost); }
+.rd-askbar-input:disabled { color: var(--rd-t-faint); }
+.rd-ask-btn {
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--rd-accbtn-text); background: var(--rd-acc-soft12);
+  border: 1px solid var(--rd-acc-soft40); border-radius: 2px;
+  padding: 8px 17px; cursor: pointer; flex-shrink: 0;
+}
+.rd-ask-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rd-askbar-ans {
+  position: absolute; bottom: calc(100% + 4px); left: 16px; right: 16px;
+  background: var(--rd-frame); border: 1px solid var(--rd-hair-12);
+  border-radius: 2px; padding: 14px 16px;
+  font-family: var(--rd-sans); font-size: 13px; line-height: 1.6;
+  color: var(--rd-t-body); max-height: 280px; overflow-y: auto;
+}
+.rd-askbar-ans .rd-state { padding: 0; }
+
+/* ---- disclaimer (§2.8 treatment; honest copy kept from the old skin) ---- */
+.rd-disc {
+  padding: 8px 16px; border-top: 1px solid var(--rd-hair-06);
+  background: var(--rd-frame);
+  font-family: var(--rd-mono); font-size: 8.5px; line-height: 1.6;
+  letter-spacing: 0.03em; color: var(--rd-t-disabled); text-align: center;
+  margin-top: 24px;
+}
+
+/* quiet owner hint — signed-out visitor desks only ({ authConfigured: true,
+   signedIn: false }); sits above the disclaimer footer. Existing tokens only
+   (--rd-t-faint carries its own DAY DESK re-pin), so both themes resolve. */
+.rd-owner-hint {
+  padding: 10px 16px 0;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint); text-align: center;
+  margin-top: 16px;
+}
+
+/* ==========================================================================
+   STAGE 5 — FOLD-INS (SPEC-wiring §2.5–2.7, SPEC-desktop §2.5)
+   FngChip (bar2 meta) · SentimentGauge · SectorStrip · CatalystLine.
+   Band/heat colors that depend on live VALUES are inline styles computed in
+   the components (design formulas verbatim); only static chrome lives here.
+   Mobile (<700px) hides all of these already: the chip sits in .rd-meta and
+   the other three in .rd-lrail — both display:none in the mobile block.
+   ========================================================================== */
+
+/* F&G band chip — datechip metrics; color/border/bg inline per band.
+   min-width 0 lets it SHRINK inside .rd-meta at narrow desktop widths; the
+   inner .rd-fng-t ellipsizes so the chip truncates cleanly instead of
+   colliding with bar2's count pills (both themes — tokens only). */
+.rd-fng-chip {
+  display: inline-flex; align-items: center;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.08em;
+  padding: 2px 7px; border: 1px solid transparent; border-radius: 2px;
+  white-space: nowrap; min-width: 0; overflow: hidden;
+  /* second in the meta's shrink order (default flex-shrink 1): stays whole
+     until .rd-meta-t has fully ellipsized, then truncates itself */
+}
+.rd-fng-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* sentiment gauge (§2.5a: svg 196px wide, value 32px/600, regime 12px) */
+.rd-gauge-svg { display: block; width: 100%; max-width: 196px; height: auto; margin: 8px auto 0; }
+.rd-gauge-vrow { display: flex; align-items: baseline; justify-content: center; gap: 10px; margin-top: 2px; }
+.rd-gauge-val { font-family: var(--rd-mono); font-size: 32px; font-weight: 600; line-height: 1; }
+.rd-gauge-regime { font-family: var(--rd-mono); font-size: 12px; letter-spacing: 0.12em; }
+.rd-gauge-axis {
+  display: flex; justify-content: space-between; margin-top: 7px;
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost);
+}
+
+/* sector heat map (§2.5b) — 3-col rail adaptation of the 4-col band card;
+   tile bg/border/text are inline (intensity vs the day's max |Δ|) */
+.rd-sec-sort {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg);
+  border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  padding: 2px 7px; cursor: pointer; white-space: nowrap;
+}
+.rd-sec-sort:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+.rd-sec-tiles {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr; gap: 4px; margin-top: 9px;
+}
+.rd-sec-tile {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  min-width: 0; padding: 7px 8px; border: 1px solid transparent; border-radius: 2px;
+}
+.rd-sec-name {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.06em;
+  color: var(--rd-tile-label); /* §1.5 misc literal (sector name · map label) */
+  white-space: nowrap; overflow: hidden;
+}
+/* design pct is 14px in the 1fr band card — 12px fits the 3-col rail tile */
+.rd-sec-pct { font-family: var(--rd-mono); font-size: 12px; white-space: nowrap; }
+.rd-sec-legend {
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  margin-top: 7px; font-family: var(--rd-mono); font-size: 7px; color: var(--rd-t-ghost);
+}
+.rd-sec-swatch {
+  width: 42px; height: 6px; border-radius: 1px;
+  background: var(--rd-sec-swatch-grad);
+}
+
+/* catalysts line (§2.5 slim line, stacked for the rail) */
+.rd-cat-rows { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-cat-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--rd-mono); font-size: 9.5px;
+  padding: 3px 9px; border: 1px solid var(--rd-hair-10); border-radius: 2px;
+  white-space: nowrap;
+}
+.rd-cat-tkr { color: var(--rd-t-chip); font-weight: 600; }
+.rd-cat-date { color: var(--rd-t-dim2); }
+.rd-cat-tag { font-size: 8.5px; letter-spacing: 0.08em; }
+.rd-cat-bmo { color: var(--rd-blue); }
+.rd-cat-amc { color: var(--rd-amber); }
+.rd-cat-dmh { color: var(--rd-t-absent); }
+.rd-cat-note {
+  margin-top: 8px; font-family: var(--rd-mono); font-size: 8px;
+  letter-spacing: 0.05em; color: var(--rd-t-ghost);
+}
+
+/* ==========================================================================
+   STAGE 6 — MAP THE STOCKS (SPEC-desktop §2.5d, SPEC-wiring §2.8): flat SVG
+   over build-time geoAlbersUsa outlines (lib/intel/us-states-paths.json) —
+   zero runtime network. Lives in the rail, so the stage-4 mobile block hides
+   it with the rest of .rd-lrail. Exact design values throughout.
+   ========================================================================== */
+
+.rd-map-body { min-height: 118px; display: flex; align-items: center; margin-top: 5px; }
+.rd-map-svg { width: 100%; height: auto; display: block; }
+.rd-map-state {
+  fill: var(--rd-map-state-fill);
+  stroke: var(--rd-map-state-stroke);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+.rd-map-lbl {
+  font-family: var(--rd-mono); font-size: 8px;
+  fill: var(--rd-tile-label); /* §1.5 misc literal (sector name · map label) */
+}
+/* tracked ticker with no quote yet — minimal ash dot (no ring, no pct claim) */
+.rd-map-dot-ash { fill: var(--rd-t-ghost); }
+/* verbatim design states — pending ls .14em, offline ls .1em */
+.rd-map-pending, .rd-map-offline {
+  width: 100%; text-align: center;
+  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-ghost);
+}
+.rd-map-pending { letter-spacing: 0.14em; }
+.rd-map-offline { letter-spacing: 0.1em; }
+/* footnote: mono 7.5px ls .04em ghost; tickers pop to #8b929a (t-dim) */
+.rd-map-foot {
+  margin-top: 4px; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.04em; color: var(--rd-t-ghost);
+}
+.rd-map-foot b { font-weight: 400; color: var(--rd-t-dim); }
+
+/* ==========================================================================
+   STAGE 4 — MOBILE (<700px): rail hidden (rule of record — mobile paths are
+   header row2 + the SOURCES tab), 44px targets on every reachable control
+   (the .ibtn selector keeps the OPTIONS tab's old-skin buttons covered)
+   ========================================================================== */
+
+@media (max-width: 700px) {
+  .rd-main { grid-template-columns: 1fr; }
+  .rd-lrail { display: none; }
+  .rd-center { border-right: none; }
+
+  .rd-tabview .rd-btn, .rd-tabview .ibtn,
+  .rd-drawer .rd-btn { min-height: 44px; }
+  .rd-hist-pills .rd-datepill, .rd-hist-today { min-height: 44px; }
+  .rd-drawer-x { min-width: 44px; min-height: 44px; }
+
+  .rd-askbar { gap: 8px; }
+  /* keep the accessible name; reclaim the row for the input on phones */
+  .rd-askbar-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+  .rd-askbar-shell { min-height: 44px; }
+  .rd-ask-btn { min-height: 44px; }
+}
+
+/* ==========================================================================
+   STAGE 7 — OPTIONS INTEL panel (SPEC-desktop §2.6.2 item 5) + OPTION TICKET
+   (inspector option mode, §2.6.3). Wiring per SPEC-wiring §2.9: creator plays
+   vs AUGUST candidates (always INFERRED, never sized), quotedPremium never
+   overwritten, Greeks-null honesty. The design's options HEAT MAP (call/put
+   skew tags) is NOT rendered anywhere — no real skew source exists today and
+   fake percentages must never ship; /api/intel/options/skew (SPEC-wiring §4
+   #2) is the wiring path if it's ever wanted.
+   ========================================================================== */
+
+/* ---- collapsible OPTIONS INTEL card below the board ---- */
+.rd-optx {
+  margin: 12px 16px 4px; border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-bar1-bg); overflow: hidden; flex-shrink: 0;
+}
+.rd-optx-toggle {
+  width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 13px;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+}
+.rd-optx-toggle:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-optx-caret { color: var(--rd-t-faint2); font-size: 11px; width: 11px; flex-shrink: 0; }
+.rd-optx-title {
+  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.14em; color: var(--rd-t-dim); white-space: nowrap;
+}
+.rd-optx-toggle:hover .rd-optx-title { color: var(--rd-t-chip); }
+.rd-optx-sub {
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.04em;
+  color: var(--rd-t-ghost); min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-optx-counts { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.rd-optx-cp, .rd-optx-cc {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 2px; white-space: nowrap;
+}
+.rd-optx-cp { color: var(--rd-blue-dim); border: 1px solid var(--rd-blue-soft25); }
+.rd-optx-cc { color: var(--rd-inferred); border: 1px dashed var(--rd-inferred-soft35); }
+
+.rd-optx-body { border-top: 1px solid var(--rd-hair-06); padding: 10px 13px 12px; }
+/* narrow screens: the 6-col grid keeps its design widths and scrolls */
+.rd-optx-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--rd-hair-08) transparent; }
+.rd-optx-min { min-width: 560px; }
+.rd-optx-cols, .rd-optx-row {
+  display: grid; grid-template-columns: 54px 150px 48px 112px minmax(0, 1fr) 100px;
+  gap: 9px; align-items: center;
+}
+.rd-optx-cols { padding: 0 4px 6px; }
+.rd-optx-cols span {
+  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-optx-sect { display: flex; align-items: center; gap: 9px; margin: 2px 0; padding: 0 4px; }
+.rd-optx-sect-aug { margin: 11px 0 2px; }
+.rd-optx-sect-t { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.13em; white-space: nowrap; }
+.rd-optx-sect-cp { color: var(--rd-blue-dim); }
+.rd-optx-sect-cc { color: var(--rd-inferred); }
+.rd-optx-sect-hair { height: 1px; flex: 1; background: var(--rd-hair-06); min-width: 8px; }
+.rd-optx-sect-note {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.05em;
+  color: var(--rd-t-ghost); white-space: nowrap;
+}
+.rd-optx-row {
+  width: 100%; padding: 6px 4px; border: none; border-top: 1px solid var(--rd-hair-05);
+  background: none; cursor: pointer; text-align: left; border-radius: 0;
+}
+.rd-optx-row:hover { background: var(--rd-hover-item); }
+.rd-optx-row:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+.rd-optx-tkr { font-family: var(--rd-mono); font-size: 11px; font-weight: 600; color: var(--rd-t-primary); }
+.rd-optx-struct {
+  font-family: var(--rd-mono); font-size: 9px; color: var(--rd-t-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-optx-dir {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rd-mono); font-size: 9.5px; white-space: nowrap;
+}
+.rd-optx-dirg { font-size: 7px; }
+.rd-optx-cell { min-width: 0; overflow: hidden; }
+/* options-row cell variant (§3.4): 10px value / 8.5px glyph; ev chip ls .06em */
+.rd-optx-cell .rd-cell { font-size: 10px; }
+.rd-optx-cell .rd-cell-g { font-size: 8.5px; }
+.rd-optx-cell .rd-abs { font-size: 10px; }
+.rd-optx-size-t {
+  font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+}
+.rd-optx-row .rd-ev { gap: 4px; letter-spacing: 0.06em; }
+.rd-optx-foot {
+  margin-top: 10px; font-family: var(--rd-mono); font-size: 8.5px;
+  line-height: 1.5; letter-spacing: 0.02em; color: var(--rd-t-ghost);
+}
+.rd-optx-foot-g { color: var(--rd-inferred); }
+.rd-optx-foot-ns { color: var(--rd-t-disabled); }
+
+/* ---- OPTION TICKET (inspector option mode, §2.6.3) ---- */
+.rd-insp-crumb-opt { color: var(--rd-opt-violet); }
+.rd-optk-chip {
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
+  color: var(--rd-opt-violet); padding: 3px 8px; border: 1px solid var(--rd-inferred-soft50);
+  border-radius: 2px; white-space: nowrap;
+}
+.rd-optk-back {
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-dim); background: var(--rd-btn-bg); border: 1px solid var(--rd-hair-10);
+  border-radius: 2px; padding: 4px 9px; cursor: pointer; flex-shrink: 0;
+}
+.rd-optk-back:hover { color: var(--rd-t-chip); }
+.rd-optk-back:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+.rd-pchip-struct { color: var(--rd-t-secondary); border-color: var(--rd-hair-12); letter-spacing: 0.06em; }
+.rd-pchip-g { font-size: 8px; }
+.rd-optk-ref {
+  display: flex; align-items: center; gap: 8px; margin-top: 13px; min-width: 0;
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--rd-t-dim3);
+}
+.rd-optk-refv { color: var(--rd-blue-lt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-optk-refv-inf { color: var(--rd-cell-inferred); }
+.rd-optk-planhead { margin: 15px 0 7px; }
+/* option-variant plan boxes: padding 9px 10px, values mono 12px (§2.6.3) */
+.rd-plan-opt .rd-plan-box { padding: 9px 10px; }
+.rd-plan-opt .rd-plan-val { font-size: 12px; }
+.rd-optk-nc { font-family: var(--rd-sans); font-style: italic; font-size: 10px; color: var(--rd-t-disabled); }
+.rd-optk-liverow { display: flex; align-items: center; gap: 8px; margin-top: 15px; }
+.rd-optk-prov {
+  font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-dim); padding: 1px 6px; border: 1px solid var(--rd-hair-12);
+  border-radius: 2px; white-space: nowrap;
+}
+.rd-optk-prov-warn { color: var(--rd-val-amber); border-color: var(--rd-amber-soft30); }
+.rd-optk-live { margin-top: 8px; }
+.rd-optk-shims { margin-top: 0; }
+.rd-optk-provline {
+  font-family: var(--rd-sans); font-style: italic; font-size: 11px;
+  line-height: 1.5; color: var(--rd-t-disabled);
+}
+.rd-optk-csym {
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.03em;
+  color: var(--rd-t-secondary2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rd-optk-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px;
+  margin-top: 7px; border: 1px solid var(--rd-hair-07); border-radius: 2px;
+  background: var(--rd-inset); padding: 8px 10px;
+}
+.rd-optk-c { min-width: 0; }
+.rd-optk-c-l {
+  font-family: var(--rd-mono); font-size: 7px; letter-spacing: 0.1em;
+  color: var(--rd-t-ghost); margin-bottom: 2px; white-space: nowrap;
+}
+.rd-optk-c-v {
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-brightest);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rd-optk-greeks {
+  margin-top: 8px; font-family: var(--rd-sans); font-style: italic;
+  font-size: 10.5px; color: var(--rd-t-disabled);
+}
+.rd-optk-asof {
+  margin-top: 3px; font-family: var(--rd-mono); font-size: 7.5px;
+  letter-spacing: 0.05em; color: var(--rd-t-ghost);
+}
+.rd-optk-note {
+  margin-top: 14px; font-family: var(--rd-mono); font-size: 8.5px;
+  line-height: 1.55; letter-spacing: 0.02em; color: var(--rd-t-ghost);
+}
+.rd-optk-note-g { color: var(--rd-inferred); }
+.rd-optk-foot { justify-content: flex-end; }
+
+/* mobile touch targets (44px rule; the inspector column is desktop-only but
+   the panel toggle + rows render at every width) */
+@media (max-width: 700px) {
+  .rd-optx-toggle { min-height: 44px; }
+  .rd-optx-row { min-height: 44px; }
+  .rd-optk-back { min-height: 44px; min-width: 44px; }
+}
+
+/* ==========================================================================
+   STAGE 8 — MOBILE (<700px): the SPEC-mobile phone layout for the BOARD tab.
+   Summary carousel (Brief / Alerts / At-the-Open) with scroll-bound dots,
+   sticky segmented horizon control, single-expand accordion idea cards.
+   Exact values from docs/design/SPEC-mobile.md. EVERYTHING here is scoped to
+   the breakpoint (or to .rd-m* classes that are display:none above it) —
+   ≥701px renders exactly as stages 1–7 left it.
+   ========================================================================== */
+
+.rd-mb { display: none; }               /* whole mobile board tree — desktop off */
+.rd-tape-badge-short { display: none; } /* mobile "TAPE" label — desktop off */
+
+@media (max-width: 700px) {
+  /* ---- mobile palette + stage (§2.1/§10): the brighter green/amber set is
+     used throughout the phone design; page bg one step darker; ambient 320px
+     with the mobile gradient. Re-pinning the tokens keeps shared chrome
+     (count pills, tape tails, life chips) on the mobile ramp. ---- */
+  .intel-root {
+    --rd-bull: #6fbf93;
+    --rd-amber: #c79a52;
+    --rd-stage: #040506;
+    --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(95, 176, 173, 0.16), transparent 62%);
+    /* chart area fills follow the brighter mobile line hues (line colors
+       re-pin automatically via --rd-bull/--rd-amber; fills carry their own
+       alpha so they re-pin here) */
+    --rd-chart-fill-bull: rgba(111, 191, 147, 0.1);
+    --rd-chart-fill-amber: rgba(199, 154, 82, 0.1);
+    background: var(--rd-stage);
+  }
+  .cinematic .rd-ambient { height: 320px; }
+  /* all scrollbars hidden on mobile (§1) */
+  .intel-root * { scrollbar-width: none; }
+  .intel-root *::-webkit-scrollbar { display: none; }
+
+  /* ---- sticky app header (§4.1 adapted): bar1 (brand + the fkeys strip —
+     the real tab bar on this app) pins with the design's blur treatment.
+     bar2/status/tape scroll away; the real header height is 77px (33px brand
+     row + 44px fkeys), which is the sticky offset the segmented control uses. ---- */
+  .rd-bar1 {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--rd-mbar1-bg);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--rd-hair-06);
+  }
+  /* LIVE pill mobile form (§10): 8px, radius 20, brighter green, soft bg */
+  .rd-livechip {
+    font-size: 8px; letter-spacing: 0.1em; border-radius: 20px;
+    border-color: var(--rd-mbull-soft32); background: var(--rd-mbull-soft06);
+  }
+  .rd-livechip-dot { width: 4px; height: 4px; }
+
+  /* ---- condensed tape (§4.2): TAPE label, 50s loop, static dot, 10px items
+     without cell borders, no divider labels, 32px right fade ---- */
+  .rd-tape, .rd-tape-badge { background: var(--rd-bar3-bg); }
+  .rd-tape-badge { font-size: 8px; letter-spacing: 0.12em; padding: 0 13px; }
+  .rd-tape-badge-full { display: none; }
+  .rd-tape-badge-short { display: inline; }
+  .rd-tape-badge-dot { background: var(--rd-bull); box-shadow: 0 0 6px -1px var(--rd-bull); animation: none; }
+  .rd-tape-track { animation-duration: 50s; }
+  .rd-tape-q { font-size: 10px; padding: 0 13px; gap: 6px; border-right: none; }
+  .rd-tape-inst { font-size: 9px; }
+  .rd-tape-watchtail { font-size: 9px; }
+  .rd-tape-divider { display: none; }
+  .rd-tape-scroll::after {
+    content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 32px;
+    background: linear-gradient(90deg, transparent, var(--rd-bar3-bg)); pointer-events: none;
+  }
+
+  /* the sticky segmented control needs a visible ancestor chain */
+  .rd-center { overflow: visible; }
+  .rd-mb { display: block; }
+
+  /* ---- summary carousel (§4.3) ---- */
+  .rd-mcar {
+    display: flex; gap: 11px; overflow-x: auto;
+    scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+    padding: 15px 16px 4px;
+  }
+  .rd-mcar:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -2px; }
+  .rd-mcard {
+    flex: 0 0 86%; min-width: 0; scroll-snap-align: center;
+    border-radius: 16px;
+    background: var(--rd-mcard-grad);
+    border: 1px solid var(--rd-hair-07);
+    box-shadow: 0 10px 30px -18px var(--rd-shadow-70), inset 0 1px 0 var(--rd-edge-035);
+    padding: 14px 16px;
+  }
+  .rd-mcard-brief { padding: 15px 16px; }
+  .rd-mcar-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rd-mcar-title {
+    font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
+    letter-spacing: 0.18em; color: var(--rd-t-muted); white-space: nowrap;
+  }
+  .rd-mread {
+    position: relative; font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.08em;
+    color: var(--rd-t-faint3); padding: 3px 8px; border: 1px solid var(--rd-hair-10);
+    border-radius: 20px; background: none; cursor: pointer; white-space: nowrap;
+  }
+  .rd-mread::before { content: ""; position: absolute; inset: -14px -8px; } /* ≥44px hit */
+  .rd-mread.on { color: var(--rd-acc); border-color: var(--rd-acc-soft40); }
+  .rd-mread:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+  .rd-mbrief-p {
+    font-family: var(--rd-sans); font-size: 14px; line-height: 1.5;
+    color: var(--rd-mt-body2); margin: 10px 0 0;
+  }
+  .rd-mabs { font-style: italic; color: var(--rd-t-disabled); }
+  .rd-mtiles { display: flex; gap: 7px; margin-top: 12px; }
+  .rd-mtile { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 12px; border: 1px solid; }
+  .rd-mtile-v {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--rd-mono); font-size: 15px; color: var(--rd-t-primary);
+  }
+  .rd-mtile-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .rd-mtile-l {
+    display: block; font-family: var(--rd-mono); font-size: 8px;
+    letter-spacing: 0.08em; margin-top: 3px; white-space: nowrap;
+  }
+  .rd-mtile-trig { background: var(--rd-mbull-soft05); border-color: var(--rd-mbull-soft20); }
+  .rd-mtile-trig .rd-mtile-dot { background: var(--rd-bull); }
+  .rd-mtile-trig .rd-mtile-l { color: var(--rd-mtile-trig-l); }
+  .rd-mtile-arm { background: var(--rd-mamber-soft05); border-color: var(--rd-mamber-soft20); }
+  .rd-mtile-arm .rd-mtile-dot { background: var(--rd-amber); }
+  .rd-mtile-arm .rd-mtile-l { color: var(--rd-mtile-arm-l); }
+  .rd-mtile-act { background: var(--rd-blue-soft05); border-color: var(--rd-blue-soft20); }
+  .rd-mtile-act .rd-mtile-dot { background: var(--rd-blue); }
+  .rd-mtile-act .rd-mtile-l { color: var(--rd-mtile-act-l); }
+
+  /* alerts card rows (§4.3 card 2 — real tracker transitions + system rows) */
+  .rd-mnew {
+    font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+    color: var(--rd-mnew-text); background: var(--rd-bull); padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+  }
+  .rd-malert { display: flex; gap: 9px; padding: 7px 0; }
+  .rd-malert + .rd-malert { border-top: 1px solid var(--rd-hair-05); }
+  .rd-malert-dot { width: 5px; height: 5px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .rd-malert-dot.up { background: var(--rd-bull); }
+  .rd-malert-dot.dn { background: var(--rd-bear); }
+  .rd-malert-dot.up.glow { box-shadow: 0 0 5px var(--rd-bull); }
+  .rd-malert-dot.dn.glow { box-shadow: 0 0 5px var(--rd-bear); }
+  .rd-malert-main { min-width: 0; }
+  .rd-malert-body {
+    display: block; font-family: var(--rd-sans); font-size: 12.5px;
+    line-height: 1.35; color: var(--rd-t-body);
+  }
+  .rd-malert-tkr { font-family: var(--rd-mono); font-size: 0.92em; color: var(--rd-t-primary); }
+  .rd-malert-meta {
+    display: block; font-family: var(--rd-mono); font-size: 8px;
+    letter-spacing: 0.04em; color: var(--rd-t-ghost); margin-top: 2px;
+  }
+  .rd-malert-sys .rd-malert-dot { background: var(--rd-amber); box-shadow: 0 0 5px var(--rd-amber); }
+  .rd-malert-sys .rd-malert-body { color: var(--rd-t-secondary); }
+  .rd-malert-sys .rd-malert-tkr { font-size: 0.9em; color: var(--rd-amber); }
+  .rd-mabs-line {
+    font-family: var(--rd-sans); font-style: italic; font-size: 12px;
+    color: var(--rd-t-disabled); padding: 10px 0 2px;
+  }
+  .rd-mabs-line .rd-abs-g { font-style: normal; }
+
+  /* at-the-open card rows (§4.3 card 3) */
+  .rd-mgate { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+  .rd-mgate + .rd-mgate { border-top: 1px solid var(--rd-hair-05); }
+  .rd-mgate-tkr { font-family: var(--rd-mono); font-size: 11px; color: var(--rd-tape-sym); width: 42px; flex-shrink: 0; }
+  .rd-mgate-desc { font-family: var(--rd-sans); font-size: 11.5px; color: var(--rd-t-dim4); flex: 1; min-width: 0; }
+  .rd-mgate-px { font-family: var(--rd-mono); color: var(--rd-px-blue); }
+  .rd-mgate-st { font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em; white-space: nowrap; }
+
+  /* carousel dots — 44px buttons around the drawn 4px dots (§4.3 + §7) */
+  .rd-mdots { display: flex; justify-content: center; align-items: center; margin-top: -8px; }
+  .rd-mdot {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; padding: 0; cursor: pointer;
+  }
+  .rd-mdot:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -8px; border-radius: 10px; }
+  .rd-mdot-v {
+    width: 4px; height: 4px; border-radius: 50%; background: var(--rd-mdot-bg);
+    transition: width 0.15s ease, border-radius 0.15s ease, background 0.15s ease;
+  }
+  .rd-mdot-v.on { width: 16px; border-radius: 2px; background: var(--rd-acc); }
+
+  /* ---- sticky segmented horizon control (§4.4; top = real 77px header) ---- */
+  .rd-mseg-wrap {
+    position: sticky; top: 77px; z-index: 9;
+    padding: 14px 16px 11px;
+    background: var(--rd-mseg-wrap-grad);
+  }
+  .rd-mseg {
+    display: flex; gap: 4px; padding: 4px;
+    background: var(--rd-mseg-bg); border: 1px solid var(--rd-hair-07); border-radius: 13px;
+  }
+  .rd-mseg-btn {
+    position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-family: var(--rd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.05em;
+    color: var(--rd-t-faint); background: transparent; border: 1px solid transparent;
+    border-radius: 10px; padding: 8px 4px; cursor: pointer; white-space: nowrap;
+  }
+  .rd-mseg-btn::before { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; } /* ≥44px hit */
+  .rd-mseg-btn.on {
+    color: var(--rd-mt-bright);
+    background: var(--rd-mseg-on-grad);
+    border-color: var(--rd-hair-09);
+    box-shadow: 0 2px 8px -3px var(--rd-shadow-70);
+  }
+  .rd-mseg-btn:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: 1px; }
+  .rd-mseg-n { font-size: 8px; color: var(--rd-t-ghost); }
+  .rd-mseg-btn.on .rd-mseg-n { color: var(--rd-acc); }
+
+  /* status chips stay reachable below the horizon control (SPEC-wiring §5 —
+     the design's mobile filter is by horizon only; the tracker-state axis
+     keeps its own row, soft mobile radius) */
+  .rd-mstatus { display: flex; padding: 2px 16px 6px; overflow-x: auto; }
+  .rd-mstatus .rd-filter-seg { border-radius: 10px; }
+
+  /* ---- idea cards (single-expand accordion, §4.5) ---- */
+  .rd-mlist { padding: 4px 16px 6px; display: flex; flex-direction: column; gap: 11px; }
+  .rd-mrow {
+    position: relative; border: 1px solid var(--rd-hair-08); border-radius: 16px;
+    background: var(--rd-panel-grad); overflow: hidden;
+    box-shadow: 0 8px 22px -16px var(--rd-shadow-70), inset 0 1px 0 var(--rd-edge-03);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+  }
+  .rd-mrow.open {
+    border-color: var(--rd-acc-soft25);
+    box-shadow: 0 14px 36px -16px var(--rd-acc-soft40), inset 0 1px 0 var(--rd-edge-04);
+  }
+  .rd-mrow:active { transform: scale(0.99); }
+  .rd-mrow-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 1; }
+  .rd-mrow.lc-trig .rd-mrow-rail, .rd-mrow.lc-tgt .rd-mrow-rail { background: var(--rd-bull); }
+  .rd-mrow.lc-arm .rd-mrow-rail { background: var(--rd-amber); }
+  .rd-mrow.lc-act .rd-mrow-rail { background: var(--rd-blue); }
+  .rd-mrow.lc-inval .rd-mrow-rail { background: var(--rd-bear); }
+  .rd-mrow.lc-exp .rd-mrow-rail, .rd-mrow.lc-watch .rd-mrow-rail { background: var(--rd-lo); }
+  .rd-mrow-wash {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(120deg, var(--rd-live-soft05), transparent 55%);
+  }
+  .rd-mhead {
+    position: relative; display: block; width: 100%; min-height: 44px;
+    padding: 14px 15px 13px 17px; background: none; border: none;
+    text-align: left; cursor: pointer;
+  }
+  .rd-mhead:focus-visible { outline: 2px solid var(--rd-acc-soft40); outline-offset: -4px; border-radius: 14px; }
+  .rd-mhead-r1 { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .rd-mlife {
+    display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+    font-family: var(--rd-mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em;
+    padding: 3px 8px; border: 1px solid; border-radius: 20px; white-space: nowrap;
+  }
+  .rd-mlife .rd-life-dot { width: 4px; height: 4px; }
+  .rd-mlife.lc-trig, .rd-mlife.lc-tgt { color: var(--rd-bull); border-color: var(--rd-mbull-soft50); background: var(--rd-mbull-soft12); }
+  .cinematic .rd-mlife.lc-trig { box-shadow: 0 0 12px -4px var(--rd-mbull-soft70); }
+  .rd-mlife.lc-arm { color: var(--rd-amber); border-color: var(--rd-mamber-soft50); }
+  .rd-mlife.lc-act { color: var(--rd-blue); border-color: var(--rd-blue-soft50); }
+  .rd-mlife.lc-inval { color: var(--rd-bear); border-color: var(--rd-bear-soft50); }
+  .rd-mlife.lc-exp, .rd-mlife.lc-watch { color: var(--rd-lo); border-color: var(--rd-lo-soft50); }
+  .rd-mtkr {
+    font-family: var(--rd-mono); font-size: 19px; font-weight: 600;
+    letter-spacing: 0.01em; color: var(--rd-mt-bright); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .rd-mdir { display: inline-flex; align-items: center; gap: 3px; font-family: var(--rd-mono); font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+  .rd-mdir-g { font-size: 8px; }
+  .rd-mhead-right { margin-left: auto; text-align: right; flex-shrink: 0; }
+  .rd-mpx { display: block; font-family: var(--rd-mono); font-size: 18px; font-weight: 500; letter-spacing: 0.01em; color: var(--rd-mt-brightest); }
+  .rd-mdelta { display: block; font-family: var(--rd-mono); font-size: 10.5px; margin-top: 2px; }
+  .rd-mdelta-past { color: var(--rd-bull); }
+  .rd-mdelta-to { color: var(--rd-amber); }
+  .rd-mdelta-none { color: var(--rd-mt-faint4); }
+  .rd-mdelta-tag { font-size: 9px; opacity: 0.7; }
+  .rd-mhead-r2 { display: flex; align-items: center; gap: 8px; margin-top: 11px; min-width: 0; }
+  .rd-msetup {
+    font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rd-mtf {
+    font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.04em; color: var(--rd-t-dim4);
+    padding: 2px 7px; border: 1px solid var(--rd-hair-10); border-radius: 20px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .rd-mspark-slot { margin-left: auto; flex-shrink: 0; display: inline-flex; }
+  .rd-mspark { display: block; overflow: visible; }
+  .rd-mcaret { font-family: var(--rd-mono); font-size: 12px; color: var(--rd-t-ghost); flex-shrink: 0; }
+
+  /* ---- expanded body (§4.5 items 1–6) ---- */
+  .rd-mbody { position: relative; padding: 0 17px 16px; border-top: 1px solid var(--rd-hair-055); }
+  .rd-mthesis { font-family: var(--rd-sans); font-size: 13.5px; line-height: 1.52; color: var(--rd-t-body); margin: 13px 0 0; }
+  .rd-mchart-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 14px 0 0; }
+  .rd-mchart-lab { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em; color: var(--rd-t-faint3); white-space: nowrap; }
+  .rd-mchart-delta { font-family: var(--rd-mono); font-size: 9px; white-space: nowrap; }
+  /* the reused InspChart panel takes the mobile card idiom */
+  .rd-mbody .rd-chart { border-radius: 11px; background: var(--rd-legend-bg); border-color: var(--rd-hair-06); }
+  .rd-mlev-h { font-family: var(--rd-mono); font-size: 7.5px; letter-spacing: 0.12em; color: var(--rd-t-faint3); margin: 15px 0 0; }
+  .rd-mlev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+  /* mobile cell scale (§4.5 cell variants): 12.5px values, 12px absent,
+     soft-radius evidence chips */
+  .rd-mlev-grid .rd-cell { font-size: 12.5px; }
+  .rd-mlev-grid .rd-cell-g { font-size: 10px; }
+  .rd-mlev-grid .rd-cell-qv, .rd-mlev-grid .rd-cell-iv, .rd-mlev-grid .rd-cell-nv {
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  .rd-mlev-grid .rd-abs { font-size: 12px; white-space: normal; }
+  .rd-mlev-grid .rd-lev-plain { font-size: 12.5px; }
+  .rd-mbody .rd-ev { border-radius: 20px; letter-spacing: 0.06em; }
+  .rd-mfoot {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding-top: 2px; border-top: 1px solid var(--rd-hair-055);
+  }
+  .rd-mconf-l { font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em; color: var(--rd-mt-faint4); }
+  .rd-mconf-bar { width: 60px; height: 4px; background: var(--rd-hair-08); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .rd-mconf-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--rd-acc-soft40), var(--rd-acc)); }
+  .rd-mconf-pct { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-muted); }
+  .rd-msrc {
+    margin-left: auto; display: inline-flex; align-items: center; min-height: 44px; /* padded hit (§7) */
+    font-family: var(--rd-mono); font-size: 9px; color: var(--rd-acc); text-decoration: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  a.rd-msrc:hover { text-decoration: underline; }
+  .rd-msrc-plain { color: var(--rd-t-faint); }
+
+  /* mobile loading skeleton — the desktop SYNCING strip restyled into the
+     card idiom (no designed mobile treatment; SPEC-mobile §6) */
+  .rd-mskel {
+    height: 88px; border-radius: 16px;
+    background: var(--rd-skel-bg);
+    animation: augShimmer 1.4s ease-in-out infinite;
+  }
+
+  /* ---- OPTIONS INTEL strip takes the §4.6 mobile form (soft radius, inset
+     margins; the real expand/table behavior is kept — the design left the
+     strip inert) ---- */
+  .rd-optx { margin: 5px 16px 0; border-radius: 14px; background: var(--rd-bar1-bg); }
+  .rd-optx-toggle { padding: 12px 15px; }
+  .rd-optx-sub { display: none; }
+  .rd-optx-cp, .rd-optx-cc { border-radius: 20px; padding: 3px 7px; }
+
+  /* ---- disclaimer (§4.8 exact) ---- */
+  .rd-disc {
+    padding: 15px 20px 18px; font-size: 8px;
+    letter-spacing: 0.03em; color: var(--rd-mt-disc);
+  }
+}
+
+/* ==========================================================================
+   EMBEDDED DESK — the home deck's second surface renders this same dashboard
+   inside a panel (components/surfaces/IntelDeckSurface.tsx). Two rules here
+   deliberately sit OUTSIDE the .intel-root scope (the frame + its idle label
+   wrap/precede the root): everything else stays .intel-embedded-scoped so the
+   standalone /intel route is pixel-untouched.
+   ========================================================================== */
+
+/* The frame's transform makes it the CONTAINING BLOCK for every
+   position:fixed layer inside the embed (video drawer + scrim, workspace
+   drawer) — they pin to the panel, never to the viewport, so nothing bleeds
+   over Presence/World/Comms or the home shell's chrome. */
+.intel-embed-frame {
+  position: relative;
+  height: 100%;
+  transform: translateZ(0);
+  /* the frame shares the token scope (see the token block selector), so the
+     stage color flows through the variable here too */
+  background: var(--rd-stage, #050608);
+}
+
+/* the embedded root scrolls internally; the deck page's body stays locked
+   (see the :not(.intel-embedded) guard on the scroll fix in intel.css) */
+.intel-root.intel-embedded {
+  /* the home shell's composer dock no longer renders on the intel panel
+     (one input per screen — the desk's ASK bar is the input here), so the
+     sticky askbar pins to the true bottom edge; no reserved band, no rail
+     content peeking out beneath it */
+  --rd-embed-dock: 0px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
+}
+
+/* pre-visit placeholder: stage color + a mono label — no data, no spinner */
+.intel-embedded .intel-embed-idle {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--rd-mono);
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--rd-t-faint);
+}
+
+/* ASK band: fixed → sticky inside the panel scroller. It stays pinned while
+   the desk scrolls but lifts clear of the home dock; the matching
+   margin-bottom makes its end-of-scroll resting spot coincide with the pin
+   line, so it never covers the disclaimer. left/right offsets are inert on
+   sticky; the flex column stretches it full-width. */
+.intel-embedded .rd-askbar {
+  position: sticky;
+  bottom: var(--rd-embed-dock);
+  margin-bottom: var(--rd-embed-dock);
+}
+
+/* ==========================================================================
+   DAY DESK — light-theme palette (stage B). The desk follows the app theme:
+   under data-theme="light" every color variable above is re-pinned to a
+   paper/ink derivation of the same design; dark and batman keep the default
+   (dark) values untouched — this block is the ONLY light-mode delta.
+
+   Taste contract (from the app's light landing, .home-landing in globals.css):
+   warm paper stage (#F5F4F1 family), ink text ramp, black-alpha hairlines
+   (the dark skin's white-alpha flips direction), and the desk's identity
+   accent stays TEAL — darkened to ink strength (#2e6b68) so 9–10px mono
+   labels pass contrast on paper. Semantic hues are re-derived as deeper,
+   inkier versions of the same colors; soft ramps keep their alphas on the
+   light hues. Additive dark effects (glows, scrims, shimmer) become
+   subtractive ink washes and soft paper shadows. No new visual effects.
+
+   Scope mirrors the token block exactly (.intel-root + .intel-embed-frame);
+   nothing here can leak to .command-surface or any other route. Sits at the
+   end of the file so equal-specificity light rules win by source order.
+   Theme-invariant by design (no light value needed): --rd-mono/--rd-sans
+   (fonts), --rd-chart-line-{bull,amber,bear} (var() references that follow
+   the re-pinned semantic hues), --rd-cols/--rd-embed-dock (layout).
+   ========================================================================== */
+
+:root[data-theme="light"] .intel-root,
+:root[data-theme="light"] .intel-embed-frame {
+  /* ---- P palette (semantic colors — deeper ink derivations) ---- */
+  --rd-bull: #3e7a54;
+  --rd-bear: #b0503e;
+  --rd-amber: #8a6420;
+  --rd-blue: #3a6b8f;
+  --rd-teal: #2e6b68;
+  --rd-inferred: #6b5f85;
+  --rd-lo: #726e64;
+  --rd-live: #2f7a4d;
+  --rd-live-rgb: 47, 122, 77;
+
+  /* ---- accent ramp — teal ink ---- */
+  --rd-acc: #2e6b68;
+  --rd-acc-rgb: 46, 107, 104;
+  --rd-acc-soft06: rgba(46, 107, 104, 0.06);
+  --rd-acc-soft12: rgba(46, 107, 104, 0.12);
+  --rd-acc-soft25: rgba(46, 107, 104, 0.25);
+  --rd-acc-soft40: rgba(46, 107, 104, 0.42);
+
+  /* ---- stage / surface colors — warm paper ramp ---- */
+  --rd-stage: #f2f1ec;
+  --rd-frame: #ecebe5;
+  --rd-bar1-bg: #efeee8;
+  --rd-bar3-bg: #e9e8e2;
+  --rd-tape-label-bg: #e4e3dc;
+  --rd-card: #f7f6f2;
+  --rd-legend-bg: #edece6;
+  --rd-btn-bg: #e9e8e1;
+  --rd-inset: #edece7;
+
+  /* ---- hairlines — ink-alpha (direction flips; slightly stronger alphas
+     keep the same perceived weight on paper) ---- */
+  --rd-hair-045: rgba(30, 28, 22, 0.08);
+  --rd-hair-05: rgba(30, 28, 22, 0.08);
+  --rd-hair-06: rgba(30, 28, 22, 0.09);
+  --rd-hair-07: rgba(30, 28, 22, 0.1);
+  --rd-hair-08: rgba(30, 28, 22, 0.11);
+  --rd-hair-09: rgba(30, 28, 22, 0.12);
+  --rd-hair-10: rgba(30, 28, 22, 0.13);
+  --rd-hair-12: rgba(30, 28, 22, 0.16);
+  --rd-hair-13: rgba(30, 28, 22, 0.17);
+  --rd-hair-14: rgba(30, 28, 22, 0.18);
+
+  /* ---- text ramp — ink, relative hierarchy preserved ---- */
+  --rd-t-brightest: #131310;
+  --rd-t-primary: #1c1b17;
+  --rd-t-chip: #272620;
+  --rd-t-body: #393730;
+  --rd-t-secondary: #46443c;
+  --rd-t-secondary2: #4c4a42;
+  --rd-t-muted: #575349;
+  --rd-t-dim: #615e54;
+  --rd-t-dim2: #66635a;
+  --rd-t-dim3: #6b6860;
+  --rd-t-dim4: #6f6c63;
+  --rd-t-faint: #76736a;
+  --rd-t-faint2: #7b7870;
+  --rd-t-faint3: #807d74;
+  --rd-t-ghost: #868379;
+  --rd-t-disabled: #96938a;
+  --rd-t-absent: #a8a59b;
+  --rd-t-empty: #b4b1a7;
+
+  /* ---- misc literals ---- */
+  --rd-tape-sym: #2b2a24;
+  --rd-tape-div: #adaaa0;
+  --rd-val-amber: #7a5b1e;
+  --rd-val-green: #2e6b45;
+  --rd-accbtn-text: #17403e;
+  --rd-retry-text: #7c3728;
+
+  /* ---- illumination — restrained teal washes, soft ink rings ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(46, 107, 104, 0.07), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(46, 107, 104, 0.4), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(46, 107, 104, 0.5), 0 0 22px -8px rgba(46, 107, 104, 0.3);
+  --rd-live-wash: rgba(47, 122, 77, 0.05);
+  --rd-status-glow: 0 0 16px -3px rgba(47, 122, 77, 0.35);
+
+  /* ---- stage / surfaces / shadows ---- */
+  --rd-panel-grad: linear-gradient(180deg, #f7f6f1, #f0efea);
+  --rd-askbar-bg: rgba(242, 241, 236, 0.92);
+  --rd-thumb-grad: linear-gradient(135deg, #d9dee2, #e8e7e1);
+  --rd-scrim: rgba(32, 30, 26, 0.35);
+  --rd-mbar1-bg: rgba(242, 241, 236, 0.88);
+  --rd-mcard-grad: linear-gradient(180deg, #f8f7f3, #f1f0eb);
+  --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(240, 239, 234, 0.96) 70%, rgba(240, 239, 234, 0));
+  --rd-mseg-bg: #e9e8e2;
+  --rd-mseg-on-grad: linear-gradient(180deg, #fdfcfa, #f3f2ed);
+  --rd-shadow-70: rgba(50, 46, 38, 0.18);
+  --rd-edge-03: rgba(255, 255, 255, 0.5);
+  --rd-edge-035: rgba(255, 255, 255, 0.55);
+  --rd-edge-04: rgba(255, 255, 255, 0.6);
+
+  /* ---- text (value renderers + misc literals) ---- */
+  --rd-cell-quoted: #2e5876;
+  --rd-cell-inferred: #54496e;
+  --rd-cell-narr: #45637c;
+  --rd-blue-lt: #3c638a;
+  --rd-px-blue: #34617f;
+  --rd-tile-label: #33312a;
+  --rd-opt-violet: #7a4e8a;
+  --rd-plan-entry-text: #235b3b;
+  --rd-plan-exit-text: #8a3a2a;
+  --rd-plan-tp-text: #2e5876;
+
+  /* ---- mobile text ramp ---- */
+  --rd-mt-bright: #161510;
+  --rd-mt-brightest: #12110d;
+  --rd-mt-body2: #403e36;
+  --rd-mt-faint4: #8b887e;
+  --rd-mt-disc: #a3a096;
+  --rd-mnew-text: #f2f7f1;
+  --rd-mtile-trig-l: #55705c;
+  --rd-mtile-arm-l: #6e6142;
+  --rd-mtile-act-l: #536674;
+
+  /* ---- hairlines / ink overlays / states ---- */
+  --rd-hair-055: rgba(30, 28, 22, 0.09);
+  --rd-hover-row: rgba(30, 28, 22, 0.03);
+  --rd-hover-item: rgba(30, 28, 22, 0.04);
+  --rd-hover-btn: rgba(30, 28, 22, 0.08);
+  --rd-skel-bg: rgba(30, 28, 22, 0.07);
+  --rd-skel-hi: rgba(30, 28, 22, 0.09);
+  --rd-mdot-bg: rgba(30, 28, 22, 0.22);
+
+  /* ---- accent / selection ---- */
+  --rd-acc-soft04: rgba(46, 107, 104, 0.05);
+  --rd-sel-ring-flat: inset 0 0 0 1px rgba(46, 107, 104, 0.45);
+
+  /* ---- semantic soft ramps (same alphas, light hues) ---- */
+  --rd-bull-soft05: rgba(62, 122, 84, 0.05);
+  --rd-bull-soft08: rgba(62, 122, 84, 0.08);
+  --rd-bull-soft28: rgba(62, 122, 84, 0.28);
+  --rd-bull-soft30: rgba(62, 122, 84, 0.3);
+  --rd-bull-soft32: rgba(62, 122, 84, 0.32);
+  --rd-bull-dim: #5e8a6e;
+  --rd-bear-soft03: rgba(176, 80, 62, 0.03);
+  --rd-bear-soft05: rgba(176, 80, 62, 0.05);
+  --rd-bear-soft10: rgba(176, 80, 62, 0.1);
+  --rd-bear-soft18: rgba(176, 80, 62, 0.18);
+  --rd-bear-soft28: rgba(176, 80, 62, 0.28);
+  --rd-bear-soft40: rgba(176, 80, 62, 0.4);
+  --rd-bear-soft50: rgba(176, 80, 62, 0.5);
+  --rd-bear-dim: #9c6250;
+  --rd-amber-soft08: rgba(138, 100, 32, 0.08);
+  --rd-amber-soft25: rgba(138, 100, 32, 0.25);
+  --rd-amber-soft30: rgba(138, 100, 32, 0.3);
+  --rd-amber-soft35: rgba(138, 100, 32, 0.35);
+  --rd-blue-soft05: rgba(58, 107, 143, 0.05);
+  --rd-blue-soft14: rgba(58, 107, 143, 0.14);
+  --rd-blue-soft20: rgba(58, 107, 143, 0.2);
+  --rd-blue-soft25: rgba(58, 107, 143, 0.25);
+  --rd-blue-soft28: rgba(58, 107, 143, 0.28);
+  --rd-blue-soft30: rgba(58, 107, 143, 0.3);
+  --rd-blue-soft50: rgba(58, 107, 143, 0.5);
+  --rd-blue-dim: #567a94;
+  --rd-inferred-soft35: rgba(107, 95, 133, 0.35);
+  --rd-inferred-soft50: rgba(107, 95, 133, 0.5);
+  --rd-live-soft05: rgba(47, 122, 77, 0.05);
+  --rd-live-soft12: rgba(47, 122, 77, 0.12);
+  --rd-lo-soft50: rgba(114, 110, 100, 0.5);
+
+  /* ---- mobile soft ramps — the OLED-brightened hues are a dark-stage
+     legibility device; on paper the standard light hues carry them ---- */
+  --rd-mbull-soft05: rgba(62, 122, 84, 0.05);
+  --rd-mbull-soft06: rgba(62, 122, 84, 0.06);
+  --rd-mbull-soft12: rgba(62, 122, 84, 0.12);
+  --rd-mbull-soft20: rgba(62, 122, 84, 0.2);
+  --rd-mbull-soft32: rgba(62, 122, 84, 0.32);
+  --rd-mbull-soft50: rgba(62, 122, 84, 0.5);
+  --rd-mbull-soft70: rgba(62, 122, 84, 0.7);
+  --rd-mamber-soft05: rgba(138, 100, 32, 0.05);
+  --rd-mamber-soft20: rgba(138, 100, 32, 0.2);
+  --rd-mamber-soft50: rgba(138, 100, 32, 0.5);
+
+  /* ---- charts / sparks — ink grid, paper label scrims ---- */
+  --rd-chart-grid: rgba(30, 28, 22, 0.06);
+  --rd-chart-trigline: rgba(58, 107, 143, 0.55);
+  --rd-chart-fill-bull: rgba(62, 122, 84, 0.1);
+  --rd-chart-fill-amber: rgba(138, 100, 32, 0.1);
+  --rd-chart-fill-bear: rgba(176, 80, 62, 0.1);
+  --rd-mspark-fill-bull: rgba(62, 122, 84, 0.13);
+  --rd-mspark-fill-amber: rgba(138, 100, 32, 0.13);
+  --rd-mspark-fill-bear: rgba(176, 80, 62, 0.13);
+  --rd-chart-scrim-72: rgba(237, 236, 231, 0.72);
+  --rd-chart-scrim-85: rgba(237, 236, 231, 0.85);
+  --rd-chart-scrim-90: rgba(237, 236, 231, 0.9);
+
+  /* ---- map ---- */
+  --rd-map-state-fill: rgba(58, 107, 143, 0.07);
+  --rd-map-state-stroke: rgba(58, 107, 143, 0.3);
+  --rd-map-dot-up: #3e7a54;
+  --rd-map-dot-dn: #ad5b47;
+
+  /* ---- sentiment gauge + F&G bands (bands stay mutually distinguishable:
+     red-brown → orange-brown → amber → green → deep green) ---- */
+  --rd-gauge-seg-1: #ad5240;
+  --rd-gauge-seg-2: #a5663a;
+  --rd-gauge-seg-3: #8a6e30;
+  --rd-gauge-seg-4: #3e7a54;
+  --rd-gauge-seg-5: #2f7a4d;
+  --rd-gauge-needle: #1c1b17;
+  --rd-fng-xfear: #b0503e;
+  --rd-fng-xfear-bd: rgba(176, 80, 62, 0.42);
+  --rd-fng-xfear-bg: rgba(176, 80, 62, 0.09);
+  --rd-fng-fear: #a5663a;
+  --rd-fng-fear-bd: rgba(165, 102, 58, 0.42);
+  --rd-fng-fear-bg: rgba(165, 102, 58, 0.09);
+  --rd-fng-neutral: #8a6420;
+  --rd-fng-neutral-bd: rgba(138, 100, 32, 0.42);
+  --rd-fng-neutral-bg: rgba(138, 100, 32, 0.09);
+  --rd-fng-greed: #3e7a54;
+  --rd-fng-greed-bd: rgba(62, 122, 84, 0.42);
+  --rd-fng-greed-bg: rgba(62, 122, 84, 0.09);
+  --rd-fng-xgreed: #2f7a4d;
+  --rd-fng-xgreed-bd: rgba(47, 122, 77, 0.42);
+  --rd-fng-xgreed-bg: rgba(47, 122, 77, 0.09);
+
+  /* ---- sector heat map (alpha formula in JSX untouched — hue triplets only;
+     tile text is ink over the data-tinted paper) ---- */
+  --rd-sec-up-rgb: 62, 122, 84;
+  --rd-sec-dn-rgb: 173, 91, 71;
+  --rd-sec-up-text-hi: #1e5233;
+  --rd-sec-up-text: #33684a;
+  --rd-sec-dn-text-hi: #7c3320;
+  --rd-sec-dn-text: #8f4936;
+  --rd-sec-swatch-grad: linear-gradient(90deg, #ad5240, #b3b0a6 50%, #3e7a54);
+
+  /* ---- OPTIONS workspace legacy skin + TradingView shell ---- */
+  --rd-ows-bull: #35754a;
+  --rd-ows-bear: #a84a3e;
+  --rd-ows-watch: #8a6e2c;
+  --rd-ows-pred: #4a6096;
+  --rd-ows-stale: #9a5a32;
+  --rd-ows-gold-bd: rgb(138 108 46 / 0.35);
+  --rd-ows-gold-bg: rgb(138 108 46 / 0.05);
+  --rd-tv-bg: rgb(248 247 243 / 1);
+  --rd-tv-overlay: rgb(248 247 243 / 0.92);
+
+  /* ---- publish curation — gold ink (deep enough for 7.5px mono on paper) ---- */
+  --rd-pub-gold: #7c5f24;
+  --rd-pub-gold-bd: rgb(138 108 46 / 0.45);
+  --rd-pub-gold-bg: rgb(138 108 46 / 0.06);
+}
+
+/* mobile (<700px) light re-pins — the dark mobile block above re-pins
+   --rd-bull/--rd-amber/--rd-chart-fill-* to brighter OLED hues at (0,1,0)
+   specificity; the light block's (0,3,0) already outranks it, so on paper
+   those keep the standard light hues (correct — no brightening needed).
+   Only the two mobile-geometry tokens get light values here: the one-step-
+   deeper stage and the mobile ambient-gradient shape. Placed after the light
+   block so it wins its equal-specificity siblings by source order. */
+@media (max-width: 700px) {
+  :root[data-theme="light"] .intel-root {
+    --rd-stage: #efeee9;
+    --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(46, 107, 104, 0.07), transparent 62%);
+  }
+}

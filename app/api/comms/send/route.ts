@@ -10,6 +10,7 @@
 //     thread's sender — the client cannot redirect it elsewhere.
 import { sendReply } from "@/lib/gmail";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ const MAX_BODY = 25_000; // a sane ceiling for a reply body
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("commsSend", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+
+  // Session → namespace (stage 2): the send uses THIS user's Gmail tokens.
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
 
   let messageId = "";
   let body = "";
@@ -46,7 +51,7 @@ export async function POST(req: Request): Promise<Response> {
 
   // sendReply re-derives to/subject/threading from the original and dispatches the
   // body verbatim. It returns a structured result — surface failures, never retry.
-  const result = await sendReply(messageId, trimmed);
+  const result = await sendReply(user.email, messageId, trimmed);
 
   if (!result.ok) {
     // Map the few states that need a distinct client message; 502 for the rest.

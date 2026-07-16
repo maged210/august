@@ -7,14 +7,17 @@
 //     receives (via /api/inbox) is normalized { ts, sender, subject, category }
 //     metadata — never tokens, never message bodies.
 //   - The code→token exchange happens server-side in the callback route.
-//   - Tokens are stored in Upstash under a single key (this is a single-user
-//     app: USER_NAME). Refresh tokens persist; access tokens are refreshed
-//     automatically when they near expiry.
+//   - Tokens are stored in Upstash PER USER (stage 2): every function takes the
+//     session email (resolved once by the route) and scopes its key through
+//     scopeKey — null email = single-user fallback = the legacy key, unchanged.
+//     Refresh tokens persist; access tokens are refreshed automatically when
+//     they near expiry.
 //
 // We use raw fetch against Google's REST endpoints (no googleapis SDK) to match
 // the rest of the codebase and keep the bundle light.
 
 import { Redis } from "@upstash/redis";
+import { scopeKey } from "./user-scope";
 
 // ---- endpoints -----------------------------------------------------------
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -41,6 +44,7 @@ export function scopeGranted(scopes: string | undefined, scope: string): boolean
 }
 
 const TOKENS_KEY = "august:gmail:tokens";
+const tokensKey = (email: string | null) => scopeKey(email, TOKENS_KEY);
 const EXPIRY_SKEW_MS = 60_000; // refresh a minute before actual expiry
 const INBOX_COUNT = 15;
 const INBOX_TTL_MS = 3 * 60_000;
@@ -71,35 +75,41 @@ export function storageConfigured(): boolean {
   return getRedis() !== null;
 }
 
-async function loadTokens(): Promise<Tokens | null> {
+async function loadTokens(email: string | null): Promise<Tokens | null> {
   const redis = getRedis();
   if (!redis) return null;
   try {
-    return (await redis.get<Tokens>(TOKENS_KEY)) ?? null;
+    return (await redis.get<Tokens>(tokensKey(email))) ?? null;
   } catch {
     return null;
   }
 }
 
-async function saveTokens(t: Tokens): Promise<void> {
+async function saveTokens(email: string | null, t: Tokens): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(TOKENS_KEY, t);
+    await redis.set(tokensKey(email), t);
   } catch {
     /* best-effort; a failed write just means the next call re-refreshes */
   }
 }
 
-async function clearTokens(): Promise<void> {
+async function clearTokens(email: string | null): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.del(TOKENS_KEY);
+    await redis.del(tokensKey(email));
   } catch {
     /* ignore */
   }
-  _inboxCache = null;
+  _inboxCache.delete(cacheId(email));
+}
+
+/** Whether a Google connection is stored for this user's namespace — the brief
+ *  cron's cheap eligibility check (one GET, no refresh, no Google call). */
+export async function hasStoredGoogleTokens(email: string | null): Promise<boolean> {
+  return (await loadTokens(email)) !== null;
 }
 
 // ---- origin / redirect URI -----------------------------------------------
@@ -182,6 +192,7 @@ export function buildConsentUrl(origin: string, state: string): string {
 
 // ---- OAuth: exchange authorization code for tokens -----------------------
 export async function exchangeCode(
+  email: string | null,
   origin: string,
   code: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -238,13 +249,16 @@ export async function exchangeCode(
   // Fetch the connected address (covered by gmail.readonly) for display.
   tokens.email = await fetchEmail(tokens.access_token);
 
-  await saveTokens(tokens);
-  _inboxCache = null;
+  await saveTokens(email, tokens);
+  _inboxCache.delete(cacheId(email));
   return { ok: true };
 }
 
 // ---- OAuth: refresh an expired access token ------------------------------
-async function refreshAccessToken(refreshToken: string): Promise<Tokens | null> {
+async function refreshAccessToken(
+  email: string | null,
+  refreshToken: string,
+): Promise<Tokens | null> {
   let res: Response;
   try {
     res = await fetch(TOKEN_ENDPOINT, {
@@ -265,7 +279,7 @@ async function refreshAccessToken(refreshToken: string): Promise<Tokens | null> 
   if (!res.ok) {
     // invalid_grant => the refresh token was revoked (user disconnected the app
     // from their Google account). Clear our copy so the UI shows "disconnected".
-    if (res.status === 400 || res.status === 401) await clearTokens();
+    if (res.status === 400 || res.status === 401) await clearTokens(email);
     return null;
   }
 
@@ -288,21 +302,21 @@ async function refreshAccessToken(refreshToken: string): Promise<Tokens | null> 
 // null if not connected / refresh failed. Exported so the calendar layer reuses the
 // SAME single token store + refresh path (the token covers both scopes after
 // re-consent). The refresh response omits `scope`, so we carry it from storage.
-export async function getGoogleAccessToken(): Promise<
-  { token: string; email?: string; scopes?: string } | null
-> {
-  const stored = await loadTokens();
+export async function getGoogleAccessToken(
+  userEmail: string | null,
+): Promise<{ token: string; email?: string; scopes?: string } | null> {
+  const stored = await loadTokens(userEmail);
   if (!stored) return null;
 
   if (stored.expiry - Date.now() > EXPIRY_SKEW_MS) {
     return { token: stored.access_token, email: stored.email, scopes: stored.scopes };
   }
 
-  const refreshed = await refreshAccessToken(stored.refresh_token);
+  const refreshed = await refreshAccessToken(userEmail, stored.refresh_token);
   if (!refreshed) return null;
 
   const updated: Tokens = { ...refreshed, email: stored.email, scopes: stored.scopes };
-  await saveTokens(updated);
+  await saveTokens(userEmail, updated);
   return { token: updated.access_token, email: updated.email, scopes: updated.scopes };
 }
 
@@ -379,7 +393,11 @@ type CacheEntry = {
   unread: number;
   email?: string;
 };
-let _inboxCache: CacheEntry | null = null;
+// Per-user in-process cache — keyed by the session email so one user's inbox
+// can NEVER be served to another from a warm instance. Null email (single-user
+// fallback) gets its own slot.
+const cacheId = (email: string | null) => email ?? "__single_user__";
+const _inboxCache = new Map<string, CacheEntry>();
 // On a failed refresh we keep serving the last good inbox, but only within this
 // bounded window — never indefinitely — and flagged stale so the UI can show it.
 const MAX_STALE_SERVE_MS = 15 * 60_000;
@@ -458,14 +476,14 @@ function buildBriefLine(connected: boolean, messages: InboxItem[], unread: numbe
   return `${n} — latest worth seeing is from ${lead.sender}.`;
 }
 
-export async function getInboxState(): Promise<InboxState> {
+export async function getInboxState(userEmail: string | null): Promise<InboxState> {
   const base: Omit<InboxState, "messages" | "unread" | "briefLine"> = {
     connected: false,
     oauthConfigured: oauthConfigured(),
     storageConfigured: storageConfigured(),
   };
 
-  const auth = await getGoogleAccessToken();
+  const auth = await getGoogleAccessToken(userEmail);
   if (!auth) {
     return {
       ...base,
@@ -479,23 +497,30 @@ export async function getInboxState(): Promise<InboxState> {
   // to let me draft replies". Derived from the live granted-scope set, every call.
   const canSend = scopeGranted(auth.scopes, GMAIL_SEND_SCOPE);
 
-  // serve cache if warm
+  // serve this user's cache if warm
   const now = Date.now();
-  if (_inboxCache && _inboxCache.exp > now) {
+  const cached = _inboxCache.get(cacheId(userEmail));
+  if (cached && cached.exp > now) {
     return {
       ...base,
       connected: true,
       canSend,
-      email: _inboxCache.email,
-      messages: _inboxCache.messages,
-      unread: _inboxCache.unread,
-      briefLine: buildBriefLine(true, _inboxCache.messages, _inboxCache.unread),
+      email: cached.email,
+      messages: cached.messages,
+      unread: cached.unread,
+      briefLine: buildBriefLine(true, cached.messages, cached.unread),
     };
   }
 
   try {
     const { messages, unread } = await fetchInboxMessages(auth.token);
-    _inboxCache = { exp: now + INBOX_TTL_MS, fetchedAt: now, messages, unread, email: auth.email };
+    _inboxCache.set(cacheId(userEmail), {
+      exp: now + INBOX_TTL_MS,
+      fetchedAt: now,
+      messages,
+      unread,
+      email: auth.email,
+    });
     return {
       ...base,
       connected: true,
@@ -510,16 +535,16 @@ export async function getInboxState(): Promise<InboxState> {
     // Connected but the fetch failed. Serve the last good inbox ONLY within a
     // bounded staleness window, flagged stale — never expired data indefinitely.
     // Past the window, surface the error so the UI shows FEED OFFLINE · RETRY.
-    if (_inboxCache && Date.now() - _inboxCache.fetchedAt < MAX_STALE_SERVE_MS) {
+    if (cached && Date.now() - cached.fetchedAt < MAX_STALE_SERVE_MS) {
       return {
         ...base,
         connected: true,
         canSend,
         stale: true,
-        email: _inboxCache.email,
-        messages: _inboxCache.messages,
-        unread: _inboxCache.unread,
-        briefLine: buildBriefLine(true, _inboxCache.messages, _inboxCache.unread),
+        email: cached.email,
+        messages: cached.messages,
+        unread: cached.unread,
+        briefLine: buildBriefLine(true, cached.messages, cached.unread),
       };
     }
     throw new Error("inbox_fetch_failed");
@@ -579,8 +604,11 @@ function extractPlainText(payload: unknown): string {
 
 // Read a single message in full and pull out everything needed to draft + send a
 // threaded reply. Read-only (gmail.readonly); NEVER sends.
-export async function getMessageForReply(messageId: string): Promise<ReplyContext | null> {
-  const auth = await getGoogleAccessToken();
+export async function getMessageForReply(
+  userEmail: string | null,
+  messageId: string,
+): Promise<ReplyContext | null> {
+  const auth = await getGoogleAccessToken(userEmail);
   if (!auth) return null;
 
   let res: Response;
@@ -686,8 +714,12 @@ export type SendResult =
 
 /** Send a plain-text reply in-thread. The ONLY function that sends mail. Recipient +
  *  threading are re-derived server-side from `messageId`; `body` is sent verbatim. */
-export async function sendReply(messageId: string, body: string): Promise<SendResult> {
-  const auth = await getGoogleAccessToken();
+export async function sendReply(
+  userEmail: string | null,
+  messageId: string,
+  body: string,
+): Promise<SendResult> {
+  const auth = await getGoogleAccessToken(userEmail);
   if (!auth) return { ok: false, error: "not_connected" };
   // Hard gate: without the send scope we never even build a message.
   if (!scopeGranted(auth.scopes, GMAIL_SEND_SCOPE)) return { ok: false, error: "needs_send_consent" };
@@ -725,13 +757,13 @@ export async function sendReply(messageId: string, body: string): Promise<SendRe
     return { ok: false, error: `send_failed_${res.status}` };
   }
 
-  _inboxCache = null; // the thread just changed — let the next inbox read refresh
+  _inboxCache.delete(cacheId(userEmail)); // the thread just changed — refresh next read
   return { ok: true, to: ctx.to, subject };
 }
 
 /** Whether the stored Google connection has the send scope (drives the re-consent
  *  prompt in the Comms UI). */
-export async function hasSendScope(): Promise<boolean> {
-  const auth = await getGoogleAccessToken();
+export async function hasSendScope(userEmail: string | null): Promise<boolean> {
+  const auth = await getGoogleAccessToken(userEmail);
   return !!auth && scopeGranted(auth.scopes, GMAIL_SEND_SCOPE);
 }

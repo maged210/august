@@ -1,14 +1,17 @@
-// Videos — list all discovered/processed videos.
-// Source privacy: every row carries channel/title attribution, so GET returns
-// the list only when the server-side INTEL_OWNER_VIEW flag is set — same
-// contract as overview.
+// Videos — list all discovered/processed videos. OWNER-ONLY: video rows carry
+// full channel/title attribution (source privacy — non-owners get the redacted
+// brief + public feed surfaces instead). Attribution READ boundary, so it rides
+// the attribution gate: open when auth is unconfigured OUTSIDE production
+// (single-user fallback), refused inside it — a missing env var on a deploy
+// must never publish the video library.
 import { listVideos } from "@/lib/intel/store";
-import { intelOwnerView } from "@/lib/intel/redact";
+import { gateIntelAttributionOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
-  if (!intelOwnerView()) return Response.json({ videos: [] });
+  const denied = await gateIntelAttributionOrRespond();
+  if (denied) return denied;
   return Response.json({ videos: await listVideos() });
 }

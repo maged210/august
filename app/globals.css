@@ -138,6 +138,36 @@
 }
 
 /* ----------------------------------------------------------------------------
+   BATMAN THEME — Gotham grade, same restraint. A token swap, not a skin:
+   blacker stage, warm searchlight text, and THE accent flips from steel-blue
+   to muted signal gold. Bull/bear semantics (pos/neg) inherit the dark values
+   untouched — data colors never cosplay. No logos, no new effects.
+   ---------------------------------------------------------------------------- */
+:root[data-theme="batman"] {
+  --charcoal: #050505; /* Gotham black stage */
+  --charcoal-2: #0a0a0c;
+  --bone: #e9e4d6; /* warm searchlight white */
+  --ash: #99938a;
+  --ink-mute: #6b675f;
+  --graphite: #38352e;
+  --steel: #d6b25a; /* THE accent — signal gold */
+  --steel-rgb: 214 178 90;
+
+  --wash-rgb: 255 244 220; /* warm wash for hairlines/fills */
+  --glass: rgba(7, 7, 8, 0.78);
+  --glass-strong: rgba(5, 5, 6, 0.88);
+  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.2);
+
+  --vignette: radial-gradient(
+    125% 125% at 50% 44%,
+    transparent 36%,
+    rgba(0, 0, 0, 0.42) 74%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+  --grain-opacity: 0.05;
+}
+
+/* ----------------------------------------------------------------------------
    MOOD — a second axis, orthogonal to the light/dark theme above. <html> carries
    data-mood (steel | ember | phosphor | graphite); each mood re-tints ONLY the
    accent family — --steel / --steel-rgb — and everything accent-derived
@@ -146,6 +176,11 @@
    semantics never move, in any mood. STEEL is the default and has no block: the
    :root values above ARE steel. Each mood keeps the reference relationship — a
    fuller accent on the dark stage, a calmer ink variant on the light one.
+
+   The mood axis stays orthogonal to BATMAN too: these blocks sit AFTER the
+   batman block at equal specificity, so a chosen mood re-tints Gotham's accent
+   as well. Batman on the default (steel) mood has no block to override it and
+   keeps its signal gold — exactly as designed.
    ---------------------------------------------------------------------------- */
 /* EMBER — warm workshop gold. Copper-leaning, so it never reads as the semantic
    catalyst amber (#c9a24a), which keeps its meaning in every mood. */
@@ -286,6 +321,15 @@ body::after {
 .boot-lines-out {
   max-height: 0;
   opacity: 0;
+}
+/* The earlier, gentler settle: once the boot typewriter finishes the flavor
+   lines merely recede (the brand line + clock stay). The fold above supersedes
+   this whenever BootHud wraps the lines in .boot-lines — these rules then only
+   apply where .opacity-70 is still a DIRECT child of a .settled .boot-hud, so
+   the two compose rather than fight. */
+.boot-hud.settled > .opacity-70 {
+  opacity: 0.38;
+  transition: opacity 600ms var(--ease);
 }
 
 /* Corner frame ticks — thin L-marks framing the stage. Precise periphery, calm
@@ -539,6 +583,13 @@ body::after {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   overflow: hidden;
+}
+/* the depth layer takes the swipe transform so the section's snap geometry
+   never moves (transformed boxes shift their own snap areas) */
+.deck-depth {
+  width: 100%;
+  height: 100%;
+  position: relative;
   /* JS (Deck) drives scale+opacity depth during the swipe; scale from the centre */
   transform-origin: center center;
 }
@@ -1058,6 +1109,9 @@ body::after {
 }
 .mk-gauges {
   grid-area: gauges;
+  /* same safety valve as the sibling panels — .panel{overflow:hidden} was
+     amputating the bottom gauge arcs when the 2x2 grid outgrew the 1fr row */
+  overflow-y: auto;
 }
 .mk-econ {
   grid-area: econ;
@@ -1144,6 +1198,11 @@ body::after {
   font-size: 11.5px;
   padding: 7px 0;
   border-bottom: 1px solid rgb(var(--wash-rgb) / 0.04);
+}
+/* empty-state li carries a bare text node — the 48px first track truncated it
+   to "No US"; block display lets the sentence breathe */
+.econ-list li.muted {
+  display: block;
 }
 .econ-t {
   color: var(--steel);
@@ -1601,6 +1660,28 @@ body::after {
   color: var(--charcoal, #13151a);
 }
 
+/* Signed-out (auth configured, no session): the personal inbox invites a
+   sign-in — centered and quiet, same voice as the connect card. */
+.comms-signedout {
+  align-items: center;
+  text-align: center;
+  margin: 0 auto;
+  padding: 56px 4px;
+  gap: 6px;
+}
+.comms-signedout .comms-connect-btn {
+  margin-top: 14px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The morning-brief pill's sign-in control is an anchor — strip the UA link
+   styling so it reads as its sibling buttons do. */
+a.mb-btn {
+  text-decoration: none;
+}
+
 @media (max-width: 720px) {
   .surface {
     padding: 84px 22px clamp(170px, 24vh, 260px);
@@ -1817,7 +1898,10 @@ body::after {
 
 .movers-cols {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* auto-flow: empty screener columns are no longer rendered, so survivors
+     share the width instead of leaving bare headers over blank tracks */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 14px;
 }
 .movers-h {
@@ -2170,9 +2254,15 @@ body::after {
 /* gauge cluster */
 .gauge-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 8px;
+  /* one row of four: the desktop panel row is ~113px tall — a 2x2 stack needs
+     ~170px+ even with tiny arcs, so it always clipped. Four across fits. */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 6px;
   align-content: start;
+}
+@media (max-width: 1100px) {
+  /* narrow layouts stack panels and size them to content — 2x2 breathes there */
+  .gauge-grid { grid-template-columns: 1fr 1fr; }
 }
 .gauge {
   display: flex;
@@ -2181,7 +2271,7 @@ body::after {
 }
 .gauge-svg {
   width: 100%;
-  max-width: 132px;
+  max-width: 104px; /* 132px pushed the 2x2 grid past its fixed 1fr row → clipped arcs */
   height: auto;
 }
 .gauge-val {
@@ -2490,13 +2580,15 @@ body::after {
 .command-surface {
   position: absolute;
   inset: 0;
-  background: #05060a;
+  background: var(--cmd-stage);
   overflow: hidden;
-  /* The globe stage is a dark space backdrop in BOTH themes, so its glass chrome
-     (HUD, layers rail, reset, intel panel) must stay light-on-dark even when the
-     app goes light. Re-pin the text/accent/hairline tokens to their dark values
-     for everything inside the surface — otherwise light theme flips them dark and
-     they vanish against the dark glass. */
+  /* The World follows the app theme. These defaults are the DARK skin and they
+     serve data-theme dark AND batman unchanged (batman's gold accent never
+     reaches the globe — the chrome stays steel, exactly as before). Re-pinning
+     the text/accent/hairline tokens here keeps the glass chrome light-on-dark
+     regardless of what the outer app tokens say; the DAY WORLD block further
+     down re-pins the same set to a warm-paper derivation under
+     [data-theme="light"]. The basemap swap lives in CommandGlobe.tsx. */
   --bone: #e8e6e1;
   --ash: #9a9a9f;
   --ink-mute: #6b6b72;
@@ -2506,6 +2598,17 @@ body::after {
   --steel-rgb: 110 140 168;
   --wash-rgb: 255 255 255;
   --line: rgb(var(--wash-rgb) / 0.08);
+  /* Surface-scoped chrome tokens — the former hard-coded dark-glass literals,
+     lifted so the DAY WORLD block can re-pin them. The hud/panel glass tracks
+     the lifted dark stage (#13151a = rgb(19 21 26), see --charcoal above): the
+     comfort pass raised the stage and every dark-glass literal with it, so these
+     tokens carry that value rather than the pre-lift #08080b they were first
+     extracted from. */
+  --cmd-stage: #05060a;
+  --cmd-vignette: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
+  --cmd-chip-bg: rgba(10, 11, 14, 0.55);
+  --cmd-hud-bg: rgba(19, 21, 26, 0.55);
+  --cmd-panel-bg: rgba(19, 21, 26, 0.5);
 }
 .command-map {
   position: absolute;
@@ -2524,7 +2627,7 @@ body::after {
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 46%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
+  background: var(--cmd-vignette);
 }
 .command-reset {
   position: absolute;
@@ -2539,7 +2642,7 @@ body::after {
   letter-spacing: 0.2em;
   color: var(--ash);
   border: 1px solid var(--line);
-  background: rgba(10, 11, 14, 0.55);
+  background: var(--cmd-chip-bg);
   padding: 7px 12px;
   border-radius: 6px;
   backdrop-filter: blur(6px);
@@ -2562,7 +2665,7 @@ body::after {
   align-items: center;
   gap: 10px;
   padding: 7px 16px;
-  background: rgba(19, 21, 26, 0.55);
+  background: var(--cmd-hud-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   backdrop-filter: blur(6px);
@@ -2585,7 +2688,7 @@ body::after {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  background: rgba(19, 21, 26, 0.5);
+  background: var(--cmd-panel-bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   backdrop-filter: blur(6px);
@@ -2663,6 +2766,230 @@ body::after {
   white-space: nowrap;
 }
 
+/* LIVE rail — curated 24/7 broadcaster streams, clustered with the LAYERS
+   control on the left. Geometry: LAYERS is centered at top:50% and its
+   fully-EXPANDED list tops out around 50% − 65px, so this cluster is
+   BOTTOM-anchored at calc(50% + 78px) — its bottom edge sits at 50% − 78px,
+   always ≥ 13px clear of LAYERS in any state. The collapsed tab is therefore
+   pinned in place and the panel flies UPWARD into the upper-left band, which
+   carries no chrome in this x-range (HUD + deck dots are center-x, RESET is
+   right-x) — so the expanded rail can never cover LAYERS or the HUD. The
+   player is a NON-scrolling block (only the poster list scrolls), so a
+   playing video is never clipped; max-height on the cluster keeps its top
+   ≥ 16px from the surface top. Collapsed it is ONE small tab: no panel in
+   the DOM, zero network, zero layout beyond the chip itself. Every color
+   rides the .command-surface tokens (re-pinned above / in DAY WORLD), so
+   dark + batman keep the dark glass and light gets paper for free — no new
+   literals. Interactive targets are 44px (touch-sized). */
+.command-live {
+  position: absolute;
+  bottom: calc(50% + 78px);
+  left: calc(env(safe-area-inset-left, 0px) + 28px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: max(200px, calc(50% - 94px));
+}
+.command-live.open {
+  width: 240px;
+}
+.command-live-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px; /* thumb-sized */
+  background: var(--cmd-panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  padding: 0 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ash);
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease);
+}
+.command-live-head:hover {
+  color: var(--bone);
+}
+.command-live.open .command-live-head {
+  color: var(--bone);
+}
+.command-live-glyph {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--steel);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.8);
+}
+.command-live-chev {
+  margin-left: auto;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ash);
+}
+.command-live-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--cmd-panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+.command-live-list {
+  /* shrink weight 1000: the SCROLLABLE list gives up its height long before
+     the player frame does — flex shrinks proportionally, and the video should
+     only letterbox once the list is already down to scrolling */
+  flex: 0 1000 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+/* poster (rest state) — a styled row, deliberately NOT a YouTube thumbnail:
+   the rail makes no network request until a tile is clicked */
+.live-tile {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px; /* thumb-sized */
+  padding: 0 14px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  text-align: left;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.live-tile + .live-tile {
+  border-top: 1px solid var(--line);
+}
+.live-tile:hover,
+.live-tile.on {
+  color: var(--bone);
+}
+.live-tile:hover {
+  background: rgb(var(--wash-rgb) / 0.04);
+}
+.live-tile-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--ash);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.live-tile:hover .live-tile-dot,
+.live-tile.on .live-tile-dot {
+  background: var(--steel);
+  border-color: var(--steel);
+  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.8);
+}
+.live-tile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-tile-play {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--ash);
+}
+/* player — name bar + the muted stream; one at most, never scroll-clipped */
+.live-player {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.live-player-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+.live-player-x {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 44px;
+  min-height: 44px; /* thumb-sized */
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ash);
+  transition: color var(--dur-fast) var(--ease);
+}
+.live-player-x:hover {
+  color: var(--bone);
+}
+.live-player-frame {
+  position: relative;
+  width: 100%;
+  /* natural size is 16:9, but on short viewports the frame SHRINKS (YouTube
+     letterboxes inside) rather than getting clipped by the panel edge */
+  aspect-ratio: 16 / 9;
+  flex: 0 1 auto;
+  min-height: 96px;
+  background: var(--cmd-stage);
+}
+.live-player-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.command-live-note {
+  flex: 0 0 auto;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ash);
+  opacity: 0.8;
+}
+/* Phones: the LIVE rail is desktop-only for now — a DELIBERATE scope cut, not
+   an oversight: live video is a perf tax on phones and the phone deck chrome
+   (HUD + LAYERS + intel panel + composer) is already crowded. A mobile entry
+   point can come later. */
+@media (max-width: 700px) {
+  .command-live {
+    display: none;
+  }
+}
+
 /* INTEL panel — world news wires + AUGUST's synthesis, folded onto the globe as
    a collapsible glass panel docked right (a sibling to the left LAYERS rail).
    pointer-events live on the box only, so the globe keeps drag/zoom elsewhere. */
@@ -2677,7 +3004,7 @@ body::after {
   display: flex;
   flex-direction: column;
   max-height: min(72vh, 560px);
-  background: rgba(19, 21, 26, 0.5);
+  background: var(--cmd-panel-bg);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   backdrop-filter: blur(8px);
@@ -2759,10 +3086,68 @@ body::after {
 }
 
 .command-surface .maplibregl-ctrl-attrib {
-  background: rgba(19, 21, 26, 0.5);
+  background: var(--cmd-panel-bg);
 }
 .command-surface .maplibregl-ctrl-attrib a {
   color: var(--ash);
+}
+
+/* ==========================================================================
+   DAY WORLD — light-theme palette for the World surface. The globe follows
+   the app theme (user decision — supersedes the old "dark in both themes"
+   behavior): under data-theme="light" the .command-surface re-pins above
+   yield to a warm-paper derivation of the same chrome, in the landing's
+   family (paper #f5f4f1 / ink #16150f — .home-landing) with the ramp
+   discipline of the intel desk's DAY DESK block (app/intel/tokens.css):
+   ink text ramp, ink-alpha hairlines, the steel accent deepened to ink
+   strength, additive glows becoming soft ink washes. Dark and batman keep
+   the defaults above untouched — this block is the ONLY light-mode delta.
+   The basemap swap (dark-matter ↔ positron) lives in CommandGlobe.tsx.
+   ========================================================================== */
+:root[data-theme="light"] .command-surface {
+  /* text ramp — ink on paper (micro-mono ≥3:1, body ≥4.5:1 on paper glass) */
+  --bone: #1c1b17;
+  --ash: #57534a;
+  --ink-mute: #7b7870;
+  --graphite: #cfcec7;
+  --charcoal: #f2f1ec;
+  /* accent — steel deepened for paper (the app light theme's own steel) */
+  --steel: #3f5670;
+  --steel-rgb: 63 86 112;
+  /* hairlines — ink-alpha; direction flips, slightly stronger for the same
+     perceived weight on paper */
+  --wash-rgb: 30 28 22;
+  --line: rgb(var(--wash-rgb) / 0.14);
+  /* stage + glass — warm paper family over the positron basemap */
+  --cmd-stage: #e9e7e1;
+  --cmd-vignette: radial-gradient(circle at 50% 46%, transparent 50%, rgba(20, 22, 28, 0.12) 100%);
+  --cmd-chip-bg: rgba(247, 246, 241, 0.78);
+  --cmd-hud-bg: rgba(247, 246, 241, 0.78);
+  --cmd-panel-bg: rgba(247, 246, 241, 0.76);
+}
+/* Shared-global classes rendered inside the surface that carry dark literals —
+   day values are scoped here so the dark "look closer" overlay (Globe.tsx uses
+   the same .aug-marker) and the dark-panel feeds keep theirs. */
+:root[data-theme="light"] .command-surface .aug-marker-label {
+  background: rgba(250, 249, 246, 0.9);
+}
+:root[data-theme="light"] .command-surface .feed-link:hover {
+  text-decoration-color: rgba(28, 27, 23, 0.35);
+}
+:root[data-theme="light"] .command-surface .feed-list li {
+  /* wash at 0.04 is a dark-glass hairline; on paper it vanishes */
+  border-bottom-color: rgb(var(--wash-rgb) / 0.1);
+}
+:root[data-theme="light"] .command-surface .widget-state {
+  /* the dark literal is a white-family gray — illegible on paper */
+  color: rgba(87, 83, 74, 0.85);
+}
+:root[data-theme="light"] .command-surface .feed-time,
+:root[data-theme="light"] .command-surface .synth-meta {
+  /* ash at 0.45 lands under 3:1 on paper — trade the heavy fade for a
+     deeper ink at a light fade (same quiet register, legible) */
+  color: var(--ink-mute);
+  opacity: 0.9;
 }
 
 /* ======================================================================
@@ -3192,7 +3577,9 @@ body {
 .brief-summon {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 14px);
-  right: calc(env(safe-area-inset-right, 0px) + clamp(40px, 5vw, 72px));
+  /* 112px clears the fixed INTEL link (it spans ~16-90px from the right edge);
+     the old clamp(40px,5vw,72px) always ended INSIDE the link's box → overlap. */
+  right: calc(env(safe-area-inset-right, 0px) + 112px);
   left: auto;
   z-index: 8;
   display: inline-flex;
@@ -3610,5 +3997,962 @@ button.pulse-line:focus-visible {
       fill 0.42s var(--ease),
       stroke 0.42s var(--ease),
       box-shadow 0.42s var(--ease) !important;
+  }
+}
+
+/* ======================================================================
+   HOME LANDING — the ask-first landing on the Presence panel.
+   Ported verbatim from docs/design/AUGUST Home.dc.html: the DAY palette is
+   the default; the applyTheme() NIGHT values apply under the app's dark AND
+   batman themes. Everything is scoped to .home-landing — global tokens and
+   the other three surfaces are untouched.
+   ====================================================================== */
+.home-landing {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --hair2: #eae6dc;
+  --card: #ffffff;
+  --label: #a2823f;
+  --thread: #16150f;
+  --up: #1b7f4d;
+  --down: #b4483e;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+  --orb-bg: radial-gradient(circle at 36% 32%, #3a332a 0%, #16130e 46%, #060505 74%);
+  --orb-glow:
+    0 0 70px rgba(201, 169, 106, 0.38),
+    0 26px 50px -18px rgba(30, 22, 8, 0.35),
+    inset -18px -26px 55px rgba(0, 0, 0, 0.8),
+    inset 8px 12px 40px rgba(201, 169, 106, 0.14);
+  --ring: rgba(170, 140, 80, 0.22);
+  --halo: rgba(201, 169, 106, 0.16);
+  --chip-hover: #c9a96a;
+
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  transition: background 0.5s ease;
+}
+:root[data-theme="dark"] .home-landing,
+:root[data-theme="batman"] .home-landing {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --hair2: rgba(255, 255, 255, 0.08);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --thread: rgba(255, 255, 255, 0.82);
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+  --orb-bg: radial-gradient(circle at 36% 32%, #282218 0%, #12100c 46%, #050504 74%);
+  --orb-glow:
+    0 0 90px rgba(201, 169, 106, 0.28),
+    0 0 32px rgba(201, 169, 106, 0.2),
+    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
+    inset 9px 12px 42px rgba(201, 169, 106, 0.12);
+  --ring: rgba(201, 169, 106, 0.13);
+  --halo: rgba(201, 169, 106, 0.14);
+}
+
+/* — top bar: wordmark · clock + state · quiet control cluster ------------- */
+.hl-top {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 26px 44px;
+  flex: none;
+}
+.hl-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.hl-brand-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.hl-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.hl-top-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.hl-clock {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.hl-ctls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hl-ctl {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.hl-ctl:hover {
+  color: var(--ink);
+}
+.hl-ctl.on {
+  color: var(--label);
+}
+.hl-ctl:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+/* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
+.hl-session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hl-signin,
+.hl-signout {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.hl-signin:hover,
+.hl-signout:hover {
+  color: var(--label);
+}
+.hl-signin:focus-visible,
+.hl-signout:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.hl-account-email {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* — the orb: halo + ring + gradient circle under the living WebGL sphere -- */
+.hl-orb {
+  margin-top: 6vh;
+  width: 190px;
+  height: 190px;
+  position: relative;
+  flex: none;
+}
+.hl-orb-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 90px 34px var(--halo);
+  animation: hl-halo 7s ease-in-out infinite;
+}
+@keyframes hl-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.hl-orb-ring {
+  position: absolute;
+  inset: -22px;
+  border: 1px solid var(--ring);
+  border-radius: 50%;
+}
+.hl-orb-core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--orb-bg);
+  box-shadow: var(--orb-glow);
+}
+/* The canvas bleeds 65px past the circle so the corona can reach beyond the
+   rim; Presence3D orbFraction pins the sphere itself to the 190px circle. */
+.hl-orb-gl {
+  position: absolute;
+  inset: -65px;
+}
+
+/* — heading + ask bar + chips --------------------------------------------- */
+.hl-heading {
+  margin: 44px 0 0;
+  padding: 0 24px;
+  text-align: center;
+  font-family: inherit;
+  font-size: clamp(30px, 4.6vw, 42px);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.hl-bar {
+  margin-top: 30px;
+  width: min(760px, 88vw);
+  min-height: 62px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 20px;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: 16px;
+  box-shadow: var(--cardshadow);
+  flex: none;
+}
+.hl-input {
+  flex: 1;
+  min-width: 0;
+  height: 60px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+}
+.hl-input::placeholder {
+  color: var(--dim);
+}
+.hl-mic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.hl-mic:hover {
+  color: var(--ink);
+}
+.hl-mic.on {
+  color: var(--label);
+  background: rgba(201, 169, 106, 0.14);
+}
+.hl-mic:focus-visible,
+.hl-chip:focus-visible,
+.hl-thread:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.hl-kbd {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dim);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.hl-chips {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 24px;
+}
+.hl-chip {
+  border: 1px solid var(--hair);
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.hl-chip:hover {
+  border-color: var(--chip-hover);
+  color: var(--ink);
+}
+.hl-spacer {
+  flex: 1 1 auto;
+  min-height: 36px;
+}
+
+/* — activity grid: real threads · real quotes ------------------------------ */
+.hl-activity {
+  width: min(880px, 88vw);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 40px 60px;
+  margin-bottom: 7vh;
+  flex: none;
+}
+.hl-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hl-watch {
+  gap: 13px;
+}
+.hl-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: var(--label);
+}
+.hl-threads {
+  display: flex;
+  flex-direction: column;
+}
+.hl-thread {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 0;
+  border: none;
+  border-bottom: 1px solid var(--hair2);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  min-width: 0;
+  transition: opacity var(--dur-fast) var(--ease-snappy);
+}
+.hl-thread:first-child {
+  padding: 13px 0 11px;
+}
+.hl-thread:last-child {
+  border-bottom: none;
+}
+.hl-thread:hover {
+  opacity: 0.7;
+}
+.hl-thread-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--thread);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hl-thread-date {
+  flex: none;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dim);
+}
+.hl-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-content: flex-start;
+}
+.hl-pill {
+  border: 1px solid var(--hair);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.hl-up {
+  color: var(--up);
+}
+.hl-down {
+  color: var(--down);
+}
+
+/* — mobile: 44px targets, tighter chrome ----------------------------------- */
+@media (max-width: 700px) {
+  .hl-top {
+    padding: 18px 20px;
+  }
+  .hl-top-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .hl-clock {
+    letter-spacing: 0.12em;
+  }
+  .hl-ctl {
+    width: 44px;
+    height: 44px;
+  }
+  .hl-signin,
+  .hl-signout {
+    min-height: 44px;
+  }
+  .hl-account-email {
+    max-width: 110px;
+  }
+  .hl-mic {
+    width: 44px;
+    height: 44px;
+  }
+  .hl-kbd {
+    display: none;
+  }
+  .hl-chip {
+    min-height: 44px;
+  }
+  .hl-thread {
+    align-items: center;
+    min-height: 44px;
+  }
+  .hl-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hl-orb-halo {
+    animation: none;
+  }
+}
+
+/* ======================================================================
+   LOGIN — /login. The home landing's face (Geist, gold-dot wordmark,
+   day/night palettes) reduced to one decision. Tokens are duplicated from
+   .home-landing and scoped to .login-page — no global leaks.
+   ====================================================================== */
+.login-page {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --card: #ffffff;
+  --label: #a2823f;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+}
+:root[data-theme="dark"] .login-page,
+:root[data-theme="batman"] .login-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --cardshadow: none;
+}
+.lp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.lp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.lp-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.lp-copy {
+  margin: 18px 0 34px;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--body2);
+}
+.lp-google {
+  min-height: 44px;
+  padding: 12px 28px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.lp-google:hover {
+  border-color: #c9a96a;
+  color: var(--label);
+}
+.lp-google:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+.lp-note {
+  max-width: 380px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+.lp-back {
+  color: var(--label);
+  text-decoration: none;
+}
+.lp-back:hover {
+  text-decoration: underline;
+}
+
+/* ======================================================================
+   WELCOME — /welcome, the one-screen setup ("Set up AUGUST" first time,
+   "Your setup" thereafter). The home landing's face: Geist + mono, gold
+   label accent, day/night palettes. Tokens duplicated from .home-landing
+   and scoped to .welcome-page — no global leaks (same pattern as /login).
+   ====================================================================== */
+.welcome-page {
+  --bg: #f5f4f1;
+  --ink: #16150f;
+  --dim: #a39c8b;
+  --body2: #6e685c;
+  --hair: #e8e4da;
+  --card: #ffffff;
+  --label: #a2823f;
+  --up: #1b7f4d;
+  --down: #b4483e;
+  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: clamp(24px, 6vh, 64px) 20px 48px;
+  background: var(--bg);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  color: var(--ink);
+}
+:root[data-theme="dark"] .welcome-page,
+:root[data-theme="batman"] .welcome-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
+  --ink: #f2efe8;
+  --dim: rgba(255, 255, 255, 0.4);
+  --body2: rgba(255, 255, 255, 0.55);
+  --hair: rgba(255, 255, 255, 0.13);
+  --card: rgba(255, 255, 255, 0.04);
+  --label: #c9a96a;
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+}
+.wp-card {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  margin: auto 0; /* vertical centering when short; scrolls when tall */
+}
+.wp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wp-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.wp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c9a96a;
+  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+}
+.wp-wordmark {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+}
+.wp-title {
+  margin: 10px 0 0;
+  font-size: clamp(26px, 4vw, 34px);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.wp-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--body2);
+}
+.wp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 26px;
+  border-top: 1px solid var(--hair);
+}
+.wp-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: var(--label);
+}
+.wp-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.wp-loading {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+.wp-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* — watchlist chips + add row — */
+.wp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.wp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 4px 6px 4px 16px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  box-shadow: var(--cardshadow);
+}
+.wp-chip-x {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.wp-chip-x:hover:not(:disabled) {
+  color: var(--down);
+}
+.wp-chip-x:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.wp-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wp-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  outline: none;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.wp-input::placeholder {
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--dim);
+  text-transform: none;
+}
+.wp-input:focus-visible {
+  border-color: var(--label);
+}
+.wp-ghost {
+  flex: none;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.wp-ghost:hover:not(:disabled) {
+  border-color: #c9a96a;
+  color: var(--ink);
+}
+.wp-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.wp-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--body2);
+}
+.wp-err {
+  color: var(--down);
+}
+
+/* — feed toggles: full-row buttons with a switch — */
+.wp-toggles {
+  display: flex;
+  flex-direction: column;
+}
+.wp-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 44px;
+  padding: 13px 2px;
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.wp-toggle:last-child {
+  border-bottom: none;
+}
+.wp-switch {
+  flex: none;
+  margin-top: 1px;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  position: relative;
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.wp-switch-dot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition:
+    transform var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.wp-toggle.on .wp-switch {
+  border-color: #c9a96a;
+  background: rgba(201, 169, 106, 0.18);
+}
+.wp-toggle.on .wp-switch-dot {
+  transform: translateX(14px);
+  background: var(--label);
+}
+.wp-toggle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.wp-toggle-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.wp-toggle-hint {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+
+/* — actions — */
+.wp-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-top: 26px;
+  border-top: 1px solid var(--hair);
+}
+.wp-start {
+  min-height: 44px;
+  padding: 12px 30px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--cardshadow);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-snappy),
+    color var(--dur-fast) var(--ease-snappy);
+}
+.wp-start:hover:not(:disabled) {
+  border-color: #c9a96a;
+  color: var(--label);
+}
+.wp-start:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.wp-skip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--dim);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
+}
+.wp-skip:hover:not(:disabled) {
+  color: var(--ink);
+}
+.wp-skip:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.wp-start:focus-visible,
+.wp-skip:focus-visible,
+.wp-ghost:focus-visible,
+.wp-chip-x:focus-visible,
+.wp-toggle:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .welcome-page {
+    padding: 20px 16px 40px;
+  }
+  .wp-add {
+    flex-wrap: wrap;
+  }
+  /* The brief pill's sign-in anchor keeps a 44px touch target on phones. */
+  .mb-signin {
+    min-height: 44px;
   }
 }

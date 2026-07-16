@@ -1,22 +1,30 @@
 // Sources — list + add (resolve a URL/handle/id into a stored source).
-// Source privacy: the roster names who is watched, so GET returns it only when
-// the server-side INTEL_OWNER_VIEW flag is set — same contract as overview.
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { intelStorageConfigured, listSources } from "@/lib/intel/store";
-import { intelOwnerView } from "@/lib/intel/redact";
 import { addSource } from "@/lib/intel/pipeline";
+import { gateIntelAttributionOrRespond, gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<Response> {
-  if (!intelOwnerView()) return Response.json({ sources: [] });
+  // The source roster IS the watched-channel list — owner-only (source privacy:
+  // published output must read as AUGUST's, never reveal who is watched).
+  // Attribution READ boundary: 401 signed-out / 403 non-owner when auth is
+  // configured; open when auth is unconfigured OUTSIDE production (single-user
+  // fallback), refused inside it — a missing env var on a deploy must never
+  // publish the roster.
+  const denied = await gateIntelAttributionOrRespond();
+  if (denied) return denied;
   return Response.json({ sources: await listSources() });
 }
 
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("intelMutate", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+  // Intel data is SHARED; mutating it is OWNER-only (no-op when auth unconfigured).
+  const denied = await gateIntelMutationOrRespond();
+  if (denied) return denied;
   if (!intelStorageConfigured()) return Response.json({ ok: false, error: "storage_unconfigured" }, { status: 501 });
 
   let url = "";

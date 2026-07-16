@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { exchangeCode, getOrigin } from "@/lib/gmail";
+import { AuthRequiredError, requireSessionEmail } from "@/lib/user-scope";
 
 // OAuth callback. Google redirects here with ?code & ?state. We verify the CSRF
 // state against the cookie, exchange the code for tokens SERVER-SIDE (the client
@@ -35,7 +36,18 @@ export async function GET(req: Request): Promise<Response> {
   const expected = cookieStore.get(STATE_COOKIE)?.value;
   if (!expected || expected !== state) return back(origin, "state_mismatch");
 
-  const result = await exchangeCode(origin, code);
+  // Stage 2: tokens are stored under the SESSION user's namespace (null =
+  // single-user fallback = the legacy key). A configured instance with no
+  // session refuses — tokens must never land in a namespace nobody owns.
+  let email: string | null;
+  try {
+    email = await requireSessionEmail();
+  } catch (err) {
+    if (err instanceof AuthRequiredError) return back(origin, "signin_required");
+    throw err;
+  }
+
+  const result = await exchangeCode(email, origin, code);
   if (!result.ok) return back(origin, `error_${result.error}`);
 
   return back(origin, "connected");

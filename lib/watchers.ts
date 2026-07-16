@@ -13,13 +13,20 @@
 //     ensures the same quake/headline never fires twice.
 //   - QUIET HOURS: overnight (≈10pm–7am ET) the check is a no-op — never wakes you.
 
+// MULTI-USER (stage 2): watchers are PERSONAL standing alerts — every function
+// takes the session email and scopes the hash through scopeKey (null email =
+// single-user fallback = the legacy hash, unchanged). Trips push ONLY to the
+// owning user's devices.
+
 import { Redis } from "@upstash/redis";
 import { getQuote } from "./markets";
 import { getQuakes } from "./command";
 import { getIntel } from "./intel";
 import { sendToAll } from "./push";
+import { scopeKey } from "./user-scope";
 
 const KEY = "august:watchers"; // Redis hash: id -> Watcher JSON
+const watchersKey = (email: string | null) => scopeKey(email, KEY);
 const COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const MAX_WATCHERS = 25;
 const TZ = "America/New_York"; // Maged's local time (matches the brief/markets layers)
@@ -58,30 +65,30 @@ export function watchersConfigured(): boolean {
 }
 
 // --- storage --------------------------------------------------------------
-async function loadAll(): Promise<Watcher[]> {
+async function loadAll(email: string | null): Promise<Watcher[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
-    const all = await redis.hgetall<Record<string, Watcher>>(KEY);
+    const all = await redis.hgetall<Record<string, Watcher>>(watchersKey(email));
     return all ? Object.values(all).sort((a, b) => a.created - b.created) : [];
   } catch {
     return [];
   }
 }
-async function saveOne(w: Watcher): Promise<void> {
+async function saveOne(email: string | null, w: Watcher): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.hset(KEY, { [w.id]: w });
+    await redis.hset(watchersKey(email), { [w.id]: w });
   } catch {
     /* best-effort */
   }
 }
-async function removeOne(id: string): Promise<void> {
+async function removeOne(email: string | null, id: string): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.hdel(KEY, id);
+    await redis.hdel(watchersKey(email), id);
   } catch {
     /* noop */
   }
@@ -117,9 +124,12 @@ export type CreateInput = {
 
 type CreateResult = { ok: true; label: string; note?: string } | { ok: false; error: string };
 
-export async function createWatcher(input: CreateInput): Promise<CreateResult> {
+export async function createWatcher(
+  email: string | null,
+  input: CreateInput,
+): Promise<CreateResult> {
   if (!watchersConfigured()) return { ok: false, error: "storage_unconfigured" };
-  const existing = await loadAll();
+  const existing = await loadAll(email);
   if (existing.length >= MAX_WATCHERS) return { ok: false, error: "too_many" };
 
   const type = (input.type || "").toLowerCase();
@@ -136,7 +146,7 @@ export async function createWatcher(input: CreateInput): Promise<CreateResult> {
     if (!q) return { ok: false, error: "unknown_symbol" };
     const params: MarketParams = { symbol: q.symbol, op, value };
     const label = `${q.symbol} ${op} ${fmtPrice(value)}`;
-    await saveOne(make("market", params, label));
+    await saveOne(email, make("market", params, label));
     return { ok: true, label, note: `${q.symbol} is ${fmtPrice(q.price)} now` };
   }
 
@@ -148,7 +158,7 @@ export async function createWatcher(input: CreateInput): Promise<CreateResult> {
     const label = `quakes ≥ M${minMag}${region ? ` near ${region}` : ""}`;
     const w = make("quake", params, label);
     w.cursor = Date.now(); // only alert on quakes AFTER creation
-    await saveOne(w);
+    await saveOne(email, w);
     return { ok: true, label };
   }
 
@@ -159,7 +169,7 @@ export async function createWatcher(input: CreateInput): Promise<CreateResult> {
     const label = `"${keyword}" on the wires`;
     const w = make("intel", params, label);
     w.cursor = Date.now(); // only alert on headlines published AFTER creation
-    await saveOne(w);
+    await saveOne(email, w);
     return { ok: true, label };
   }
 
@@ -180,8 +190,8 @@ function make(type: WatcherType, params: Watcher["params"], label: string): Watc
 }
 
 // --- list / remove --------------------------------------------------------
-export async function listWatchers(): Promise<Watcher[]> {
-  return loadAll();
+export async function listWatchers(email: string | null): Promise<Watcher[]> {
+  return loadAll(email);
 }
 
 export function describeWatchers(ws: Watcher[]): string {
@@ -203,9 +213,12 @@ type RemoveResult =
   | { ok: true; removed: string }
   | { ok: false; error: string; candidates?: string[] };
 
-export async function removeWatcher(query: string): Promise<RemoveResult> {
+export async function removeWatcher(
+  email: string | null,
+  query: string,
+): Promise<RemoveResult> {
   if (!watchersConfigured()) return { ok: false, error: "storage_unconfigured" };
-  const all = await loadAll();
+  const all = await loadAll(email);
   if (!all.length) return { ok: false, error: "none" };
   const q = (query || "").trim().toLowerCase();
   if (!q) return { ok: false, error: "no_query" };
@@ -220,28 +233,29 @@ export async function removeWatcher(query: string): Promise<RemoveResult> {
     else if (matches.length > 1) return { ok: false, error: "ambiguous", candidates: matches.map((m) => m.label) };
   }
   if (!target) return { ok: false, error: "no_match" };
-  await removeOne(target.id);
+  await removeOne(email, target.id);
   return { ok: true, removed: target.label };
 }
 
 // --- chat-tool dispatcher (called from /api/chat, server-side) -------------
 // Returns a plain confirmation string for the model to speak back in character.
 export async function runWatcherTool(
+  email: string | null,
   name: string,
   input: Record<string, unknown>,
 ): Promise<string> {
   if (name === "create_watcher") {
-    const r = await createWatcher(input as CreateInput);
+    const r = await createWatcher(email, input as CreateInput);
     if (r.ok) {
       return `Watcher set: ${r.label}${r.note ? ` — ${r.note}` : ""}. I'll ping you once when it trips, then hold off so you're not spammed.`;
     }
     return `Couldn't set that watcher: ${createError(r.error)}.`;
   }
   if (name === "list_watchers") {
-    return describeWatchers(await listWatchers());
+    return describeWatchers(await listWatchers(email));
   }
   if (name === "remove_watcher") {
-    const r = await removeWatcher(String(input.query ?? input.id ?? ""));
+    const r = await removeWatcher(email, String(input.query ?? input.id ?? ""));
     if (r.ok) return `Removed: ${r.removed}.`;
     if (r.error === "ambiguous") return `A few match — which one? ${(r.candidates ?? []).join("; ")}.`;
     if (r.error === "no_match" || r.error === "none") return `I don't have a watcher matching that.`;
@@ -331,11 +345,12 @@ function evaluate(w: Watcher, f: Feeds): { message: string; cursor?: number } | 
   return null;
 }
 
-async function fire(w: Watcher, message: string): Promise<void> {
+async function fire(email: string | null, w: Watcher, message: string): Promise<void> {
   // Every alert deep-links the deck: market alerts land on the DESK slide, the
   // rest on WORLD (the orb page resolves ?screen= via resolveTarget on mount).
   const url = w.type === "market" ? "/?screen=desk" : "/?screen=world";
-  await sendToAll({
+  // Push ONLY to the owning user's devices — never a broadcast.
+  await sendToAll(email, {
     title: "AUGUST",
     body: message,
     url,
@@ -350,11 +365,11 @@ export type CheckResult = {
   details: string[];
 };
 
-export async function checkWatchers(): Promise<CheckResult> {
+export async function checkWatchers(email: string | null): Promise<CheckResult> {
   if (!watchersConfigured()) return { checked: 0, fired: 0, skipped: "storage_unconfigured", details: [] };
   if (isQuietHours()) return { checked: 0, fired: 0, skipped: "quiet_hours", details: [] };
 
-  const active = (await loadAll()).filter((w) => w.status !== "paused");
+  const active = (await loadAll(email)).filter((w) => w.status !== "paused");
   if (!active.length) return { checked: 0, fired: 0, details: [] };
 
   // Pull each needed feed ONCE (reusing the existing fetchers + their TTL caches).
@@ -397,7 +412,7 @@ export async function checkWatchers(): Promise<CheckResult> {
 
     const alert = evaluate(w, feeds);
     if (alert) {
-      await fire(w, alert.message);
+      await fire(email, w, alert.message);
       w.last_fired = now;
       w.status = "cooldown";
       if (alert.cursor) w.cursor = alert.cursor;
@@ -406,7 +421,7 @@ export async function checkWatchers(): Promise<CheckResult> {
       details.push(`${w.label} → ${alert.message}`);
     }
 
-    if (dirty) await saveOne(w);
+    if (dirty) await saveOne(email, w);
   }
 
   return { checked: active.length, fired, details };

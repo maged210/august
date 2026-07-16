@@ -13,6 +13,7 @@ import type {
   IntelVideo,
   TranscriptSegment,
   VideoAnalysis,
+  VideoStatus,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 
@@ -108,6 +109,12 @@ export async function removeSource(id: string): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   await redis.hdel(K.sources, id);
+  // Debris fix: the per-source video index must not outlive the source.
+  try {
+    await redis.del(K.sourceVideos(id));
+  } catch {
+    /* best-effort */
+  }
 }
 
 // --- videos ---------------------------------------------------------------
@@ -156,6 +163,124 @@ export async function videosForTicker(sym: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+// --- soft-duplicate videos (livestream + VOD re-upload sharing a title) -----
+//
+// The videos hash is keyed by videoId, so true duplicates can't exist — but a
+// channel's livestream and its separately-uploaded VOD are two DISTINCT ids
+// with the same title, published hours apart. One gets a transcript and
+// analyzes; the twin sits forever in "transcript pending". The merge below
+// keeps the RICHER record and absorbs the twin so twins never persist.
+
+/** Case/punctuation/whitespace-insensitive title key for soft-dup detection. */
+export function normalizeVideoTitle(title: string): string {
+  return title
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Two videos published within this window can be livestream/VOD twins. */
+export const SOFT_DUP_WINDOW_MS = 48 * 3_600_000;
+
+/** Richness order for the merge decision: analyzed > transcript_ready > pending. */
+const STATUS_RICHNESS: Record<VideoStatus, number> = {
+  analyzed: 7,
+  preliminary: 6,
+  analyzing: 5,
+  transcript_ready: 4,
+  transcript_pending: 3,
+  metadata_saved: 2,
+  discovered: 1,
+  failed: 0,
+};
+
+export function videoStatusRichness(s: VideoStatus): number {
+  return STATUS_RICHNESS[s] ?? 0;
+}
+
+/** Same channel + same normalized title + published within 48h → soft twins. */
+export function isSoftDuplicate(a: IntelVideo, b: IntelVideo): boolean {
+  if (a.videoId === b.videoId) return false;
+  if (!a.channelId || !b.channelId || a.channelId !== b.channelId) return false;
+  const na = normalizeVideoTitle(a.title);
+  if (!na || na !== normalizeVideoTitle(b.title)) return false;
+  return Math.abs(a.publishedAt - b.publishedAt) <= SOFT_DUP_WINDOW_MS;
+}
+
+/** PURE merge decision: the richer-status record is kept. Ties keep the older
+ *  record (then the lexicographically smaller id) — deterministic. Returns
+ *  null when the pair is not a soft duplicate. */
+export function decideVideoMerge(
+  a: IntelVideo,
+  b: IntelVideo,
+): { keep: IntelVideo; absorb: IntelVideo } | null {
+  if (!isSoftDuplicate(a, b)) return null;
+  const ra = videoStatusRichness(a.status);
+  const rb = videoStatusRichness(b.status);
+  if (ra !== rb) return ra > rb ? { keep: a, absorb: b } : { keep: b, absorb: a };
+  if (a.created !== b.created) return a.created < b.created ? { keep: a, absorb: b } : { keep: b, absorb: a };
+  return a.videoId < b.videoId ? { keep: a, absorb: b } : { keep: b, absorb: a };
+}
+
+/** Absorb a soft-duplicate twin into the kept record:
+ *   - union the ticker sets onto the keeper,
+ *   - move any transcript/chapters/analysis blobs the keeper LACKS (never
+ *     deletes the only copy of real data), then drop the twin's blobs,
+ *   - repoint source:<id>:videos membership from the twin to the keeper,
+ *   - remove the twin from ticker index sets and delete its video row.
+ *  Returns the (updated) kept record. */
+export async function mergeVideoTwins(keep: IntelVideo, absorb: IntelVideo): Promise<IntelVideo> {
+  const redis = getRedis();
+  if (!redis) return keep;
+
+  // union tickers (saveVideo below re-indexes the keeper into the ticker sets)
+  const tickers = [...new Set([...(keep.tickers ?? []), ...(absorb.tickers ?? [])])];
+  if (tickers.length) keep.tickers = tickers;
+
+  // move blobs the keeper lacks; delete the twin's either way
+  for (const kb of [K.transcript, K.chapters, K.analysis]) {
+    try {
+      const twinVal = await redis.get<unknown>(kb(absorb.videoId));
+      if (twinVal === null || twinVal === undefined) continue;
+      const keepVal = await redis.get<unknown>(kb(keep.videoId));
+      if (keepVal === null || keepVal === undefined) {
+        await redis.set(kb(keep.videoId), typeof twinVal === "string" ? twinVal : JSON.stringify(twinVal));
+      }
+      await redis.del(kb(absorb.videoId));
+    } catch {
+      /* best-effort per blob */
+    }
+  }
+
+  // repoint the per-source index: the twin's set loses the twin, gains the keeper
+  try {
+    if (absorb.sourceId) {
+      await redis.srem(K.sourceVideos(absorb.sourceId), absorb.videoId);
+      await redis.sadd(K.sourceVideos(absorb.sourceId), keep.videoId);
+    }
+  } catch {
+    /* best-effort */
+  }
+
+  // drop the twin from the ticker index sets, then the row itself
+  for (const t of absorb.tickers ?? []) {
+    try {
+      await redis.srem(K.ticker(t), absorb.videoId);
+    } catch {
+      /* best-effort */
+    }
+  }
+  await redis.hdel(K.videos, absorb.videoId);
+  await saveVideo(keep);
+  await logIntel("video_twins_merged", {
+    kept: keep.videoId,
+    absorbed: absorb.videoId,
+    title: keep.title.slice(0, 80),
+  });
+  return keep;
 }
 
 // --- transcript + chapters + analysis (JSON blobs) ------------------------

@@ -26,8 +26,9 @@ function getRedis(): Redis {
 
 type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
-  | "intelMutate" | "intelProcess" | "intelAsk"
-  | "push" | "day" | "draft" | "commsSend" | "watchers";
+  | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
+  | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
+  | "threads" | "watchlist" | "feeds";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -42,11 +43,17 @@ const LIMITS: Record<RouteKey, number> = {
   intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
   intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
   intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
+  intelRole: 30,   // owner/auth signal — one cheap session read per page load
+  intelFeed: 30,   // public published-ideas feed — served from a 45s cache
   push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
   day: 30,    // Google Calendar today-view — server-cached, Presence polls it
   draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft
   commsSend: 10, // Gmail send — tight: each send dispatches real mail
   watchers: 10, // Watchers cron — an external ~15min pinger is far under this
+  "intel-track": 10, // Idea Tracker cron — same external-pinger profile as watchers
+  threads: 30, // conversation persistence — one background POST per completed reply
+  watchlist: 30, // per-user watchlist reads/writes — cheap Redis ops
+  feeds: 30,  // per-user feed prefs + onboarded flag — cheap Redis ops
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();

@@ -43,7 +43,8 @@ export type TranscriptStatus =
   | "unavailable"
   | "permission_required"
   | "provider_error"
-  | "live_caption_pending";
+  | "live_caption_pending"
+  | "not_configured"; // external transcript provider slot exists but no key is set
 export type VideoStatus =
   | "discovered"
   | "metadata_saved"

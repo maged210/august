@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{--bg:#F5F4F1;--ink:#16150F;--dim:#A39C8B;--body2:#6E685C;--hair:#E8E4DA;--hair2:#EAE6DC;--card:#FFFFFF;--label:#A2823F;--thread:#16150F;--up:#1B7F4D;--down:#B4483E;--cardshadow:0 2px 14px rgba(20,18,12,.05);--orb-bg:radial-gradient(circle at 36% 32%,#3A332A 0%,#16130E 46%,#060505 74%);--orb-glow:0 0 70px rgba(201,169,106,.38),0 26px 50px -18px rgba(30,22,8,.35),inset -18px -26px 55px rgba(0,0,0,.8),inset 8px 12px 40px rgba(201,169,106,.14);--ring:rgba(170,140,80,.22);--halo:rgba(201,169,106,.16);margin:0;background:var(--bg);font-family:'Geist',system-ui,sans-serif;transition:background .5s ease}
+a{color:var(--label)}
+a:hover{color:#8B6F3E}
+input::placeholder{color:var(--dim)}
+@keyframes augustHalo{0%,100%{opacity:.55}50%{opacity:1}}
+</style>
+</helmet>
+<div data-screen-label="Home" style="min-height:100vh;display:flex;flex-direction:column;align-items:center">
+<div style="width:100%;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;padding:26px 44px">
+<div style="display:flex;align-items:center;gap:11px">
+<span style="width:6px;height:6px;border-radius:50%;background:#C9A96A;box-shadow:0 0 8px rgba(201,169,106,.7)"></span>
+<span style="font:600 12.5px 'JetBrains Mono',monospace;letter-spacing:.32em;color:var(--ink)">AUGUST</span>
+</div>
+<span style="font:400 11.5px 'JetBrains Mono',monospace;letter-spacing:.18em;color:var(--dim)">{{ clock }} · SYSTEMS STEADY</span>
+</div>
+
+<div style="margin-top:6vh;width:190px;height:190px;position:relative">
+<div style="position:absolute;inset:-6px;border-radius:50%;box-shadow:0 0 90px 34px var(--halo);animation:augustHalo 7s ease-in-out infinite"></div>
+<div style="position:absolute;inset:-22px;border:1px solid var(--ring);border-radius:50%"></div>
+<div style="position:relative;width:190px;height:190px;border-radius:50%;background:var(--orb-bg);box-shadow:var(--orb-glow)">
+<div style="position:absolute;top:31%;left:35%;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle,#FFFFFF 0%,rgba(255,255,255,0) 70%)"></div>
+<div style="position:absolute;top:58%;left:60%;width:7px;height:7px;border-radius:50%;background:radial-gradient(circle,#E8C27A 0%,rgba(232,194,122,0) 70%)"></div>
+</div>
+</div>
+
+<h1 style="margin:44px 0 0;padding:0 24px;text-align:center;font:500 clamp(30px,4.6vw,42px)/1.15 'Geist',sans-serif;color:var(--ink)">What do you want to know?</h1>
+
+<div style="margin-top:30px;width:min(760px,88vw);height:62px;background:var(--card);border:1px solid var(--hair);border-radius:16px;box-shadow:var(--cardshadow);display:flex;align-items:center;gap:14px;padding:0 20px;box-sizing:border-box">
+<input ref="{{ inputRef }}" value="{{ draft }}" onChange="{{ onDraft }}" placeholder="Ask about markets, your positions, or the world…" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font:400 16px 'Geist',sans-serif;color:var(--ink)">
+<span style="flex:none;font:500 11px 'JetBrains Mono',monospace;color:var(--dim);border:1px solid var(--hair);border-radius:6px;padding:4px 8px">⌘K</span>
+</div>
+
+<sc-if value="{{ showSuggestions }}" hint-placeholder-val="{{ true }}">
+<div style="margin-top:16px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px;padding:0 24px">
+<button onClick="{{ ask }}" style="border:1px solid var(--hair);background:transparent;border-radius:999px;padding:8px 16px;font:400 13px 'Geist',sans-serif;color:var(--body2);cursor:pointer" style-hover="border-color:#C9A96A;color:var(--ink)">Why is NQ above pivot?</button>
+<button onClick="{{ ask }}" style="border:1px solid var(--hair);background:transparent;border-radius:999px;padding:8px 16px;font:400 13px 'Geist',sans-serif;color:var(--body2);cursor:pointer" style-hover="border-color:#C9A96A;color:var(--ink)">Summarize overnight intel</button>
+<button onClick="{{ ask }}" style="border:1px solid var(--hair);background:transparent;border-radius:999px;padding:8px 16px;font:400 13px 'Geist',sans-serif;color:var(--body2);cursor:pointer" style-hover="border-color:#C9A96A;color:var(--ink)">Stress-test the SOL position</button>
+</div>
+</sc-if>
+
+<div style="flex:1;min-height:36px"></div>
+
+<sc-if value="{{ showActivity }}" hint-placeholder-val="{{ true }}">
+<div style="width:min(880px,88vw);display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:40px 60px;margin-bottom:7vh">
+<div style="display:flex;flex-direction:column">
+<span style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.26em;color:var(--label)">RECENT THREADS</span>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:13px 0 11px;border-bottom:1px solid var(--hair2);cursor:pointer" style-hover="opacity:.7">
+<span style="font:400 14px 'Geist',sans-serif;color:var(--thread)">CPI scenarios for the desk</span>
+<span style="font:400 11px 'JetBrains Mono',monospace;color:var(--dim)">YESTERDAY</span>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:11px 0;border-bottom:1px solid var(--hair2);cursor:pointer" style-hover="opacity:.7">
+<span style="font:400 14px 'Geist',sans-serif;color:var(--thread)">Why crude ignored the ceasefire</span>
+<span style="font:400 11px 'JetBrains Mono',monospace;color:var(--dim)">MON</span>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:11px 0;cursor:pointer" style-hover="opacity:.7">
+<span style="font:400 14px 'Geist',sans-serif;color:var(--thread)">Rebalance: cut SOL or trim NQ?</span>
+<span style="font:400 11px 'JetBrains Mono',monospace;color:var(--dim)">JUL 3</span>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:13px">
+<span style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.26em;color:var(--label)">WATCHING</span>
+<div style="display:flex;flex-wrap:wrap;gap:9px;align-content:flex-start">
+<span style="border:1px solid var(--hair);background:var(--card);border-radius:999px;padding:7px 14px;font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">NQ 28,458 <span style="color:var(--up)">+0.4%</span></span>
+<span style="border:1px solid var(--hair);background:var(--card);border-radius:999px;padding:7px 14px;font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">ES 6,912 <span style="color:var(--up)">+0.2%</span></span>
+<span style="border:1px solid var(--hair);background:var(--card);border-radius:999px;padding:7px 14px;font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">BTC 118,240 <span style="color:var(--down)">−1.1%</span></span>
+<span style="border:1px solid var(--hair);background:var(--card);border-radius:999px;padding:7px 14px;font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">SOL 212.40 <span style="color:var(--up)">+2.4%</span></span>
+<span style="border:1px solid var(--hair);background:var(--card);border-radius:999px;padding:7px 14px;font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">VIX 11.8 <span style="color:var(--down)">−0.3</span></span>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;day&quot;,&quot;night&quot;],&quot;default&quot;:&quot;day&quot;,&quot;tsType&quot;:&quot;'day' | 'night'&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;showSuggestions&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;showActivity&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;}}">
+class Component extends DCLogic {
+  state = { draft: '', now: new Date() };
+  inputRef = React.createRef();
+
+  componentDidMount() {
+    this.applyTheme();
+    this.timer = setInterval(() => this.setState({ now: new Date() }), 30000);
+    this.onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
+        e.preventDefault();
+        if (this.inputRef.current) this.inputRef.current.focus();
+      }
+    };
+    window.addEventListener('keydown', this.onKey);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.theme !== this.props.theme) this.applyTheme();
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    window.removeEventListener('keydown', this.onKey);
+  }
+
+  applyTheme() {
+    const night = (this.props.theme ?? 'day') === 'night';
+    const day = {
+      '--bg': '#F5F4F1',
+      '--ink': '#16150F',
+      '--dim': '#A39C8B',
+      '--body2': '#6E685C',
+      '--hair': '#E8E4DA',
+      '--hair2': '#EAE6DC',
+      '--card': '#FFFFFF',
+      '--label': '#A2823F',
+      '--thread': '#16150F',
+      '--up': '#1B7F4D',
+      '--down': '#B4483E',
+      '--cardshadow': '0 2px 14px rgba(20,18,12,.05)',
+      '--orb-bg': 'radial-gradient(circle at 36% 32%,#3A332A 0%,#16130E 46%,#060505 74%)',
+      '--orb-glow': '0 0 70px rgba(201,169,106,.38),0 26px 50px -18px rgba(30,22,8,.35),inset -18px -26px 55px rgba(0,0,0,.8),inset 8px 12px 40px rgba(201,169,106,.14)',
+      '--ring': 'rgba(170,140,80,.22)',
+      '--halo': 'rgba(201,169,106,.16)'
+    };
+    const nightVals = {
+      '--bg': 'radial-gradient(ellipse 900px 620px at 50% 30%,#14120E 0%,#0A0A0B 62%) #0A0A0B',
+      '--ink': '#F2EFE8',
+      '--dim': 'rgba(255,255,255,.4)',
+      '--body2': 'rgba(255,255,255,.55)',
+      '--hair': 'rgba(255,255,255,.13)',
+      '--hair2': 'rgba(255,255,255,.08)',
+      '--card': 'rgba(255,255,255,.04)',
+      '--label': '#C9A96A',
+      '--thread': 'rgba(255,255,255,.82)',
+      '--up': '#57A97F',
+      '--down': '#C97064',
+      '--cardshadow': 'none',
+      '--orb-bg': 'radial-gradient(circle at 36% 32%,#282218 0%,#12100C 46%,#050504 74%)',
+      '--orb-glow': '0 0 90px rgba(201,169,106,.28),0 0 32px rgba(201,169,106,.2),inset -20px -28px 60px rgba(0,0,0,.85),inset 9px 12px 42px rgba(201,169,106,.12)',
+      '--ring': 'rgba(201,169,106,.13)',
+      '--halo': 'rgba(201,169,106,.14)'
+    };
+    const vals = night ? nightVals : day;
+    for (const k in vals) document.body.style.setProperty(k, vals[k]);
+  }
+
+  renderVals() {
+    let clock;
+    try {
+      clock = this.state.now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' }) + ' ET';
+    } catch (err) {
+      clock = this.state.now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return {
+      clock: clock,
+      draft: this.state.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      ask: (e) => {
+        this.setState({ draft: e.currentTarget.textContent.trim() });
+        if (this.inputRef.current) this.inputRef.current.focus();
+      },
+      inputRef: this.inputRef,
+      showSuggestions: this.props.showSuggestions ?? true,
+      showActivity: this.props.showActivity ?? true
+    };
+  }
+}
+</script>
+</body>
+</html>

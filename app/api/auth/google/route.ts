@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildConsentUrl, getOrigin, oauthConfigured, storageConfigured } from "@/lib/gmail";
+import { AuthRequiredError, requireSessionEmail } from "@/lib/user-scope";
 
 // Kicks off the Google OAuth consent flow. Generates a CSRF state nonce, stashes
 // it in a short-lived httpOnly cookie, and redirects the browser to Google.
@@ -17,6 +18,19 @@ export async function GET(req: Request): Promise<Response> {
   }
   if (!storageConfigured()) {
     return NextResponse.redirect(`${origin}/?comms=storage_unconfigured`);
+  }
+
+  // Stage 2: with sign-in configured, the Comms connect flow stores tokens
+  // under the SESSION user's namespace — so a session must exist before we
+  // even send the browser to Google (the callback resolves the same session).
+  // Unconfigured auth resolves null and keeps the legacy single-user store.
+  try {
+    await requireSessionEmail();
+  } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return NextResponse.redirect(`${origin}/login`);
+    }
+    throw err;
   }
 
   // CSRF protection: random state echoed back by Google and verified in the

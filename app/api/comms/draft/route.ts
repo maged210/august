@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { getMessageForReply } from "@/lib/gmail";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,10 @@ export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("draft", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
+  // Session → namespace (stage 2): drafts read THIS user's Gmail tokens.
+  const sessionUser = await resolveUserOr401();
+  if (!sessionUser.ok) return sessionUser.response;
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return new Response("Model not configured", { status: 503 });
 
@@ -46,7 +51,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (!messageId) return new Response("messageId required.", { status: 400 });
 
-  const ctx = await getMessageForReply(messageId);
+  const ctx = await getMessageForReply(sessionUser.email, messageId);
   if (!ctx) return new Response("Couldn't read that message.", { status: 404 });
 
   const subject = /^\s*re:/i.test(ctx.subject) ? ctx.subject : `Re: ${ctx.subject || "(no subject)"}`;

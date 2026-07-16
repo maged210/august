@@ -9,10 +9,15 @@
 //
 // Degrades gracefully: if UPSTASH_REDIS_REST_URL / _TOKEN are absent, every function
 // is a no-op and the app behaves exactly as before.
+//
+// MULTI-USER (stage 2): every function takes the session email (resolved once
+// by the route via requireSessionEmail) and scopes its keys through scopeKey —
+// null email = single-user fallback = the legacy keys, unchanged.
 
 import { Redis } from "@upstash/redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { USER_NAME } from "./persona";
+import { scopeKey } from "./user-scope";
 
 const PROFILE_KEY = "august:profile";
 const SUMMARIES_KEY = "august:summaries";
@@ -55,7 +60,7 @@ export function memoryEnabled(): boolean {
 // Load (used by the chat route to inject memory into the system prompt)
 // ---------------------------------------------------------------------------
 
-export async function loadMemory(): Promise<{
+export async function loadMemory(email: string | null): Promise<{
   profile: Profile | null;
   summaries: SessionSummary[];
 }> {
@@ -65,8 +70,8 @@ export async function loadMemory(): Promise<{
     // One HTTP round trip, not two. MGET can't combine these (GET + LRANGE are
     // different types), but an Upstash pipeline ships both in a single request.
     const pipe = redis.pipeline();
-    pipe.get(PROFILE_KEY);
-    pipe.lrange(SUMMARIES_KEY, 0, SUMMARIES_LOAD - 1);
+    pipe.get(scopeKey(email, PROFILE_KEY));
+    pipe.lrange(scopeKey(email, SUMMARIES_KEY), 0, SUMMARIES_LOAD - 1);
     const [profile, summaries] = await pipe.exec<[Profile | null, SessionSummary[]]>();
     return { profile: profile ?? null, summaries: summaries ?? [] };
   } catch {
@@ -219,6 +224,7 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
 }
 
 export async function updateMemoryFromExchange(input: {
+  email: string | null;
   sessionId: string;
   userText: string;
   assistantText: string;
@@ -228,14 +234,17 @@ export async function updateMemoryFromExchange(input: {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return;
 
+  const profileKey = scopeKey(input.email, PROFILE_KEY);
+  const summariesKey = scopeKey(input.email, SUMMARIES_KEY);
+
   // Load current profile + the current session's rolling summary (if it's the head).
   let profile: Profile = {};
   let currentSummary = "";
   let headIsSameSession = false;
   try {
     const [p, head] = await Promise.all([
-      redis.get<Profile>(PROFILE_KEY),
-      redis.lindex(SUMMARIES_KEY, 0) as Promise<SessionSummary | null>,
+      redis.get<Profile>(profileKey),
+      redis.lindex(summariesKey, 0) as Promise<SessionSummary | null>,
     ]);
     if (p) profile = p;
     if (head && head.sessionId === input.sessionId) {
@@ -290,14 +299,14 @@ export async function updateMemoryFromExchange(input: {
       text: summaryText,
     };
     const pipe = redis.pipeline();
-    pipe.set(PROFILE_KEY, newProfile);
+    pipe.set(profileKey, newProfile);
     if (headIsSameSession) {
       // same conversation → update its summary in place
-      pipe.lset(SUMMARIES_KEY, 0, entry);
+      pipe.lset(summariesKey, 0, entry);
     } else {
       // new conversation → push a fresh summary and cap the list
-      pipe.lpush(SUMMARIES_KEY, entry);
-      pipe.ltrim(SUMMARIES_KEY, 0, SUMMARIES_CAP - 1);
+      pipe.lpush(summariesKey, entry);
+      pipe.ltrim(summariesKey, 0, SUMMARIES_CAP - 1);
     }
     await pipe.exec();
   } catch {
@@ -309,11 +318,11 @@ export async function updateMemoryFromExchange(input: {
 // Wipe
 // ---------------------------------------------------------------------------
 
-export async function clearMemory(): Promise<void> {
+export async function clearMemory(email: string | null): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.del(PROFILE_KEY, SUMMARIES_KEY);
+    await redis.del(scopeKey(email, PROFILE_KEY), scopeKey(email, SUMMARIES_KEY));
   } catch {
     /* ignore */
   }

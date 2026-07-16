@@ -1,17 +1,15 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Composer from "@/components/Composer";
 import Deck, { type DeckHandle } from "@/components/Deck";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
-import PresenceTelemetry from "@/components/PresenceTelemetry";
-import PulseCard from "@/components/PulseCard";
-import CommsSurface from "@/components/surfaces/CommsSurface";
-import DeskSurface from "@/components/surfaces/DeskSurface";
+import HomeLanding from "@/components/surfaces/HomeLanding";
+import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import WorldSurface from "@/components/surfaces/WorldSurface";
+import CommsSurface from "@/components/surfaces/CommsSurface";
 import { SCREENS, SCREEN_LABELS, screenIndex, resolveTarget } from "@/lib/screens";
-import { computePulse, type PulseDelta } from "@/lib/pulse";
+import { computePulse } from "@/lib/pulse";
 import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import type { GlobeTarget } from "@/components/command/CommandGlobe";
@@ -42,9 +40,10 @@ import {
 } from "@/lib/push-client";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
-// WebGL components load only in the browser. (The globe goes further: WorldSurface
-// lazy-mounts it behind an IntersectionObserver, so boot never pays for MapLibre.)
-const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
+// WebGL components load only in the browser, and each heavy surface owns its own
+// laziness: HomeLanding carries the Presence orb's dynamic import, WorldSurface
+// lazy-mounts the MapLibre globe behind an IntersectionObserver (boot never pays
+// for it), and IntelDeckSurface latches its desk/feed bodies on first visit.
 
 const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
 
@@ -151,13 +150,9 @@ export default function Home() {
   const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
   const [activeScreen, setActiveScreen] = useState(0);
   // The World pull — the "something new there" line the pulse computes from its
-  // one-shot feeds on load. Drives the World deck dot's quiet unseen halo AND
-  // gates the pulse card's world delta; cleared the moment World is visited so
-  // the two signals can never disagree.
+  // one-shot feeds on load. Drives the World deck dot's quiet unseen halo;
+  // cleared the moment World is visited.
   const [worldNews, setWorldNews] = useState<string | null>(null);
-  // The Pulse — at most four "since your last visit" deltas, computed once per
-  // load (lib/pulse.ts owns the snapshot semantics). Empty = no card renders.
-  const [pulse, setPulse] = useState<PulseDelta[]>([]);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -170,10 +165,10 @@ export default function Home() {
   const [briefPlaying, setBriefPlaying] = useState(false);
   const [briefDismissed, setBriefDismissed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
-  // White / black theme — persisted; the toggle flips the whole token system.
-  const [theme, setTheme] = useState<Theme>("dark");
+  // Light / dark / gotham theme — persisted; the toggle flips the whole token system.
+  const [theme, setTheme] = useState<Theme>("light");
   // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
-  // the theme, it re-tints only the accent family and re-lights the orb.
+  // the theme, it re-tints only the accent family.
   const [mood, setMood] = useState<Mood>("steel");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
@@ -205,6 +200,10 @@ export default function Home() {
   // are ignored rather than corrupting shared refs or triggering double re-arms.
   const recSessionRef = useRef(0);
   const sessionIdRef = useRef<string>("");
+  // Server-side conversation thread (the landing's RECENT THREADS). null until
+  // the first completed exchange persists one; a page load or /forget starts a
+  // fresh conversation → fresh thread. Best-effort only — never blocks chat.
+  const threadIdRef = useRef<string | null>(null);
   const globeNonceRef = useRef(0);
   const deckRef = useRef<DeckHandle | null>(null);
   const replyDockRef = useRef<HTMLDivElement | null>(null);
@@ -792,9 +791,9 @@ export default function Home() {
 
   // --- The World pull --------------------------------------------------------
   // aug-world-seen marks the last real World visit. Stamped when the slide
-  // becomes active — clearing the deck-dot halo and the pulse card's world line
-  // at that moment — AND when it stops being active, so wires that landed while
-  // you were watching the globe don't re-light the signal on departure.
+  // becomes active — clearing the deck-dot halo at that moment — AND when it
+  // stops being active, so wires that landed while you were watching the globe
+  // don't re-light the signal on departure.
   const onWorldSlide = activeScreen === screenIndex("world");
   const wasOnWorldRef = useRef(false);
   useEffect(() => {
@@ -804,21 +803,19 @@ export default function Home() {
       } catch {
         /* non-persistent */
       }
-      setWorldNews(null); // seen — the dot and the pulse world delta clear together
+      setWorldNews(null); // seen — the dot clears
     }
     wasOnWorldRef.current = onWorldSlide;
   }, [onWorldSlide]);
 
-  // --- The Pulse ---------------------------------------------------------------
-  // One-shot on load: diff the live feeds against the "aug-pulse" snapshot, keep
-  // at most four deltas, and stamp this load as the new "last visit". The world
-  // line doubles as the deck-dot signal (one computation, two quiet surfaces).
+  // --- The World signal --------------------------------------------------------
+  // One-shot on load: diff the live feeds against the "aug-pulse" snapshot and
+  // keep the world line — it is the deck-dot's unseen signal.
   useEffect(() => {
     let cancelled = false;
     computePulse()
       .then((r) => {
         if (cancelled) return;
-        setPulse(r.deltas);
         setWorldNews(r.worldLine);
       })
       .catch(() => {});
@@ -827,23 +824,12 @@ export default function Home() {
     };
   }, []);
 
-  // Once World is visited (worldNews cleared), its delta leaves the card too —
-  // the card and the deck dot never disagree.
-  const pulseShown = worldNews == null ? pulse.filter((d) => d.nav !== "world") : pulse;
-
-  // The rail + pulse card share the readouts' old navigation path: resolve the
-  // spoken/legacy name, slide the deck to the surface.
-  const goToScreen = useCallback((key: string) => {
-    const target = resolveTarget(key);
-    if (target) deckRef.current?.goTo(target.index);
-  }, []);
-
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
   // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("aug-theme");
-      if (saved === "light" || saved === "dark") setTheme(saved);
+      if (saved === "light" || saved === "dark" || saved === "batman") setTheme(saved);
     } catch {
       /* private mode */
     }
@@ -865,7 +851,8 @@ export default function Home() {
     root.setAttribute("data-theming", "");
     window.clearTimeout(themingTimerRef.current);
     themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    setTheme((t) => (t === "dark" ? "light" : "dark"));
+    // three-way cycle: dark → light → batman (Gotham) → dark
+    setTheme((t) => (t === "dark" ? "light" : t === "light" ? "batman" : "dark"));
   }
 
   // Mood: same persistence contract as the theme — load the saved choice once,
@@ -889,8 +876,7 @@ export default function Home() {
   }, [mood]);
 
   // Set the accent mood — the switcher and the set_mood tool share this one
-  // path. The token swap rides the same transient cross-fade as the theme flip;
-  // the orb eases its light temperature over in its own render loop (~600ms).
+  // path. The token swap rides the same transient cross-fade as the theme flip.
   const applyMood = useCallback((m: Mood) => {
     const root = document.documentElement;
     root.setAttribute("data-theming", "");
@@ -924,9 +910,20 @@ export default function Home() {
       /* no-op */
     }
     fetch("/api/brief", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((j: { ready?: boolean; brief?: MorningBriefData | null }) => {
+      .then<{ ready?: boolean; brief?: MorningBriefData | null } | "signedout">((r) => {
+        // 401 = auth configured, no session (middleware gate) — the brief is
+        // personal, so the card offers sign-in instead of a compile.
+        if (r.status === 401) return "signedout";
+        return r.ok
+          ? (r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>)
+          : Promise.reject(r);
+      })
+      .then((j) => {
         if (cancelled) return;
+        if (j === "signedout") {
+          setBriefStatus("signedout");
+          return;
+        }
         if (j.ready && j.brief) {
           setBrief(j.brief); // always store so the summon trigger has it later
           if (fromPush) {
@@ -1027,6 +1024,7 @@ export default function Home() {
     setBriefStatus("compiling");
     fetch("/api/brief", { method: "POST" })
       .then(async (r) => {
+        if (r.status === 401) throw new Error("signedout");
         if (r.status === 429) throw new Error("rate");
         if (!r.ok) throw new Error("compile");
         return r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>;
@@ -1047,7 +1045,9 @@ export default function Home() {
           setBriefStatus("error");
         }
       })
-      .catch(() => setBriefStatus("error"));
+      .catch((e) =>
+        setBriefStatus((e as Error)?.message === "signedout" ? "signedout" : "error"),
+      );
   }
 
   function dismissBrief() {
@@ -1088,14 +1088,14 @@ export default function Home() {
         markAugNav();
         deckRef.current?.goTo(screenIndex("presence"));
       } else if (t.tool === "go_to_screen" && t.input) {
-        // Everything (market words included) is a deck surface — slide to it.
+        // Everything (the market words included) is a deck surface — slide to it.
         const target = resolveTarget(String(t.input.screen ?? ""));
         if (target) {
           markAugNav();
           deckRef.current?.goTo(target.index);
         }
       } else if (t.tool === "set_mood" && t.input) {
-        // Same path as the mood control: re-tint the tokens, re-light the orb.
+        // Same path as the mood control: re-tint the tokens.
         const m = String(t.input.mood ?? "").toLowerCase();
         if ((MOODS as readonly string[]).includes(m)) applyMood(m as Mood);
       }
@@ -1133,12 +1133,48 @@ export default function Home() {
     stopListening();
     messagesRef.current = [];
     setMessages([]);
+    threadIdRef.current = null; // the wiped conversation is over — next exchange opens a new thread
     setInterim("");
     openPanel();
     setHistoryOpen(false);
     const line = "Done. I've let it go — we start clean.";
     setReplyText(line);
     speakReply(line);
+  }
+
+  // Open a saved thread from the landing's RECENT THREADS: load its messages
+  // into the conversation and point threadIdRef at it so the next exchange
+  // CONTINUES that thread (the save path upserts by id).
+  async function openThread(id: string) {
+    try {
+      const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      const j = (await res.json()) as {
+        thread?: { id: string; messages?: Array<{ role: string; content: string }> };
+      };
+      const t = j.thread;
+      if (!t || !Array.isArray(t.messages)) throw new Error("malformed");
+      genRef.current += 1; // supersede any in-flight stream
+      abortRef.current?.abort();
+      stopSpeaking();
+      stopListening();
+      const msgs: ChatMessage[] = t.messages.filter(
+        (m): m is ChatMessage =>
+          (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string",
+      );
+      messagesRef.current = msgs;
+      setMessages(msgs);
+      threadIdRef.current = t.id;
+      setInterim("");
+      const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
+      setReplyText(lastAssistant?.content ?? "");
+      setHistoryOpen(true); // land on the full transcript, ready to continue
+      openPanel();
+      setState((s) => (s === "boot" ? s : "idle"));
+    } catch {
+      setReplyText("Couldn't open that thread just now.");
+      openPanel();
+    }
   }
 
   async function handleSend(raw: string) {
@@ -1298,6 +1334,28 @@ export default function Home() {
             assistantText: reply,
           }),
         }).catch(() => {});
+
+        // Background: persist the conversation as a thread (RECENT THREADS on the
+        // landing). Fire-and-forget and best-effort — a failure never blocks or
+        // breaks the chat. Pre-trimmed to the server caps (≤40 messages, ≤8KB
+        // each — see lib/threads.ts) so long sessions keep persisting instead of
+        // tripping the route's 400 validation.
+        void fetch("/api/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: threadIdRef.current ?? undefined,
+            messages: withAssistant.slice(-40).map((m) => ({
+              role: m.role,
+              content: m.content.length > 8000 ? m.content.slice(0, 8000) : m.content,
+            })),
+          }),
+        })
+          .then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null))
+          .then((d) => {
+            if (d && typeof d.id === "string") threadIdRef.current = d.id;
+          })
+          .catch(() => {});
       } else {
         concludeSpeech();
       }
@@ -1335,10 +1393,36 @@ export default function Home() {
   // on phones where Web Speech (micSupported) doesn't.
   const voiceCapable = micSupported || deepgramAvailable;
 
+  // The landing is the IDLE state of the Presence panel. Once a conversation is
+  // live (messages, a streamed/failed reply, voice mode, him thinking/speaking),
+  // the existing reply panel + composer own the screen and the landing's ask bar
+  // and chips yield (showSuggestions semantics from the design).
+  const conversationActive =
+    voiceMode ||
+    messages.length > 0 ||
+    replyText !== "" ||
+    interim !== "" ||
+    state === "thinking" ||
+    state === "speaking";
+  const landingIdle = activeScreen === screenIndex("presence") && !conversationActive;
+  // One input per screen: the landing has its ask bar, the intel desk has its
+  // own contextual ASK AUGUST bar — the global composer dock renders on
+  // neither unless a conversation is live ON SCREEN. conversationActive is
+  // deliberately sticky (messages persist all session so the landing stays in
+  // its conversation layout); the desk instead keys off what is visibly live —
+  // voice mode, an in-flight reply, or the reply card being open. A dismissed
+  // panel with old history must not summon the dock over the desk.
+  const conversationLive =
+    voiceMode ||
+    state === "thinking" ||
+    state === "speaking" ||
+    (panelOpen && (replyText !== "" || interim !== ""));
+  const intelPanelIdle = activeScreen === screenIndex("markets") && !conversationLive;
+
   return (
     <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
-      <BootHud />
-      <FrameTicks />
+      {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
+          the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
           a conditionally-mounted bar wouldn't announce its first "mic live" state. */}
       <div className="sr-only" aria-live="assertive" aria-atomic="true">
@@ -1352,54 +1436,47 @@ export default function Home() {
         onActiveChange={handleSurfaceChange}
         surfaces={[
           <div key="presence" className="presence-surface">
-            <Presence3D state={state} amplitudeRef={amplitudeRef} theme={theme} mood={mood} />
-            <PresenceTelemetry state={state} visible={booted && !briefOpen} />
-            {booted && !briefOpen ? (
-              <button type="button" className="brief-summon" onClick={summonBrief}>
-                <span className="brief-summon-dot" /> today&rsquo;s brief
-              </button>
-            ) : null}
-            {/* The Pulse — renders null when nothing changed (the empty state is
-                the point). While the brief is open it stacks BELOW the brief in
-                its column — the brief speaks first. */}
-            {booted && !briefOpen ? <PulseCard deltas={pulseShown} onNavigate={goToScreen} /> : null}
+            <HomeLanding
+              state={state}
+              theme={theme}
+              amplitudeRef={amplitudeRef}
+              active={activeScreen === screenIndex("presence")}
+              conversationActive={conversationActive}
+              micSupported={voiceCapable}
+              listening={state === "listening"}
+              busy={state === "thinking"}
+              voiceMode={voiceMode}
+              messagesCount={messages.length}
+              onSend={handleSend}
+              onToggleMic={toggleMic}
+              onToggleVoiceMode={toggleVoiceMode}
+              onOpenThread={openThread}
+              onSummonBrief={summonBrief}
+              pushState={pushState}
+              onNotify={handleNotify}
+              soundOn={soundOn}
+              onToggleSound={toggleSound}
+              onToggleTheme={toggleTheme}
+            />
             {booted && briefOpen ? (
-              <div className="presence-stack">
-                <MorningBrief
-                  brief={brief}
-                  status={briefStatus}
-                  playing={briefPlaying}
-                  onPlay={playBrief}
-                  onStop={stopVoice}
-                  onCompile={compileBriefNow}
-                  onDismiss={dismissBrief}
-                />
-                <PulseCard deltas={pulseShown} onNavigate={goToScreen} />
-              </div>
+              <MorningBrief
+                brief={brief}
+                status={briefStatus}
+                playing={briefPlaying}
+                onPlay={playBrief}
+                onStop={stopVoice}
+                onCompile={compileBriefNow}
+                onDismiss={dismissBrief}
+              />
             ) : null}
-            {/* Word-rail — the four surfaces as one quiet mono line above the
-                composer band; the current one reads a touch brighter. */}
-            <nav className={`presence-rail${booted ? " rail-in" : ""}`} aria-label="Surfaces">
-              {SCREENS.map((s, i) => (
-                <Fragment key={s}>
-                  {i > 0 ? (
-                    <span className="rail-sep" aria-hidden>
-                      ·
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={`rail-word${activeScreen === i ? " on" : ""}`}
-                    onClick={() => goToScreen(s)}
-                    aria-current={activeScreen === i ? "true" : undefined}
-                  >
-                    {SCREEN_LABELS[s]}
-                  </button>
-                </Fragment>
-              ))}
-            </nav>
           </div>,
-          <DeskSurface key="desk" />,
+          // The standalone markets surface is retired; the embedded intel desk
+          // owns this slot (user decision: intel is a full deck surface, not a
+          // corner pill). The id stays "markets" so tool nav + watcher deep
+          // links keep landing here.
+          <IntelDeckSurface key="markets" active={activeScreen === screenIndex("markets")} />,
+          // WorldSurface holds the MapLibre globe behind an IntersectionObserver
+          // latch, so boot never pays for the map bundle.
           <WorldSurface
             key="world"
             active={activeScreen === screenIndex("world")}
@@ -1512,6 +1589,12 @@ export default function Home() {
           </div>
         ) : null}
 
+        {/* On the idle landing the design's ask bar IS the input (mic + voice
+            mode ride inside it), and the intel desk carries its own contextual
+            ASK AUGUST bar — the dock composer stands down on both (one input
+            per screen); it returns the moment a conversation is live or the
+            deck slides to World/Comms. */}
+        {!landingIdle && !intelPanelIdle ? (
         <div className="composer-row">
           <Composer
             onSend={handleSend}
@@ -1570,45 +1653,10 @@ export default function Home() {
             >
               {muted ? <VoiceOffIcon /> : <VoiceIcon />}
             </button>
-            <button
-              type="button"
-              className={`ctl-round${soundOn ? "" : " off"}`}
-              onClick={toggleSound}
-              title={soundOn ? "UI sounds on" : "UI sounds off"}
-              aria-pressed={soundOn}
-              aria-label={soundOn ? "Turn UI sounds off" : "Turn UI sounds on"}
-            >
-              <ToneIcon off={!soundOn} />
-            </button>
-            {pushState !== "unsupported" && (
-              <button
-                type="button"
-                className={`ctl-round${pushState === "granted" ? " on" : ""}`}
-                onClick={handleNotify}
-                title={
-                  pushState === "granted"
-                    ? "Notifications on"
-                    : pushState === "ios-install"
-                      ? "Install AUGUST to enable notifications"
-                      : pushState === "denied"
-                        ? "Notifications blocked — tap for help"
-                        : "Enable notifications"
-                }
-                aria-pressed={pushState === "granted"}
-                aria-label={pushState === "granted" ? "Notifications enabled" : "Enable notifications"}
-              >
-                {pushState === "denied" ? <BellOffIcon /> : <BellIcon on={pushState === "granted"} />}
-              </button>
-            )}
-            <button
-              type="button"
-              className="ctl-round ctl-theme"
-              onClick={toggleTheme}
-              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            >
-              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-            </button>
+            {/* Sound, bell, and theme moved to the landing's quiet top-bar
+                cluster (HomeLanding) — the conversation cluster keeps only
+                the in-conversation controls: voice mode, stop, mute, and the
+                mood switcher (which has no home on the landing). */}
             <button
               type="button"
               className="ctl-round ctl-mood"
@@ -1620,6 +1668,7 @@ export default function Home() {
             </button>
           </div>
         </div>
+        ) : null}
       </div>
     </main>
   );
@@ -1753,7 +1802,7 @@ function FrameTicks() {
 }
 
 // ---------------------------------------------------------------------------
-// Theme toggle icons — the control lives in the composer's control cluster.
+// Theme toggle icons — the control lives in the landing's top-bar cluster.
 // ---------------------------------------------------------------------------
 
 function SunIcon() {
@@ -1769,6 +1818,17 @@ function MoonIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+    </svg>
+  );
+}
+
+/* Signal icon — a beam ring, the third theme's cue. Same stroke language as
+   Sun/Moon; monochrome (currentColor), no decoration. */
+function SignalIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="12" cy="12" r="8.5" opacity="0.45" />
     </svg>
   );
 }
@@ -1821,9 +1881,9 @@ function BootHud() {
     return () => window.clearTimeout(id);
   }, [n, full.length]);
 
-  // Live ZULU timestamp.
+  // Live ZULU timestamp — time-only; the full ISO date was corner clutter.
   useEffect(() => {
-    const fmt = () => setZulu(new Date().toISOString().replace(/\.\d{3}Z$/, "Z"));
+    const fmt = () => setZulu(new Date().toISOString().slice(11, 19) + "Z");
     fmt();
     const id = window.setInterval(fmt, 1000);
     return () => window.clearInterval(id);
@@ -1833,7 +1893,7 @@ function BootHud() {
   const done = n >= full.length;
 
   return (
-    <div className="boot-hud hud fixed left-5 top-5 z-30 select-none">
+    <div className={`boot-hud hud fixed left-5 top-5 z-30 select-none${done ? " settled" : ""}`}>
       <div className={`boot-lines${collapsed ? " boot-lines-out" : ""}`} aria-hidden={collapsed}>
         {LINES.map((_, i) => (
           <div key={i} className={i === 1 ? "boot-brand" : "opacity-70"}>

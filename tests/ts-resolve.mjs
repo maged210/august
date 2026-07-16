@@ -18,6 +18,16 @@ registerHooks({
       const relative = specifier.startsWith("./") || specifier.startsWith("../");
       const hasExt = /\.[mc]?[jt]s$/.test(specifier);
       if (relative && !hasExt) return nextResolve(`${specifier}.ts`, context);
+      // The app's "@/…" path alias (tsconfig baseUrl) — map to the repo root so
+      // modules like lib/intel/pipeline.ts (imports "@/lib/markets") are testable.
+      if (specifier.startsWith("@/")) {
+        const base = new URL(`../${specifier.slice(2)}`, import.meta.url).href;
+        try {
+          return nextResolve(base, context);
+        } catch {
+          return nextResolve(`${base}.ts`, context);
+        }
+      }
       throw err;
     }
   },

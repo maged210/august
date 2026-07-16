@@ -1,7 +1,14 @@
-// Ask AUGUST — cited retrieval Q&A over processed videos.
+// Ask AUGUST — cited retrieval Q&A over processed videos. OWNER-ONLY: the
+// answer path is built around attribution (the model sees channel + video
+// titles and must cite videoId + timestamp, and its prose may name channels),
+// so it cannot be served redacted — non-owners are gated instead of leaked to.
+// (The pre-merge approach — serve everyone, blank the cite FIELDS — did not
+// hold: it left channel names the model wrote into ANSWER PROSE untouched.)
+// This is a source-privacy READ boundary, so it rides the attribution gate
+// (fail-closed in production when auth is unconfigured), not the write gate.
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { askIntel } from "@/lib/intel/ask";
-import { intelOwnerView } from "@/lib/intel/redact";
+import { gateIntelAttributionOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +17,8 @@ export const maxDuration = 60;
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("intelAsk", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+  const denied = await gateIntelAttributionOrRespond();
+  if (denied) return denied;
   let q = "";
   try {
     q = String((await req.json())?.question ?? "").trim();
@@ -17,10 +26,5 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
   if (q.length < 3) return Response.json({ error: "question_required" }, { status: 400 });
-  const result = await askIntel(q);
-  // Privacy contract: same as the briefs routes — source attribution (videoId/videoTitle/channelTitle) never leaves the app unless INTEL_OWNER_VIEW; blanked cites are hidden by the client's videoId gate.
-  if (!intelOwnerView()) {
-    result.citations = result.citations.map((c) => ({ ...c, videoId: "", videoTitle: "", channelTitle: "" }));
-  }
-  return Response.json(result);
+  return Response.json(await askIntel(q));
 }

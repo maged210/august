@@ -3,6 +3,7 @@
 // All Upstash + model work happens server-side.
 import { updateMemoryFromExchange, clearMemory } from "@/lib/memory";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
+import { resolveUserOr401 } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,10 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("memory", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+
+  // Session → namespace (stage 2): null in the single-user fallback.
+  const user = await resolveUserOr401();
+  if (!user.ok) return user.response;
 
   let body: unknown;
   try {
@@ -22,7 +27,7 @@ export async function POST(req: Request): Promise<Response> {
   const action = b.action;
 
   if (action === "forget") {
-    await clearMemory();
+    await clearMemory(user.email);
     return new Response(null, { status: 204 });
   }
 
@@ -35,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     // The CLIENT fires this without awaiting, so the reply is never blocked. We
     // await here so the function stays alive until the write completes.
-    await updateMemoryFromExchange({ sessionId, userText, assistantText });
+    await updateMemoryFromExchange({ email: user.email, sessionId, userText, assistantText });
     return new Response(null, { status: 204 });
   }
 

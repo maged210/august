@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Inter } from "next/font/google";
+import { JetBrains_Mono, Inter, Geist } from "next/font/google";
 import "./globals.css";
 
 const mono = JetBrains_Mono({
@@ -12,6 +12,15 @@ const mono = JetBrains_Mono({
 const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
+  display: "swap",
+});
+
+// The home landing's face (docs/design/AUGUST Home.dc.html) — scoped to the
+// landing via --font-geist; the rest of the app keeps Inter + JetBrains Mono.
+const geist = Geist({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-geist",
   display: "swap",
 });
 
@@ -55,13 +64,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${mono.variable} ${sans.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${mono.variable} ${sans.variable} ${geist.variable}`} suppressHydrationWarning>
       <head>
         {/* Set the theme + mood attributes before first paint so neither flashes. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){var d=document.documentElement;try{var t=localStorage.getItem('aug-theme');d.setAttribute('data-theme',t==='light'?'light':'dark');var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-theme','dark');d.setAttribute('data-mood','steel');}})();",
+              // THEME — light is the default stage; the toggle cycles
+              // light → gotham(batman) → dark. One-time migration: a previously
+              // stored 'dark' (the old default) is reset to light once; an
+              // explicit re-pick of dark/gotham after that is honored forever.
+              // MOOD — orthogonal to the theme (it re-tints only the accent
+              // family); same pre-paint contract so a saved mood boots without
+              // a flash. A theme failure must not cost the mood, and vice versa,
+              // so each resolves in its own try/catch with its own safe default.
+              "(function(){var d=document.documentElement;" +
+              "try{var f=localStorage.getItem('aug-theme-lightdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-lightdefault','1');if(t==='dark'){t='light';localStorage.setItem('aug-theme','light');}}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':'light');}catch(e){d.setAttribute('data-theme','light');}" +
+              "try{var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-mood','steel');}" +
+              "})();",
           }}
         />
       </head>
