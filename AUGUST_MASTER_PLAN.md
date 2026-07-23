@@ -41,8 +41,8 @@
   DONE WHEN: both files in repo, pushed. ✓ 2026-07-23
 - [x] **A2 (S) HUMAN** Install Claude Code on the rig — PowerShell: `irm https://claude.ai/install.ps1 | iex`, then `claude` in C:\dev\august, log in.
   DONE WHEN: `claude` opens in the repo. ✓ verified 2026-07-23 — this session runs in the repo.
-- [ ] **A3 (S)** Install Vercel CLI (`npm i -g vercel`), run `vercel link` (HUMAN confirms the august project when prompted), then `vercel env pull .env.local`.
-  DONE WHEN: `.env.local` exists containing ANTHROPIC_API_KEY and Upstash vars; file is git-ignored.
+- [x] **A3 (S)** Install Vercel CLI (`npm i -g vercel`), run `vercel link` (HUMAN confirms the august project when prompted), then `vercel env pull .env.local`.
+  DONE WHEN: `.env.local` exists containing ANTHROPIC_API_KEY and Upstash vars; file is git-ignored. ✓ 2026-07-23 — linked to august-wiiz; pulled from Preview env (Development env is empty on Vercel; note: Preview Upstash creds differ from Production's).
 - [ ] **A4 (S)** Verify `npm run dev` boots clean with the pulled env; hit `/` and `/intel` locally.
   DONE WHEN: both routes render, no red console errors.
 - [ ] **A5 (M)** Set up a Claude Code Notification hook: when Claude Code needs permission, hits a blocker, or finishes a run, play a Windows sound + toast. Claude Code configures its own hooks — ask it to.
@@ -125,7 +125,7 @@ Goal: replace the CSS-drawn room with a real render. Chat overlay sits ON the mo
 - **G1** approve bedroom render · **G2** approve relight feel · **G3** confirm page retirements · **G4** pricing/model for paid tier · **G5** 3D tech path
 
 ## BLOCKERS LOG (Claude Code appends; newest on top)
-- **2026-07-23 · A3** Vercel CLI installed (v56.5.0) but not logged in — device-auth flow started, needs Milek to authorize in browser, then Claude continues `vercel link` + `env pull`. A1/A2 done this session.
+- **2026-07-23 · A3** ~~Vercel CLI not logged in~~ RESOLVED same session — Milek authorized device flow; linked + env pulled.
 
 ## TROUBLESHOOTING APPENDIX (check here before flagging a blocker)
 - **PowerShell blocks npm/npx scripts** → `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
