@@ -47,8 +47,8 @@
   DONE WHEN: both routes render, no red console errors. ✓ 2026-07-23 — Ready in ~2s, both routes 200, no compile/runtime errors.
 - [x] **A5 (M)** Set up a Claude Code Notification hook: when Claude Code needs permission, hits a blocker, or finishes a run, play a Windows sound + toast. Claude Code configures its own hooks — ask it to.
   DONE WHEN: killing the network mid-task (or any forced stop) produces an audible/visible ping. ✓ 2026-07-23 — `~/.claude/hooks/notify.ps1` (sound + toast) wired to Notification + Stop hooks in `~/.claude/settings.json`; script pipe-tested clean. If no toast appeared, check Windows Focus Assist.
-- [ ] **A6 (S)** Create branch `feature/character-page`. All Phase B–C work happens here.
-  DONE WHEN: branch pushed.
+- [x] **A6 (S)** Create branch `feature/character-page`. All Phase B–C work happens here.
+  DONE WHEN: branch pushed. ✓ 2026-07-23 — PHASE A COMPLETE.
 
 ## PHASE B — PHOTOREAL CHARACTER PAGE, STILL-IMAGE VERSION (Fable 5)
 Goal: replace the CSS-drawn room with a real render. Chat overlay sits ON the monitor in the render. Screen relights the room on reply. This ships to prod at the end of the phase.
