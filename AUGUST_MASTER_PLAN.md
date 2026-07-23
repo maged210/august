@@ -43,8 +43,8 @@
   DONE WHEN: `claude` opens in the repo. ✓ verified 2026-07-23 — this session runs in the repo.
 - [x] **A3 (S)** Install Vercel CLI (`npm i -g vercel`), run `vercel link` (HUMAN confirms the august project when prompted), then `vercel env pull .env.local`.
   DONE WHEN: `.env.local` exists containing ANTHROPIC_API_KEY and Upstash vars; file is git-ignored. ✓ 2026-07-23 — linked to august-wiiz; pulled from Preview env (Development env is empty on Vercel; note: Preview Upstash creds differ from Production's).
-- [ ] **A4 (S)** Verify `npm run dev` boots clean with the pulled env; hit `/` and `/intel` locally.
-  DONE WHEN: both routes render, no red console errors.
+- [x] **A4 (S)** Verify `npm run dev` boots clean with the pulled env; hit `/` and `/intel` locally.
+  DONE WHEN: both routes render, no red console errors. ✓ 2026-07-23 — Ready in ~2s, both routes 200, no compile/runtime errors.
 - [ ] **A5 (M)** Set up a Claude Code Notification hook: when Claude Code needs permission, hits a blocker, or finishes a run, play a Windows sound + toast. Claude Code configures its own hooks — ask it to.
   DONE WHEN: killing the network mid-task (or any forced stop) produces an audible/visible ping.
 - [ ] **A6 (S)** Create branch `feature/character-page`. All Phase B–C work happens here.
