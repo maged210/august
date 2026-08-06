@@ -502,7 +502,7 @@ function SheetLevel({ label, level, cls }: { label: string; level: TrackedLevel 
 
 // ── the feed surface ───────────────────────────────────────────────────────────
 
-export default function IdeasFeed({ showDeskLink = false }: { showDeskLink?: boolean }) {
+export default function IdeasFeed() {
   const [feed, setFeed] = useState<FeedPayload | null>(null);
   const [status, setStatus] = useState<"loading" | "live" | "error">("loading");
   const [filter, setFilter] = useState<Filter>("ALL");
@@ -549,11 +549,8 @@ export default function IdeasFeed({ showDeskLink = false }: { showDeskLink?: boo
               {trig} TRIG
             </span>
             <span className={`if-count if-count-arm${arm === 0 ? " if-count-zero" : ""}`}>{arm} ARM</span>
-            {showDeskLink && (
-              <a className="if-desk-link" href="/intel">
-                OPEN DESK →
-              </a>
-            )}
+            {/* OPEN DESK link retired with the standalone /intel route — the
+                owner's desk now renders directly in the Terminal view */}
           </span>
         </div>
         <div className="if-pills" role="tablist" aria-label="Filter ideas by lifecycle">

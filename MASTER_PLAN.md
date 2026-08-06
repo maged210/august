@@ -25,9 +25,12 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] Write this plan to MASTER_PLAN.md with checkboxes.
 
 ## P1 — SINGLE-PAGE IA
-- [ ] One surface at /. Default view: Chat. Top-bar menu toggles Chat ↔ Intel Terminal with no full route change (shallow routing via ?view=terminal is fine).
-- [ ] Trade Ideas rail visible in BOTH views: right sidebar on desktop, collapsible drawer on mobile.
-- [ ] Remove nav links to globe/feeds/mail; redirect those routes to /. Park the code — hide it, don't delete it.
+- [x] One surface at /. Default view: Chat. Top-bar menu toggles Chat ↔ Intel Terminal with no full route change (shallow routing via ?view=terminal is fine).
+- [x] Trade Ideas rail visible in BOTH views: right sidebar on desktop, collapsible drawer on mobile.
+- [x] Remove nav links to globe/feeds/mail; redirect those routes to /. Park the code — hide it, don't delete it.
+  - Parked by un-import (house convention): Deck, WorldSurface/CommandGlobe, CommsSurface; globe tools (look_closer/close_map) retired from the model's tool surface.
+  - /intel and /feed → redirect to /?view=terminal (the embed's owner/visitor split replaces the old server gates); legacy /globe //feeds //mail → / via next.config redirects.
+  - Owner on a phone now gets the desk's MobileBoard inside the Terminal view (the standalone /intel escape hatch is gone) — verify polish at P6.
 
 ## P2 — MATRIX THEME
 - [ ] Dark base, green code-rain canvas background: low opacity, slow fall, capped FPS, single canvas, requestAnimationFrame, honors prefers-reduced-motion.

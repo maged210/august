@@ -475,7 +475,7 @@ function InspChart({ closes, live, trigger, tone }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner, signedOut,
+  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner, signedOut, onExitToChat,
 }: {
   data: Overview;
   clock: string;
@@ -491,6 +491,9 @@ function PageHeader({
   /** role RESOLVED as { authConfigured: true, signedIn: false } — the one case
    *  that renders SIGN IN (a signed-in non-owner gets nothing new) */
   signedOut: boolean;
+  /** CORE V2 — hosted on / as the Terminal view: switch to the Chat view
+   *  client-side (a plain href="/" would full-reload and drop the chat state) */
+  onExitToChat?: () => void;
 }) {
   const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
   for (const idea of blotter) {
@@ -522,7 +525,11 @@ function PageHeader({
           <span className="rd-bar1-div" aria-hidden="true" />
           <nav className="rd-wstabs" aria-label="AUGUST workspaces">
             <span className="rd-wstab on" aria-current="page">INTEL</span>
-            <a className="rd-wstab" href="/">AUGUST</a>
+            {onExitToChat ? (
+              <button type="button" className="rd-wstab" onClick={onExitToChat}>AUGUST</button>
+            ) : (
+              <a className="rd-wstab" href="/">AUGUST</a>
+            )}
           </nav>
         </div>
         <div className="rd-fkeys">
@@ -579,20 +586,22 @@ function PageHeader({
             </button>
           )}
           <a className="rd-btn" href="/api/intel/export/today">EXPORT</a>
-          {/* owner preview of the public /feed page — the audience URL */}
-          {owner && (
-            <a className="rd-btn" href="/feed" target="_blank" rel="noopener noreferrer">VIEW FEED</a>
+          {/* VIEW FEED retired with the standalone /feed route — the public
+              audience now sees the ideas feed inside the Terminal view */}
+          {onExitToChat ? (
+            <button type="button" className="rd-btn" onClick={onExitToChat}>← AUGUST</button>
+          ) : (
+            <a className="rd-btn" href="/">← AUGUST</a>
           )}
-          <a className="rd-btn" href="/">← AUGUST</a>
           {/* signed-out visitor on a configured instance: give the owner (or
-              anyone) a path in — Google identity-only, callback to /intel.
-              `redirectTo` is next-auth v5's option (callbackUrl deprecated);
-              same client pattern as HomeLanding's signOut. */}
+              anyone) a path in — Google identity-only, callback to the
+              Terminal view. `redirectTo` is next-auth v5's option (callbackUrl
+              deprecated); same client pattern as HomeLanding's signOut. */}
           {signedOut && (
             <button
               type="button"
               className="rd-btn rd-btn-acc"
-              onClick={() => void signIn("google", { redirectTo: "/intel" })}
+              onClick={() => void signIn("google", { redirectTo: "/?view=terminal" })}
             >
               SIGN IN
             </button>
@@ -4799,7 +4808,7 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
 
 // ── IntelDashboard (main) ────────────────────────────────────────────────────
 
-export default function IntelDashboard() {
+export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => void } = {}) {
   const [data, setData] = useState<Overview | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [busy, setBusy] = useState<string | null>(null);
@@ -5452,6 +5461,7 @@ export default function IntelDashboard() {
           fng={desk?.fng ?? null}
           owner={owner}
           signedOut={signedOut}
+          onExitToChat={onExitToChat}
         />
         <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
         <LiveTape tape={fullTape} />

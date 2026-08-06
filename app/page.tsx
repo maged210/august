@@ -1487,9 +1487,12 @@ export default function Home() {
         className={`view-panel${view === "terminal" ? "" : " view-hidden"}`}
         aria-hidden={view !== "terminal"}
       >
-        {/* The embedded intel desk keeps its audience split: owner on a wide
-            viewport → the full desk; everyone else → the public ideas feed. */}
-        <IntelDeckSurface active={view === "terminal"} />
+        {/* The embedded intel desk keeps its audience split: owner → the full
+            desk; everyone else → the public ideas feed. */}
+        <IntelDeckSurface
+          active={view === "terminal"}
+          onExitToChat={() => switchView("chat")}
+        />
       </section>
 
       {/* reply dock + composer — fixed, available on every surface. A contained,
