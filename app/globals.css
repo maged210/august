@@ -815,6 +815,12 @@ body::after {
 .matrix-rain {
   position: fixed;
   inset: 0;
+  /* a canvas is a REPLACED element: inset alone doesn't stretch it (the used
+     width stays intrinsic 300×150), so the explicit size is load-bearing —
+     it also keeps writing canvas.width from feeding back into layout size */
+  display: block;
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
   opacity: var(--rain-opacity, 0.11);
@@ -830,7 +836,8 @@ body::after {
    below the boot HUD's z-30 sibling line) */
 .view-bar {
   position: fixed;
-  top: 14px;
+  /* clear the notch/status bar in the installed PWA; env() is 0 elsewhere */
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
@@ -956,7 +963,8 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 10px;
+  /* the rail is full-height fixed — pad its ends clear of notch/indicator */
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 14px 10px;
   border-bottom: 1px solid var(--line);
 }
 .ir-title {
@@ -991,7 +999,7 @@ body::after {
 .ir-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 12px 20px;
+  padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 20px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1010,6 +1018,16 @@ body::after {
 .ir-empty-sub {
   letter-spacing: 0.08em;
   opacity: 0.7;
+}
+/* failed refresh with rows still on screen — mark them stale, offer retry */
+.ir-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--neg);
 }
 .ir-card {
   border: 1px solid var(--line);
@@ -4409,6 +4427,33 @@ button.pulse-line:focus-visible {
   --ring: rgba(201, 169, 106, 0.13);
   --halo: rgba(201, 169, 106, 0.14);
 }
+/* MATRIX: a third night palette in phosphor green. --bg is TRANSPARENT by
+   design — the code-rain canvas is fixed at z-0 behind the view panels, and
+   main.stage-vignette already paints the --charcoal (#030905) stage, so the
+   landing lets the rain read through while its cards stay translucent glass
+   ("content sits on translucent dark panels over the rain"). */
+:root[data-theme="matrix"] .home-landing {
+  --bg: transparent;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --hair2: rgba(190, 255, 205, 0.08);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
+  --thread: rgba(216, 236, 217, 0.84);
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+  --orb-bg: radial-gradient(circle at 36% 32%, #12241a 0%, #0a140e 46%, #030905 74%);
+  --orb-glow:
+    0 0 90px rgba(78, 201, 122, 0.26),
+    0 0 32px rgba(78, 201, 122, 0.18),
+    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
+    inset 9px 12px 42px rgba(78, 201, 122, 0.12);
+  --ring: rgba(78, 201, 122, 0.13);
+  --halo: rgba(78, 201, 122, 0.14);
+}
 
 /* — top bar: wordmark · clock + state · quiet control cluster ------------- */
 .hl-top {
@@ -4586,7 +4631,8 @@ button.pulse-line:focus-visible {
 /* NIGHT/GOTHAM: no contact shadow — an ink pool on a black stage is invisible at
    best, and there the stone is lit in a void, not lying on anything. */
 :root[data-theme="dark"] .home-landing .hl-orb::before,
-:root[data-theme="batman"] .home-landing .hl-orb::before {
+:root[data-theme="batman"] .home-landing .hl-orb::before,
+:root[data-theme="matrix"] .home-landing .hl-orb::before {
   display: none;
 }
 /* THE HALO IS NIGHT-ONLY. It is an OUTSET box-shadow on a 202px border-box with
@@ -4603,7 +4649,8 @@ button.pulse-line:focus-visible {
   display: none;
 }
 :root[data-theme="dark"] .home-landing .hl-orb-halo,
-:root[data-theme="batman"] .home-landing .hl-orb-halo {
+:root[data-theme="batman"] .home-landing .hl-orb-halo,
+:root[data-theme="matrix"] .home-landing .hl-orb-halo {
   display: block;
   position: absolute;
   inset: -6px;
@@ -4630,7 +4677,8 @@ button.pulse-line:focus-visible {
   display: none;
 }
 :root[data-theme="dark"] .home-landing .hl-orb-ring,
-:root[data-theme="batman"] .home-landing .hl-orb-ring {
+:root[data-theme="batman"] .home-landing .hl-orb-ring,
+:root[data-theme="matrix"] .home-landing .hl-orb-ring {
   display: block;
   position: absolute;
   inset: -22px;
@@ -4906,7 +4954,8 @@ button.pulse-line:focus-visible {
   /* Must out-specify the night/gotham halo rule above, which is where the
      animation is now declared — a bare .hl-orb-halo here would lose to it. */
   :root[data-theme="dark"] .home-landing .hl-orb-halo,
-  :root[data-theme="batman"] .home-landing .hl-orb-halo {
+  :root[data-theme="batman"] .home-landing .hl-orb-halo,
+  :root[data-theme="matrix"] .home-landing .hl-orb-halo {
     animation: none;
   }
 }
@@ -4944,6 +4993,16 @@ button.pulse-line:focus-visible {
   --hair: rgba(255, 255, 255, 0.13);
   --card: rgba(255, 255, 255, 0.04);
   --label: #c9a96a;
+  --cardshadow: none;
+}
+:root[data-theme="matrix"] .login-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
   --cardshadow: none;
 }
 .lp-card {
@@ -5053,6 +5112,18 @@ button.pulse-line:focus-visible {
   --hair: rgba(255, 255, 255, 0.13);
   --card: rgba(255, 255, 255, 0.04);
   --label: #c9a96a;
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+}
+:root[data-theme="matrix"] .welcome-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
   --up: #57a97f;
   --down: #c97064;
   --cardshadow: none;

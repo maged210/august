@@ -15,7 +15,9 @@
 import { useEffect, useRef } from "react";
 
 const GLYPHS = "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ABCDEFXZ$+-<>*";
-const CELL = 16; // px per column/row
+const CELL = 16; // px per column/row at normal widths
+const MAX_COLS = 240; // ultrawide guard: the cell scales up past ~3840px so the
+// per-step glyph count stays bounded on a 7680×2160 display
 const STEP_MS = 80; // column advance cadence (~12.5 steps/s)
 const TRAIL = 16; // trail length in glyphs
 
@@ -40,7 +42,7 @@ export default function MatrixRain() {
       .split(/[\s,]+/)
       .join(",");
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const font = `${CELL - 2}px "JetBrains Mono", ui-monospace, monospace`;
+    let cell = CELL;
 
     let raf = 0;
     let running = false;
@@ -52,12 +54,28 @@ export default function MatrixRain() {
     let speeds: number[] = []; // rows per step, per column
     let grid: string[][] = []; // [col][row] → last glyph drawn at that cell
 
-    const seed = () => {
-      cols = Math.max(1, Math.floor(canvas.clientWidth / CELL));
-      rows = Math.max(1, Math.ceil(canvas.clientHeight / CELL) + 1);
-      heads = Array.from({ length: cols }, () => -Math.random() * rows * 1.5);
-      speeds = Array.from({ length: cols }, () => 0.55 + Math.random() * 0.75);
-      grid = Array.from({ length: cols }, () => Array.from({ length: rows }, glyph));
+    // Fit the column/row arrays to the current size, PRESERVING what survives:
+    // a resize must not blank the whole field and leave it refilling for
+    // seconds — only added columns/rows seed fresh. From empty state (boot)
+    // this seeds everything, with heads staggered above the viewport.
+    const reflow = () => {
+      cols = Math.max(1, Math.floor(canvas.clientWidth / cell));
+      rows = Math.max(1, Math.ceil(canvas.clientHeight / cell) + 1);
+      heads.length = Math.min(heads.length, cols);
+      speeds.length = Math.min(speeds.length, cols);
+      grid.length = Math.min(grid.length, cols);
+      while (heads.length < cols) {
+        heads.push(-Math.random() * rows * 1.5);
+        speeds.push(0.55 + Math.random() * 0.75);
+        grid.push(Array.from({ length: rows }, glyph));
+      }
+      for (let c = 0; c < cols; c++) {
+        const col = grid[c];
+        if (col.length > rows) col.length = rows;
+        while (col.length < rows) col.push(glyph());
+        // a shrink must not strand a head far below the new bottom
+        if (heads[c] > rows + TRAIL) heads[c] = rows + TRAIL;
+      }
     };
 
     // Size the backing store; false = zero-size (hidden/mid-layout) — self-heal
@@ -66,10 +84,11 @@ export default function MatrixRain() {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       if (w === 0 || h === 0) return false;
+      cell = Math.max(CELL, Math.ceil(w / MAX_COLS));
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.font = font;
+      ctx.font = `${cell - 2}px "JetBrains Mono", ui-monospace, monospace`;
       ctx.textBaseline = "top";
       return true;
     };
@@ -81,7 +100,7 @@ export default function MatrixRain() {
       ctx.fillStyle = `rgba(${rainRgb},0.4)`;
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
-          if (Math.random() < 0.045) ctx.fillText(glyph(), c * CELL, r * CELL);
+          if (Math.random() < 0.045) ctx.fillText(glyph(), c * cell, r * cell);
         }
       }
     };
@@ -109,7 +128,7 @@ export default function MatrixRain() {
         ctx.fillStyle = `rgba(${rainRgb},${a})`;
         for (let c = 0; c < cols; c++) {
           const r = Math.floor(heads[c]) - t;
-          if (r >= 0 && r < rows) ctx.fillText(grid[c][r], c * CELL, r * CELL);
+          if (r >= 0 && r < rows) ctx.fillText(grid[c][r], c * cell, r * cell);
         }
       }
     };
@@ -142,19 +161,18 @@ export default function MatrixRain() {
 
     const boot = () => {
       if (!size()) return;
-      seed();
+      reflow();
       if (reduced) drawStatic();
       else start();
     };
     boot();
 
     const ro = new ResizeObserver(() => {
-      const wasRunning = running;
       stop();
-      if (!size()) return;
-      seed();
+      if (!size()) return; // zero-size — heal on the next observer tick
+      reflow();
       if (reduced) drawStatic();
-      else if (wasRunning || !document.hidden) start();
+      else if (!document.hidden) start();
     });
     ro.observe(canvas);
 

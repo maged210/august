@@ -149,8 +149,10 @@ export default function Home() {
   // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
   const [view, setView] = useState<ViewId>("chat");
   // Trade Ideas drawer (below 1100px; the desktop sidebar is always open and
-  // ignores this — see .ideas-rail's media query).
+  // ignores this — see .ideas-rail's media query). The ref mirrors it for the
+  // Esc handler, which must not resubscribe per toggle.
   const [railOpen, setRailOpen] = useState(false);
+  const railOpenRef = useRef(false);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -253,18 +255,37 @@ export default function Home() {
     }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
   }, []);
 
-  // Esc exits hands-free voice mode first (it's the bigger thing to back out of);
-  // otherwise it dismisses the reply panel. Works even while typing.
+  // ONE Esc stack, owned here (a second capture-phase listener elsewhere could
+  // shadow the voice-mode kill switch — the privacy-critical one): voice mode
+  // exits first, then the ideas drawer closes, then the reply panel dismisses.
+  // Works even while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (voiceModeRef.current) exitVoiceMode();
+      else if (railOpenRef.current) setRailOpen(false);
       else closePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closePanel]);
+
+  useEffect(() => {
+    railOpenRef.current = railOpen;
+  }, [railOpen]);
+
+  // Crossing up past 1100px turns the drawer into the always-open sidebar —
+  // clear the drawer flag so a stale `open` can't silently eat an Esc later.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1100px)");
+    const apply = () => {
+      if (mq.matches) setRailOpen(false);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -990,6 +1011,23 @@ export default function Home() {
       switchView(v, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The Gmail OAuth callback still redirects to "/?comms=<status>#comms", but
+  // the comms surface is parked (CORE V2) — its only consumer is unmounted.
+  // Consume and strip the param so it can't stick in the URL; the connect
+  // affordance re-homes if/when comms returns.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("comms")) {
+        u.searchParams.delete("comms");
+        u.hash = "";
+        window.history.replaceState({}, "", u.toString());
+      }
+    } catch {
+      /* no-op */
+    }
   }, []);
 
   // Summon the brief panel on demand; compile if none exists yet.

@@ -20,9 +20,9 @@ export const GO_TO_SCREEN_TOOL = {
     properties: {
       screen: {
         type: "string" as const,
-        enum: ["presence", "desk", "markets", "intel"],
+        enum: ["chat", "presence", "desk", "markets", "intel", "terminal"],
         description:
-          "Where to go: presence (the chat/home view — the orb and the conversation) or desk (the intel terminal — today's brief, the live blotter and tape, the brief archive; also reachable as 'markets' or 'intel').",
+          "Where to go: chat (the home view — the orb and the conversation; also 'presence') or desk (the intel terminal — today's brief, the live blotter and tape, the brief archive; also 'markets', 'intel', or 'terminal').",
       },
     },
     required: ["screen"],

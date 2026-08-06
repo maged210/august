@@ -36,10 +36,7 @@ export default function IdeasRail({ open, onClose }: Props) {
         setIdeas(Array.isArray(j.ideas) ? j.ideas : []);
         setFailed(false);
       })
-      .catch(() => {
-        setFailed(true);
-        setIdeas((prev) => prev); // keep any stale rows on a failed refresh
-      });
+      .catch(() => setFailed(true)); // rows (if any) stay — marked stale below
   }, []);
 
   useEffect(() => {
@@ -55,19 +52,8 @@ export default function IdeasRail({ open, onClose }: Props) {
     return () => window.clearInterval(id);
   }, []);
 
-  // Drawer mode: Esc closes (the page's Esc handler owns voice/panel; this one
-  // only fires while the drawer is open, and stops there).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  // Esc handling lives in the page's single Esc stack (voice mode → drawer →
+  // reply panel) — a listener here could shadow the voice-mode kill switch.
 
   const count = ideas?.length ?? 0;
 
@@ -105,7 +91,19 @@ export default function IdeasRail({ open, onClose }: Props) {
               <span className="ir-empty-sub">the desk publishes here</span>
             </div>
           ) : (
-            ideas!.map((idea) => <IdeaCard key={idea.id} idea={idea} />)
+            <>
+              {failed ? (
+                <div className="ir-stale" role="status">
+                  FEED OFFLINE · showing last
+                  <button type="button" className="widget-retry" onClick={pull}>
+                    RETRY
+                  </button>
+                </div>
+              ) : null}
+              {ideas!.map((idea) => (
+                <IdeaCard key={idea.id} idea={idea} />
+              ))}
+            </>
           )}
         </div>
       </aside>

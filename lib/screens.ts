@@ -29,6 +29,9 @@ const SCREEN_ALIASES: Record<string, ScreenId> = {
   desk: "markets",
   intel: "markets",
   tape: "markets",
+  // CORE V2 view names — the go_to_screen tool and users speak in these now.
+  terminal: "markets",
+  chat: "presence",
 };
 
 export function screenIndex(id: string): number {
