@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
+import MatrixRain from "@/components/MatrixRain";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
@@ -162,8 +163,9 @@ export default function Home() {
   const [briefPlaying, setBriefPlaying] = useState(false);
   const [briefDismissed, setBriefDismissed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
-  // Light / dark / gotham theme — persisted; the toggle flips the whole token system.
-  const [theme, setTheme] = useState<Theme>("light");
+  // Matrix / dark / light / gotham theme — persisted; the toggle flips the
+  // whole token system. Matrix is the CORE V2 default stage.
+  const [theme, setTheme] = useState<Theme>("matrix");
   // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
   // the theme, it re-tints only the accent family.
   const [mood, setMood] = useState<Mood>("steel");
@@ -837,7 +839,8 @@ export default function Home() {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("aug-theme");
-      if (saved === "light" || saved === "dark" || saved === "batman") setTheme(saved);
+      if (saved === "light" || saved === "dark" || saved === "batman" || saved === "matrix")
+        setTheme(saved);
     } catch {
       /* private mode */
     }
@@ -859,8 +862,10 @@ export default function Home() {
     root.setAttribute("data-theming", "");
     window.clearTimeout(themingTimerRef.current);
     themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    // three-way cycle: dark → light → batman (Gotham) → dark
-    setTheme((t) => (t === "dark" ? "light" : t === "light" ? "batman" : "dark"));
+    // four-way cycle: matrix → dark → light → batman (Gotham) → matrix
+    setTheme((t) =>
+      t === "matrix" ? "dark" : t === "dark" ? "light" : t === "light" ? "batman" : "matrix",
+    );
   }
 
   // Mood: same persistence contract as the theme — load the saved choice once,
@@ -1404,6 +1409,9 @@ export default function Home() {
       <div className="sr-only" aria-live="assertive" aria-atomic="true">
         {voiceAnnounce}
       </div>
+
+      {/* the code-rain — the matrix theme's stage layer, behind everything */}
+      {theme === "matrix" ? <MatrixRain /> : null}
 
       {/* CORE V2 — the top-bar view toggle, in the deck dots' old top-center
           slot. Two views only; the segmented control is the page's whole nav. */}

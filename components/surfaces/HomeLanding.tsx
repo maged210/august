@@ -368,21 +368,36 @@ export default function HomeLanding({
               className="hl-ctl"
               onClick={onToggleTheme}
               title={
-                theme === "dark"
-                  ? "Switch to light theme"
-                  : theme === "light"
-                    ? "Switch to Gotham theme"
-                    : "Switch to dark theme"
+                theme === "matrix"
+                  ? "Switch to dark theme"
+                  : theme === "dark"
+                    ? "Switch to light theme"
+                    : theme === "light"
+                      ? "Switch to Gotham theme"
+                      : "Switch to Matrix theme"
               }
               aria-label={
-                theme === "dark"
-                  ? "Switch to light theme"
-                  : theme === "light"
-                    ? "Switch to Gotham theme"
-                    : "Switch to dark theme"
+                theme === "matrix"
+                  ? "Switch to dark theme"
+                  : theme === "dark"
+                    ? "Switch to light theme"
+                    : theme === "light"
+                      ? "Switch to Gotham theme"
+                      : "Switch to Matrix theme"
               }
             >
-              {theme === "dark" ? <SunGlyph /> : theme === "light" ? <SignalGlyph /> : <MoonGlyph />}
+              {/* the glyph previews the NEXT stop in the cycle:
+                  matrix→dark (moon), dark→light (sun), light→gotham (signal),
+                  gotham→matrix (rain) */}
+              {theme === "matrix" ? (
+                <MoonGlyph />
+              ) : theme === "dark" ? (
+                <SunGlyph />
+              ) : theme === "light" ? (
+                <SignalGlyph />
+              ) : (
+                <RainGlyph />
+              )}
             </button>
             {/* SETTINGS — re-opens /welcome ("Your setup": watchlist + feeds).
                 Session-only: signed out and unconfigured instances never show it. */}
@@ -724,6 +739,26 @@ function SignalGlyph() {
     >
       <circle cx="12" cy="12" r="4" />
       <circle cx="12" cy="12" r="8.5" opacity="0.45" />
+    </svg>
+  );
+}
+
+/* Digital-rain glyph — three falling dashed columns, the Matrix theme's cue. */
+function RainGlyph() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M6 3v4M6 11v3" />
+      <path d="M12 5v3M12 12v5" />
+      <path d="M18 3v2M18 9v4" />
     </svg>
   );
 }

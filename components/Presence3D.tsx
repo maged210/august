@@ -5,7 +5,7 @@ import * as THREE from "three";
 import type { Mood } from "@/lib/tools";
 
 export type AugustState = "boot" | "idle" | "listening" | "thinking" | "speaking";
-export type Theme = "dark" | "light" | "batman";
+export type Theme = "dark" | "light" | "batman" | "matrix";
 export type { Mood };
 
 type Props = {
@@ -152,6 +152,35 @@ const LOOK = {
       bounce: "30,36,48",
       bounceA: 0.42,
       box: { a: 0.82, r: 90, squash: 0.44, dx: -66, dy: -50 },
+      shade: null,
+    },
+  },
+  // Matrix (CORE V2): the night rig re-lit in terminal green — phosphor rim
+  // and corona over a green-cast near-black room. Same dark-stage physics;
+  // the greens sit with the theme's --steel (#4ec97a family), deliberately
+  // apart from the market --pos and the phosphor mood.
+  matrix: {
+    crystalTint: CRYSTAL_TINT,
+    crystalMetalness: 0.95,
+    crystalRoughness: 0.12,
+    crystalIridescence: 0.26,
+    crystalSpike: 1.0,
+    rim: new THREE.Color(0x8fe6ab),
+    corona: new THREE.Color(0x4ec97a),
+    glow: new THREE.Color(0x2f6b45),
+    additive: true,
+    rimIntensity: 0.7,
+    glowOpacity: 0.45,
+    coronaOpacity: 0.5,
+    envIntensity: 2.55,
+    exposure: 1.1,
+    envRoom: {
+      top: null,
+      mid: "#0d1a12",
+      floor: "#020604",
+      bounce: "34,58,42",
+      bounceA: 0.46,
+      box: { a: 0.82, r: 94, squash: 0.45, dx: -66, dy: -50 },
       shade: null,
     },
   },

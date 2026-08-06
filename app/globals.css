@@ -168,6 +168,52 @@
 }
 
 /* ----------------------------------------------------------------------------
+   MATRIX THEME (CORE V2) — the code-rain stage. Same token-swap discipline as
+   Gotham: near-black green-cast stage, pale phosphor ink, THE accent flips to
+   terminal green. Bull/bear semantics (pos/neg) and the catalyst amber inherit
+   untouched — data colors never cosplay, and the accent green (#4ec97a, cold
+   and saturated) is deliberately apart from both the --pos market green
+   (#7fb0a3, teal-leaning) and the phosphor mood (#82a878, leaf-muted).
+
+   The [data-mood] twin selector out-specifies every mood block below
+   REGARDLESS of source order: Matrix's identity IS its green, so the mood
+   axis stands down while this theme is active (a saved ember/graphite mood
+   resumes the moment the theme cycles off matrix).
+
+   The rain reads its own --rain-* tokens — never --steel — so nothing can
+   re-tint the rain, and the canvas component picks them up per theme flip.
+   ---------------------------------------------------------------------------- */
+:root[data-theme="matrix"],
+:root[data-theme="matrix"][data-mood] {
+  --charcoal: #030905; /* near-black stage, green cast */
+  --charcoal-2: #060d08;
+  --bone: #d8ecd9; /* pale phosphor white */
+  --ash: #8aa78f;
+  --ink-mute: #5c7261;
+  --graphite: #29392d;
+  --steel: #4ec97a; /* THE accent — terminal green */
+  --steel-rgb: 78 201 122;
+
+  --wash-rgb: 190 255 205; /* green wash for hairlines/fills */
+  --glass: rgba(4, 12, 7, 0.78);
+  --glass-strong: rgba(3, 9, 5, 0.9);
+  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.22);
+
+  --vignette: radial-gradient(
+    125% 125% at 50% 44%,
+    transparent 36%,
+    rgba(0, 0, 0, 0.44) 74%,
+    rgba(0, 0, 0, 0.74) 100%
+  );
+  --grain-opacity: 0.05;
+
+  /* rain-only tokens — the canvas layer's color, glyph alpha and overall
+     strength (kept off the accent so moods/set_mood can never touch the rain) */
+  --rain-rgb: 64 220 110;
+  --rain-opacity: 0.11;
+}
+
+/* ----------------------------------------------------------------------------
    MOOD — a second axis, orthogonal to the light/dark theme above. <html> carries
    data-mood (steel | ember | phosphor | graphite); each mood re-tints ONLY the
    accent family — --steel / --steel-rgb — and everything accent-derived
@@ -761,6 +807,17 @@ body::after {
   position: absolute;
   inset: 0;
   z-index: 1;
+}
+
+/* the code-rain canvas — behind the view panels (z-1), under the vignette
+   (z-5) and grain (z-6); mounted only while data-theme="matrix". The layer's
+   overall strength is the theme's --rain-opacity token. */
+.matrix-rain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--rain-opacity, 0.11);
 }
 /* display:none, not unmount — the hidden view keeps its React state (chat
    thread, desk tabs/selection); the orb's IntersectionObserver and the desk's

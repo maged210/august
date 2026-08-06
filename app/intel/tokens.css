@@ -2989,3 +2989,41 @@ a.rd-cite:hover { text-decoration: underline; }
     --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(46, 107, 104, 0.07), transparent 62%);
   }
 }
+
+/* ============================================================================
+   MATRIX THEME (CORE V2) — the terminal on the code-rain stage. Appended
+   LAST so it wins its equal-specificity siblings by source order (the same
+   contract the light block relies on), and doubled with [data-mood] so the
+   mood axis can never re-tint it. Re-pins ONLY the stage/surface family, the
+   accent ramp, and the accent-derived illumination values — the semantic
+   colors (bull/bear/amber/blue/teal), hairlines, and text ramp keep their
+   dark defaults: data colors never cosplay.
+   ============================================================================ */
+:root[data-theme="matrix"] .intel-root,
+:root[data-theme="matrix"] .intel-embed-frame,
+:root[data-theme="matrix"][data-mood] .intel-root,
+:root[data-theme="matrix"][data-mood] .intel-embed-frame {
+  /* accent ramp — terminal green (matches the app shell's --steel) */
+  --rd-acc: #4ec97a;
+  --rd-acc-rgb: 78, 201, 122;
+  --rd-acc-soft06: rgba(78, 201, 122, 0.06);
+  --rd-acc-soft12: rgba(78, 201, 122, 0.12);
+  --rd-acc-soft25: rgba(78, 201, 122, 0.25);
+  --rd-acc-soft40: rgba(78, 201, 122, 0.42);
+
+  /* stage / surface family — near-black with a green cast */
+  --rd-stage: #030905;
+  --rd-frame: #050d08;
+  --rd-bar1-bg: #071009;
+  --rd-bar3-bg: #050c07;
+  --rd-tape-label-bg: #08120b;
+  --rd-card: #081209;
+  --rd-legend-bg: #06100a;
+  --rd-btn-bg: #0a1710;
+  --rd-inset: #071009;
+
+  /* accent-derived illumination */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(78, 201, 122, 0.13), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(78, 201, 122, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(78, 201, 122, 0.55), 0 0 22px -8px rgba(78, 201, 122, 0.6);
+}

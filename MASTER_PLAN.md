@@ -33,9 +33,10 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
   - Owner on a phone now gets the desk's MobileBoard inside the Terminal view (the standalone /intel escape hatch is gone) — verify polish at P6.
 
 ## P2 — MATRIX THEME
-- [ ] Dark base, green code-rain canvas background: low opacity, slow fall, capped FPS, single canvas, requestAnimationFrame, honors prefers-reduced-motion.
-- [ ] Content sits on translucent dark panels over the rain; text contrast stays AA-readable everywhere.
-- [ ] Build as a theme (CSS variables) so alternate themes can be added later.
+- [x] Dark base, green code-rain canvas background: low opacity, slow fall, capped FPS, single canvas, requestAnimationFrame, honors prefers-reduced-motion.
+- [x] Content sits on translucent dark panels over the rain; text contrast stays AA-readable everywhere.
+- [x] Build as a theme (CSS variables) so alternate themes can be added later.
+  - Matrix = fourth data-theme value (default via one-time migration; cycle matrix→dark→light→batman). Token swap in globals.css + terminal re-pin in tokens.css; rain rides its own --rain-* tokens so moods can't tint it; orb gets a green LOOK rig.
 
 ### GATE G1 — notify Milek: preview of the themed shell, both views. WAIT for approval.
 - [ ] G1 approved.
