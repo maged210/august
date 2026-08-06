@@ -42,11 +42,11 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] G1 approved 2026-08-05. *(dev preview at localhost:3000; adversarial review ran, 10 confirmed findings fixed pre-gate)*
 
 ## P3 — TRADE IDEAS BACKEND
-- [ ] Upstash Redis. Idea model: id, instrument, thesis, entry, target, riskLevel, status (draft | live | closed), source (manual | extracted), createdAt, updatedAt.
-- [ ] Public: GET /api/ideas returns live ideas only.
-- [ ] Admin: POST/PATCH /api/admin/ideas guarded by ADMIN_TOKEN (bearer). Add ADMIN_TOKEN to .env.local and flag it for the Vercel dashboard at G2.
-- [ ] Admin UI at /admin (token gate): create, edit, approve (draft→live), close.
-- [ ] Public rail renders: instrument, thesis, entry, target, risk level, relative timestamp ("2h ago").
+- [x] Upstash Redis. Idea model: id, instrument, thesis, entry, target, riskLevel, status (draft | live | closed), source (manual | extracted), createdAt, updatedAt. *(lib/ideas — shared august:ideas:v1 namespace, validators + 13 tests)*
+- [x] Public: GET /api/ideas returns live ideas only *(redacted — status/source never on the wire)*.
+- [x] Admin: POST/PATCH /api/admin/ideas guarded by ADMIN_TOKEN (bearer). Add ADMIN_TOKEN to .env.local and flag it for the Vercel dashboard at G2. *(dual gate: bearer OR owner session; ADMIN_TOKEN generated locally — ADD TO VERCEL AT G2)*
+- [x] Admin UI at /admin (token gate): create, edit, approve (draft→live), close. *(+ reject/relist; token tab-scoped in sessionStorage; unlinked + noindex)*
+- [x] Public rail renders: instrument, thesis, entry, target, risk level, relative timestamp ("2h ago"). *(wired since P1 — the rail polls /api/ideas)*
 
 ## P4 — TRANSCRIPT → IDEAS PIPELINE
 - [ ] Admin paste box for NoteGPT transcripts (manual for now; build POST /api/admin/transcripts so a future webhook can hit the same endpoint).
