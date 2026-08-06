@@ -39,7 +39,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
   - Matrix = fourth data-theme value (default via one-time migration; cycle matrix→dark→light→batman). Token swap in globals.css + terminal re-pin in tokens.css; rain rides its own --rain-* tokens so moods can't tint it; orb gets a green LOOK rig.
 
 ### GATE G1 — notify Milek: preview of the themed shell, both views. WAIT for approval.
-- [ ] G1 approved. *(pinged 2026-08-05 — dev preview at localhost:3000; adversarial review ran, 10 confirmed findings fixed pre-gate)*
+- [x] G1 approved 2026-08-05. *(dev preview at localhost:3000; adversarial review ran, 10 confirmed findings fixed pre-gate)*
 
 ## P3 — TRADE IDEAS BACKEND
 - [ ] Upstash Redis. Idea model: id, instrument, thesis, entry, target, riskLevel, status (draft | live | closed), source (manual | extracted), createdAt, updatedAt.
@@ -71,7 +71,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 ---
 
 ## BLOCKERS LOG (newest on top)
-- *(empty)*
+- **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
 ## NOTES
 - ADMIN_TOKEN must be added to the Vercel dashboard (Production + Preview) before G2 sign-off — flag at G2.

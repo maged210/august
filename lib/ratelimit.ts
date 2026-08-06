@@ -28,7 +28,7 @@ type RouteKey =
   | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
   | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
-  | "threads" | "watchlist" | "feeds" | "ideas";
+  | "threads" | "watchlist" | "feeds" | "ideas" | "admin";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -55,6 +55,7 @@ const LIMITS: Record<RouteKey, number> = {
   watchlist: 30, // per-user watchlist reads/writes — cheap Redis ops
   feeds: 30,  // per-user feed prefs + onboarded flag — cheap Redis ops
   ideas: 30,  // public trade-ideas rail — cheap Redis read, 60s client poll
+  admin: 30,  // admin ideas CRUD — token/owner-gated, cheap Redis ops
 };
 
 const _limiters = new Map<RouteKey, Ratelimit>();
