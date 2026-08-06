@@ -39,7 +39,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
   - Matrix = fourth data-theme value (default via one-time migration; cycle matrix→dark→light→batman). Token swap in globals.css + terminal re-pin in tokens.css; rain rides its own --rain-* tokens so moods can't tint it; orb gets a green LOOK rig.
 
 ### GATE G1 — notify Milek: preview of the themed shell, both views. WAIT for approval.
-- [ ] G1 approved.
+- [ ] G1 approved. *(pinged 2026-08-05 — dev preview at localhost:3000; adversarial review ran, 10 confirmed findings fixed pre-gate)*
 
 ## P3 — TRADE IDEAS BACKEND
 - [ ] Upstash Redis. Idea model: id, instrument, thesis, entry, target, riskLevel, status (draft | live | closed), source (manual | extracted), createdAt, updatedAt.
