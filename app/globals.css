@@ -5739,3 +5739,45 @@ button.pulse-line:focus-visible {
     transition: none;
   }
 }
+
+/* transcript intake (P4) */
+.adm-transcript {
+  min-height: 120px;
+  font-size: var(--fs-caption);
+}
+.adm-ok {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--pos);
+  align-self: center;
+}
+.adm-trlog {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.adm-trrow {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--ash);
+}
+.adm-trstatus {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--pos);
+}
+.adm-trstatus.bad {
+  color: var(--neg);
+}
+.adm-trmeta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

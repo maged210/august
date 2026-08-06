@@ -14,6 +14,8 @@
 import { useCallback, useEffect, useState } from "react";
 import WidgetState from "@/components/WidgetState";
 import { IDEA_RISKS, relativeTime, type Idea, type IdeaRiskLevel } from "@/lib/ideas";
+// type-only: lib/transcripts is server code (Anthropic/Redis) — the type erases
+import type { TranscriptRecord } from "@/lib/transcripts";
 
 const TOKEN_KEY = "aug-admin-token";
 
@@ -52,6 +54,12 @@ export default function AdminConsole() {
   const [form, setForm] = useState<Draft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Draft>(EMPTY_DRAFT);
+  // transcript intake (P4)
+  const [trText, setTrText] = useState("");
+  const [trSource, setTrSource] = useState("");
+  const [trBusy, setTrBusy] = useState(false);
+  const [trResult, setTrResult] = useState("");
+  const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -83,9 +91,68 @@ export default function AdminConsole() {
     }
   }, []);
 
+  const loadTranscripts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/transcripts", {
+        cache: "no-store",
+        headers: authHeaders(),
+      });
+      if (!res.ok) return; // gate/storage states already surfaced by the board
+      const j = (await res.json()) as { transcripts?: TranscriptRecord[] };
+      setTranscripts(Array.isArray(j.transcripts) ? j.transcripts : []);
+    } catch {
+      /* intake log is a nicety — the board's states carry the errors */
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (gate === "open") void loadTranscripts();
+  }, [gate, loadTranscripts]);
+
+  const processTranscript = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = trText.trim();
+    if (!text || trBusy) return;
+    setTrBusy(true);
+    setTrResult("");
+    setActionError("");
+    try {
+      const res = await fetch("/api/admin/transcripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ text, source: trSource.trim() }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        drafts?: number;
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        throw new Error(
+          j.error === "ai_not_configured"
+            ? "ANTHROPIC_API_KEY missing — extraction can't run"
+            : (j.error ?? String(res.status)),
+        );
+      }
+      setTrText("");
+      setTrSource("");
+      setTrResult(
+        j.drafts === 0
+          ? "Processed — no trade ideas found in that transcript."
+          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review below.`,
+      );
+      await Promise.all([load(), loadTranscripts()]);
+    } catch (err) {
+      setActionError(`Transcript failed: ${(err as Error).message}`);
+      await loadTranscripts(); // the failed record still shows in the log
+    } finally {
+      setTrBusy(false);
+    }
+  };
 
   const unlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,6 +443,57 @@ export default function AdminConsole() {
             {actionError}
           </p>
         ) : null}
+
+        <section className="adm-section">
+          <h2 className="adm-label">TRANSCRIPT INTAKE</h2>
+          <form className="adm-form" onSubmit={processTranscript}>
+            <input
+              className="adm-input"
+              value={trSource}
+              onChange={(e) => setTrSource(e.target.value)}
+              aria-label="Transcript source"
+              placeholder="source label (optional) — video title or URL"
+              spellCheck={false}
+            />
+            <textarea
+              className="adm-input adm-textarea adm-transcript"
+              value={trText}
+              onChange={(e) => setTrText(e.target.value)}
+              aria-label="Transcript text"
+              placeholder="paste the NoteGPT transcript — ideas are extracted automatically into the draft queue"
+              rows={7}
+            />
+            <div className="adm-actions">
+              <button
+                type="submit"
+                className="adm-btn adm-btn-acc"
+                disabled={trBusy || !trText.trim()}
+              >
+                {trBusy ? "EXTRACTING…" : "PROCESS"}
+              </button>
+              {trResult ? <span className="adm-ok">{trResult}</span> : null}
+            </div>
+          </form>
+          {transcripts.length > 0 ? (
+            <ul className="adm-trlog">
+              {transcripts.map((t) => (
+                <li key={t.id} className="adm-trrow">
+                  <span className={`adm-trstatus${t.status === "failed" ? " bad" : ""}`}>
+                    {t.status === "failed" ? "FAILED" : "OK"}
+                  </span>
+                  <span className="adm-trmeta">
+                    {t.source || t.id} · {(t.chars / 1000).toFixed(1)}k chars ·{" "}
+                    {relativeTime(t.receivedAt)}
+                    {t.status === "processed" ? ` · ${t.ideaIds.length} drafts` : ""}
+                    {t.status === "failed" && t.error && t.error !== "pending"
+                      ? ` · ${t.error}`
+                      : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
 
         <section className="adm-section">
           <h2 className="adm-label">NEW IDEA</h2>

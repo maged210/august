@@ -49,9 +49,9 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] Public rail renders: instrument, thesis, entry, target, risk level, relative timestamp ("2h ago"). *(wired since P1 — the rail polls /api/ideas)*
 
 ## P4 — TRANSCRIPT → IDEAS PIPELINE
-- [ ] Admin paste box for NoteGPT transcripts (manual for now; build POST /api/admin/transcripts so a future webhook can hit the same endpoint).
-- [ ] On submit, automatically: store raw transcript → call Claude (claude-sonnet-4-6) with a strict-JSON extraction prompt → write each candidate as a draft idea. No manual trigger.
-- [ ] Draft queue in /admin: approve / edit / reject. Nothing goes public without approval.
+- [x] Admin paste box for NoteGPT transcripts (manual for now; build POST /api/admin/transcripts so a future webhook can hit the same endpoint). *(one endpoint, both callers; intake log in /admin)*
+- [x] On submit, automatically: store raw transcript → call Claude (claude-sonnet-4-6) with a strict-JSON extraction prompt → write each candidate as a draft idea. No manual trigger. *(schema-forced emit_ideas tool; raw stored BEFORE extraction so failures never lose it; candidates pass the same validator as manual creates and can never publish)*
+- [x] Draft queue in /admin: approve / edit / reject. Nothing goes public without approval. *(built at P3)*
 
 ### GATE G2 — notify Milek: run one real transcript end-to-end (paste → drafts → approve → visible on public rail). WAIT for approval.
 - [ ] G2 approved.
