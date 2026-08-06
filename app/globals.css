@@ -820,6 +820,209 @@ body::after {
   }
 }
 
+/* — Trade Ideas rail — fixed right sidebar ≥1100px, off-canvas drawer below.
+   The --rail-w var (on .has-rail, inherited by every fixed child) shifts the
+   view panels, dock, and view bar so the sidebar never covers content. — */
+.has-rail {
+  --rail-w: 0px;
+}
+@media (min-width: 1100px) {
+  .has-rail {
+    --rail-w: 276px;
+  }
+  .view-tab-ideas {
+    display: none;
+  }
+}
+.has-rail .view-panel {
+  right: var(--rail-w);
+}
+.has-rail .dock-wrap {
+  right: var(--rail-w);
+}
+.has-rail .view-bar {
+  left: calc(50% - var(--rail-w) / 2);
+}
+
+.ideas-rail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40; /* drawer mode: above the dock (z-20) and view bar (z-30) */
+  width: min(320px, 88vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-left: 1px solid var(--line);
+  transform: translateX(102%);
+  visibility: hidden;
+  transition:
+    transform var(--dur-med) var(--ease),
+    visibility 0s linear var(--dur-med);
+}
+.ideas-rail.open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-med) var(--ease);
+}
+.ir-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.45);
+}
+@media (min-width: 1100px) {
+  /* sidebar mode: always open, ambient, below the dock */
+  .ideas-rail {
+    width: var(--rail-w);
+    transform: none;
+    visibility: visible;
+    transition: none;
+    z-index: 15;
+    background: var(--glass);
+  }
+  .ir-scrim,
+  .ir-close {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ideas-rail {
+    transition: none;
+  }
+}
+
+.ir-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.ir-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+}
+.ir-count {
+  color: var(--steel);
+}
+.ir-close {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ash);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.ir-close:hover {
+  color: var(--bone);
+}
+.ir-close:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.ir-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ir-empty {
+  margin-top: 28px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ir-empty-sub {
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+.ir-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ir-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ir-sym {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+}
+.ir-risk {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.ir-risk-low {
+  color: var(--ash);
+}
+.ir-risk-medium {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.4);
+}
+.ir-risk-high {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.4);
+}
+.ir-thesis {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--ash);
+}
+.ir-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--bone);
+}
+.ir-level-k {
+  margin-right: 3px;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+}
+.ir-when {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+
 /* presence */
 .presence-surface {
   position: relative;

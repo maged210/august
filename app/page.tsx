@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Composer from "@/components/Composer";
+import IdeasRail from "@/components/IdeasRail";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
@@ -146,6 +147,9 @@ export default function Home() {
   // the top-bar toggle, the go_to_screen tool, ?view=terminal deep links, and
   // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
   const [view, setView] = useState<ViewId>("chat");
+  // Trade Ideas drawer (below 1100px; the desktop sidebar is always open and
+  // ignores this — see .ideas-rail's media query).
+  const [railOpen, setRailOpen] = useState(false);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -1392,7 +1396,7 @@ export default function Home() {
   const intelPanelIdle = view === "terminal" && !conversationLive;
 
   return (
-    <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
+    <main className="stage-vignette has-rail relative h-[100dvh] w-screen overflow-hidden">
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1420,7 +1424,19 @@ export default function Home() {
         >
           TERMINAL
         </button>
+        {/* drawer trigger — hidden ≥1100px where the rail is a fixed sidebar */}
+        <button
+          type="button"
+          className="view-tab view-tab-ideas"
+          aria-expanded={railOpen}
+          onClick={() => setRailOpen((v) => !v)}
+        >
+          IDEAS
+        </button>
       </nav>
+
+      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px, drawer below */}
+      <IdeasRail open={railOpen} onClose={() => setRailOpen(false)} />
 
       {/* The two-view stack. Both panels STAY MOUNTED once visited (chat always;
           the terminal latches its bodies internally) so chat state and desk
