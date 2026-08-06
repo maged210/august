@@ -49,3 +49,17 @@ export function resolveTarget(id: string): NavTarget {
   const index = screenIndex(id);
   return index >= 0 ? { kind: "screen", index } : null;
 }
+
+// CORE V2 — the deck collapsed to a single page with two views: Chat (the
+// Presence panel) and Terminal (the embedded intel desk / ideas feed). Every
+// legacy screen name still resolves so watcher pushes, the go_to_screen tool,
+// and stale "?screen=" bookmarks keep landing somewhere sensible: the market
+// words go to the Terminal view, everything else goes to Chat. null = unknown
+// name; callers should no-op.
+export type ViewId = "chat" | "terminal";
+
+export function resolveView(id: string): ViewId | null {
+  const index = screenIndex(id);
+  if (index < 0) return null;
+  return SCREENS[index] === "markets" ? "terminal" : "chat";
+}

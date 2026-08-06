@@ -753,6 +753,73 @@ body::after {
   }
 }
 
+/* ===========================================================================
+   CORE V2 — the two-view stack (Chat | Terminal) behind the top-center view
+   bar. The deck styles above are parked with the Deck component.
+   =========================================================================== */
+.view-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* display:none, not unmount — the hidden view keeps its React state (chat
+   thread, desk tabs/selection); the orb's IntersectionObserver and the desk's
+   visited latch park their own background work while hidden */
+.view-hidden {
+  display: none;
+}
+
+/* the view bar — the deck dots' old top-center slot (fixed, z above surfaces,
+   below the boot HUD's z-30 sibling line) */
+.view-bar {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-1);
+}
+.view-tab {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  padding: 5px 14px;
+  border-radius: var(--r-full);
+  color: var(--ash);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.view-tab:hover {
+  color: var(--bone);
+}
+.view-tab.on {
+  color: var(--bone);
+  background: rgb(var(--steel-rgb) / 0.16);
+}
+.view-tab:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-tab {
+    transition: none;
+  }
+}
+
 /* presence */
 .presence-surface {
   position: relative;
