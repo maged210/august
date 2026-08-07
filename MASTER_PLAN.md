@@ -54,7 +54,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] Draft queue in /admin: approve / edit / reject. Nothing goes public without approval. *(built at P3)*
 
 ### GATE G2 — notify Milek: run one real transcript end-to-end (paste → drafts → approve → visible on public rail). WAIT for approval.
-- [ ] G2 approved. *(E2E ran 2026-08-07: transcript tr_974bc2ba → 3 drafts (NQ/NVDA/BTC) → NQ approved + live on /api/ideas redacted, BTC rejected, NVDA left in queue. REMINDER: add ADMIN_TOKEN to the Vercel dashboard before deploy.)*
+- [x] G2 approved 2026-08-07. *(E2E ran 2026-08-07: transcript tr_974bc2ba → 3 drafts (NQ/NVDA/BTC) → NQ approved + live on /api/ideas redacted, BTC rejected, NVDA left in queue. REMINDER: add ADMIN_TOKEN to the Vercel dashboard before deploy.)*
 
 ## P5 — CHAT SURFACE
 - [ ] Clean Claude-style chat: input pinned bottom, streaming reply, message history in client state.
