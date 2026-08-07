@@ -5982,3 +5982,69 @@ button.pulse-line:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* desk tape (G3 round 4) — quick-add row + dense flow-style rows */
+.adm-tape-add .adm-tape-in-sym {
+  flex: 0 0 110px;
+  text-transform: uppercase;
+}
+.adm-tape-add .adm-tape-in-x {
+  flex: 0 1 120px;
+}
+.adm-tapelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.adm-taperow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.06);
+  border-left: 2px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  flex-wrap: wrap;
+}
+.adm-tape-bull { border-left-color: var(--pos); }
+.adm-tape-bear { border-left-color: var(--neg); }
+.adm-tape-neutral { border-left-color: rgb(var(--wash-rgb) / 0.25); }
+.adm-tape-sym {
+  font-weight: 600;
+  color: var(--bone);
+  min-width: 46px;
+}
+.adm-tape-note {
+  color: var(--bone);
+  opacity: 0.85;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 200px;
+}
+.adm-tape-x {
+  font-size: var(--fs-micro);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+.adm-tape-kind {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 6px;
+  border: 1px solid rgb(var(--wash-rgb) / 0.18);
+  border-radius: 3px;
+  color: var(--ash);
+  white-space: nowrap;
+}
+.adm-tk-sweep { color: var(--amber); border-color: rgb(var(--amber-rgb) / 0.4); }
+.adm-tk-block { color: var(--steel); border-color: rgb(var(--steel-rgb) / 0.4); }
+.adm-tk-split { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.4); }
+.adm-tape-acts {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}

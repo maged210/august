@@ -1,9 +1,10 @@
 import { gateAdminOrRespond } from "@/lib/admin";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { createIdea } from "@/lib/ideas";
+import { createTapeEntry } from "@/lib/tape";
 import {
   aiConfigured,
-  extractIdeas,
+  extractFromTranscript,
   listTranscripts,
   storeTranscript,
   transcriptsConfigured,
@@ -60,11 +61,12 @@ export async function POST(req: Request): Promise<Response> {
   const rec = await storeTranscript(text, source);
   if (!rec) return Response.json({ ok: false, error: "store_write_failed" }, { status: 502 });
 
-  // 2. Extract. A failure is recorded on the transcript and reported honestly —
-  //    the caller can re-paste later; nothing half-created.
+  // 2. Extract (ideas + tape callouts, one model pass). A failure is recorded
+  //    on the transcript and reported honestly — the caller can re-paste
+  //    later; nothing half-created.
   let candidates;
   try {
-    candidates = await extractIdeas(text);
+    candidates = await extractFromTranscript(text);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "extraction_failed";
     await updateTranscript(rec.id, { status: "failed", error: msg });
@@ -76,16 +78,27 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // 3. Every surviving candidate becomes a DRAFT (source "extracted") — the
-  //    /admin queue's approve step is the only door to the public rail.
+  //    /admin queue's approve step is the only door to the public rail/dock.
   const ideaIds: string[] = [];
-  for (const c of candidates) {
+  for (const c of candidates.ideas) {
     const idea = await createIdea(c);
     if (idea) ideaIds.push(idea.id);
   }
-  await updateTranscript(rec.id, { status: "processed", ideaIds });
+  const tapeIds: string[] = [];
+  for (const t of candidates.tape) {
+    const entry = await createTapeEntry(t);
+    if (entry) tapeIds.push(entry.id);
+  }
+  await updateTranscript(rec.id, { status: "processed", ideaIds, tapeIds });
 
   return Response.json(
-    { ok: true, transcriptId: rec.id, drafts: ideaIds.length, ideaIds },
+    {
+      ok: true,
+      transcriptId: rec.id,
+      drafts: ideaIds.length + tapeIds.length,
+      ideaIds,
+      tapeIds,
+    },
     { status: 201 },
   );
 }

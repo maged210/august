@@ -14,6 +14,13 @@
 import { useCallback, useEffect, useState } from "react";
 import WidgetState from "@/components/WidgetState";
 import { IDEA_RISKS, relativeTime, type Idea, type IdeaRiskLevel } from "@/lib/ideas";
+import {
+  TAPE_KINDS,
+  TAPE_SENTIMENTS,
+  type TapeEntry,
+  type TapeKind,
+  type TapeSentiment,
+} from "@/lib/tape";
 // type-only: lib/transcripts is server code (Anthropic/Redis) — the type erases
 import type { TranscriptRecord } from "@/lib/transcripts";
 
@@ -44,6 +51,26 @@ type Draft = {
 
 const EMPTY_DRAFT: Draft = { instrument: "", thesis: "", entry: "", target: "", riskLevel: "medium" };
 
+type TapeDraft = {
+  symbol: string;
+  note: string;
+  expiry: string;
+  premium: string;
+  kind: TapeKind;
+  sentiment: TapeSentiment;
+};
+
+// kind/sentiment deliberately survive a save — consecutive callouts usually
+// share them; only the text fields clear (the keyboard-fast contract)
+const EMPTY_TAPE: TapeDraft = {
+  symbol: "",
+  note: "",
+  expiry: "",
+  premium: "",
+  kind: "note",
+  sentiment: "neutral",
+};
+
 export default function AdminConsole() {
   const [gate, setGate] = useState<GateState>("checking");
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
@@ -60,6 +87,10 @@ export default function AdminConsole() {
   const [trBusy, setTrBusy] = useState(false);
   const [trResult, setTrResult] = useState("");
   const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([]);
+  // desk tape (G3 round 4)
+  const [tape, setTape] = useState<TapeEntry[]>([]);
+  const [tapeForm, setTapeForm] = useState<TapeDraft>(EMPTY_TAPE);
+  const [tapeBusy, setTapeBusy] = useState<string | null>(null); // entry id or "create"
 
   const load = useCallback(async () => {
     try {
@@ -105,13 +136,95 @@ export default function AdminConsole() {
     }
   }, []);
 
+  const loadTape = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/tape", { cache: "no-store", headers: authHeaders() });
+      if (!res.ok) return; // gate/storage states already surfaced by the board
+      const j = (await res.json()) as { entries?: TapeEntry[] };
+      setTape(Array.isArray(j.entries) ? j.entries : []);
+    } catch {
+      /* the board's states carry the errors */
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (gate === "open") void loadTranscripts();
-  }, [gate, loadTranscripts]);
+    if (gate === "open") {
+      void loadTranscripts();
+      void loadTape();
+    }
+  }, [gate, loadTranscripts, loadTape]);
+
+  // Quick-add (keyboard-fast): Enter anywhere in the row submits; saves
+  // straight to LIVE (the owner typing IS the approval), source "desk".
+  const tapeQuickAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tapeBusy || !tapeForm.symbol.trim() || !tapeForm.note.trim()) return;
+    setTapeBusy("create");
+    setActionError("");
+    try {
+      const res = await fetch("/api/admin/tape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ ...tapeForm, status: "live", source: "desk" }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? String(res.status));
+      }
+      // keep kind/sentiment for the next callout; clear only the text fields
+      setTapeForm((f) => ({ ...f, symbol: "", note: "", expiry: "", premium: "" }));
+      await loadTape();
+    } catch (err) {
+      setActionError(`Tape add failed: ${(err as Error).message}`);
+    } finally {
+      setTapeBusy(null);
+    }
+  };
+
+  const tapeMutate = async (id: string, patch: Record<string, unknown>) => {
+    setTapeBusy(id);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/admin/tape/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? String(res.status));
+      }
+      await loadTape();
+    } catch (e) {
+      setActionError(`Tape change failed: ${(e as Error).message}`);
+    } finally {
+      setTapeBusy(null);
+    }
+  };
+
+  const tapeDelete = async (id: string) => {
+    setTapeBusy(id);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/admin/tape/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? String(res.status));
+      }
+      await loadTape();
+    } catch (e) {
+      setActionError(`Tape delete failed: ${(e as Error).message}`);
+    } finally {
+      setTapeBusy(null);
+    }
+  };
 
   const processTranscript = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,10 +255,10 @@ export default function AdminConsole() {
       setTrSource("");
       setTrResult(
         j.drafts === 0
-          ? "Processed — no trade ideas found in that transcript."
-          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review below.`,
+          ? "Processed — no trade ideas or tape callouts found in that transcript."
+          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created (ideas + tape), review below.`,
       );
-      await Promise.all([load(), loadTranscripts()]);
+      await Promise.all([load(), loadTranscripts(), loadTape()]);
     } catch (err) {
       setActionError(`Transcript failed: ${(err as Error).message}`);
       await loadTranscripts(); // the failed record still shows in the log
@@ -310,6 +423,51 @@ export default function AdminConsole() {
   const drafts = rows.filter((i) => i.status === "draft");
   const live = rows.filter((i) => i.status === "live");
   const closed = rows.filter((i) => i.status === "closed");
+  const tapeDrafts = tape.filter((t) => t.status === "draft");
+  const tapeLive = tape.filter((t) => t.status === "live");
+
+  const tapeRow = (t: TapeEntry) => (
+    <li key={t.id} className={`adm-taperow adm-tape-${t.sentiment}`}>
+      <span className="adm-tape-sym">{t.symbol}</span>
+      <span className="adm-tape-note">{t.note}</span>
+      {t.expiry ? <span className="adm-tape-x">{t.expiry}</span> : null}
+      {t.premium ? <span className="adm-tape-x">{t.premium}</span> : null}
+      <span className={`adm-tape-kind adm-tk-${t.kind}`}>{t.kind.toUpperCase()}</span>
+      <span className="adm-src">{t.source.toUpperCase()}</span>
+      <span className="adm-when">{relativeTime(t.ts)}</span>
+      <span className="adm-tape-acts">
+        {t.status === "draft" ? (
+          <>
+            <button
+              type="button"
+              className="adm-btn adm-btn-acc"
+              disabled={tapeBusy === t.id}
+              onClick={() => tapeMutate(t.id, { status: "live" })}
+            >
+              APPROVE
+            </button>
+            <button
+              type="button"
+              className="adm-btn adm-btn-warn"
+              disabled={tapeBusy === t.id}
+              onClick={() => tapeDelete(t.id)}
+            >
+              REJECT
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="adm-btn adm-btn-warn"
+            disabled={tapeBusy === t.id}
+            onClick={() => tapeDelete(t.id)}
+          >
+            REMOVE
+          </button>
+        )}
+      </span>
+    </li>
+  );
 
   const card = (idea: Idea) => (
     <article key={idea.id} className="adm-card">
@@ -484,7 +642,11 @@ export default function AdminConsole() {
                   <span className="adm-trmeta">
                     {t.source || t.id} · {(t.chars / 1000).toFixed(1)}k chars ·{" "}
                     {relativeTime(t.receivedAt)}
-                    {t.status === "processed" ? ` · ${t.ideaIds.length} drafts` : ""}
+                    {t.status === "processed"
+                      ? ` · ${t.ideaIds.length} idea${t.ideaIds.length === 1 ? "" : "s"}${
+                          t.tapeIds?.length ? ` · ${t.tapeIds.length} tape` : ""
+                        }`
+                      : ""}
                     {t.status === "failed" && t.error && t.error !== "pending"
                       ? ` · ${t.error}`
                       : ""}
@@ -545,6 +707,111 @@ export default function AdminConsole() {
               </button>
             </div>
           </form>
+        </section>
+
+        <section className="adm-section">
+          <h2 className="adm-label">DESK TAPE — QUICK ADD</h2>
+          <form className="adm-form" onSubmit={tapeQuickAdd}>
+            <div className="adm-form-row adm-tape-add">
+              <input
+                className="adm-input adm-tape-in-sym"
+                value={tapeForm.symbol}
+                onChange={(e) => setTapeForm({ ...tapeForm, symbol: e.target.value })}
+                aria-label="Tape symbol"
+                placeholder="SPX"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <input
+                className="adm-input"
+                value={tapeForm.note}
+                onChange={(e) => setTapeForm({ ...tapeForm, note: e.target.value })}
+                aria-label="Tape note"
+                placeholder="Buy 7600 SPX Put"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
+            <div className="adm-form-row adm-tape-add">
+              <input
+                className="adm-input adm-tape-in-x"
+                value={tapeForm.expiry}
+                onChange={(e) => setTapeForm({ ...tapeForm, expiry: e.target.value })}
+                aria-label="Expiry"
+                placeholder="expiry?"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <input
+                className="adm-input adm-tape-in-x"
+                value={tapeForm.premium}
+                onChange={(e) => setTapeForm({ ...tapeForm, premium: e.target.value })}
+                aria-label="Premium"
+                placeholder="premium?"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <select
+                className="adm-input adm-select"
+                value={tapeForm.kind}
+                onChange={(e) => setTapeForm({ ...tapeForm, kind: e.target.value as TapeKind })}
+                aria-label="Kind"
+              >
+                {TAPE_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {k.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="adm-input adm-select"
+                value={tapeForm.sentiment}
+                onChange={(e) =>
+                  setTapeForm({ ...tapeForm, sentiment: e.target.value as TapeSentiment })
+                }
+                aria-label="Sentiment"
+              >
+                {TAPE_SENTIMENTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="adm-btn adm-btn-acc"
+                disabled={
+                  tapeBusy === "create" || !tapeForm.symbol.trim() || !tapeForm.note.trim()
+                }
+              >
+                {tapeBusy === "create" ? "SAVING…" : "ADD LIVE"}
+              </button>
+            </div>
+            <p className="adm-hint">Enter saves straight to the public tape (you typing it is the approval).</p>
+          </form>
+        </section>
+
+        <section className="adm-section">
+          <h2 className="adm-label">
+            TAPE DRAFTS{" "}
+            {tapeDrafts.length ? <span className="adm-count">{tapeDrafts.length}</span> : null}
+          </h2>
+          {tapeDrafts.length ? (
+            <ul className="adm-tapelist">{tapeDrafts.map(tapeRow)}</ul>
+          ) : (
+            <p className="adm-empty">no extracted tape waiting</p>
+          )}
+        </section>
+
+        <section className="adm-section">
+          <h2 className="adm-label">
+            TAPE LIVE {tapeLive.length ? <span className="adm-count">{tapeLive.length}</span> : null}
+          </h2>
+          {tapeLive.length ? (
+            <ul className="adm-tapelist">{tapeLive.map(tapeRow)}</ul>
+          ) : (
+            <p className="adm-empty">nothing on the public tape</p>
+          )}
         </section>
 
         <section className="adm-section">

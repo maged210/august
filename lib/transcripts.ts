@@ -23,10 +23,16 @@ import {
   validateIdeaCreate,
   type IdeaCreateInput,
 } from "@/lib/ideas";
+import {
+  MAX_TAPE_NOTE_CHARS,
+  validateTapeCreate,
+  type TapeCreateInput,
+} from "@/lib/tape";
 
 export const MAX_TRANSCRIPT_CHARS = 120_000;
 export const MAX_TRANSCRIPTS = 100;
 export const MAX_IDEAS_PER_TRANSCRIPT = 12;
+export const MAX_TAPE_PER_TRANSCRIPT = 12;
 export const MAX_SOURCE_CHARS = 200;
 
 const EXTRACT_MODEL = "claude-sonnet-4-6";
@@ -42,6 +48,8 @@ export type TranscriptRecord = {
   status: TranscriptStatus;
   /** draft ideas created from this transcript */
   ideaIds: string[];
+  /** draft tape entries created from this transcript (G3 round 4; absent on older records) */
+  tapeIds?: string[];
   error?: string;
 };
 
@@ -91,6 +99,33 @@ export function normalizeCandidates(raw: unknown): IdeaCreateInput[] {
   return out;
 }
 
+/**
+ * PURE. Same discipline for tape callouts (G3 round 4): each candidate must
+ * pass lib/tape's own create validator; malformed rows are dropped. Stamps
+ * source "extracted", status "draft" — extracted tape can never publish
+ * itself; the /admin queue's approve step is the only door to the dock.
+ */
+export function normalizeTapeCandidates(raw: unknown): TapeCreateInput[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const out: TapeCreateInput[] = [];
+  for (const c of list.slice(0, MAX_TAPE_PER_TRANSCRIPT)) {
+    if (typeof c !== "object" || c === null) continue;
+    const b = c as Record<string, unknown>;
+    const parsed = validateTapeCreate({
+      symbol: b.symbol,
+      note: b.note,
+      expiry: b.expiry ?? "",
+      premium: b.premium ?? "",
+      kind: b.kind,
+      sentiment: b.sentiment,
+      status: "draft",
+      source: "extracted",
+    });
+    if (parsed.ok) out.push(parsed.value);
+  }
+  return out;
+}
+
 // --- extraction -------------------------------------------------------------
 
 export function aiConfigured(): boolean {
@@ -100,17 +135,28 @@ export function aiConfigured(): boolean {
   return key.length > 0 && !key.includes("[SENSITIVE]");
 }
 
-const EXTRACT_SYSTEM = `You extract trade ideas from trading-video transcripts for a human review queue. Rules, in order:
-- Extract ONLY ideas the speaker actually states. Never invent an instrument, level, or direction the transcript does not contain.
+const EXTRACT_SYSTEM = `You extract trade ideas AND options/flow callouts from trading-video transcripts for a human review queue. Rules, in order:
+- Extract ONLY what the speaker actually states. Never invent an instrument, level, direction, or trade the transcript does not contain.
+
+TRADE IDEAS (the "ideas" list):
 - thesis: a tight 1-3 sentence paraphrase of the speaker's ACTUAL reasoning for this idea, in plain prose (max ${MAX_THESIS_CHARS} chars).
 - entry / target: the speaker's stated levels or conditions, near-verbatim ("21,450", "break of 600", "under the pivot") — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
 - riskLevel: "high" when the speaker frames the idea as aggressive, speculative, or a lottery; "low" when framed as conservative, core, or highest-conviction; otherwise "medium".
 - Skip pure market commentary with no actionable idea. Merge repeats of the same idea into one row.
-- No trade ideas in the transcript → emit an empty list. Every idea goes to a DRAFT queue a human approves — completeness matters less than never fabricating.`;
 
-const EMIT_IDEAS_TOOL = {
-  name: "emit_ideas",
-  description: "Emit every trade idea found in the transcript (empty list when there are none).",
+TAPE CALLOUTS (the "tape" list) — specific options or order-flow trades the speaker mentions seeing or making ("someone swept the 7600 SPX puts", "I bought the 600 calls for Friday"):
+- note: the callout in a short plain phrase, near-verbatim ("Buy 7600 SPX Put") (max ${MAX_TAPE_NOTE_CHARS} chars).
+- expiry / premium: ONLY when the speaker states them ("0DTE", "Friday", "$1.2M") — an EMPTY STRING otherwise. Never guess.
+- kind: "sweep" or "block" or "split" ONLY when the speaker uses that word or describes that mechanic; otherwise "note".
+- sentiment: "bull" for bullish positioning (calls bought / puts sold), "bear" for bearish, "neutral" when unclear or two-sided.
+- A tape callout that is ALSO a full trade idea with reasoning may appear in both lists — the idea carries the why, the tape row carries the flow.
+
+Nothing found → emit empty lists. Everything goes to a DRAFT queue a human approves — completeness matters less than never fabricating.`;
+
+const EMIT_EXTRACTIONS_TOOL = {
+  name: "emit_extractions",
+  description:
+    "Emit every trade idea and every options/flow tape callout found in the transcript (empty lists when there are none).",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -128,8 +174,23 @@ const EMIT_IDEAS_TOOL = {
           required: ["instrument", "thesis", "entry", "target", "riskLevel"],
         },
       },
+      tape: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            symbol: { type: "string", description: "The underlying — 'SPX', 'NVDA'." },
+            note: { type: "string", description: "The callout, short and near-verbatim — 'Buy 7600 SPX Put'." },
+            expiry: { type: "string", description: "Stated expiry ('0DTE', 'DEC 19'); empty string if none stated." },
+            premium: { type: "string", description: "Stated premium/size ('$1.2M'); empty string if none stated." },
+            kind: { type: "string", enum: ["sweep", "block", "split", "note"] },
+            sentiment: { type: "string", enum: ["bull", "bear", "neutral"] },
+          },
+          required: ["symbol", "note", "expiry", "premium", "kind", "sentiment"],
+        },
+      },
     },
-    required: ["ideas"],
+    required: ["ideas", "tape"],
   },
 };
 
@@ -142,29 +203,36 @@ function getClient(apiKey: string): Anthropic {
 }
 
 /**
- * Call Claude with the schema-forced emit_ideas tool and return validated
- * candidates. Throws on API failure — the caller records the failure on the
- * transcript so the raw text survives for a retry.
+ * Call Claude with the schema-forced emit_extractions tool and return
+ * validated candidates for BOTH categories (G3 round 4: tape callouts ride
+ * the same call as ideas — one transcript, one model pass). Throws on API
+ * failure — the caller records the failure on the transcript so the raw text
+ * survives for a retry.
  */
-export async function extractIdeas(text: string): Promise<IdeaCreateInput[]> {
+export async function extractFromTranscript(
+  text: string,
+): Promise<{ ideas: IdeaCreateInput[]; tape: TapeCreateInput[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || !aiConfigured()) throw new Error("ai_not_configured");
   const client = getClient(apiKey);
 
   const msg = await client.messages.create({
     model: EXTRACT_MODEL,
-    max_tokens: 3000,
+    max_tokens: 4000,
     system: EXTRACT_SYSTEM,
-    tools: [EMIT_IDEAS_TOOL],
-    tool_choice: { type: "tool", name: "emit_ideas" },
+    tools: [EMIT_EXTRACTIONS_TOOL],
+    tool_choice: { type: "tool", name: "emit_extractions" },
     messages: [{ role: "user", content: `TRANSCRIPT:\n\n${text}` }],
   });
 
   const toolUse = msg.content.find(
-    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "emit_ideas",
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "emit_extractions",
   );
-  const raw = (toolUse?.input as { ideas?: unknown } | undefined)?.ideas;
-  return normalizeCandidates(raw);
+  const input = toolUse?.input as { ideas?: unknown; tape?: unknown } | undefined;
+  return {
+    ideas: normalizeCandidates(input?.ideas),
+    tape: normalizeTapeCandidates(input?.tape),
+  };
 }
 
 // --- store ------------------------------------------------------------------
@@ -242,7 +310,7 @@ export async function storeTranscript(
 
 export async function updateTranscript(
   id: string,
-  patch: Partial<Pick<TranscriptRecord, "status" | "ideaIds" | "error">>,
+  patch: Partial<Pick<TranscriptRecord, "status" | "ideaIds" | "tapeIds" | "error">>,
 ): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
