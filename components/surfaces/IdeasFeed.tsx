@@ -32,6 +32,9 @@ import type { FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { Direction, TimeHorizon } from "@/lib/intel/types";
 import { relativeTime, type IdeaRiskLevel, type PublicIdea } from "@/lib/ideas";
+import type { PublicTapeEntry } from "@/lib/tape";
+import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
+import { liveSide, numOf } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
@@ -199,24 +202,8 @@ function sparkTone(card: FeedCard): "bull" | "bear" {
   return "bull";
 }
 
-// ── LIVE-idea derivations (PublicIdea stores free-form level STRINGS) ──────────
-
-/** first numeral in a free-form level string ("21,450" / "break of 600") */
-function numOf(s: string): number | null {
-  const m = s.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
-  if (!m) return null;
-  const v = parseFloat(m[0]);
-  return Number.isFinite(v) ? v : null;
-}
-
-/** SIDE derived from entry vs target numerals — the model stores no direction,
- *  so this renders in the derived style; null when not derivable (∅) */
-function liveSide(idea: PublicIdea): "LONG" | "SHORT" | null {
-  const e = numOf(idea.entry);
-  const t = numOf(idea.target);
-  if (e == null || t == null || e === t) return null;
-  return t > e ? "LONG" : "SHORT";
-}
+// LIVE-idea derivations (numOf / liveSide) live in dock/derive.ts — shared
+// with the chart dock so SIDE logic can never drift between grid and chart.
 
 // ── blotter cells ──────────────────────────────────────────────────────────────
 
@@ -239,12 +226,23 @@ function LevelCell({ level, cls }: { level: TrackedLevel | null; cls: string }) 
 
 // ── LIVE row (new backend) ─────────────────────────────────────────────────────
 
-function LiveRow({ idea, open, onToggle }: { idea: PublicIdea; open: boolean; onToggle: () => void }) {
+function LiveRow({
+  idea,
+  open,
+  charted,
+  onToggle,
+}: {
+  idea: PublicIdea;
+  open: boolean;
+  /** this row's ticker is on the dock chart */
+  charted: boolean;
+  onToggle: () => void;
+}) {
   const side = liveSide(idea);
   return (
     <>
       <div
-        className={`if-brow if-brow-live${open ? " open" : ""}`}
+        className={`if-brow if-brow-live${open ? " open" : ""}${charted ? " charted" : ""}`}
         role="button"
         tabIndex={0}
         aria-expanded={open}
@@ -317,7 +315,18 @@ function LiveRow({ idea, open, onToggle }: { idea: PublicIdea; open: boolean; on
 
 // ── TRACKED row (legacy publish pipeline) ──────────────────────────────────────
 
-function TrackedRow({ card, open, onToggle }: { card: FeedCard; open: boolean; onToggle: () => void }) {
+function TrackedRow({
+  card,
+  open,
+  charted,
+  onToggle,
+}: {
+  card: FeedCard;
+  open: boolean;
+  /** this row's ticker is on the dock chart */
+  charted: boolean;
+  onToggle: () => void;
+}) {
   const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
   const dir = DIR_META[card.direction] ?? DIR_META.watch;
   const perf = perfOf(card);
@@ -325,7 +334,7 @@ function TrackedRow({ card, open, onToggle }: { card: FeedCard; open: boolean; o
   return (
     <>
       <div
-        className={`if-brow ${life.family}${open ? " open" : ""}${card.stale ? " stale" : ""}`}
+        className={`if-brow ${life.family}${open ? " open" : ""}${card.stale ? " stale" : ""}${charted ? " charted" : ""}`}
         role="button"
         tabIndex={0}
         aria-expanded={open}
@@ -527,6 +536,36 @@ function XpLevel({ label, level, cls }: { label: string; level: TrackedLevel | n
   );
 }
 
+// ── chart-dock selection (G3) — built from the same row data the grid shows ──
+
+function selectionFromLive(idea: PublicIdea): ChartSelection {
+  return {
+    key: `live:${idea.id}`,
+    ticker: idea.instrument,
+    label: "LIVE",
+    levels: {
+      entry: numOf(idea.entry) ?? undefined,
+      target: numOf(idea.target) ?? undefined,
+    },
+    triggeredAt: null,
+  };
+}
+
+function selectionFromTracked(card: FeedCard): ChartSelection {
+  const trig = card.statusHistory.find((h) => h.state === "TRIGGERED");
+  return {
+    key: `trk:${card.id}`,
+    ticker: card.ticker,
+    label: (LIFE_META[card.status] ?? LIFE_META.CLOSED).label,
+    levels: {
+      entry: card.statedLevels.trigger?.value ?? undefined,
+      target: card.statedLevels.targets[0]?.value ?? undefined,
+      stop: card.statedLevels.invalidation?.value ?? undefined,
+    },
+    triggeredAt: trig ? trig.at : null,
+  };
+}
+
 // ── the terminal surface ───────────────────────────────────────────────────────
 
 const BLOT_COLS = [
@@ -544,6 +583,14 @@ export default function IdeasFeed() {
   // one expansion at a time; keys are namespaced so the two sections can't collide
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [clock, setClock] = useState("");
+  // chart-dock selection (G3) — a row click charts that ticker; defaults to
+  // the top LIVE idea once data lands
+  const [selection, setSelection] = useState<ChartSelection | null>(null);
+  // desk tape (G3 round 4) — fetched here, rendered by the dock's TapeModule
+  const [tapeRows, setTapeRows] = useState<PublicTapeEntry[] | null>(null);
+  const [tapeErr, setTapeErr] = useState(false);
+  // ≤700px: the dock hides behind a toggle
+  const [dockOpen, setDockOpen] = useState(false);
 
   const load = useCallback(() => {
     // two independent sources — one failing never blanks the other; a refresh
@@ -563,6 +610,13 @@ export default function IdeasFeed() {
         setLiveErr(false);
       })
       .catch(() => setLiveErr(true));
+    fetch("/api/tape", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { entries?: PublicTapeEntry[] }) => {
+        setTapeRows(Array.isArray(j.entries) ? j.entries : []);
+        setTapeErr(false);
+      })
+      .catch(() => setTapeErr(true));
   }, []);
 
   useEffect(() => {
@@ -602,6 +656,14 @@ export default function IdeasFeed() {
   const unreachable = feed === null && feedErr && live === null && liveErr;
   const empty = !loading && !unreachable && liveIdeas.length === 0 && tracked.length === 0;
 
+  // default chart = the top LIVE idea, else the first tracked row — set once
+  // when data first lands; every later change is a user click
+  useEffect(() => {
+    if (selection !== null) return;
+    if (liveIdeas.length > 0) setSelection(selectionFromLive(liveIdeas[0]));
+    else if (tracked.length > 0) setSelection(selectionFromTracked(tracked[0]));
+  }, [selection, liveIdeas, tracked]);
+
   const toggle = (key: string) => setOpenKey((k) => (k === key ? null : key));
 
   const colhead = (
@@ -631,6 +693,15 @@ export default function IdeasFeed() {
               {trig} TRIG
             </span>
             <span className={`if-count if-count-arm${arm === 0 ? " if-count-zero" : ""}`}>{arm} ARM</span>
+            {/* phones only (CSS): the chart dock hides behind this toggle */}
+            <button
+              type="button"
+              className={`if-dock-toggle${dockOpen ? " on" : ""}`}
+              aria-expanded={dockOpen}
+              onClick={() => setDockOpen((v) => !v)}
+            >
+              DOCK
+            </button>
           </span>
         </div>
         <div className="if-pills" role="tablist" aria-label="Filter tracked ideas by lifecycle">
@@ -651,116 +722,144 @@ export default function IdeasFeed() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="if-blot-wrap" aria-hidden="true">
-          <div className="if-blot-min">
-            {colhead}
-            {[0, 1, 2, 3].map((r) => (
-              <div key={r} className="if-brow if-brow-skel">
-                <span className="if-brail" aria-hidden="true" />
-                {SKEL_W.map((w, i) => (
-                  <span key={i} className="if-bc">
-                    <span
-                      className={`if-skel-bar${i < 2 ? " hi" : ""}`}
-                      style={{ width: w, animationDelay: `${i * 0.06}s` }}
-                    />
-                  </span>
+      {/* G3 — the full-bleed three-zone desk: LEFT chart dock · CENTER
+          blotter · RIGHT the page-level Trade Ideas rail (outside this
+          surface, untouched). Tablet stacks the dock above the blotter;
+          phones hide it behind the DOCK toggle. */}
+      <div className="if-desk">
+        <aside className={`if-dock${dockOpen ? " open" : ""}`} aria-label="Chart dock">
+          <ChartDock
+            selection={selection}
+            cards={tracked}
+            liveIdeas={liveIdeas}
+            tape={tapeRows}
+            tapeFailed={tapeErr}
+            onTapeRetry={load}
+          />
+        </aside>
+
+        <section className="if-main">
+          {loading ? (
+            <div className="if-blot-wrap" aria-hidden="true">
+              <div className="if-blot-min">
+                {colhead}
+                {[0, 1, 2, 3].map((r) => (
+                  <div key={r} className="if-brow if-brow-skel">
+                    <span className="if-brail" aria-hidden="true" />
+                    {SKEL_W.map((w, i) => (
+                      <span key={i} className="if-bc">
+                        <span
+                          className={`if-skel-bar${i < 2 ? " hi" : ""}`}
+                          style={{ width: w, animationDelay: `${i * 0.06}s` }}
+                        />
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
-        </div>
-      ) : unreachable ? (
-        <div className="if-state">
-          <div className="if-state-glyph" aria-hidden="true">
-            ∅
-          </div>
-          <div className="if-state-title">FEED UNREACHABLE</div>
-          <p className="if-state-copy">The ideas feed could not be loaded.</p>
-          <button type="button" className="if-retry" onClick={load}>
-            RETRY
-          </button>
-        </div>
-      ) : empty ? (
-        <div className="if-state">
-          <div className="if-state-glyph" aria-hidden="true">
-            ∅
-          </div>
-          <div className="if-state-title">NO IDEAS ON THE BOARD</div>
-          <p className="if-state-copy">
-            When the desk publishes an idea, it appears here with its stated levels and live tracking.
-          </p>
-        </div>
-      ) : (
-        <div className="if-blot-wrap">
-          <div className="if-blot-min">
-            {colhead}
+            </div>
+          ) : unreachable ? (
+            <div className="if-state">
+              <div className="if-state-glyph" aria-hidden="true">
+                ∅
+              </div>
+              <div className="if-state-title">FEED UNREACHABLE</div>
+              <p className="if-state-copy">The ideas feed could not be loaded.</p>
+              <button type="button" className="if-retry" onClick={load}>
+                RETRY
+              </button>
+            </div>
+          ) : empty ? (
+            <div className="if-state">
+              <div className="if-state-glyph" aria-hidden="true">
+                ∅
+              </div>
+              <div className="if-state-title">NO IDEAS ON THE BOARD</div>
+              <p className="if-state-copy">
+                When the desk publishes an idea, it appears here with its stated levels and live
+                tracking.
+              </p>
+            </div>
+          ) : (
+            <div className="if-blot-wrap">
+              <div className="if-blot-min">
+                {colhead}
 
-            {/* LIVE — the desk's current calls lead the board */}
-            {liveIdeas.length > 0 && (
-              <>
-                <div className="if-bgroup hot">
-                  <span className="if-bgroup-tick" aria-hidden="true" />
-                  <span className="if-bgroup-label">LIVE</span>
-                  <span className="if-bgroup-sub">DESK CALLS — CURRENT</span>
+                {/* LIVE — the desk's current calls lead the board */}
+                {liveIdeas.length > 0 && (
+                  <>
+                    <div className="if-bgroup hot">
+                      <span className="if-bgroup-tick" aria-hidden="true" />
+                      <span className="if-bgroup-label">LIVE</span>
+                      <span className="if-bgroup-sub">DESK CALLS — CURRENT</span>
+                      <span className="if-bgroup-hair" aria-hidden="true" />
+                      <span className="if-bgroup-count">
+                        {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
+                      </span>
+                    </div>
+                    {liveIdeas.map((idea) => (
+                      <LiveRow
+                        key={idea.id}
+                        idea={idea}
+                        open={openKey === `live:${idea.id}`}
+                        charted={selection?.key === `live:${idea.id}`}
+                        onToggle={() => {
+                          toggle(`live:${idea.id}`);
+                          setSelection(selectionFromLive(idea));
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+                {liveErr && live === null && (
+                  <div className="if-bmiss">
+                    LIVE CALLS UNREACHABLE
+                    <button type="button" className="if-bmiss-retry" onClick={load}>
+                      RETRY
+                    </button>
+                  </div>
+                )}
+
+                {/* TRACKED — the legacy publish pipeline, under the lifecycle filter */}
+                <div className="if-bgroup">
+                  <span className="if-bgroup-tick dim" aria-hidden="true" />
+                  <span className="if-bgroup-label">TRACKED</span>
+                  <span className="if-bgroup-sub">SINCE-CALL PERFORMANCE</span>
                   <span className="if-bgroup-hair" aria-hidden="true" />
                   <span className="if-bgroup-count">
-                    {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
+                    {visible.length} OF {tracked.length}
                   </span>
                 </div>
-                {liveIdeas.map((idea) => (
-                  <LiveRow
-                    key={idea.id}
-                    idea={idea}
-                    open={openKey === `live:${idea.id}`}
-                    onToggle={() => toggle(`live:${idea.id}`)}
-                  />
-                ))}
-              </>
-            )}
-            {liveErr && live === null && (
-              <div className="if-bmiss">
-                LIVE CALLS UNREACHABLE
-                <button type="button" className="if-bmiss-retry" onClick={load}>
-                  RETRY
-                </button>
+                {feed === null && feedErr ? (
+                  <div className="if-bmiss">
+                    TRACKED FEED UNREACHABLE
+                    <button type="button" className="if-bmiss-retry" onClick={load}>
+                      RETRY
+                    </button>
+                  </div>
+                ) : tracked.length === 0 ? (
+                  <div className="if-bmiss">NOTHING TRACKED YET</div>
+                ) : visible.length === 0 ? (
+                  <div className="if-bmiss">NO {filter} IDEAS RIGHT NOW</div>
+                ) : (
+                  visible.map((card) => (
+                    <TrackedRow
+                      key={card.id}
+                      card={card}
+                      open={openKey === `trk:${card.id}`}
+                      charted={selection?.key === `trk:${card.id}`}
+                      onToggle={() => {
+                        toggle(`trk:${card.id}`);
+                        setSelection(selectionFromTracked(card));
+                      }}
+                    />
+                  ))
+                )}
               </div>
-            )}
-
-            {/* TRACKED — the legacy publish pipeline, under the lifecycle filter */}
-            <div className="if-bgroup">
-              <span className="if-bgroup-tick dim" aria-hidden="true" />
-              <span className="if-bgroup-label">TRACKED</span>
-              <span className="if-bgroup-sub">SINCE-CALL PERFORMANCE</span>
-              <span className="if-bgroup-hair" aria-hidden="true" />
-              <span className="if-bgroup-count">
-                {visible.length} OF {tracked.length}
-              </span>
             </div>
-            {feed === null && feedErr ? (
-              <div className="if-bmiss">
-                TRACKED FEED UNREACHABLE
-                <button type="button" className="if-bmiss-retry" onClick={load}>
-                  RETRY
-                </button>
-              </div>
-            ) : tracked.length === 0 ? (
-              <div className="if-bmiss">NOTHING TRACKED YET</div>
-            ) : visible.length === 0 ? (
-              <div className="if-bmiss">NO {filter} IDEAS RIGHT NOW</div>
-            ) : (
-              visible.map((card) => (
-                <TrackedRow
-                  key={card.id}
-                  card={card}
-                  open={openKey === `trk:${card.id}`}
-                  onToggle={() => toggle(`trk:${card.id}`)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      )}
+          )}
+        </section>
+      </div>
     </div>
   );
 }
