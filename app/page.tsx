@@ -1,18 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
-import Deck, { type DeckHandle } from "@/components/Deck";
+import IdeasRail from "@/components/IdeasRail";
+import MatrixRain from "@/components/MatrixRain";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
-import WorldSurface from "@/components/surfaces/WorldSurface";
-import CommsSurface from "@/components/surfaces/CommsSurface";
-import { SCREENS, SCREEN_LABELS, screenIndex, resolveTarget } from "@/lib/screens";
-import { computePulse } from "@/lib/pulse";
+import { resolveView, type ViewId } from "@/lib/screens";
 import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
-import type { GlobeTarget } from "@/components/command/CommandGlobe";
 import {
   createRecognizer,
   createSpeechQueue,
@@ -40,12 +38,11 @@ import {
 } from "@/lib/push-client";
 import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
 
-// WebGL components load only in the browser, and each heavy surface owns its own
-// laziness: HomeLanding carries the Presence orb's dynamic import, WorldSurface
-// lazy-mounts the MapLibre globe behind an IntersectionObserver (boot never pays
-// for it), and IntelDeckSurface latches its desk/feed bodies on first visit.
-
-const DECK_LABELS = SCREENS.map((s) => SCREEN_LABELS[s]);
+// WebGL components load only in the browser, and each heavy view owns its own
+// laziness: HomeLanding carries the Presence orb's dynamic import and
+// IntelDeckSurface latches its desk/feed bodies on first visit. The old deck
+// (Deck, WorldSurface/globe, CommsSurface) is parked, not deleted — the
+// components remain, unimported, per the house parking convention.
 
 // Tool calls are framed in the chat stream with this separator (0x1F). Split
 // AUGUST's spoken words from any tool events without disturbing the text path.
@@ -147,12 +144,16 @@ export default function Home() {
   // engine. Web Speech remains the fallback when Deepgram isn't configured.
   const [deepgramAvailable, setDeepgramAvailable] = useState(false);
   const [booted, setBooted] = useState(false);
-  const [commandTarget, setCommandTarget] = useState<GlobeTarget | null>(null);
-  const [activeScreen, setActiveScreen] = useState(0);
-  // The World pull — the "something new there" line the pulse computes from its
-  // one-shot feeds on load. Drives the World deck dot's quiet unseen halo;
-  // cleared the moment World is visited.
-  const [worldNews, setWorldNews] = useState<string | null>(null);
+  // CORE V2 — the single page's two views: Chat (the Presence orb + reply dock)
+  // and the Intel Terminal (the embedded desk / public ideas feed). Driven by
+  // the top-bar toggle, the go_to_screen tool, ?view=terminal deep links, and
+  // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
+  const [view, setView] = useState<ViewId>("chat");
+  // Trade Ideas drawer (below 1100px; the desktop sidebar is always open and
+  // ignores this — see .ideas-rail's media query). The ref mirrors it for the
+  // Esc handler, which must not resubscribe per toggle.
+  const [railOpen, setRailOpen] = useState(false);
+  const railOpenRef = useRef(false);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -165,8 +166,9 @@ export default function Home() {
   const [briefPlaying, setBriefPlaying] = useState(false);
   const [briefDismissed, setBriefDismissed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
-  // Light / dark / gotham theme — persisted; the toggle flips the whole token system.
-  const [theme, setTheme] = useState<Theme>("light");
+  // Matrix / dark / light / gotham theme — persisted; the toggle flips the
+  // whole token system. Matrix is the CORE V2 default stage.
+  const [theme, setTheme] = useState<Theme>("matrix");
   // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
   // the theme, it re-tints only the accent family.
   const [mood, setMood] = useState<Mood>("steel");
@@ -204,8 +206,9 @@ export default function Home() {
   // the first completed exchange persists one; a page load or /forget starts a
   // fresh conversation → fresh thread. Best-effort only — never blocks chat.
   const threadIdRef = useRef<string | null>(null);
-  const globeNonceRef = useRef(0);
-  const deckRef = useRef<DeckHandle | null>(null);
+  // Mirror of `view` for callbacks that outlive a render (switchView reads it
+  // to decide whether a switch actually changes anything).
+  const viewRef = useRef<ViewId>("chat");
   const replyDockRef = useRef<HTMLDivElement | null>(null);
   const dockWrapRef = useRef<HTMLDivElement | null>(null);
   const mutedRef = useRef(false);
@@ -216,8 +219,9 @@ export default function Home() {
   // in-flight stream, so a stale closure can never write over the new turn's UI.
   const genRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  // True while AUGUST himself is sliding the deck (tool nav) — his narration should
-  // stay on screen; only USER surface changes dismiss the reply panel.
+  // True while AUGUST himself is switching the view (tool nav / deep links) —
+  // his narration should stay on screen; only USER view changes dismiss the
+  // reply panel.
   const augNavRef = useRef(false);
   const augNavTimerRef = useRef(0);
 
@@ -252,18 +256,37 @@ export default function Home() {
     }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
   }, []);
 
-  // Esc exits hands-free voice mode first (it's the bigger thing to back out of);
-  // otherwise it dismisses the reply panel. Works even while typing.
+  // ONE Esc stack, owned here (a second capture-phase listener elsewhere could
+  // shadow the voice-mode kill switch — the privacy-critical one): voice mode
+  // exits first, then the ideas drawer closes, then the reply panel dismisses.
+  // Works even while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (voiceModeRef.current) exitVoiceMode();
+      else if (railOpenRef.current) setRailOpen(false);
       else closePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closePanel]);
+
+  useEffect(() => {
+    railOpenRef.current = railOpen;
+  }, [railOpen]);
+
+  // Crossing up past 1100px turns the drawer into the always-open sidebar —
+  // clear the drawer flag so a stale `open` can't silently eat an Esc later.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1100px)");
+    const apply = () => {
+      if (mq.matches) setRailOpen(false);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -333,6 +356,43 @@ export default function Home() {
     return () => {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  // G3 fix 1 — the transcript's bottom clearance follows the dock's REAL
+  // height (composer + voice bar + stop controls change it turn to turn).
+  // A ResizeObserver writes --dock-h; .hl-convo-inner pads by it.
+  useEffect(() => {
+    const el = dockWrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      document.documentElement.style.setProperty("--dock-h", `${el.offsetHeight}px`);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--dock-h");
+    };
+  }, []);
+
+  // G3 fix 1 — on-screen keyboard: where the browser overlays it instead of
+  // resizing the layout (iOS), --kb-inset lifts the dock above it and pads
+  // the transcript to match. 0 whenever the keyboard is closed or the layout
+  // viewport already resized (interactiveWidget: resizes-content).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const apply = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--kb-inset", `${Math.round(inset)}px`);
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+      document.documentElement.style.removeProperty("--kb-inset");
     };
   }, []);
 
@@ -724,8 +784,8 @@ export default function Home() {
   }
 
   // A couple of spoken commands handled locally (no brain round-trip). Everything
-  // else flows to /api/chat, where the existing tools (go_to_screen, look_closer,
-  // close_map) already act on his words. Returns true if handled here.
+  // else flows to /api/chat, where the existing tools (go_to_screen, set_mood,
+  // watchers) already act on his words. Returns true if handled here.
   function tryVoiceCommand(raw: string): boolean {
     const t = raw.trim().toLowerCase().replace(/[.!?,]+$/g, "");
     if (
@@ -789,47 +849,57 @@ export default function Home() {
     }
   }
 
-  // --- The World pull --------------------------------------------------------
-  // aug-world-seen marks the last real World visit. Stamped when the slide
-  // becomes active — clearing the deck-dot halo at that moment — AND when it
-  // stops being active, so wires that landed while you were watching the globe
-  // don't re-light the signal on departure.
-  const onWorldSlide = activeScreen === screenIndex("world");
-  const wasOnWorldRef = useRef(false);
+  // --- View routing (CORE V2) ------------------------------------------------
+  // Shallow routing in the codebase's native pattern — history + popstate, no
+  // useRouter/useSearchParams (none exist in this repo). ?view=terminal persists
+  // in the URL; the one-shot params (?screen/?brief/?comms) each strip only
+  // their own key, so they coexist. Back/forward walks the view history.
   useEffect(() => {
-    if (onWorldSlide || wasOnWorldRef.current) {
-      try {
-        window.localStorage.setItem("aug-world-seen", String(Date.now()));
-      } catch {
-        /* non-persistent */
-      }
-      setWorldNews(null); // seen — the dot clears
-    }
-    wasOnWorldRef.current = onWorldSlide;
-  }, [onWorldSlide]);
+    viewRef.current = view;
+  }, [view]);
 
-  // --- The World signal --------------------------------------------------------
-  // One-shot on load: diff the live feeds against the "aug-pulse" snapshot and
-  // keep the world line — it is the deck-dot's unseen signal.
   useEffect(() => {
-    let cancelled = false;
-    computePulse()
-      .then((r) => {
-        if (cancelled) return;
-        setWorldNews(r.worldLine);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    const apply = () => {
+      try {
+        const u = new URL(window.location.href);
+        setView(u.searchParams.get("view") === "terminal" ? "terminal" : "chat");
+      } catch {
+        /* no-op */
+      }
     };
+    apply();
+    window.addEventListener("popstate", apply);
+    return () => window.removeEventListener("popstate", apply);
   }, []);
+
+  // Switch views. USER switches dismiss the reply panel (the old user-swipe
+  // semantics); AUGUST-driven switches (tool nav, deep links) call markAugNav
+  // first, which keeps his narration on screen.
+  const switchView = useCallback(
+    (v: ViewId, opts?: { replace?: boolean }) => {
+      try {
+        const u = new URL(window.location.href);
+        if (v === "terminal") u.searchParams.set("view", "terminal");
+        else u.searchParams.delete("view");
+        const url = u.toString();
+        if (opts?.replace) window.history.replaceState({}, "", url);
+        else if (url !== window.location.href) window.history.pushState({}, "", url);
+      } catch {
+        /* no-op */
+      }
+      if (viewRef.current !== v && !augNavRef.current) closePanel();
+      setView(v);
+    },
+    [closePanel],
+  );
 
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
   // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("aug-theme");
-      if (saved === "light" || saved === "dark" || saved === "batman") setTheme(saved);
+      if (saved === "light" || saved === "dark" || saved === "batman" || saved === "matrix")
+        setTheme(saved);
     } catch {
       /* private mode */
     }
@@ -851,8 +921,10 @@ export default function Home() {
     root.setAttribute("data-theming", "");
     window.clearTimeout(themingTimerRef.current);
     themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    // three-way cycle: dark → light → batman (Gotham) → dark
-    setTheme((t) => (t === "dark" ? "light" : t === "light" ? "batman" : "dark"));
+    // four-way cycle: matrix → dark → light → batman (Gotham) → matrix
+    setTheme((t) =>
+      t === "matrix" ? "dark" : t === "dark" ? "light" : t === "light" ? "batman" : "matrix",
+    );
   }
 
   // Mood: same persistence contract as the theme — load the saved choice once,
@@ -953,10 +1025,11 @@ export default function Home() {
     };
   }, [booted]);
 
-  // Deep-link: a Watcher push, the /intel redirect, or a stale bookmark opens
-  // "/?screen=..." — slide the deck to that surface, then strip the param.
-  // Runs on MOUNT (not after the ~2.2s boot timer) so deep links land fast;
-  // the boot visuals simply continue on the destination surface.
+  // Deep-link: an old Watcher push or a stale bookmark opens "/?screen=..." —
+  // resolve the legacy name to a view, then strip the param (?view is the
+  // persistent one now). Runs on MOUNT (not after the ~2.2s boot timer) so deep
+  // links land fast; declared AFTER the ?view apply effect so a legacy
+  // ?screen=desk link wins over the (absent) ?view param.
   useEffect(() => {
     let screen: string | null = null;
     try {
@@ -970,14 +1043,29 @@ export default function Home() {
       /* no-op */
     }
     if (!screen) return;
-    const target = resolveTarget(screen);
-    if (target) {
+    const v = resolveView(screen);
+    if (v) {
       markAugNav();
-      // Defer one tick so the deck is mounted + measured before it scrolls.
-      const t = window.setTimeout(() => deckRef.current?.goTo(target.index), 80);
-      return () => window.clearTimeout(t);
+      switchView(v, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The Gmail OAuth callback still redirects to "/?comms=<status>#comms", but
+  // the comms surface is parked (CORE V2) — its only consumer is unmounted.
+  // Consume and strip the param so it can't stick in the URL; the connect
+  // affordance re-homes if/when comms returns.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("comms")) {
+        u.searchParams.delete("comms");
+        u.hash = "";
+        window.history.replaceState({}, "", u.toString());
+      }
+    } catch {
+      /* no-op */
+    }
   }, []);
 
   // Summon the brief panel on demand; compile if none exists yet.
@@ -1074,25 +1162,14 @@ export default function Home() {
 
   function applyToolEvents(tools: ToolEvent[]) {
     for (const t of tools) {
-      if (t.tool === "look_closer" && t.input) {
-        const lat = Number(t.input.lat);
-        const lon = Number(t.input.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        const label = typeof t.input.label === "string" ? t.input.label : "";
-        const zoom = typeof t.input.zoom === "number" ? t.input.zoom : undefined;
-        globeNonceRef.current += 1;
-        setCommandTarget({ lat, lon, label, zoom, key: globeNonceRef.current });
-        markAugNav();
-        deckRef.current?.goTo(screenIndex("world"));
-      } else if (t.tool === "close_map") {
-        markAugNav();
-        deckRef.current?.goTo(screenIndex("presence"));
-      } else if (t.tool === "go_to_screen" && t.input) {
-        // Everything (the market words included) is a deck surface — slide to it.
-        const target = resolveTarget(String(t.input.screen ?? ""));
-        if (target) {
+      if (t.tool === "go_to_screen" && t.input) {
+        // Legacy names (desk/markets/intel, presence/home…) resolve to one of
+        // the two views. look_closer/close_map are retired with the globe —
+        // a stale stream framing one is simply ignored.
+        const v = resolveView(String(t.input.screen ?? ""));
+        if (v) {
           markAugNav();
-          deckRef.current?.goTo(target.index);
+          switchView(v);
         }
       } else if (t.tool === "set_mood" && t.input) {
         // Same path as the mood control: re-tint the tokens.
@@ -1102,25 +1179,23 @@ export default function Home() {
     }
   }
 
-  // USER surface changes dismiss the reply panel — a stale reply must not follow
-  // you across the deck. AUGUST's own navigation keeps his narration visible.
-  // useCallback is load-bearing: Deck keys its debounced scroll effect on this
-  // prop's identity, and an unstable function would re-subscribe the effect on
-  // every streamed chunk — clearing the pending debounce and silently losing
-  // active-surface tracking (stale dots, globe never activates).
-  const handleSurfaceChange = useCallback(
-    (i: number) => {
-      if (augNavRef.current) {
-        // AUGUST is driving — update the indicator (CommandGlobe needs this)
-        // but keep the reply panel open so his narration stays visible.
-        setActiveScreen(i);
-        return;
-      }
-      setActiveScreen(i);
-      closePanel();
-    },
-    [closePanel],
-  );
+  // CORE V2 P5 — the transcript's "+ NEW CHAT": reset the on-screen
+  // conversation only. Long-term memory and saved threads are untouched
+  // (unlike /forget); the next exchange opens a fresh thread.
+  function startNewChat() {
+    genRef.current += 1; // supersede any in-flight stream
+    abortRef.current?.abort();
+    stopSpeaking();
+    stopListening();
+    messagesRef.current = [];
+    setMessages([]);
+    threadIdRef.current = null;
+    setInterim("");
+    setReplyText("");
+    setHistoryOpen(false);
+    closePanel();
+    setState((s) => (s === "boot" ? s : "idle"));
+  }
 
   function forgetMemory() {
     // Wipe persistent memory (Upstash) and reset the on-screen conversation.
@@ -1404,7 +1479,7 @@ export default function Home() {
     interim !== "" ||
     state === "thinking" ||
     state === "speaking";
-  const landingIdle = activeScreen === screenIndex("presence") && !conversationActive;
+  const landingIdle = view === "chat" && !conversationActive;
   // One input per screen: the landing has its ask bar, the intel desk has its
   // own contextual ASK AUGUST bar — the global composer dock renders on
   // neither unless a conversation is live ON SCREEN. conversationActive is
@@ -1417,10 +1492,10 @@ export default function Home() {
     state === "thinking" ||
     state === "speaking" ||
     (panelOpen && (replyText !== "" || interim !== ""));
-  const intelPanelIdle = activeScreen === screenIndex("markets") && !conversationLive;
+  const intelPanelIdle = view === "terminal" && !conversationLive;
 
   return (
-    <main className="stage-vignette relative h-[100dvh] w-screen overflow-hidden">
+    <main className="stage-vignette has-rail relative h-[100dvh] w-screen overflow-hidden">
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1429,74 +1504,123 @@ export default function Home() {
         {voiceAnnounce}
       </div>
 
-      <Deck
-        ref={deckRef}
-        labels={DECK_LABELS}
-        fresh={SCREENS.map((s) => s === "world" && worldNews != null && !onWorldSlide)}
-        onActiveChange={handleSurfaceChange}
-        surfaces={[
-          <div key="presence" className="presence-surface">
-            <HomeLanding
-              state={state}
-              theme={theme}
-              amplitudeRef={amplitudeRef}
-              active={activeScreen === screenIndex("presence")}
-              conversationActive={conversationActive}
-              micSupported={voiceCapable}
-              listening={state === "listening"}
-              busy={state === "thinking"}
-              voiceMode={voiceMode}
-              messagesCount={messages.length}
-              onSend={handleSend}
-              onToggleMic={toggleMic}
-              onToggleVoiceMode={toggleVoiceMode}
-              onOpenThread={openThread}
-              onSummonBrief={summonBrief}
-              pushState={pushState}
-              onNotify={handleNotify}
-              soundOn={soundOn}
-              onToggleSound={toggleSound}
-              onToggleTheme={toggleTheme}
-            />
-            {booted && briefOpen ? (
-              <MorningBrief
-                brief={brief}
-                status={briefStatus}
-                playing={briefPlaying}
-                onPlay={playBrief}
-                onStop={stopVoice}
-                onCompile={compileBriefNow}
-                onDismiss={dismissBrief}
-              />
-            ) : null}
-          </div>,
-          // The standalone markets surface is retired; the embedded intel desk
-          // owns this slot (user decision: intel is a full deck surface, not a
-          // corner pill). The id stays "markets" so tool nav + watcher deep
-          // links keep landing here.
-          <IntelDeckSurface key="markets" active={activeScreen === screenIndex("markets")} />,
-          // WorldSurface holds the MapLibre globe behind an IntersectionObserver
-          // latch, so boot never pays for the map bundle.
-          <WorldSurface
-            key="world"
-            active={activeScreen === screenIndex("world")}
-            flyTo={commandTarget}
-          />,
-          <CommsSurface key="comms" />,
-        ]}
-      />
+      {/* the code-rain — the matrix theme's stage layer, behind everything */}
+      {theme === "matrix" ? <MatrixRain /> : null}
 
-      {/* reply dock + composer — fixed, available on every surface. A contained,
-          translucent card that never covers the dashboard widgets: dismissible
-          (✕ / Esc / click outside), expandable into the session transcript. */}
+      {/* CORE V2 — the top-bar view toggle, in the deck dots' old top-center
+          slot. Two views only; the segmented control is the page's whole nav. */}
+      <nav className="view-bar" aria-label="AUGUST views">
+        <button
+          type="button"
+          className={`view-tab${view === "chat" ? " on" : ""}`}
+          aria-pressed={view === "chat"}
+          onClick={() => switchView("chat")}
+        >
+          AUGUST
+        </button>
+        <button
+          type="button"
+          className={`view-tab${view === "terminal" ? " on" : ""}`}
+          aria-pressed={view === "terminal"}
+          onClick={() => switchView("terminal")}
+        >
+          TERMINAL
+        </button>
+        {/* drawer trigger — hidden ≥1100px where the rail is a fixed sidebar */}
+        <button
+          type="button"
+          className="view-tab view-tab-ideas"
+          aria-expanded={railOpen}
+          onClick={() => setRailOpen((v) => !v)}
+        >
+          IDEAS
+        </button>
+      </nav>
+
+      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px, drawer below */}
+      <IdeasRail open={railOpen} onClose={() => setRailOpen(false)} />
+
+      {/* The two-view stack. Both panels STAY MOUNTED once visited (chat always;
+          the terminal latches its bodies internally) so chat state and desk
+          tab/selection state survive toggling — the inactive panel is
+          display:none. The orb's IntersectionObserver and the desk's visited
+          latch park their own background work while hidden. */}
+      <section
+        className={`view-panel${view === "chat" ? "" : " view-hidden"}`}
+        aria-hidden={view !== "chat"}
+      >
+        <div className="presence-surface">
+          <HomeLanding
+            state={state}
+            theme={theme}
+            amplitudeRef={amplitudeRef}
+            active={view === "chat"}
+            conversationActive={conversationActive}
+            micSupported={voiceCapable}
+            listening={state === "listening"}
+            busy={state === "thinking"}
+            voiceMode={voiceMode}
+            messagesCount={messages.length}
+            onSend={handleSend}
+            onToggleMic={toggleMic}
+            onToggleVoiceMode={toggleVoiceMode}
+            onOpenThread={openThread}
+            transcript={
+              <ChatTranscript
+                messages={messages}
+                replyText={replyText}
+                interim={interim}
+                thinking={state === "thinking"}
+                onNewChat={startNewChat}
+              />
+            }
+            onSummonBrief={summonBrief}
+            pushState={pushState}
+            onNotify={handleNotify}
+            soundOn={soundOn}
+            onToggleSound={toggleSound}
+            onToggleTheme={toggleTheme}
+          />
+          {booted && briefOpen ? (
+            <MorningBrief
+              brief={brief}
+              status={briefStatus}
+              playing={briefPlaying}
+              onPlay={playBrief}
+              onStop={stopVoice}
+              onCompile={compileBriefNow}
+              onDismiss={dismissBrief}
+            />
+          ) : null}
+        </div>
+      </section>
+      <section
+        className={`view-panel${view === "terminal" ? "" : " view-hidden"}`}
+        aria-hidden={view !== "terminal"}
+      >
+        {/* The embedded intel desk keeps its audience split: owner → the full
+            desk; everyone else → the public ideas feed. */}
+        <IntelDeckSurface
+          active={view === "terminal"}
+          onExitToChat={() => switchView("chat")}
+        />
+      </section>
+
+      {/* reply dock + composer — fixed. The composer serves every surface;
+          the overlay reply card is TERMINAL-ONLY now (CORE V2 P5): over the
+          desk it stays a contained, dismissible card that never covers the
+          widgets, while the chat view renders the conversation as a full
+          Claude-style transcript inside the landing instead. */}
       {/* pointer-events-none is load-bearing: the transparent full-width wrapper must
           never eat clicks meant for the surfaces beneath (globe reset, drag, click-
           outside dismissal). The dock and composer row re-enable their own events. */}
       <div
         ref={dockWrapRef}
-        className="dock-wrap pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
+        className="dock-wrap pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
       >
-        {panelOpen && (replyText || interim || (historyOpen && messages.length > 0)) ? (
+        {view === "terminal" &&
+        panelOpen &&
+        (replyText || interim || (historyOpen && messages.length > 0)) ? (
           <div
             className={`reply-dock${historyOpen ? " history" : ""}${dockClosing ? " closing" : ""}`}
             role="log"
@@ -1561,7 +1685,8 @@ export default function Home() {
               )}
             </div>
           </div>
-        ) : statusLabel && !voiceMode ? (
+        ) : view === "terminal" && statusLabel && !voiceMode ? (
+          // Chat-view thinking/listening cues live inside the transcript now.
           <div className="reply-status">{statusLabel}</div>
         ) : null}
 

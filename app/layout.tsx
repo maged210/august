@@ -54,8 +54,13 @@ export const viewport: Viewport = {
   themeColor: "#13151A",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // No maximumScale — pinch-zoom must stay available (a11y). Inputs are ≥16px,
+  // so iOS won't auto-zoom on focus anyway.
   viewportFit: "cover", // draw under notches; safe-area insets handle the rest
+  // Browsers that support it resize the layout viewport for the on-screen
+  // keyboard (Android Chrome) — the bottom-docked composer rides above it.
+  // iOS overlays instead; the visualViewport --kb-inset effect covers that.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
@@ -70,16 +75,18 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              // THEME — light is the default stage; the toggle cycles
-              // light → gotham(batman) → dark. One-time migration: a previously
-              // stored 'dark' (the old default) is reset to light once; an
-              // explicit re-pick of dark/gotham after that is honored forever.
+              // THEME — matrix is the CORE V2 default stage; the toggle cycles
+              // matrix → dark → light → gotham(batman) → matrix. One-time
+              // migration (the house lightdefault precedent): every stored
+              // theme is reset to matrix once so the new default actually
+              // lands; an explicit re-pick after that is honored forever.
+              // Unknown/absent values also resolve to matrix.
               // MOOD — orthogonal to the theme (it re-tints only the accent
               // family); same pre-paint contract so a saved mood boots without
               // a flash. A theme failure must not cost the mood, and vice versa,
               // so each resolves in its own try/catch with its own safe default.
               "(function(){var d=document.documentElement;" +
-              "try{var f=localStorage.getItem('aug-theme-lightdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-lightdefault','1');if(t==='dark'){t='light';localStorage.setItem('aug-theme','light');}}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':'light');}catch(e){d.setAttribute('data-theme','light');}" +
+              "try{var f=localStorage.getItem('aug-theme-matrixdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-matrixdefault','1');t='matrix';localStorage.setItem('aug-theme','matrix');}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':t==='light'?'light':'matrix');}catch(e){d.setAttribute('data-theme','matrix');}" +
               "try{var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-mood','steel');}" +
               "})();",
           }}

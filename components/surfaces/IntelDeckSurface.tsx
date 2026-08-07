@@ -6,13 +6,13 @@ import { IBM_Plex_Mono, Hanken_Grotesk } from "next/font/google";
 import "@/app/intel/tokens.css";
 import "@/app/intel/intel.css";
 
-// The deck's second surface is AUDIENCE-AWARE:
-//   owner on a >700px viewport → the full /intel desk, embedded (unchanged);
-//   everyone else — any non-owner, or ANY viewer ≤700px — → the public IDEAS
-//   feed (owner-published, server-redacted cards). The owner on a phone gets
-//   an OPEN DESK → link to /intel inside the feed header instead of the desk.
+// The Terminal view's body is AUDIENCE-AWARE:
+//   owner → the full intel desk, embedded (on phones the desk's own ≤700px
+//   MobileBoard tree renders — the standalone /intel route is retired, so the
+//   embed is the owner's only desk on every viewport);
+//   everyone else → the public IDEAS feed (owner-published, server-redacted).
 // Both bodies are dynamic chunks behind the same lazy-mount latch — nothing
-// intel-sized rides the home bundle for users who stay on Presence, and the
+// intel-sized rides the home bundle for users who stay on Chat, and the
 // desk dashboard never mounts at all when the feed branch is taken.
 const IntelDashboard = dynamic(() => import("@/components/intel/IntelDashboard"), {
   loading: () => <IdleStage />,
@@ -47,24 +47,27 @@ function IdleStage() {
   );
 }
 
-export default function IntelDeckSurface({ active }: { active: boolean }) {
+export default function IntelDeckSurface({
+  active,
+  onExitToChat,
+}: {
+  active: boolean;
+  /** CORE V2 — switch back to the Chat view client-side (threaded to the
+   *  desk chrome's AUGUST / ← AUGUST controls so they never full-reload). */
+  onExitToChat?: () => void;
+}) {
   // Lazy-mount latch: neither body's fetch loops may run for users sitting on
-  // Presence. Once visited, it STAYS mounted so tab/selection/quote state
-  // survives panel switches. Render-phase setState is the documented "derive
+  // Chat. Once visited, it STAYS mounted so tab/selection/quote state
+  // survives view switches. Render-phase setState is the documented "derive
   // state from props" latch — no effect needed.
   const [visited, setVisited] = useState(active);
   if (active && !visited) setVisited(true);
 
-  // Audience signals — both start unknown so the first paint is the idle
-  // stage on server and client alike (no hydration seam).
-  //   owner:  GET /api/intel/role once per mount, only after first visit; a
-  //           fetch failure honestly degrades to the public feed.
-  //   narrow: matchMedia at the 700px boundary — this JS check must stay in
-  //           lockstep with the repo's <700px CSS convention (same contract
-  //           as the 760px comment in components/command/IntelPanel.tsx:20-24:
-  //           no styled-but-wrong-surface seam).
+  // Audience signal — starts unknown so the first paint is the idle stage on
+  // server and client alike (no hydration seam). GET /api/intel/role once per
+  // mount, only after first visit; a fetch failure honestly degrades to the
+  // public feed.
   const [owner, setOwner] = useState<boolean | null>(null);
-  const [narrow, setNarrow] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!visited) return;
@@ -82,16 +85,8 @@ export default function IntelDeckSurface({ active }: { active: boolean }) {
     };
   }, [visited]);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 700px)");
-    const apply = () => setNarrow(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-
   const mode: "idle" | "desk" | "feed" =
-    !visited || owner === null || narrow === null ? "idle" : owner && !narrow ? "desk" : "feed";
+    !visited || owner === null ? "idle" : owner ? "desk" : "feed";
 
   return (
     // The frame's transform makes it the containing block for the embed's
@@ -105,11 +100,11 @@ export default function IntelDeckSurface({ active }: { active: boolean }) {
         // body-scroll :has() guard) — only the body differs. `cinematic` is a
         // desk-only illumination gate and stays off here.
         <div className={`intel-root intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
-          <IdeasFeed showDeskLink={owner === true} />
+          <IdeasFeed />
         </div>
       ) : (
         <div className={`intel-root cinematic intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
-          {mode === "desk" ? <IntelDashboard /> : <IdleStage />}
+          {mode === "desk" ? <IntelDashboard onExitToChat={onExitToChat} /> : <IdleStage />}
         </div>
       )}
     </div>

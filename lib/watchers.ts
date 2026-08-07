@@ -346,9 +346,10 @@ function evaluate(w: Watcher, f: Feeds): { message: string; cursor?: number } | 
 }
 
 async function fire(email: string | null, w: Watcher, message: string): Promise<void> {
-  // Every alert deep-links the deck: market alerts land on the DESK slide, the
-  // rest on WORLD (the orb page resolves ?screen= via resolveTarget on mount).
-  const url = w.type === "market" ? "/?screen=desk" : "/?screen=world";
+  // Every alert deep-links a view: market alerts open the Intel Terminal, the
+  // rest land on Chat (the world/comms surfaces are parked — CORE V2). Old
+  // already-issued "?screen=" pushes still resolve via the mount effect.
+  const url = w.type === "market" ? "/?view=terminal" : "/";
   // Push ONLY to the owning user's devices — never a broadcast.
   await sendToAll(email, {
     title: "AUGUST",

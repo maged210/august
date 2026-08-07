@@ -38,7 +38,7 @@ export default function Composer({
   return (
     <form
       onSubmit={submit}
-      className="composer-form pointer-events-auto flex w-full max-w-[640px] items-center gap-2 rounded-full px-5 py-3 backdrop-blur-sm"
+      className="composer-form pointer-events-auto flex w-full max-w-[640px] items-center gap-2 rounded-full px-5 py-3"
     >
       <input
         ref={inputRef}

@@ -703,18 +703,19 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 /* ---- DAY BOARD table — same rd-row system, day column template
    (STATUS TICKER DIR TF THESIS CREATED ALERTED SO-FAR SRC) ---- */
 .rd-day-min {
-  --rd-cols: 56px 46px 44px 50px minmax(150px, 1.5fr) 84px 84px minmax(150px, 1.1fr) minmax(120px, 1fr);
-  min-width: 900px;
+  /* P6 UX pass: widened with the cumulative board's template + gap 6→8px */
+  --rd-cols: 58px 50px 46px 54px minmax(150px, 1.5fr) 90px 90px minmax(150px, 1.1fr) minmax(120px, 1fr);
+  min-width: 950px;
 }
 .rd-c-day {
-  font-family: var(--rd-mono); font-size: 9.5px;
+  font-family: var(--rd-mono); font-size: 10.5px; /* comfort floor (was 9.5px) */
   color: var(--rd-t-secondary2); white-space: nowrap;
 }
 .rd-c-sofar {
-  font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-dim);
+  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim); /* comfort floor (was 9.5px) */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.rd-sofar-lab { color: var(--rd-t-faint); font-size: 8px; letter-spacing: 0.04em; }
+.rd-sofar-lab { color: var(--rd-t-faint); font-size: 8.5px; letter-spacing: 0.04em; /* comfort floor (was 8px) */ }
 
 /* ---- DAY facts block inside the mobile idea card (rd-mb tree, <700px) ---- */
 .rd-mday {
@@ -724,10 +725,10 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
   background: var(--rd-inset);
 }
 .rd-mday-l {
-  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.12em;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.12em; /* comfort floor (was 8px) */
   color: var(--rd-t-ghost); align-self: center; white-space: nowrap;
 }
-.rd-mday-v { font-family: var(--rd-mono); font-size: 10px; color: var(--rd-t-secondary2); min-width: 0; }
+.rd-mday-v { font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-secondary2); min-width: 0; /* comfort floor (was 10px) */ }
 
 /* ---- DAY STACK: PAST IDEAS section (owner default view, below TODAY) ---- */
 /* a day group whose rows are all filtered out DIMS — never vanishes (no-CLS) */
@@ -809,20 +810,22 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 .rd-board-wrap { overflow-x: auto; scrollbar-width: thin; }
 .rd-board-min {
   /* STATUS TICKER DIR TF THESIS ENTRY TRIGGER INVALID TARGET LIVE Δ→TRIG P&L AGE SPARK CONF EVID SRC */
-  --rd-cols: 56px 46px 44px 50px minmax(140px, 1.6fr) minmax(104px, 1.1fr) 70px 72px 62px 70px 74px 54px 34px 56px 54px 62px minmax(110px, 1fr);
-  min-width: 1290px;
+  /* P6 UX pass: columns widened + gap 6→8px to carry the larger type below */
+  --rd-cols: 58px 50px 46px 54px minmax(150px, 1.6fr) minmax(108px, 1.1fr) 74px 76px 66px 74px 78px 58px 34px 58px 58px 66px minmax(114px, 1fr);
+  min-width: 1400px;
 }
 
 /* ---- column header (§2.6.2 item 2) ---- */
 .rd-colhead {
-  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
-  padding: 6px 16px;
+  display: grid; grid-template-columns: var(--rd-cols); gap: 8px; align-items: center;
+  padding: 7px 16px;
   border-bottom: 1px solid var(--rd-hair-08);
   background: var(--rd-card);
 }
 .rd-colhead span {
-  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.1em;
-  color: var(--rd-t-ghost); white-space: nowrap; overflow: hidden;
+  /* comfort floor (was 8px ghost) — the headers are how you read 17 columns */
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint); white-space: nowrap; overflow: hidden;
 }
 
 /* ---- horizon group headers (§2.6.2 item 3) ---- */
@@ -837,17 +840,17 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 .rd-tick-swing { background: var(--rd-blue); }
 .rd-tick-long { background: var(--rd-t-dim4); }
 .rd-group-label {
-  font-family: var(--rd-mono); font-size: 9px; font-weight: 600;
+  font-family: var(--rd-mono); font-size: 10px; font-weight: 600; /* comfort floor (was 9px) */
   letter-spacing: 0.16em; color: var(--rd-t-muted); white-space: nowrap;
 }
 .rd-group.hero .rd-group-label { color: var(--rd-t-chip); }
 .rd-group-sub {
-  font-family: var(--rd-mono); font-size: 8px; letter-spacing: 0.06em;
+  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em; /* comfort floor (was 8px) */
   color: var(--rd-t-ghost); white-space: nowrap;
 }
 .rd-group-hair { flex: 1; height: 1px; background: var(--rd-hair-05); min-width: 8px; }
 .rd-group-count {
-  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.06em;
+  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.06em; /* comfort floor (was 8.5px) */
   color: var(--rd-t-faint); white-space: nowrap;
 }
 
@@ -876,47 +879,50 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 .cinematic .rd-row-ring { box-shadow: var(--rd-sel-ring); }
 .rd-row-grid {
   position: relative;
-  display: grid; grid-template-columns: var(--rd-cols); gap: 6px; align-items: center;
-  padding: 8px 16px; /* Standard density rowPad */
+  display: grid; grid-template-columns: var(--rd-cols); gap: 8px; align-items: center;
+  padding: 9px 16px; /* Standard density rowPad (P6: was 8px — room for the larger type) */
   border-bottom: 1px solid var(--rd-hair-05);
 }
 .rd-row:hover .rd-row-grid { background: var(--rd-hover-row); }
 
 /* ---- cells ---- */
 .rd-c { min-width: 0; }
+/* P6 UX pass — the whole cell family gets a legibility floor: nothing in the
+   board reads below 8px, the thesis (the row's one sentence of meaning) jumps
+   to 10.5px, and the column template above widened to carry it. */
 .rd-c-ticker {
-  font-family: var(--rd-mono); font-size: 12px; font-weight: 600;
+  font-family: var(--rd-mono); font-size: 12.5px; font-weight: 600; /* was 12px */
   letter-spacing: 0.02em; color: var(--rd-t-primary); white-space: nowrap;
 }
 .rd-c-dir {
   display: inline-flex; align-items: center; gap: 3px;
-  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.02em; white-space: nowrap;
+  font-family: var(--rd-mono); font-size: 10px; letter-spacing: 0.02em; white-space: nowrap; /* was 9.5px */
 }
-.rd-dir-g { font-size: 7px; }
+.rd-dir-g { font-size: 7.5px; }
 .rd-dir-bull { color: var(--rd-bull); }
 .rd-dir-bear { color: var(--rd-bear); }
 .rd-dir-neut { color: var(--rd-amber); }
 .rd-c-tf {
-  font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.02em;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.02em; /* was 8.5px */
   color: var(--rd-t-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rd-c-thesis {
-  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.01em;
+  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.01em; /* was 9px */
   color: var(--rd-t-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rd-c-live {
   display: inline-flex; align-items: center; gap: 4px;
-  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-brightest); white-space: nowrap;
+  font-family: var(--rd-mono); font-size: 11.5px; color: var(--rd-t-brightest); white-space: nowrap; /* was 11px */
 }
 .rd-live-dot-g { color: var(--rd-live); font-size: 8.5px; animation: augPulse 2.4s ease-in-out infinite; }
 .rd-c-pnl, .rd-c-age {
-  font-family: var(--rd-mono); font-size: 10.5px; color: var(--rd-t-dim); white-space: nowrap;
+  font-family: var(--rd-mono); font-size: 11px; color: var(--rd-t-dim); white-space: nowrap; /* was 10.5px */
 }
 .rd-pos { color: var(--rd-bull); }
 .rd-neg { color: var(--rd-bear); }
 .rd-c-conf {
   display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--rd-mono); font-size: 8.5px; color: var(--rd-t-dim); white-space: nowrap;
+  font-family: var(--rd-mono); font-size: 9.5px; color: var(--rd-t-dim); white-space: nowrap; /* was 8.5px */
 }
 .rd-conf-bar {
   width: 30px; height: 3px; background: var(--rd-hair-08);
@@ -924,7 +930,7 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 }
 .rd-conf-fill { display: block; height: 100%; background: var(--rd-acc); }
 .rd-c-src {
-  font-family: var(--rd-mono); font-size: 9px; letter-spacing: 0.02em;
+  font-family: var(--rd-mono); font-size: 9.5px; letter-spacing: 0.02em; /* comfort floor (was 9px) */
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rd-c-src a { color: var(--rd-acc); text-decoration: none; }
@@ -935,7 +941,7 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 /* ---- life/status chips (§2.6.2 cell 1) ---- */
 .rd-life {
   display: inline-flex; align-items: center; gap: 4px; width: fit-content;
-  font-family: var(--rd-mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.04em;
+  font-family: var(--rd-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.04em; /* comfort floor (was 8.5px) */
   padding: 2px 6px; border: 1px solid currentColor; border-radius: 2px;
   background: transparent; white-space: nowrap;
 }
@@ -954,10 +960,10 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
    third provenance level; it is never emitted today (SPEC-wiring §2.2) ---- */
 .rd-ev {
   display: inline-flex; align-items: center; gap: 3px; width: fit-content;
-  font-family: var(--rd-mono); font-size: 7px; font-weight: 600; letter-spacing: 0.05em;
+  font-family: var(--rd-mono); font-size: 8px; font-weight: 600; letter-spacing: 0.05em; /* comfort floor (was 7px) */
   padding: 1px 5px; border-radius: 2px; white-space: nowrap;
 }
-.rd-ev-g { font-size: 6.5px; }
+.rd-ev-g { font-size: 7.5px; }
 .rd-ev-direct { color: var(--rd-blue); border: 1px solid var(--rd-blue); background: var(--rd-blue-soft14); }
 .rd-ev-extracted { color: var(--rd-teal); border: 1px solid var(--rd-teal); background: transparent; }
 .rd-ev-inferred { color: var(--rd-inferred); border: 1px dashed var(--rd-inferred); background: transparent; }
@@ -965,7 +971,7 @@ a.rd-wstab:hover { color: var(--rd-t-secondary2); }
 /* ---- value-cell renderers (§3.4 mkQuoted / mkInferred / mkNarr / ABSENT) ---- */
 .rd-cell {
   display: inline-flex; align-items: baseline; gap: 4px;
-  font-family: var(--rd-mono); font-size: 10.5px; min-width: 0; max-width: 100%;
+  font-family: var(--rd-mono); font-size: 11px; min-width: 0; max-width: 100%; /* comfort floor (was 10.5px) */
 }
 .rd-cell-g { font-size: 8.5px; flex-shrink: 0; }
 .rd-g-quote { color: var(--rd-blue); }
@@ -2700,10 +2706,11 @@ a.rd-cite:hover { text-decoration: underline; }
   position: sticky;
   bottom: var(--rd-embed-dock);
   margin-bottom: var(--rd-embed-dock);
-  /* neutralize the standalone safe-area padding — inside the deck the home
-     shell (globals.css) already reserves the home indicator, so this pins to
-     the panel edge with the original 10px/16px band (no double-count). */
-  padding: 10px 16px;
+  /* CORE V2: the embed is now the owner's ONLY desk on phones (the standalone
+     /intel route is retired), and the home dock no longer reserves the home
+     indicator on the terminal view — so the bottom inset comes back here.
+     env() is 0 off-device; desktop keeps the original 10px band. */
+  padding: 10px 16px calc(var(--rd-safe-bottom) + 10px);
 }
 
 /* ==========================================================================
@@ -2988,4 +2995,52 @@ a.rd-cite:hover { text-decoration: underline; }
     --rd-stage: #efeee9;
     --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(46, 107, 104, 0.07), transparent 62%);
   }
+}
+
+/* ============================================================================
+   MATRIX THEME (CORE V2) — the terminal on the code-rain stage. Appended
+   LAST so it wins its equal-specificity siblings by source order (the same
+   contract the light block relies on), and doubled with [data-mood] so the
+   mood axis can never re-tint it. Re-pins ONLY the stage/surface family, the
+   accent ramp, and the accent-derived illumination values — the semantic
+   colors (bull/bear/amber/blue/teal), hairlines, and text ramp keep their
+   dark defaults: data colors never cosplay.
+   ============================================================================ */
+:root[data-theme="matrix"] .intel-root,
+:root[data-theme="matrix"] .intel-embed-frame,
+:root[data-theme="matrix"][data-mood] .intel-root,
+:root[data-theme="matrix"][data-mood] .intel-embed-frame {
+  /* accent ramp — terminal green (matches the app shell's --steel) */
+  --rd-acc: #4ec97a;
+  --rd-acc-rgb: 78, 201, 122;
+  --rd-acc-soft06: rgba(78, 201, 122, 0.06);
+  --rd-acc-soft12: rgba(78, 201, 122, 0.12);
+  --rd-acc-soft25: rgba(78, 201, 122, 0.25);
+  --rd-acc-soft40: rgba(78, 201, 122, 0.42);
+
+  /* stage / surface family — near-black with a green cast. The stage is
+     TRANSLUCENT so the code-rain (fixed at z-0 behind the view panels) reads
+     through the terminal too; cards/bars above stay opaque panels. */
+  --rd-stage: rgba(3, 9, 5, 0.82);
+  --rd-frame: #050d08;
+  --rd-bar1-bg: #071009;
+  --rd-bar3-bg: #050c07;
+  --rd-tape-label-bg: #08120b;
+  --rd-card: #081209;
+  --rd-legend-bg: #06100a;
+  --rd-btn-bg: #0a1710;
+  --rd-inset: #071009;
+
+  /* accent-derived illumination */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(78, 201, 122, 0.13), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(78, 201, 122, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(78, 201, 122, 0.55), 0 0 22px -8px rgba(78, 201, 122, 0.6);
+}
+
+/* Both the frame AND the root paint var(--rd-stage); with a translucent stage
+   that would stack to near-opaque. Under matrix the frame stands down and the
+   root carries the one translucent stage layer. */
+:root[data-theme="matrix"] .intel-embed-frame,
+:root[data-theme="matrix"][data-mood] .intel-embed-frame {
+  background: transparent;
 }

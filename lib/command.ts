@@ -169,11 +169,10 @@ export async function getCommandSummary(): Promise<{
   const big = max ? `, biggest M${max.mag.toFixed(1)} ${shortPlace(max.place)}` : "";
   const briefLine = `${q.count} quakes in 24h${big}; ${planes}.`;
   const snapshot =
-    `\n\n---\nCOMMAND GLOBE (live intelligence surface):\n` +
-    `It shows live aircraft (OpenSky)${aircraft != null ? ` — ${aircraft.toLocaleString()} currently tracked` : ""}, ` +
-    `recent earthquakes (USGS) — ${q.count} in the last 24h${max ? `, largest M${max.mag.toFixed(1)} near ${max.place}` : ""}, ` +
-    `and the day/night terminator. When he asks what's on the globe or about flights/quakes, answer from these. ` +
-    `He can say "show me flights over Europe" and you should call look_closer to fly the globe there.`;
+    `\n\n---\nWORLD FEED (live situational data):\n` +
+    `Live aircraft (OpenSky)${aircraft != null ? ` — ${aircraft.toLocaleString()} currently tracked` : ""}, ` +
+    `recent earthquakes (USGS) — ${q.count} in the last 24h${max ? `, largest M${max.mag.toFixed(1)} near ${max.place}` : ""}. ` +
+    `When he asks about flights or quakes, answer from these in words — the globe surface is parked, so never offer to show it.`;
   return { aircraft, quakes: q.count, maxQuake: max, bigQuake, briefLine, snapshot };
 }
 

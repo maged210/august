@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES, MOODS } from "@/lib/tools";
-import { resolveTarget, SCREENS } from "@/lib/screens";
+import { resolveView } from "@/lib/screens";
 import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
@@ -211,26 +211,24 @@ export async function POST(req: Request): Promise<Response> {
           // Watcher tools are SERVER-side data ops (Upstash) — they need no client
           // action, so they are NOT framed to the client; they're executed here and
           // the REAL result is fed back so AUGUST confirms what actually happened.
-          // Nav tools (globe/deck) ARE framed so the client reacts immediately.
+          // Nav/mood tools ARE framed so the client reacts immediately.
           const isWatcher = WATCHER_TOOL_NAMES.has(tb.name);
           if (!isWatcher) {
             mark();
             send(encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP));
           }
           toolUseContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
-          const label = typeof input.label === "string" ? input.label : "the location";
           const screen = typeof input.screen === "string" ? input.screen : "presence";
           let resultText: string;
-          if (tb.name === "look_closer") {
-            resultText = `The globe has opened and is now showing ${label}.`;
-          } else if (tb.name === "close_map") {
-            resultText = "The globe has closed; you're back to the orb.";
-          } else if (tb.name === "go_to_screen") {
-            // Aliases (markets/intel → desk) resolve to a canonical surface name.
-            const target = resolveTarget(screen);
-            resultText = target
-              ? `The deck is now on the ${SCREENS[target.index]} surface.`
-              : "That surface doesn't exist — the deck stayed where it was.";
+          if (tb.name === "go_to_screen") {
+            // Aliases (desk/markets/intel → terminal, presence/home → chat)
+            // resolve to one of the page's two views.
+            const view = resolveView(screen);
+            resultText = view
+              ? view === "terminal"
+                ? "The intel terminal is now on screen."
+                : "You're back on the chat view — the orb."
+              : "That view doesn't exist — the page stayed where it was.";
           } else if (tb.name === "set_mood") {
             // The client re-tints from the framed event; confirm the new accent.
             const mood = typeof input.mood === "string" ? input.mood.toLowerCase() : "";

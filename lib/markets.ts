@@ -199,6 +199,44 @@ async function fetchYahooChart(symbol: string): Promise<Chart> {
   return { symbol: meta.symbol || symbol, price, prevClose, chgPct, prior, closes };
 }
 
+// --- daily OHLC bars (G3 chart dock) ---------------------------------------
+// SAME provider + endpoint family as every quote above (Yahoo v8 chart, free,
+// keyless) — the existing pipeline stores daily granularity, so the chart dock
+// gets daily bars: 3 months of them for a readable candle count (~64). Its own
+// cache key (the 1mo quote fetch stays byte-identical for every other caller);
+// 5-minute TTL — daily bars barely move intraday and this halves upstream load.
+
+export type DailyBar = { t: number; o: number; h: number; l: number; c: number };
+
+async function fetchYahooBars(symbol: string): Promise<DailyBar[]> {
+  const j = await getJson(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`,
+  );
+  const r = j?.chart?.result?.[0];
+  if (!r) throw new Error("no result");
+  const ts: number[] = r.timestamp || [];
+  const q = r.indicators?.quote?.[0] || {};
+  const bars: DailyBar[] = [];
+  for (let i = 0; i < ts.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+    // partial bars happen (halts, thin sessions) — only fully-formed candles ship
+    if (o == null || h == null || l == null || c == null) continue;
+    bars.push({ t: ts[i], o: num(o), h: num(h), l: num(l), c: num(c) });
+  }
+  return bars;
+}
+
+/** Daily candles for an arbitrary symbol — [] when the symbol doesn't resolve. */
+export async function getDailyBars(symbol: string): Promise<DailyBar[]> {
+  const sym = normalizeYahooSymbol(symbol);
+  if (!sym) return [];
+  try {
+    return await cached(`ybars:${sym}`, 300_000, () => fetchYahooBars(sym));
+  } catch {
+    return [];
+  }
+}
+
 // --- crypto ---------------------------------------------------------------
 // CoinGecko ids for price/24h/sparkline (one keyless call); Coinbase products for
 // OHLC chart candles (keyless, US-friendly).

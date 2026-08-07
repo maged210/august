@@ -1,0 +1,81 @@
+# AUGUST — CORE V2 MASTER BUILD
+
+> Working file for the CORE V2 build. Tick tasks as they complete. Branch: `feature/core-v2`.
+
+## CONTEXT
+Repo: maged210/august, local at C:\dev\august. Next.js 15 / React 19 / TypeScript / Vercel / Upstash Redis. The /intel Terminal Blotter is live. Notification hooks from Phase A are live — use them for all gate/blocker pings. IMPORTANT: local .env.local carries PREVIEW Upstash creds, not Production. Seed and test locally only. Never write test data to Production.
+
+## MISSION
+Strip August down to a single-page, two-surface app and add a trade-ideas backend with an approval pipeline. Aesthetics and usability are the point of this build — not feature count.
+
+## OPERATING RULES
+- Branch: feature/core-v2 off the default branch.
+- FIRST ACTION: write this entire plan to MASTER_PLAN.md in the repo root with checkboxes. Tick tasks as you complete them.
+- Execute ONE task at a time, in order. Commit per task with a short message.
+- Only stop and notify at the gates below or on a genuine blocker/decision. Otherwise keep moving.
+- Never touch Production env vars or data.
+
+## NON-GOALS — DO NOT BUILD
+No payments/subscriptions. No NinjaTrader integration. No character/bedroom page. No automated video sync. Park globe/feeds/mail code — hide it, don't delete it.
+
+---
+
+## P0 — SETUP
+- [x] Create branch `feature/core-v2` off main.
+- [x] Write this plan to MASTER_PLAN.md with checkboxes.
+
+## P1 — SINGLE-PAGE IA
+- [x] One surface at /. Default view: Chat. Top-bar menu toggles Chat ↔ Intel Terminal with no full route change (shallow routing via ?view=terminal is fine).
+- [x] Trade Ideas rail visible in BOTH views: right sidebar on desktop, collapsible drawer on mobile.
+- [x] Remove nav links to globe/feeds/mail; redirect those routes to /. Park the code — hide it, don't delete it.
+  - Parked by un-import (house convention): Deck, WorldSurface/CommandGlobe, CommsSurface; globe tools (look_closer/close_map) retired from the model's tool surface.
+  - /intel and /feed → redirect to /?view=terminal (the embed's owner/visitor split replaces the old server gates); legacy /globe //feeds //mail → / via next.config redirects.
+  - Owner on a phone now gets the desk's MobileBoard inside the Terminal view (the standalone /intel escape hatch is gone) — verify polish at P6.
+
+## P2 — MATRIX THEME
+- [x] Dark base, green code-rain canvas background: low opacity, slow fall, capped FPS, single canvas, requestAnimationFrame, honors prefers-reduced-motion.
+- [x] Content sits on translucent dark panels over the rain; text contrast stays AA-readable everywhere.
+- [x] Build as a theme (CSS variables) so alternate themes can be added later.
+  - Matrix = fourth data-theme value (default via one-time migration; cycle matrix→dark→light→batman). Token swap in globals.css + terminal re-pin in tokens.css; rain rides its own --rain-* tokens so moods can't tint it; orb gets a green LOOK rig.
+
+### GATE G1 — notify Milek: preview of the themed shell, both views. WAIT for approval.
+- [x] G1 approved 2026-08-05. *(dev preview at localhost:3000; adversarial review ran, 10 confirmed findings fixed pre-gate)*
+
+## P3 — TRADE IDEAS BACKEND
+- [x] Upstash Redis. Idea model: id, instrument, thesis, entry, target, riskLevel, status (draft | live | closed), source (manual | extracted), createdAt, updatedAt. *(lib/ideas — shared august:ideas:v1 namespace, validators + 13 tests)*
+- [x] Public: GET /api/ideas returns live ideas only *(redacted — status/source never on the wire)*.
+- [x] Admin: POST/PATCH /api/admin/ideas guarded by ADMIN_TOKEN (bearer). Add ADMIN_TOKEN to .env.local and flag it for the Vercel dashboard at G2. *(dual gate: bearer OR owner session; ADMIN_TOKEN generated locally — ADD TO VERCEL AT G2)*
+- [x] Admin UI at /admin (token gate): create, edit, approve (draft→live), close. *(+ reject/relist; token tab-scoped in sessionStorage; unlinked + noindex)*
+- [x] Public rail renders: instrument, thesis, entry, target, risk level, relative timestamp ("2h ago"). *(wired since P1 — the rail polls /api/ideas)*
+
+## P4 — TRANSCRIPT → IDEAS PIPELINE
+- [x] Admin paste box for NoteGPT transcripts (manual for now; build POST /api/admin/transcripts so a future webhook can hit the same endpoint). *(one endpoint, both callers; intake log in /admin)*
+- [x] On submit, automatically: store raw transcript → call Claude (claude-sonnet-4-6) with a strict-JSON extraction prompt → write each candidate as a draft idea. No manual trigger. *(schema-forced emit_ideas tool; raw stored BEFORE extraction so failures never lose it; candidates pass the same validator as manual creates and can never publish)*
+- [x] Draft queue in /admin: approve / edit / reject. Nothing goes public without approval. *(built at P3)*
+
+### GATE G2 — notify Milek: run one real transcript end-to-end (paste → drafts → approve → visible on public rail). WAIT for approval.
+- [x] G2 approved 2026-08-07. *(E2E ran 2026-08-07: transcript tr_974bc2ba → 3 drafts (NQ/NVDA/BTC) → NQ approved + live on /api/ideas redacted, BTC rejected, NVDA left in queue. REMINDER: add ADMIN_TOKEN to the Vercel dashboard before deploy.)*
+
+## P5 — CHAT SURFACE
+- [x] Clean Claude-style chat: input pinned bottom, streaming reply, message history in client state. *(ChatTranscript column in the chat view: full scrolling history, user bubbles / plain AUGUST turns, streaming caret + thinking dots, stick-to-bottom follow, + NEW CHAT reset; orb compacts above it. Overlay reply-dock is terminal-view-only now.)*
+- [x] Wire to /api/august/chat on claude-sonnet-4-6 (drop to Haiku later if cost matters), minimal "August" system prompt, Upstash rate-limiting like the existing reply route. Verify ANTHROPIC_API_KEY is present. *(Satisfied by the existing /api/chat — already claude-sonnet-4-6, streaming, persona system prompt, Upstash-rate-limited (chat:10/min); no duplicate route built. ANTHROPIC_API_KEY verified present + live E2E: streamed reply, memory 37ms, cache write.)*
+
+## P6 — POLISH
+- [x] Blotter UX pass: clearer columns, larger type, sane mobile layout. *(Type comfort floor across the desktop board — headers 8→9.5px at higher contrast, thesis 9→10.5px, nothing under 8px; columns + gaps widened to carry it. Mobile card tree was already the sane layout — unchanged.)*
+- [x] Loading/empty/error states everywhere. Meta/favicon. Quick Lighthouse sanity check. *(Rail/feed/brief/admin already carry honest loading/empty/error/stale states; meta+icons+OG existed. Lighthouse (prod, mobile-throttled): a11y 89→100 (pinch-zoom unblocked, 44px view tabs), best-practices 96, CLS 0; perf 62-64 — script eval is the WebGL orb boot, accepted for a live-canvas app.)*
+- [x] Deploy a Vercel preview. *(feature/core-v2 pushed → august-wiiz preview: https://august-wiiz-git-feature-core-v2-maged210s-projects.vercel.app)*
+
+### GATE G3 — notify Milek: preview URL for final review. DO NOT merge to main until approved.
+- [x] G3 round-1 feedback (2026-08-07) — two revisions, both shipped: **fix 1** composer overlap (measured --dock-h clearance, glass-strong composer, visualViewport keyboard inset, send-jumps/read-holds autoscroll); **fix 2** public Terminal rebuilt as a dense mono blotter (10-col grid, inline expansion, LIVE calls pinned hot above the tracked pipeline, ET clock + counts chrome). Redeployed to the same preview URL.
+- [x] G3 rounds 3+4 feedback (2026-08-07) — fill the screen; all shipped: **three-zone desk** (left chart dock ~30% / center blotter / right rail; tablet stacks, phone DOCK toggle); **chart dock modules** A idea chart (Lightweight Charts lib, daily bars off the existing Yahoo pipeline, ENTRY/TARGET/STOP lines + TRIG marker, row-click selection), B market pulse, C desk stats (since-called basis); **desk tape** (lib/tape + public/admin APIs + /admin quick-add & queue + extraction v2 emits tape callouts as drafts; module D flow-density rows, desk-sourced tag), **E bias bars**; grid texture in empty zones. Data rules held: zero new/paid sources — bars ride the same free Yahoo endpoint already in use; tape is desk/extraction-sourced with a clean seam for a licensed feed later. Options flow NOT built (out of round, module stack is its home). Redeployed to the same preview URL.
+- [x] G3 round 5 (2026-08-07) — fill the center-bottom: 55/45 band under the blotter (IDEA DETAIL: selection-driven single detail surface, inline expansion removed, ?idea= shareable URL state; DESK WIRE: reverse-chron pipeline log off existing stores via redacted /api/wire). Zero dead zones at 1440p+.
+- [x] G3 approved 2026-08-07 (round 5). Merged feature/core-v2 → main; production deploy follows the push. REMINDER: ADMIN_TOKEN must be present in Vercel Production env for the /admin bearer path; production Upstash starts with an empty ideas/tape board (preview seed data stays in preview).
+
+---
+
+## BLOCKERS LOG (newest on top)
+- **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
+
+## NOTES
+- ADMIN_TOKEN must be added to the Vercel dashboard (Production + Preview) before G2 sign-off — flag at G2.
+- Local .env.local = PREVIEW Upstash. Never seed or test against Production.

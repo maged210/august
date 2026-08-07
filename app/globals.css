@@ -168,6 +168,52 @@
 }
 
 /* ----------------------------------------------------------------------------
+   MATRIX THEME (CORE V2) — the code-rain stage. Same token-swap discipline as
+   Gotham: near-black green-cast stage, pale phosphor ink, THE accent flips to
+   terminal green. Bull/bear semantics (pos/neg) and the catalyst amber inherit
+   untouched — data colors never cosplay, and the accent green (#4ec97a, cold
+   and saturated) is deliberately apart from both the --pos market green
+   (#7fb0a3, teal-leaning) and the phosphor mood (#82a878, leaf-muted).
+
+   The [data-mood] twin selector out-specifies every mood block below
+   REGARDLESS of source order: Matrix's identity IS its green, so the mood
+   axis stands down while this theme is active (a saved ember/graphite mood
+   resumes the moment the theme cycles off matrix).
+
+   The rain reads its own --rain-* tokens — never --steel — so nothing can
+   re-tint the rain, and the canvas component picks them up per theme flip.
+   ---------------------------------------------------------------------------- */
+:root[data-theme="matrix"],
+:root[data-theme="matrix"][data-mood] {
+  --charcoal: #030905; /* near-black stage, green cast */
+  --charcoal-2: #060d08;
+  --bone: #d8ecd9; /* pale phosphor white */
+  --ash: #8aa78f;
+  --ink-mute: #5c7261;
+  --graphite: #29392d;
+  --steel: #4ec97a; /* THE accent — terminal green */
+  --steel-rgb: 78 201 122;
+
+  --wash-rgb: 190 255 205; /* green wash for hairlines/fills */
+  --glass: rgba(4, 12, 7, 0.78);
+  --glass-strong: rgba(3, 9, 5, 0.9);
+  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.22);
+
+  --vignette: radial-gradient(
+    125% 125% at 50% 44%,
+    transparent 36%,
+    rgba(0, 0, 0, 0.44) 74%,
+    rgba(0, 0, 0, 0.74) 100%
+  );
+  --grain-opacity: 0.05;
+
+  /* rain-only tokens — the canvas layer's color, glyph alpha and overall
+     strength (kept off the accent so moods/set_mood can never touch the rain) */
+  --rain-rgb: 64 220 110;
+  --rain-opacity: 0.11;
+}
+
+/* ----------------------------------------------------------------------------
    MOOD — a second axis, orthogonal to the light/dark theme above. <html> carries
    data-mood (steel | ember | phosphor | graphite); each mood re-tints ONLY the
    accent family — --steel / --steel-rgb — and everything accent-derived
@@ -751,6 +797,312 @@ body::after {
   .desk-boot-row {
     animation: none;
   }
+}
+
+/* ===========================================================================
+   CORE V2 — the two-view stack (Chat | Terminal) behind the top-center view
+   bar. The deck styles above are parked with the Deck component.
+   =========================================================================== */
+.view-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* the code-rain canvas — behind the view panels (z-1), under the vignette
+   (z-5) and grain (z-6); mounted only while data-theme="matrix". The layer's
+   overall strength is the theme's --rain-opacity token. */
+.matrix-rain {
+  position: fixed;
+  inset: 0;
+  /* a canvas is a REPLACED element: inset alone doesn't stretch it (the used
+     width stays intrinsic 300×150), so the explicit size is load-bearing —
+     it also keeps writing canvas.width from feeding back into layout size */
+  display: block;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--rain-opacity, 0.11);
+}
+/* display:none, not unmount — the hidden view keeps its React state (chat
+   thread, desk tabs/selection); the orb's IntersectionObserver and the desk's
+   visited latch park their own background work while hidden */
+.view-hidden {
+  display: none;
+}
+
+/* the view bar — the deck dots' old top-center slot (fixed, z above surfaces,
+   below the boot HUD's z-30 sibling line) */
+.view-bar {
+  position: fixed;
+  /* clear the notch/status bar in the installed PWA; env() is 0 elsewhere */
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-1);
+}
+.view-tab {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  padding: 5px 14px;
+  border-radius: var(--r-full);
+  color: var(--ash);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.view-tab:hover {
+  color: var(--bone);
+}
+.view-tab.on {
+  color: var(--bone);
+  background: rgb(var(--steel-rgb) / 0.16);
+}
+.view-tab:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-tab {
+    transition: none;
+  }
+}
+/* phones: the view tabs are primary nav — give them the 44px touch floor */
+@media (max-width: 700px) {
+  .view-tab {
+    min-height: 44px;
+    padding: 5px 16px;
+  }
+}
+
+/* — Trade Ideas rail — fixed right sidebar ≥1100px, off-canvas drawer below.
+   The --rail-w var (on .has-rail, inherited by every fixed child) shifts the
+   view panels, dock, and view bar so the sidebar never covers content. — */
+.has-rail {
+  --rail-w: 0px;
+}
+@media (min-width: 1100px) {
+  .has-rail {
+    --rail-w: 276px;
+  }
+  .view-tab-ideas {
+    display: none;
+  }
+}
+.has-rail .view-panel {
+  right: var(--rail-w);
+}
+.has-rail .dock-wrap {
+  right: var(--rail-w);
+}
+.has-rail .view-bar {
+  left: calc(50% - var(--rail-w) / 2);
+}
+
+.ideas-rail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40; /* drawer mode: above the dock (z-20) and view bar (z-30) */
+  width: min(320px, 88vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-left: 1px solid var(--line);
+  transform: translateX(102%);
+  visibility: hidden;
+  transition:
+    transform var(--dur-med) var(--ease),
+    visibility 0s linear var(--dur-med);
+}
+.ideas-rail.open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-med) var(--ease);
+}
+.ir-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.45);
+}
+@media (min-width: 1100px) {
+  /* sidebar mode: always open, ambient, below the dock */
+  .ideas-rail {
+    width: var(--rail-w);
+    transform: none;
+    visibility: visible;
+    transition: none;
+    z-index: 15;
+    background: var(--glass);
+  }
+  .ir-scrim,
+  .ir-close {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ideas-rail {
+    transition: none;
+  }
+}
+
+.ir-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* the rail is full-height fixed — pad its ends clear of notch/indicator */
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.ir-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+}
+.ir-count {
+  color: var(--steel);
+}
+.ir-close {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ash);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.ir-close:hover {
+  color: var(--bone);
+}
+.ir-close:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.ir-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ir-empty {
+  margin-top: 28px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ir-empty-sub {
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+/* failed refresh with rows still on screen — mark them stale, offer retry */
+.ir-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--neg);
+}
+.ir-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ir-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ir-sym {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--bone);
+}
+.ir-risk {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.ir-risk-low {
+  color: var(--ash);
+}
+.ir-risk-medium {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.4);
+}
+.ir-risk-high {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.4);
+}
+.ir-thesis {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--ash);
+}
+.ir-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--bone);
+}
+.ir-level-k {
+  margin-right: 3px;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+}
+.ir-when {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
 }
 
 /* presence */
@@ -3252,6 +3604,11 @@ a.mb-btn {
 /* ---- safe areas (phone notches / home bars) ---- */
 .dock-wrap {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+  /* G3 fix 1: --kb-inset is the on-screen keyboard's overlap with the layout
+     viewport (page.tsx visualViewport effect; 0 when closed / where the
+     browser resizes the layout itself) — the dock rides above the keyboard
+     instead of hiding behind it. */
+  bottom: var(--kb-inset, 0px);
 }
 @media (min-width: 640px) {
   .dock-wrap {
@@ -3928,7 +4285,13 @@ button.pulse-line:focus-visible {
 /* Composer — theme-aware (was Tailwind white-alpha; now token-driven). */
 .composer-form {
   border: 1px solid var(--line);
-  background: var(--panel);
+  /* G3 fix 1: the input is a docked glass bar — heavy enough that the
+     code-rain and any transcript text beneath can't bleed through it.
+     (--panel was a 2% wash; the blur moved here from the JSX utility so
+     one place owns the treatment.) Theme-aware via --glass-strong. */
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 .composer-form:focus-within {
   border-color: var(--accent-line);
@@ -4081,6 +4444,33 @@ button.pulse-line:focus-visible {
     inset 9px 12px 42px rgba(201, 169, 106, 0.12);
   --ring: rgba(201, 169, 106, 0.13);
   --halo: rgba(201, 169, 106, 0.14);
+}
+/* MATRIX: a third night palette in phosphor green. --bg is TRANSPARENT by
+   design — the code-rain canvas is fixed at z-0 behind the view panels, and
+   main.stage-vignette already paints the --charcoal (#030905) stage, so the
+   landing lets the rain read through while its cards stay translucent glass
+   ("content sits on translucent dark panels over the rain"). */
+:root[data-theme="matrix"] .home-landing {
+  --bg: transparent;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --hair2: rgba(190, 255, 205, 0.08);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
+  --thread: rgba(216, 236, 217, 0.84);
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+  --orb-bg: radial-gradient(circle at 36% 32%, #12241a 0%, #0a140e 46%, #030905 74%);
+  --orb-glow:
+    0 0 90px rgba(78, 201, 122, 0.26),
+    0 0 32px rgba(78, 201, 122, 0.18),
+    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
+    inset 9px 12px 42px rgba(78, 201, 122, 0.12);
+  --ring: rgba(78, 201, 122, 0.13);
+  --halo: rgba(78, 201, 122, 0.14);
 }
 
 /* — top bar: wordmark · clock + state · quiet control cluster ------------- */
@@ -4259,7 +4649,8 @@ button.pulse-line:focus-visible {
 /* NIGHT/GOTHAM: no contact shadow — an ink pool on a black stage is invisible at
    best, and there the stone is lit in a void, not lying on anything. */
 :root[data-theme="dark"] .home-landing .hl-orb::before,
-:root[data-theme="batman"] .home-landing .hl-orb::before {
+:root[data-theme="batman"] .home-landing .hl-orb::before,
+:root[data-theme="matrix"] .home-landing .hl-orb::before {
   display: none;
 }
 /* THE HALO IS NIGHT-ONLY. It is an OUTSET box-shadow on a 202px border-box with
@@ -4276,7 +4667,8 @@ button.pulse-line:focus-visible {
   display: none;
 }
 :root[data-theme="dark"] .home-landing .hl-orb-halo,
-:root[data-theme="batman"] .home-landing .hl-orb-halo {
+:root[data-theme="batman"] .home-landing .hl-orb-halo,
+:root[data-theme="matrix"] .home-landing .hl-orb-halo {
   display: block;
   position: absolute;
   inset: -6px;
@@ -4303,7 +4695,8 @@ button.pulse-line:focus-visible {
   display: none;
 }
 :root[data-theme="dark"] .home-landing .hl-orb-ring,
-:root[data-theme="batman"] .home-landing .hl-orb-ring {
+:root[data-theme="batman"] .home-landing .hl-orb-ring,
+:root[data-theme="matrix"] .home-landing .hl-orb-ring {
   display: block;
   position: absolute;
   inset: -22px;
@@ -4579,8 +4972,192 @@ button.pulse-line:focus-visible {
   /* Must out-specify the night/gotham halo rule above, which is where the
      animation is now declared — a bare .hl-orb-halo here would lose to it. */
   :root[data-theme="dark"] .home-landing .hl-orb-halo,
-  :root[data-theme="batman"] .home-landing .hl-orb-halo {
+  :root[data-theme="batman"] .home-landing .hl-orb-halo,
+  :root[data-theme="matrix"] .home-landing .hl-orb-halo {
     animation: none;
+  }
+}
+
+/* ======================================================================
+   CORE V2 P5 — the conversation transcript. While a conversation is live the
+   chat view becomes a Claude-style column: full message history scrolling in
+   place, user turns as glass bubbles, AUGUST as plain text, the streaming
+   reply appended live, input pinned bottom (the fixed composer dock). All
+   colors ride the landing's theme tokens, so day/dark/gotham/matrix work
+   without another palette. ============================================== */
+
+/* The transcript is the scroll container — the landing itself stops
+   scrolling so the column's own follow-the-stream behavior owns it. */
+.home-landing.convo {
+  overflow: hidden;
+}
+
+/* The orb compacts to a quiet presence above the conversation. transform:
+   scale keeps the WebGL canvas geometry true (the sphere fraction is sized
+   against the 190px circle); the negative margin reclaims the layout height
+   the scale gives up (190px → ~80px visible). */
+.home-landing .hl-orb {
+  transition:
+    transform 0.45s var(--ease-snappy),
+    margin-top 0.45s var(--ease-snappy),
+    margin-bottom 0.45s var(--ease-snappy);
+}
+.home-landing.convo .hl-orb {
+  margin-top: 1.2vh;
+  margin-bottom: -110px;
+  transform: scale(0.42);
+  transform-origin: 50% 0;
+  /* the bled WebGL canvas must never eat clicks/scrolls meant for the
+     transcript that now sits inside its (invisible) bleed box */
+  pointer-events: none;
+}
+
+/* head row — the one transcript control, quiet and out of the flow */
+.hl-convo-head {
+  width: min(720px, 92vw);
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 0 0;
+  flex: none;
+}
+.hl-newchat {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hair);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.hl-newchat:hover {
+  color: var(--ink);
+  border-color: var(--chip-hover);
+}
+.hl-newchat:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+.hl-convo {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scrollbar-width: thin;
+}
+.hl-convo-inner {
+  width: min(720px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* G3 fix 1: bottom clearance = the dock's MEASURED height (--dock-h,
+     ResizeObserver in page.tsx) + the keyboard inset + breathing room — the
+     last message can never sit under the input, at any dock composition
+     (voice bar, stop controls) or keyboard state. */
+  padding: 16px 0
+    calc(var(--dock-h, 132px) + var(--kb-inset, 0px) + 18px);
+}
+.hl-msg {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hl-msg.you {
+  align-self: flex-end;
+  max-width: 82%;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 16px;
+  box-shadow: var(--cardshadow);
+}
+.hl-msg.aug {
+  align-self: stretch;
+}
+.hl-msg.you.interim {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* streaming caret — blinks at the end of the in-flight reply */
+.hl-caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--label);
+  opacity: 0.8;
+  animation: hl-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes hl-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* thinking — three quiet dots before the first token lands */
+.hl-thinking {
+  display: flex;
+  gap: 5px;
+  padding: 6px 0;
+}
+.hl-thinking span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: hl-think 1.2s ease-in-out infinite;
+}
+.hl-thinking span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.hl-thinking span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes hl-think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (max-width: 700px) {
+  .hl-newchat {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-landing .hl-orb {
+    transition: none;
+  }
+  .hl-caret {
+    animation: none;
+  }
+  .hl-thinking span {
+    animation: none;
+    opacity: 0.6;
   }
 }
 
@@ -4617,6 +5194,16 @@ button.pulse-line:focus-visible {
   --hair: rgba(255, 255, 255, 0.13);
   --card: rgba(255, 255, 255, 0.04);
   --label: #c9a96a;
+  --cardshadow: none;
+}
+:root[data-theme="matrix"] .login-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
   --cardshadow: none;
 }
 .lp-card {
@@ -4726,6 +5313,18 @@ button.pulse-line:focus-visible {
   --hair: rgba(255, 255, 255, 0.13);
   --card: rgba(255, 255, 255, 0.04);
   --label: #c9a96a;
+  --up: #57a97f;
+  --down: #c97064;
+  --cardshadow: none;
+}
+:root[data-theme="matrix"] .welcome-page {
+  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
+  --ink: #d8ecd9;
+  --dim: rgba(216, 236, 217, 0.42);
+  --body2: rgba(216, 236, 217, 0.58);
+  --hair: rgba(190, 255, 205, 0.14);
+  --card: rgba(190, 255, 205, 0.045);
+  --label: #4ec97a;
   --up: #57a97f;
   --down: #c97064;
   --cardshadow: none;
@@ -5061,4 +5660,391 @@ button.pulse-line:focus-visible {
   .mb-signin {
     min-height: 44px;
   }
+}
+
+/* ======================================================================
+   ADMIN — /admin (CORE V2). The trade-ideas console: token lock screen,
+   draft queue, live/closed boards. Global tokens only (glass, hairlines,
+   mono labels) so every theme — matrix included — carries it natively.
+   Same fixed-scroller shape as .welcome-page (body scroll stays locked).
+   ====================================================================== */
+.admin-page {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: clamp(20px, 5vh, 56px) 16px calc(env(safe-area-inset-bottom, 0px) + 48px);
+  background: var(--charcoal);
+  color: var(--bone);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+.adm-shell {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.adm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--track-hud);
+}
+.adm-brand-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--steel);
+  box-shadow: var(--glow-accent);
+}
+.adm-head-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.adm-back {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+  text-decoration: none;
+}
+.adm-back:hover {
+  color: var(--bone);
+}
+.adm-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--steel);
+}
+.adm-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.adm-section {
+  display: flex;
+  flex-direction: column;
+}
+.adm-empty {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--ink-mute);
+  margin: 4px 0 0;
+}
+.adm-err {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--neg);
+  margin: 0;
+}
+.adm-hint {
+  font-size: var(--fs-caption);
+  color: var(--ink-mute);
+  margin: 4px 0 0;
+  max-width: 380px;
+}
+
+/* lock screen */
+.adm-lock {
+  max-width: 420px;
+}
+.adm-lockform {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  padding: 22px;
+}
+
+/* forms */
+.adm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 14px;
+}
+.adm-form-row {
+  display: flex;
+  gap: 10px;
+}
+.adm-form-row > * {
+  flex: 1;
+  min-width: 0;
+}
+.adm-input {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: rgb(0 0 0 / 0.25);
+  color: var(--bone);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  padding: 9px 11px;
+}
+.adm-input::placeholder {
+  color: var(--ink-mute);
+}
+.adm-input:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.adm-textarea {
+  resize: vertical;
+  min-height: 64px;
+  font-family: var(--font-sans);
+}
+.adm-select {
+  cursor: pointer;
+}
+.adm-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ash);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  padding: 7px 13px;
+  transition: color var(--dur-fast) var(--ease-snappy), border-color var(--dur-fast) var(--ease-snappy);
+}
+.adm-btn:hover:not(:disabled) {
+  color: var(--bone);
+  border-color: var(--accent-line);
+}
+.adm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.adm-btn:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.adm-btn-acc {
+  color: var(--steel);
+  border-color: var(--accent-line);
+}
+.adm-btn-warn {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.4);
+}
+
+/* idea cards */
+.adm-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adm-card + .adm-card {
+  margin-top: 10px;
+}
+.adm-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adm-sym {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.adm-risk {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 6px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  color: var(--ash);
+}
+.adm-risk-medium {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.4);
+}
+.adm-risk-high {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.4);
+}
+.adm-src {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+}
+.adm-when {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-mute);
+}
+.adm-thesis {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--bone);
+}
+.adm-levels {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--bone);
+}
+.adm-k {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+  margin-right: 3px;
+}
+.adm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  .adm-form-row {
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm-btn {
+    transition: none;
+  }
+}
+
+/* transcript intake (P4) */
+.adm-transcript {
+  min-height: 120px;
+  font-size: var(--fs-caption);
+}
+.adm-ok {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--pos);
+  align-self: center;
+}
+.adm-trlog {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.adm-trrow {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--ash);
+}
+.adm-trstatus {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--pos);
+}
+.adm-trstatus.bad {
+  color: var(--neg);
+}
+.adm-trmeta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* desk tape (G3 round 4) — quick-add row + dense flow-style rows */
+.adm-tape-add .adm-tape-in-sym {
+  flex: 0 0 110px;
+  text-transform: uppercase;
+}
+.adm-tape-add .adm-tape-in-x {
+  flex: 0 1 120px;
+}
+.adm-tapelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.adm-taperow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid rgb(var(--wash-rgb) / 0.06);
+  border-left: 2px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  flex-wrap: wrap;
+}
+.adm-tape-bull { border-left-color: var(--pos); }
+.adm-tape-bear { border-left-color: var(--neg); }
+.adm-tape-neutral { border-left-color: rgb(var(--wash-rgb) / 0.25); }
+.adm-tape-sym {
+  font-weight: 600;
+  color: var(--bone);
+  min-width: 46px;
+}
+.adm-tape-note {
+  color: var(--bone);
+  opacity: 0.85;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 200px;
+}
+.adm-tape-x {
+  font-size: var(--fs-micro);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+.adm-tape-kind {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 6px;
+  border: 1px solid rgb(var(--wash-rgb) / 0.18);
+  border-radius: 3px;
+  color: var(--ash);
+  white-space: nowrap;
+}
+.adm-tk-sweep { color: var(--amber); border-color: rgb(var(--amber-rgb) / 0.4); }
+.adm-tk-block { color: var(--steel); border-color: rgb(var(--steel-rgb) / 0.4); }
+.adm-tk-split { color: var(--pos); border-color: rgb(var(--pos-rgb) / 0.4); }
+.adm-tape-acts {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
 }
