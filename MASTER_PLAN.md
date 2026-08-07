@@ -61,9 +61,9 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] Wire to /api/august/chat on claude-sonnet-4-6 (drop to Haiku later if cost matters), minimal "August" system prompt, Upstash rate-limiting like the existing reply route. Verify ANTHROPIC_API_KEY is present. *(Satisfied by the existing /api/chat — already claude-sonnet-4-6, streaming, persona system prompt, Upstash-rate-limited (chat:10/min); no duplicate route built. ANTHROPIC_API_KEY verified present + live E2E: streamed reply, memory 37ms, cache write.)*
 
 ## P6 — POLISH
-- [ ] Blotter UX pass: clearer columns, larger type, sane mobile layout.
-- [ ] Loading/empty/error states everywhere. Meta/favicon. Quick Lighthouse sanity check.
-- [ ] Deploy a Vercel preview.
+- [x] Blotter UX pass: clearer columns, larger type, sane mobile layout. *(Type comfort floor across the desktop board — headers 8→9.5px at higher contrast, thesis 9→10.5px, nothing under 8px; columns + gaps widened to carry it. Mobile card tree was already the sane layout — unchanged.)*
+- [x] Loading/empty/error states everywhere. Meta/favicon. Quick Lighthouse sanity check. *(Rail/feed/brief/admin already carry honest loading/empty/error/stale states; meta+icons+OG existed. Lighthouse (prod, mobile-throttled): a11y 89→100 (pinch-zoom unblocked, 44px view tabs), best-practices 96, CLS 0; perf 62-64 — script eval is the WebGL orb boot, accepted for a live-canvas app.)*
+- [x] Deploy a Vercel preview. *(feature/core-v2 pushed → august-wiiz preview: https://august-wiiz-git-feature-core-v2-maged210s-projects.vercel.app)*
 
 ### GATE G3 — notify Milek: preview URL for final review. DO NOT merge to main until approved.
 - [ ] G3 approved. Merge to main.
