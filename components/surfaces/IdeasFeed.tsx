@@ -1,24 +1,37 @@
 "use client";
 
-// IDEAS FEED — the public, consumer face of the desk. Renders ONLY what
-// GET /api/intel/feed serves: owner-published ideas, redacted server-side
-// (attribution is the payload's own "AUGUST DESK" string; the payload carries
-// zero source identity and this client renders NO source rows, ever).
+// IDEAS TERMINAL — the public face of the desk (G3 revision: the soft card
+// feed became a dense monospace blotter again). Two data sources, one grid:
+//
+//   LIVE    — the CORE V2 trade-ideas backend (GET /api/ideas): the desk's
+//             current calls, redacted PublicIdea rows. They LEAD the board —
+//             pinned on top, visually hot.
+//   TRACKED — the legacy publish pipeline (GET /api/intel/feed): owner-
+//             published FeedCard rows with stated levels, live quotes and
+//             since-call performance. They sit below, under the lifecycle
+//             filters.
+//
+// Grid columns: TICKER · SIDE · STATUS · ENTRY · TARGET · STOP · % SINCE
+// CALL · SPARK · LAST · AGE. A row click expands INLINE to the full thesis
+// and detail (the old card/sheet content); collapsed by default.
 //
 // Honesty rules (the law, inherited from the tracker/publish pipeline):
-// - absent data renders as absent (the ∅ "not stated" treatment) — never a
-//   dash-as-zero, never a computed placeholder;
+// - absent data renders as absent (∅ / —) — never a dash-as-zero, never a
+//   computed placeholder;
 // - the performance numeral comes exclusively from the feed's pnl view and is
 //   labeled by its kind verbatim (SINCE CALLED / SINCE FIRST MENTION°, the °
 //   marking a price move that is NOT trade P&L);
+// - a LIVE idea's SIDE is only shown when derivable from its stated entry vs
+//   target numerals, and is styled as derived (the model stores no direction);
 // - sparklines draw only the tracker's real priceHistory ring — fewer than two
 //   observations means no line;
-// - no demo/sample cards; an empty feed shows the empty state.
+// - no demo/sample rows; an empty board shows the empty state.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { Direction, TimeHorizon } from "@/lib/intel/types";
+import { relativeTime, type IdeaRiskLevel, type PublicIdea } from "@/lib/ideas";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
@@ -50,7 +63,7 @@ const fmtDateTime = (ms: number) =>
 const DIR_META: Record<Direction, { label: string; glyph: string; cls: string; title?: string }> = {
   bullish: { label: "LONG", glyph: "▲", cls: "if-dir-bull" },
   bearish: { label: "SHORT", glyph: "▼", cls: "if-dir-bear" },
-  neutral: { label: "NEUTRAL", glyph: "◆", cls: "if-dir-neut" },
+  neutral: { label: "NEUT", glyph: "◆", cls: "if-dir-neut" },
   watch: { label: "WATCH", glyph: "◆", cls: "if-dir-neut", title: "watch idea" },
 };
 
@@ -69,6 +82,12 @@ const TF_LABEL: Record<TimeHorizon, string> = {
   swing: "SWING",
   long_term: "LONG-TERM",
   unspecified: "TF NOT STATED",
+};
+
+const RISK_LABEL: Record<IdeaRiskLevel, string> = {
+  low: "LOW RISK",
+  medium: "MED RISK",
+  high: "HIGH RISK",
 };
 
 const FILTERS = ["ALL", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as const;
@@ -104,44 +123,21 @@ function Absent({ text = "not stated" }: { text?: string }) {
   );
 }
 
-/** one ENTRY/TARGET/STOP column: numeric → level-tinted numeral; stated but
- *  non-numeric → the verbatim condition text; absent → ∅ not stated */
-function LevelCol({
-  label,
-  level,
-  cls,
-  extra,
-}: {
-  label: string;
-  level: TrackedLevel | null;
-  cls: string;
-  extra?: number;
-}) {
+/** blotter cell dash — column has no value for this row (title says why) */
+function Dash({ title }: { title?: string }) {
   return (
-    <span className="if-lev">
-      <span className="if-lev-lab">{label}</span>
-      {level == null ? (
-        <Absent />
-      ) : level.value != null ? (
-        <span className={`if-lev-val ${cls}`} title={level.text}>
-          {px(level.value)}
-          {extra ? <span className="if-lev-more"> +{extra}</span> : null}
-        </span>
-      ) : (
-        <span className={`if-lev-txt ${cls}`} title={level.text}>
-          {level.text}
-        </span>
-      )}
+    <span className="if-bdash" title={title} aria-hidden={title ? undefined : true}>
+      —
     </span>
   );
 }
 
-/** 64×20 sparkline from the tracker's REAL priceHistory ring — never drawn
- *  with fewer than two observations (no flat fake lines) */
+/** sparkline from the tracker's REAL priceHistory ring — never drawn with
+ *  fewer than two observations (no flat fake lines) */
 function FeedSpark({ points, tone }: { points: PriceSnap[]; tone: "bull" | "bear" }) {
   if (points.length < 2) return null;
-  const W = 64;
-  const H = 20;
+  const W = 60;
+  const H = 18;
   const padY = 2;
   const vals = points.map((p) => p.price);
   let min = Math.min(...vals);
@@ -203,172 +199,156 @@ function sparkTone(card: FeedCard): "bull" | "bear" {
   return "bull";
 }
 
-// ── the idea card (map-design §2.3 anatomy, top→bottom) ────────────────────────
+// ── LIVE-idea derivations (PublicIdea stores free-form level STRINGS) ──────────
 
-function IdeaCard({ card, onOpen }: { card: FeedCard; onOpen: () => void }) {
+/** first numeral in a free-form level string ("21,450" / "break of 600") */
+function numOf(s: string): number | null {
+  const m = s.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const v = parseFloat(m[0]);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** SIDE derived from entry vs target numerals — the model stores no direction,
+ *  so this renders in the derived style; null when not derivable (∅) */
+function liveSide(idea: PublicIdea): "LONG" | "SHORT" | null {
+  const e = numOf(idea.entry);
+  const t = numOf(idea.target);
+  if (e == null || t == null || e === t) return null;
+  return t > e ? "LONG" : "SHORT";
+}
+
+// ── blotter cells ──────────────────────────────────────────────────────────────
+
+/** one tracked-level cell: numeric → tinted numeral; stated text → verbatim
+ *  (ellipsized, title = full); absent → dash */
+function LevelCell({ level, cls }: { level: TrackedLevel | null; cls: string }) {
+  if (level == null) return <Dash title="not stated" />;
+  if (level.value != null)
+    return (
+      <span className={`if-bval ${cls}`} title={level.text}>
+        {px(level.value)}
+      </span>
+    );
+  return (
+    <span className={`if-bval if-bval-txt ${cls}`} title={level.text}>
+      {level.text}
+    </span>
+  );
+}
+
+// ── LIVE row (new backend) ─────────────────────────────────────────────────────
+
+function LiveRow({ idea, open, onToggle }: { idea: PublicIdea; open: boolean; onToggle: () => void }) {
+  const side = liveSide(idea);
+  return (
+    <>
+      <div
+        className={`if-brow if-brow-live${open ? " open" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <span className="if-brail" aria-hidden="true" />
+        <span className="if-bc if-bc-tkr">{idea.instrument}</span>
+        <span className="if-bc">
+          {side ? (
+            <span
+              className={`if-bside ${side === "LONG" ? "if-dir-bull" : "if-dir-bear"} derived`}
+              title="derived from entry vs target — the desk did not state a side"
+            >
+              <span className="if-bside-g" aria-hidden="true">
+                {side === "LONG" ? "▲" : "▼"}
+              </span>
+              {side}
+            </span>
+          ) : (
+            <Dash title="side not derivable from stated levels" />
+          )}
+        </span>
+        <span className="if-bc">
+          <span className="if-live-chip">
+            <span className="if-life-dot" aria-hidden="true" />
+            LIVE
+          </span>
+        </span>
+        <span className="if-bc">
+          <span className="if-bval if-lev-entry" title={idea.entry}>
+            {idea.entry}
+          </span>
+        </span>
+        <span className="if-bc">
+          <span className="if-bval if-lev-target" title={idea.target}>
+            {idea.target}
+          </span>
+        </span>
+        <span className="if-bc">
+          <Dash title="no stop stated" />
+        </span>
+        <span className="if-bc">
+          <Dash title="not yet tracked — no since-call measurement" />
+        </span>
+        <span className="if-bc" />
+        <span className="if-bc">
+          <Dash title="no live quote for this instrument" />
+        </span>
+        <span className="if-bc if-bc-age">{relativeTime(idea.createdAt)}</span>
+      </div>
+      {open && (
+        <div className="if-xp">
+          <div className="if-sh-meta">
+            <span className={`if-risk if-risk-${idea.riskLevel}`}>{RISK_LABEL[idea.riskLevel]}</span> · CALLED{" "}
+            {fmtDate(idea.createdAt)}
+          </div>
+          <p className="if-sh-thesis">{idea.thesis}</p>
+          <div className="if-sh-foot">AUGUST DESK</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── TRACKED row (legacy publish pipeline) ──────────────────────────────────────
+
+function TrackedRow({ card, open, onToggle }: { card: FeedCard; open: boolean; onToggle: () => void }) {
   const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
   const dir = DIR_META[card.direction] ?? DIR_META.watch;
   const perf = perfOf(card);
   const targets = card.statedLevels.targets;
   return (
-    <button type="button" className={`if-card ${life.family}`} onClick={onOpen}>
-      <span className="if-rail" aria-hidden="true" />
-      <span className="if-r1">
-        <span className="if-tkr">{card.ticker}</span>
-        <span className={`if-dir ${dir.cls}`} title={dir.title}>
-          <span className="if-dir-g" aria-hidden="true">
-            {dir.glyph}
-          </span>
-          {dir.label}
-        </span>
-        {card.stale && (
-          <span
-            className="if-stale"
-            title={card.evicted ? "live tracking ended — showing last known state" : "quotes not refreshed recently"}
-          >
-            {card.evicted ? "ARCHIVED" : "STALE"}
-          </span>
-        )}
-        <span className={`if-life ${life.chip}`}>
-          <span className="if-life-dot" aria-hidden="true" />
-          {life.label}
-          {card.conflict && (
-            <span className="if-life-conflict" title="conflicting stated triggers exist for this idea">
-              !
-            </span>
-          )}
-        </span>
-      </span>
-      <span className="if-thesis">{card.thesis}</span>
-      <span className="if-levels">
-        <LevelCol label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
-        <LevelCol
-          label="TARGET"
-          level={targets[0] ?? null}
-          cls="if-lev-target"
-          extra={targets.length > 1 ? targets.length - 1 : undefined}
-        />
-        <LevelCol label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
-      </span>
-      <span className="if-perf">
-        <span className="if-perf-main">
-          {perf ? (
-            <>
-              <span className={`if-perf-num ${perf.cls}`}>{perf.text}</span>
-              <span className="if-perf-lab">{perf.label}</span>
-            </>
-          ) : (
-            <>
-              <span className="if-perf-num">
-                {/* an evicted card has no live pnl — "yet" would promise one */}
-                <Absent
-                  text={
-                    card.pnl && card.pnl.kind === "none"
-                      ? card.pnl.reason
-                      : card.evicted
-                        ? "live tracking ended"
-                        : "no measurement yet"
-                  }
-                />
-              </span>
-              <span className="if-perf-lab">PERFORMANCE</span>
-            </>
-          )}
-        </span>
-        <FeedSpark points={card.priceHistory} tone={sparkTone(card)} />
-      </span>
-      <span className="if-foot">
-        <span>
-          {card.attribution} · {fmtDate(card.publishedAt)}
-        </span>
-        {card.quote && (
-          <span className="if-foot-live">
-            <span className="if-live-dot" aria-hidden="true">
-              ◉
-            </span>
-            {px(card.quote.price)}
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
-
-// ── bottom-sheet detail (scrim + drag handle; NO source rows, ever) ────────────
-
-function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
-  const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
-  const dir = DIR_META[card.direction] ?? DIR_META.watch;
-  const perf = perfOf(card);
-  const sheetRef = useRef<HTMLDivElement | null>(null);
-  const dragY = useRef<{ start: number; delta: number } | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // Drag-to-dismiss engages ONLY from the grip handle and the pinned ticker
-  // header (pointer events cover touch + mouse; both carry touch-action:none).
-  // The scrollable body has NO drag handlers and touch-action:pan-y — scrolling
-  // mid-content can never move or dismiss the sheet.
-  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    dragY.current = { start: e.clientY, delta: 0 };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
-    if (!dragY.current || !sheetRef.current) return;
-    const delta = Math.max(0, e.clientY - dragY.current.start);
-    dragY.current.delta = delta;
-    sheetRef.current.style.transform = `translateY(${delta}px)`;
-  };
-  const onPointerEnd = () => {
-    const d = dragY.current;
-    dragY.current = null;
-    if (!sheetRef.current) return;
-    if (d && d.delta > 70) {
-      onClose();
-    } else {
-      sheetRef.current.style.transform = "";
-    }
-  };
-
-  return (
     <>
-      <button type="button" className="if-scrim" aria-label="Close detail" onClick={onClose} />
-      <div className="if-sheet" role="dialog" aria-modal="true" aria-label={`${card.ticker} idea detail`} ref={sheetRef}>
-        <button
-          type="button"
-          className="if-sheet-handle"
-          aria-label="Close detail"
-          onClick={onClose}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
-        >
-          <span className="if-sheet-grip" aria-hidden="true" />
-        </button>
-        {/* ticker header — pinned outside the scroller; a drag surface like the
-            handle so a swipe-down on it dismisses (the body below only scrolls) */}
-        <div
-          className="if-sh-head"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerEnd}
-          onPointerCancel={onPointerEnd}
-        >
-          <span className="if-sh-tkr">{card.ticker}</span>
-          <span className={`if-dir ${dir.cls}`} title={dir.title}>
-            <span className="if-dir-g" aria-hidden="true">
+      <div
+        className={`if-brow ${life.family}${open ? " open" : ""}${card.stale ? " stale" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <span className="if-brail" aria-hidden="true" />
+        <span className="if-bc if-bc-tkr">{card.ticker}</span>
+        <span className="if-bc">
+          <span className={`if-bside ${dir.cls}`} title={dir.title}>
+            <span className="if-bside-g" aria-hidden="true">
               {dir.glyph}
             </span>
             {dir.label}
           </span>
-          <span className={`if-life ${life.chip}`}>
+        </span>
+        <span className="if-bc">
+          <span className={`if-life ${life.chip}`} title={card.stale ? (card.evicted ? "archived — live tracking ended" : "stale — quotes not refreshed recently") : undefined}>
             <span className="if-life-dot" aria-hidden="true" />
             {life.label}
             {card.conflict && (
@@ -377,33 +357,84 @@ function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
               </span>
             )}
           </span>
-          {card.stale && (
-            <span className="if-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
+        </span>
+        <span className="if-bc">
+          <LevelCell level={card.statedLevels.trigger} cls="if-lev-entry" />
+        </span>
+        <span className="if-bc">
+          {targets.length > 0 ? (
+            <span className="if-bval if-lev-target" title={targets[0].text}>
+              {targets[0].value != null ? px(targets[0].value) : targets[0].text}
+              {targets.length > 1 ? <span className="if-bmore"> +{targets.length - 1}</span> : null}
+            </span>
+          ) : (
+            <Dash title="not stated" />
           )}
-        </div>
-        <div className="if-sheet-body">
+        </span>
+        <span className="if-bc">
+          <LevelCell level={card.statedLevels.invalidation} cls="if-lev-stop" />
+        </span>
+        <span className="if-bc">
+          {perf ? (
+            <span className={`if-bpct ${perf.cls}`} title={perf.label}>
+              {perf.text}
+            </span>
+          ) : (
+            <Dash
+              title={
+                card.pnl && card.pnl.kind === "none"
+                  ? card.pnl.reason
+                  : card.evicted
+                    ? "live tracking ended"
+                    : "no measurement yet"
+              }
+            />
+          )}
+        </span>
+        <span className="if-bc if-bc-spark">
+          <FeedSpark points={card.priceHistory} tone={sparkTone(card)} />
+        </span>
+        <span className="if-bc">
+          {card.quote ? (
+            <span className="if-blast">
+              <span className="if-live-dot" aria-hidden="true">
+                ◉
+              </span>
+              {px(card.quote.price)}
+            </span>
+          ) : (
+            <Dash title="no live quote" />
+          )}
+        </span>
+        <span className="if-bc if-bc-age" title="since first mention">
+          {relativeTime(card.firstMentionAt)}
+        </span>
+      </div>
+      {open && (
+        <div className="if-xp">
           <div className="if-sh-meta">
             {TF_LABEL[card.timeframe] ?? card.timeframe} · FIRST MENTION {fmtDate(card.firstMentionAt)} · PUBLISHED{" "}
             {fmtDate(card.publishedAt)}
+            {card.stale ? <span className="if-stale if-xp-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span> : null}
           </div>
           <p className="if-sh-thesis">{card.thesis}</p>
 
           <div className="if-sh-sect">
             <div className="if-sh-sect-h">STATED LEVELS</div>
-            <SheetLevel label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
-            {card.statedLevels.targets.length === 0 ? (
-              <SheetLevel label="TARGET" level={null} cls="if-lev-target" />
+            <XpLevel label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
+            {targets.length === 0 ? (
+              <XpLevel label="TARGET" level={null} cls="if-lev-target" />
             ) : (
-              card.statedLevels.targets.map((t, i) => (
-                <SheetLevel
+              targets.map((t, i) => (
+                <XpLevel
                   key={i}
-                  label={card.statedLevels.targets.length > 1 ? `TARGET ${i + 1}` : "TARGET"}
+                  label={targets.length > 1 ? `TARGET ${i + 1}` : "TARGET"}
                   level={t}
                   cls="if-lev-target"
                 />
               ))
             )}
-            <SheetLevel label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
+            <XpLevel label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
           </div>
 
           <div className="if-sh-sect">
@@ -442,7 +473,7 @@ function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
             {card.quote && (
               <div className="if-sh-perf" style={{ marginTop: 10 }}>
                 <span className="if-sh-perf-sub">
-                  LAST <span className="if-foot-live" style={{ marginLeft: 0 }}>{px(card.quote.price)}</span> ·{" "}
+                  LAST <span className="if-blast" style={{ marginLeft: 0 }}>{px(card.quote.price)}</span> ·{" "}
                   <span className={card.quote.chgPct >= 0 ? "if-pos" : "if-neg"}>{pctFmt(card.quote.chgPct)}</span> TODAY
                 </span>
               </div>
@@ -473,12 +504,12 @@ function IdeaSheet({ card, onClose }: { card: FeedCard; onClose: () => void }) {
 
           <div className="if-sh-foot">{card.attribution}</div>
         </div>
-      </div>
+      )}
     </>
   );
 }
 
-function SheetLevel({ label, level, cls }: { label: string; level: TrackedLevel | null; cls: string }) {
+function XpLevel({ label, level, cls }: { label: string; level: TrackedLevel | null; cls: string }) {
   return (
     <div className="if-sh-lev">
       <span className="if-sh-lev-lab">{label}</span>
@@ -486,11 +517,7 @@ function SheetLevel({ label, level, cls }: { label: string; level: TrackedLevel 
         <Absent />
       ) : (
         <>
-          {level.value != null ? (
-            <span className={`if-sh-lev-val ${cls}`}>{px(level.value)}</span>
-          ) : (
-            <span className={`if-sh-lev-val ${cls}`}>—</span>
-          )}
+          <span className={`if-sh-lev-val ${cls}`}>{level.value != null ? px(level.value) : "—"}</span>
           <span className="if-sh-lev-txt" title={level.text}>
             {level.text}
           </span>
@@ -500,27 +527,42 @@ function SheetLevel({ label, level, cls }: { label: string; level: TrackedLevel 
   );
 }
 
-// ── the feed surface ───────────────────────────────────────────────────────────
+// ── the terminal surface ───────────────────────────────────────────────────────
+
+const BLOT_COLS = [
+  "TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "STOP", "% SINCE CALL", "SPARK", "LAST", "AGE",
+] as const;
+
+const SKEL_W = [42, 36, 60, 48, 48, 48, 44, 52, 44, 30];
 
 export default function IdeasFeed() {
   const [feed, setFeed] = useState<FeedPayload | null>(null);
-  const [status, setStatus] = useState<"loading" | "live" | "error">("loading");
+  const [feedErr, setFeedErr] = useState(false);
+  const [live, setLive] = useState<PublicIdea[] | null>(null);
+  const [liveErr, setLiveErr] = useState(false);
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [openId, setOpenId] = useState<string | null>(null);
+  // one expansion at a time; keys are namespaced so the two sections can't collide
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [clock, setClock] = useState("");
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/intel/feed", { cache: "no-store" });
-      if (!res.ok) throw new Error();
-      const j = (await res.json()) as FeedPayload;
-      if (!j || j.ok !== true || !Array.isArray(j.ideas)) throw new Error();
-      setFeed(j);
-      setStatus("live");
-    } catch {
-      // sticky-live: a refresh blip never blanks an already-live feed; with no
-      // data yet we show the honest error state (no cached fakes)
-      setStatus((s) => (s === "live" ? "live" : "error"));
-    }
+  const load = useCallback(() => {
+    // two independent sources — one failing never blanks the other; a refresh
+    // blip never blanks already-live data (sticky-live, no cached fakes)
+    fetch("/api/intel/feed", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: FeedPayload) => {
+        if (!j || j.ok !== true || !Array.isArray(j.ideas)) throw new Error("malformed");
+        setFeed(j);
+        setFeedErr(false);
+      })
+      .catch(() => setFeedErr(true));
+    fetch("/api/ideas", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { ideas?: PublicIdea[] }) => {
+        setLive(Array.isArray(j.ideas) ? j.ideas : []);
+        setLiveErr(false);
+      })
+      .catch(() => setLiveErr(true));
   }, []);
 
   useEffect(() => {
@@ -529,31 +571,69 @@ export default function IdeasFeed() {
     return () => window.clearInterval(id);
   }, [load]);
 
-  const ideas = feed?.ideas ?? [];
-  const trig = ideas.filter((i) => i.status === "TRIGGERED").length;
-  const arm = ideas.filter((i) => i.status === "ARMED").length;
-  const visible = ideas.filter((i) => matchesFilter(filter, i.status));
-  const openCard = openId != null ? ideas.find((i) => i.id === openId) ?? null : null;
-  const close = useCallback(() => setOpenId(null), []);
+  // header clock — live ET, the terminal's heartbeat
+  useEffect(() => {
+    const fmt = () => {
+      try {
+        setClock(
+          new Date().toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            timeZone: "America/New_York",
+          }) + " ET",
+        );
+      } catch {
+        setClock(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      }
+    };
+    fmt();
+    const id = window.setInterval(fmt, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const tracked = feed?.ideas ?? [];
+  const liveIdeas = live ?? [];
+  const trig = tracked.filter((i) => i.status === "TRIGGERED").length;
+  const arm = tracked.filter((i) => i.status === "ARMED").length;
+  const visible = tracked.filter((i) => matchesFilter(filter, i.status));
+
+  const loading = feed === null && !feedErr && live === null && !liveErr;
+  const unreachable = feed === null && feedErr && live === null && liveErr;
+  const empty = !loading && !unreachable && liveIdeas.length === 0 && tracked.length === 0;
+
+  const toggle = (key: string) => setOpenKey((k) => (k === key ? null : key));
+
+  const colhead = (
+    <div className="if-bhead" aria-hidden="true">
+      {BLOT_COLS.map((c) => (
+        <span key={c} title={c === "% SINCE CALL" ? "signed vs stated trigger; ° = price since first mention" : undefined}>
+          {c}
+        </span>
+      ))}
+    </div>
+  );
 
   return (
     <div className="if-feed">
       <div className="if-chrome">
         <div className="if-head">
           <span className="if-brand-dot" aria-hidden="true" />
-          <span className="if-wordmark">IDEAS</span>
+          <span className="if-wordmark">IDEAS TERMINAL</span>
           <span className="if-head-right">
+            <span className="if-statline" role="status">
+              {clock ? `${clock} · ` : ""}
+              {liveIdeas.length} LIVE · {tracked.length} TRACKED
+            </span>
             {/* zero-count chips dim but stay mounted — no CLS when counts land */}
             <span className={`if-count if-count-trig${trig === 0 ? " if-count-zero" : ""}`}>
               {trig > 0 && <span className="if-count-dot" aria-hidden="true" />}
               {trig} TRIG
             </span>
             <span className={`if-count if-count-arm${arm === 0 ? " if-count-zero" : ""}`}>{arm} ARM</span>
-            {/* OPEN DESK link retired with the standalone /intel route — the
-                owner's desk now renders directly in the Terminal view */}
           </span>
         </div>
-        <div className="if-pills" role="tablist" aria-label="Filter ideas by lifecycle">
+        <div className="if-pills" role="tablist" aria-label="Filter tracked ideas by lifecycle">
           <div className="if-pillseg">
             {FILTERS.map((f) => (
               <button
@@ -571,18 +651,26 @@ export default function IdeasFeed() {
         </div>
       </div>
 
-      {status === "loading" && !feed ? (
-        <div className="if-list" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="if-skel">
-              <div className="if-skel-bar hi" style={{ width: "38%" }} />
-              <div className="if-skel-bar" style={{ width: "86%" }} />
-              <div className="if-skel-bar" style={{ width: "72%" }} />
-              <div className="if-skel-bar hi" style={{ width: "30%", height: 18 }} />
-            </div>
-          ))}
+      {loading ? (
+        <div className="if-blot-wrap" aria-hidden="true">
+          <div className="if-blot-min">
+            {colhead}
+            {[0, 1, 2, 3].map((r) => (
+              <div key={r} className="if-brow if-brow-skel">
+                <span className="if-brail" aria-hidden="true" />
+                {SKEL_W.map((w, i) => (
+                  <span key={i} className="if-bc">
+                    <span
+                      className={`if-skel-bar${i < 2 ? " hi" : ""}`}
+                      style={{ width: w, animationDelay: `${i * 0.06}s` }}
+                    />
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
-      ) : status === "error" && !feed ? (
+      ) : unreachable ? (
         <div className="if-state">
           <div className="if-state-glyph" aria-hidden="true">
             ∅
@@ -593,7 +681,7 @@ export default function IdeasFeed() {
             RETRY
           </button>
         </div>
-      ) : ideas.length === 0 ? (
+      ) : empty ? (
         <div className="if-state">
           <div className="if-state-glyph" aria-hidden="true">
             ∅
@@ -603,23 +691,76 @@ export default function IdeasFeed() {
             When the desk publishes an idea, it appears here with its stated levels and live tracking.
           </p>
         </div>
-      ) : visible.length === 0 ? (
-        <div className="if-state">
-          <div className="if-state-glyph" aria-hidden="true">
-            ∅
-          </div>
-          <div className="if-state-title">NO {filter} IDEAS</div>
-          <p className="if-state-copy">Nothing on the board is in this state right now.</p>
-        </div>
       ) : (
-        <div className="if-list">
-          {visible.map((card) => (
-            <IdeaCard key={card.id} card={card} onOpen={() => setOpenId(card.id)} />
-          ))}
+        <div className="if-blot-wrap">
+          <div className="if-blot-min">
+            {colhead}
+
+            {/* LIVE — the desk's current calls lead the board */}
+            {liveIdeas.length > 0 && (
+              <>
+                <div className="if-bgroup hot">
+                  <span className="if-bgroup-tick" aria-hidden="true" />
+                  <span className="if-bgroup-label">LIVE</span>
+                  <span className="if-bgroup-sub">DESK CALLS — CURRENT</span>
+                  <span className="if-bgroup-hair" aria-hidden="true" />
+                  <span className="if-bgroup-count">
+                    {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
+                  </span>
+                </div>
+                {liveIdeas.map((idea) => (
+                  <LiveRow
+                    key={idea.id}
+                    idea={idea}
+                    open={openKey === `live:${idea.id}`}
+                    onToggle={() => toggle(`live:${idea.id}`)}
+                  />
+                ))}
+              </>
+            )}
+            {liveErr && live === null && (
+              <div className="if-bmiss">
+                LIVE CALLS UNREACHABLE
+                <button type="button" className="if-bmiss-retry" onClick={load}>
+                  RETRY
+                </button>
+              </div>
+            )}
+
+            {/* TRACKED — the legacy publish pipeline, under the lifecycle filter */}
+            <div className="if-bgroup">
+              <span className="if-bgroup-tick dim" aria-hidden="true" />
+              <span className="if-bgroup-label">TRACKED</span>
+              <span className="if-bgroup-sub">SINCE-CALL PERFORMANCE</span>
+              <span className="if-bgroup-hair" aria-hidden="true" />
+              <span className="if-bgroup-count">
+                {visible.length} OF {tracked.length}
+              </span>
+            </div>
+            {feed === null && feedErr ? (
+              <div className="if-bmiss">
+                TRACKED FEED UNREACHABLE
+                <button type="button" className="if-bmiss-retry" onClick={load}>
+                  RETRY
+                </button>
+              </div>
+            ) : tracked.length === 0 ? (
+              <div className="if-bmiss">NOTHING TRACKED YET</div>
+            ) : visible.length === 0 ? (
+              <div className="if-bmiss">NO {filter} IDEAS RIGHT NOW</div>
+            ) : (
+              visible.map((card) => (
+                <TrackedRow
+                  key={card.id}
+                  card={card}
+                  open={openKey === `trk:${card.id}`}
+                  onToggle={() => toggle(`trk:${card.id}`)}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
-
-      {openCard && <IdeaSheet card={openCard} onClose={close} />}
     </div>
   );
 }

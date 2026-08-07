@@ -33,7 +33,7 @@
 }
 :where(.intel-embed-frame) .if-head {
   display: flex; align-items: center; gap: 9px;
-  width: 100%; max-width: 620px; margin: 0 auto;
+  width: 100%; max-width: 980px; margin: 0 auto; /* G3: blotter-width chrome */
   /* clear the status bar / notch: the sticky .if-chrome blur wraps this row +
      the pills, so its tint fills the inset band while the wordmark + count
      chips drop below it — and the pills (next block) sit fully below in turn.
@@ -94,7 +94,7 @@
 /* filter pills — sticky with the header, horizontal scroll, ≥44px targets */
 :where(.intel-embed-frame) .if-pills {
   display: flex; overflow-x: auto; scrollbar-width: none;
-  width: 100%; max-width: 620px; margin: 0 auto;
+  width: 100%; max-width: 980px; margin: 0 auto; /* G3: blotter-width chrome */
   /* pills already clear the status bar (the .if-head above carries the top
      inset); left/right insets keep them off the notch in landscape. */
   padding: 0 calc(var(--rd-safe-right, env(safe-area-inset-right, 0px)) + 16px)
@@ -189,12 +189,12 @@
 }
 /* lifecycle chip — .rd-life semantics, feed-sized */
 :where(.intel-embed-frame) .if-life {
-  margin-left: auto;
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   font-family: var(--rd-mono, "IBM Plex Mono", monospace);
-  font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em;
-  padding: 3px 7px; border: 1px solid currentColor; border-radius: 2px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.06em; /* comfort floor (was 8.5px); margin-left:auto dropped — the blotter cell places it */
+  padding: 2px 6px; border: 1px solid currentColor; border-radius: 2px;
   background: transparent; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 :where(.intel-embed-frame) .if-life-dot {
   width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0;
@@ -550,6 +550,256 @@
   padding-bottom: 20px;
 }
 
+/* ==========================================================================
+   G3 REVISION — THE TERMINAL BLOTTER
+   The card list is replaced by a dense monospace grid: TICKER SIDE STATUS
+   ENTRY TARGET STOP %SINCE-CALL SPARK LAST AGE. Terminal energy — tight
+   rows, hairline grid, hot LIVE section — at the P6 comfort-floor type
+   scale (dense ≠ tiny: nothing below 8px, headers 9.5px, values 11px).
+   Rows expand INLINE to the old card/sheet content (.if-xp reuses the
+   .if-sh-* text recipes). Narrow viewports scroll the grid horizontally;
+   the expansion panel is sticky-left sized in container-query units so the
+   thesis stays readable without hunting sideways.
+   ========================================================================== */
+
+:where(.intel-embed-frame) .if-blot-wrap {
+  width: 100%; max-width: 980px; margin: 0 auto;
+  overflow-x: auto; scrollbar-width: thin;
+  container-type: inline-size; /* 100cqw = the VISIBLE content width (.if-xp) */
+  padding: 12px
+           calc(var(--rd-safe-right, env(safe-area-inset-right, 0px)) + 16px)
+           calc(var(--rd-safe-bottom, env(safe-area-inset-bottom, 0px)) + 28px)
+           calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
+}
+:where(.intel-embed-frame) .if-blot-min {
+  /* TICKER SIDE STATUS ENTRY TARGET STOP %SINCE-CALL SPARK LAST AGE */
+  --if-cols: 64px 58px 100px 86px 86px 86px 92px 68px 82px minmax(52px, 1fr);
+  min-width: 880px;
+  border: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
+  border-radius: 2px;
+  background: var(--rd-card, #0b0d10);
+}
+
+/* column header — the desk's rd-colhead recipe at the P6 floor */
+:where(.intel-embed-frame) .if-bhead {
+  display: grid; grid-template-columns: var(--if-cols); gap: 8px; align-items: center;
+  padding: 7px 14px 7px 16px;
+  border-bottom: 1px solid var(--rd-hair-08, rgba(255, 255, 255, 0.08));
+}
+:where(.intel-embed-frame) .if-bhead span {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px; letter-spacing: 0.1em;
+  color: var(--rd-t-faint, #6b727a); white-space: nowrap; overflow: hidden;
+}
+
+/* section headers — LIVE (hot) and TRACKED, the rd-group anatomy */
+:where(.intel-embed-frame) .if-bgroup {
+  display: flex; align-items: center; gap: 9px; padding: 6px 14px 6px 16px;
+  background: var(--rd-bar1-bg, rgba(12, 14, 17, 0.7));
+  border-top: 1px solid var(--rd-hair-05, rgba(255, 255, 255, 0.05));
+  border-bottom: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
+}
+:where(.intel-embed-frame) .if-bgroup-tick {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: var(--rd-bull, #6fa085);
+}
+:where(.intel-embed-frame) .if-bgroup.hot .if-bgroup-tick {
+  box-shadow: 0 0 8px -1px var(--rd-bull, #6fa085);
+  animation: ifPulse 2.4s ease-in-out infinite;
+}
+:where(.intel-embed-frame) .if-bgroup-tick.dim {
+  background: var(--rd-t-dim4, #7b828a);
+}
+:where(.intel-embed-frame) .if-bgroup-label {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+  color: var(--rd-t-muted, #9aa1a9); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bgroup.hot .if-bgroup-label {
+  color: var(--rd-bull, #6fa085);
+}
+:where(.intel-embed-frame) .if-bgroup-sub {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 8.5px; letter-spacing: 0.06em;
+  color: var(--rd-t-ghost, #565c63); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bgroup-hair {
+  flex: 1; height: 1px; min-width: 8px;
+  background: var(--rd-hair-05, rgba(255, 255, 255, 0.05));
+}
+:where(.intel-embed-frame) .if-bgroup-count {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; letter-spacing: 0.06em;
+  color: var(--rd-t-faint, #6b727a); white-space: nowrap;
+}
+
+/* rows — tight, hairline-separated, lifecycle accent rail on the left */
+:where(.intel-embed-frame) .if-brow {
+  position: relative;
+  display: grid; grid-template-columns: var(--if-cols); gap: 8px; align-items: center;
+  padding: 6px 14px 6px 16px;
+  border-bottom: 1px solid var(--rd-hair-05, rgba(255, 255, 255, 0.05));
+  cursor: pointer;
+}
+:where(.intel-embed-frame) .if-brow:hover {
+  background: var(--rd-hover-row, rgba(255, 255, 255, 0.03));
+}
+:where(.intel-embed-frame) .if-brow.open {
+  background: var(--rd-acc-soft06, rgba(95, 176, 173, 0.06));
+}
+:where(.intel-embed-frame) .if-brow:focus-visible {
+  outline: 2px solid var(--rd-acc-soft40, rgba(95, 176, 173, 0.42));
+  outline-offset: -2px;
+}
+:where(.intel-embed-frame) .if-brail {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+}
+:where(.intel-embed-frame) .if-brow.if-lc-trig .if-brail,
+:where(.intel-embed-frame) .if-brow.if-lc-tgt .if-brail { background: var(--rd-bull, #6fa085); }
+:where(.intel-embed-frame) .if-brow.if-lc-arm .if-brail { background: var(--rd-amber, #bfa05a); }
+:where(.intel-embed-frame) .if-brow.if-lc-act .if-brail { background: var(--rd-blue, #6aa0c8); }
+:where(.intel-embed-frame) .if-brow.if-lc-inval .if-brail { background: var(--rd-bear, #cd7e6d); }
+:where(.intel-embed-frame) .if-brow.if-lc-exp .if-brail { background: var(--rd-lo, #646b73); }
+/* LIVE rows are the hot band: bull rail + a warm left wash */
+:where(.intel-embed-frame) .if-brow-live .if-brail {
+  background: var(--rd-bull, #6fa085); width: 3px;
+}
+:where(.intel-embed-frame) .if-brow-live {
+  background: linear-gradient(90deg, var(--rd-live-soft05, rgba(116, 176, 138, 0.05)), transparent 55%);
+}
+:where(.intel-embed-frame) .if-brow-live:hover {
+  background: linear-gradient(90deg, var(--rd-live-soft12, rgba(116, 176, 138, 0.12)), transparent 70%);
+}
+/* stale tracked rows dim as a whole — data kept, emphasis honest */
+:where(.intel-embed-frame) .if-brow.stale > .if-bc { opacity: 0.55; }
+:where(.intel-embed-frame) .if-brow-skel { cursor: default; }
+
+/* cells */
+:where(.intel-embed-frame) .if-bc { min-width: 0; display: flex; align-items: center; }
+:where(.intel-embed-frame) .if-bc-tkr {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--rd-t-primary, #e9ebee); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; display: block;
+}
+:where(.intel-embed-frame) .if-bside {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10px; letter-spacing: 0.02em; white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bside-g { font-size: 7.5px; }
+/* a DERIVED side (LIVE rows: entry-vs-target, never stated) — dotted, dimmer */
+:where(.intel-embed-frame) .if-bside.derived {
+  opacity: 0.75;
+  border-bottom: 1px dotted currentColor;
+}
+:where(.intel-embed-frame) .if-live-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--rd-bull, #6fa085);
+  background: var(--rd-live-soft12, rgba(116, 176, 138, 0.12));
+  border: 1px solid currentColor; border-radius: 2px;
+  padding: 2px 7px; white-space: nowrap;
+  box-shadow: 0 0 10px -3px var(--rd-bull, #6fa085);
+}
+:where(.intel-embed-frame) .if-live-chip .if-life-dot {
+  animation: ifPulse 2s ease-in-out infinite;
+}
+:where(.intel-embed-frame) .if-bval {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+  min-width: 0; max-width: 100%;
+}
+:where(.intel-embed-frame) .if-bval-txt { font-size: 10px; }
+:where(.intel-embed-frame) .if-bmore {
+  font-size: 9px; font-weight: 400; color: var(--rd-t-faint, #6b727a);
+}
+:where(.intel-embed-frame) .if-bpct {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-blast {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 11px; color: var(--rd-t-brightest, #eef1f4); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bc-age {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10.5px; color: var(--rd-t-dim, #8b929a); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bc-spark { overflow: hidden; }
+:where(.intel-embed-frame) .if-bdash {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10.5px; color: var(--rd-t-absent, #3a4047);
+}
+
+/* inline expansion — the old card/sheet content, sticky-left so it reads in
+   place while the grid behind it scrolls horizontally */
+:where(.intel-embed-frame) .if-xp {
+  position: sticky;
+  left: calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
+  width: 100cqw; /* the wrap's visible content width; falls back to full row */
+  box-sizing: border-box;
+  padding: 12px 16px 16px;
+  border-bottom: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
+  background: var(--rd-inset, rgba(255, 255, 255, 0.02));
+}
+:where(.intel-embed-frame) .if-xp-stale { margin-left: 8px; }
+
+/* one-line section states (source unreachable / filter miss) */
+:where(.intel-embed-frame) .if-bmiss {
+  position: sticky;
+  left: calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
+  width: 100cqw;
+  box-sizing: border-box;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rd-hair-05, rgba(255, 255, 255, 0.05));
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint, #6b727a); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-bmiss-retry {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; letter-spacing: 0.06em;
+  color: var(--rd-t-secondary2, #aab1b9);
+  background: transparent;
+  border: 1px solid var(--rd-hair-12, rgba(255, 255, 255, 0.12));
+  border-radius: 2px; padding: 4px 10px; cursor: pointer;
+}
+:where(.intel-embed-frame) .if-bmiss-retry:hover { color: var(--rd-t-chip, #dfe3e7); }
+
+/* header status line — clock · n LIVE · m TRACKED */
+:where(.intel-embed-frame) .if-statline {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px; letter-spacing: 0.08em;
+  color: var(--rd-t-faint, #6b727a);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+/* risk chips (LIVE expansion) */
+:where(.intel-embed-frame) .if-risk {
+  display: inline-flex; align-items: center;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 8.5px; font-weight: 600; letter-spacing: 0.06em;
+  padding: 2px 6px; border: 1px solid; border-radius: 2px; white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-risk-low {
+  color: var(--rd-bull, #6fa085);
+  border-color: var(--rd-bull-soft30, rgba(111, 160, 133, 0.3));
+}
+:where(.intel-embed-frame) .if-risk-medium {
+  color: var(--rd-amber, #bfa05a);
+  border-color: var(--rd-amber-soft30, rgba(191, 160, 90, 0.3));
+}
+:where(.intel-embed-frame) .if-risk-high {
+  color: var(--rd-bear, #cd7e6d);
+  border-color: var(--rd-bear-soft18, rgba(205, 126, 109, 0.18));
+}
+
 /* ---- motion ------------------------------------------------------------------ */
 @keyframes ifPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 @keyframes ifShimmer { 0%, 100% { opacity: 0.28; } 50% { opacity: 0.6; } }
@@ -561,5 +811,7 @@
   :where(.intel-embed-frame) .if-live-dot,
   :where(.intel-embed-frame) .if-skel-bar,
   :where(.intel-embed-frame) .if-scrim,
+  :where(.intel-embed-frame) .if-bgroup.hot .if-bgroup-tick,
+  :where(.intel-embed-frame) .if-live-chip .if-life-dot,
   :where(.intel-embed-frame) .if-sheet { animation: none; }
 }
