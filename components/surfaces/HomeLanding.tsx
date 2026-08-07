@@ -72,6 +72,10 @@ type HomeLandingProps = {
   onToggleMic: () => void;
   onToggleVoiceMode: () => void;
   onOpenThread: (id: string) => void;
+  /** CORE V2 P5 — the conversation column (ChatTranscript), rendered by the
+      page so message state stays there. Shown while a conversation is active;
+      the landing's heading/chips/activity yield to it and the orb compacts. */
+  transcript?: React.ReactNode;
   // Quiet top-bar cluster — everything the design omits but the app keeps.
   onSummonBrief: () => void;
   pushState: PushState;
@@ -96,6 +100,7 @@ export default function HomeLanding({
   onToggleMic,
   onToggleVoiceMode,
   onOpenThread,
+  transcript,
   onSummonBrief,
   pushState,
   onNotify,
@@ -293,7 +298,7 @@ export default function HomeLanding({
   const showActivity = threads.length > 0 || pills.length > 0;
 
   return (
-    <div className="home-landing">
+    <div className={`home-landing${conversationActive ? " convo" : ""}`}>
       {/* top bar — wordmark · live clock + live state · quiet control cluster */}
       <div className="hl-top">
         <div className="hl-brand">
@@ -430,7 +435,14 @@ export default function HomeLanding({
         </div>
       </div>
 
-      <h1 className="hl-heading">What do you want to know?</h1>
+      {!conversationActive ? (
+        <h1 className="hl-heading">What do you want to know?</h1>
+      ) : null}
+
+      {/* CORE V2 P5 — a live conversation replaces the landing's idle body:
+          the Claude-style transcript column owns the middle of the screen
+          (the fixed composer dock below it is the input, pinned bottom). */}
+      {conversationActive ? transcript : null}
 
       {/* the ask bar — THE real input; hidden while a conversation is live
           (the existing reply panel + composer own that state) */}
@@ -486,10 +498,11 @@ export default function HomeLanding({
         </div>
       ) : null}
 
-      <div className="hl-spacer" />
+      {!conversationActive ? <div className="hl-spacer" /> : null}
 
-      {/* activity — real threads, real quotes; absent when there are none */}
-      {showActivity ? (
+      {/* activity — real threads, real quotes; absent when there are none,
+          and yielded entirely while the transcript owns the screen */}
+      {showActivity && !conversationActive ? (
         <div className="hl-activity">
           {threads.length > 0 ? (
             <div className="hl-col">

@@ -4961,6 +4961,189 @@ button.pulse-line:focus-visible {
 }
 
 /* ======================================================================
+   CORE V2 P5 — the conversation transcript. While a conversation is live the
+   chat view becomes a Claude-style column: full message history scrolling in
+   place, user turns as glass bubbles, AUGUST as plain text, the streaming
+   reply appended live, input pinned bottom (the fixed composer dock). All
+   colors ride the landing's theme tokens, so day/dark/gotham/matrix work
+   without another palette. ============================================== */
+
+/* The transcript is the scroll container — the landing itself stops
+   scrolling so the column's own follow-the-stream behavior owns it. */
+.home-landing.convo {
+  overflow: hidden;
+}
+
+/* The orb compacts to a quiet presence above the conversation. transform:
+   scale keeps the WebGL canvas geometry true (the sphere fraction is sized
+   against the 190px circle); the negative margin reclaims the layout height
+   the scale gives up (190px → ~80px visible). */
+.home-landing .hl-orb {
+  transition:
+    transform 0.45s var(--ease-snappy),
+    margin-top 0.45s var(--ease-snappy),
+    margin-bottom 0.45s var(--ease-snappy);
+}
+.home-landing.convo .hl-orb {
+  margin-top: 1.2vh;
+  margin-bottom: -110px;
+  transform: scale(0.42);
+  transform-origin: 50% 0;
+  /* the bled WebGL canvas must never eat clicks/scrolls meant for the
+     transcript that now sits inside its (invisible) bleed box */
+  pointer-events: none;
+}
+
+/* head row — the one transcript control, quiet and out of the flow */
+.hl-convo-head {
+  width: min(720px, 92vw);
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 0 0;
+  flex: none;
+}
+.hl-newchat {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hair);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--body2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.hl-newchat:hover {
+  color: var(--ink);
+  border-color: var(--chip-hover);
+}
+.hl-newchat:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+
+.hl-convo {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scrollbar-width: thin;
+}
+.hl-convo-inner {
+  width: min(720px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* bottom clearance for the fixed composer dock */
+  padding: 16px 0 150px;
+}
+.hl-msg {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hl-msg.you {
+  align-self: flex-end;
+  max-width: 82%;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 16px;
+  box-shadow: var(--cardshadow);
+}
+.hl-msg.aug {
+  align-self: stretch;
+}
+.hl-msg.you.interim {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* streaming caret — blinks at the end of the in-flight reply */
+.hl-caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--label);
+  opacity: 0.8;
+  animation: hl-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes hl-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* thinking — three quiet dots before the first token lands */
+.hl-thinking {
+  display: flex;
+  gap: 5px;
+  padding: 6px 0;
+}
+.hl-thinking span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  animation: hl-think 1.2s ease-in-out infinite;
+}
+.hl-thinking span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.hl-thinking span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes hl-think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (max-width: 700px) {
+  .hl-newchat {
+    min-height: 40px;
+  }
+  /* the mobile composer sits lower — keep the last line clear of it */
+  .hl-convo-inner {
+    padding-bottom: 132px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-landing .hl-orb {
+    transition: none;
+  }
+  .hl-caret {
+    animation: none;
+  }
+  .hl-thinking span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ======================================================================
    LOGIN — /login. The home landing's face (Geist, gold-dot wordmark,
    day/night palettes) reduced to one decision. Tokens are duplicated from
    .home-landing and scoped to .login-page — no global leaks.

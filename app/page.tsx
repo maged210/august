@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
 import MatrixRain from "@/components/MatrixRain";
@@ -1141,6 +1142,24 @@ export default function Home() {
     }
   }
 
+  // CORE V2 P5 — the transcript's "+ NEW CHAT": reset the on-screen
+  // conversation only. Long-term memory and saved threads are untouched
+  // (unlike /forget); the next exchange opens a fresh thread.
+  function startNewChat() {
+    genRef.current += 1; // supersede any in-flight stream
+    abortRef.current?.abort();
+    stopSpeaking();
+    stopListening();
+    messagesRef.current = [];
+    setMessages([]);
+    threadIdRef.current = null;
+    setInterim("");
+    setReplyText("");
+    setHistoryOpen(false);
+    closePanel();
+    setState((s) => (s === "boot" ? s : "idle"));
+  }
+
   function forgetMemory() {
     // Wipe persistent memory (Upstash) and reset the on-screen conversation.
     void fetch("/api/memory", {
@@ -1509,6 +1528,15 @@ export default function Home() {
             onToggleMic={toggleMic}
             onToggleVoiceMode={toggleVoiceMode}
             onOpenThread={openThread}
+            transcript={
+              <ChatTranscript
+                messages={messages}
+                replyText={replyText}
+                interim={interim}
+                thinking={state === "thinking"}
+                onNewChat={startNewChat}
+              />
+            }
             onSummonBrief={summonBrief}
             pushState={pushState}
             onNotify={handleNotify}
@@ -1541,9 +1569,11 @@ export default function Home() {
         />
       </section>
 
-      {/* reply dock + composer — fixed, available on every surface. A contained,
-          translucent card that never covers the dashboard widgets: dismissible
-          (✕ / Esc / click outside), expandable into the session transcript. */}
+      {/* reply dock + composer — fixed. The composer serves every surface;
+          the overlay reply card is TERMINAL-ONLY now (CORE V2 P5): over the
+          desk it stays a contained, dismissible card that never covers the
+          widgets, while the chat view renders the conversation as a full
+          Claude-style transcript inside the landing instead. */}
       {/* pointer-events-none is load-bearing: the transparent full-width wrapper must
           never eat clicks meant for the surfaces beneath (globe reset, drag, click-
           outside dismissal). The dock and composer row re-enable their own events. */}
@@ -1551,7 +1581,9 @@ export default function Home() {
         ref={dockWrapRef}
         className="dock-wrap pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
       >
-        {panelOpen && (replyText || interim || (historyOpen && messages.length > 0)) ? (
+        {view === "terminal" &&
+        panelOpen &&
+        (replyText || interim || (historyOpen && messages.length > 0)) ? (
           <div
             className={`reply-dock${historyOpen ? " history" : ""}${dockClosing ? " closing" : ""}`}
             role="log"
@@ -1616,7 +1648,8 @@ export default function Home() {
               )}
             </div>
           </div>
-        ) : statusLabel && !voiceMode ? (
+        ) : view === "terminal" && statusLabel && !voiceMode ? (
+          // Chat-view thinking/listening cues live inside the transcript now.
           <div className="reply-status">{statusLabel}</div>
         ) : null}
 

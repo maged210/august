@@ -57,8 +57,8 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] G2 approved 2026-08-07. *(E2E ran 2026-08-07: transcript tr_974bc2ba → 3 drafts (NQ/NVDA/BTC) → NQ approved + live on /api/ideas redacted, BTC rejected, NVDA left in queue. REMINDER: add ADMIN_TOKEN to the Vercel dashboard before deploy.)*
 
 ## P5 — CHAT SURFACE
-- [ ] Clean Claude-style chat: input pinned bottom, streaming reply, message history in client state.
-- [ ] Wire to /api/august/chat on claude-sonnet-4-6 (drop to Haiku later if cost matters), minimal "August" system prompt, Upstash rate-limiting like the existing reply route. Verify ANTHROPIC_API_KEY is present.
+- [x] Clean Claude-style chat: input pinned bottom, streaming reply, message history in client state. *(ChatTranscript column in the chat view: full scrolling history, user bubbles / plain AUGUST turns, streaming caret + thinking dots, stick-to-bottom follow, + NEW CHAT reset; orb compacts above it. Overlay reply-dock is terminal-view-only now.)*
+- [x] Wire to /api/august/chat on claude-sonnet-4-6 (drop to Haiku later if cost matters), minimal "August" system prompt, Upstash rate-limiting like the existing reply route. Verify ANTHROPIC_API_KEY is present. *(Satisfied by the existing /api/chat — already claude-sonnet-4-6, streaming, persona system prompt, Upstash-rate-limited (chat:10/min); no duplicate route built. ANTHROPIC_API_KEY verified present + live E2E: streamed reply, memory 37ms, cache write.)*
 
 ## P6 — POLISH
 - [ ] Blotter UX pass: clearer columns, larger type, sane mobile layout.
