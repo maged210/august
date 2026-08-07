@@ -54,7 +54,8 @@ export const viewport: Viewport = {
   themeColor: "#13151A",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // No maximumScale — pinch-zoom must stay available (a11y). Inputs are ≥16px,
+  // so iOS won't auto-zoom on focus anyway.
   viewportFit: "cover", // draw under notches; safe-area insets handle the rest
 };
 

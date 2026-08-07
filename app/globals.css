@@ -883,6 +883,13 @@ body::after {
     transition: none;
   }
 }
+/* phones: the view tabs are primary nav — give them the 44px touch floor */
+@media (max-width: 700px) {
+  .view-tab {
+    min-height: 44px;
+    padding: 5px 16px;
+  }
+}
 
 /* — Trade Ideas rail — fixed right sidebar ≥1100px, off-canvas drawer below.
    The --rail-w var (on .has-rail, inherited by every fixed child) shifts the
