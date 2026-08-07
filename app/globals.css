@@ -3604,6 +3604,11 @@ a.mb-btn {
 /* ---- safe areas (phone notches / home bars) ---- */
 .dock-wrap {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+  /* G3 fix 1: --kb-inset is the on-screen keyboard's overlap with the layout
+     viewport (page.tsx visualViewport effect; 0 when closed / where the
+     browser resizes the layout itself) — the dock rides above the keyboard
+     instead of hiding behind it. */
+  bottom: var(--kb-inset, 0px);
 }
 @media (min-width: 640px) {
   .dock-wrap {
@@ -4280,7 +4285,13 @@ button.pulse-line:focus-visible {
 /* Composer — theme-aware (was Tailwind white-alpha; now token-driven). */
 .composer-form {
   border: 1px solid var(--line);
-  background: var(--panel);
+  /* G3 fix 1: the input is a docked glass bar — heavy enough that the
+     code-rain and any transcript text beneath can't bleed through it.
+     (--panel was a 2% wash; the blur moved here from the JSX utility so
+     one place owns the treatment.) Theme-aware via --glass-strong. */
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 .composer-form:focus-within {
   border-color: var(--accent-line);
@@ -5051,8 +5062,12 @@ button.pulse-line:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* bottom clearance for the fixed composer dock */
-  padding: 16px 0 150px;
+  /* G3 fix 1: bottom clearance = the dock's MEASURED height (--dock-h,
+     ResizeObserver in page.tsx) + the keyboard inset + breathing room — the
+     last message can never sit under the input, at any dock composition
+     (voice bar, stop controls) or keyboard state. */
+  padding: 16px 0
+    calc(var(--dock-h, 132px) + var(--kb-inset, 0px) + 18px);
 }
 .hl-msg {
   font-size: 15px;
@@ -5130,10 +5145,6 @@ button.pulse-line:focus-visible {
 @media (max-width: 700px) {
   .hl-newchat {
     min-height: 40px;
-  }
-  /* the mobile composer sits lower — keep the last line clear of it */
-  .hl-convo-inner {
-    padding-bottom: 132px;
   }
 }
 

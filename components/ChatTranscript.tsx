@@ -35,6 +35,15 @@ export default function ChatTranscript({
   // scrolled up to reread, in which case leave them alone until they return
   // near the bottom (within 80px re-engages the follow).
   const stickRef = useRef(true);
+  // ...but the user's OWN send always jumps to the newest message, wherever
+  // they were reading (sending is an explicit "take me to the conversation").
+  const prevLenRef = useRef(0);
+  if (messages.length > prevLenRef.current) {
+    if (messages[messages.length - 1]?.role === "user") stickRef.current = true;
+    prevLenRef.current = messages.length;
+  } else if (messages.length < prevLenRef.current) {
+    prevLenRef.current = messages.length; // new-chat reset
+  }
 
   // Any reply text not yet finalized into messages — a streaming reply, a
   // stopped partial, or a local feedback line — renders as its own AUGUST turn.

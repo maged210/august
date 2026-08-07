@@ -359,6 +359,43 @@ export default function Home() {
     };
   }, []);
 
+  // G3 fix 1 — the transcript's bottom clearance follows the dock's REAL
+  // height (composer + voice bar + stop controls change it turn to turn).
+  // A ResizeObserver writes --dock-h; .hl-convo-inner pads by it.
+  useEffect(() => {
+    const el = dockWrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      document.documentElement.style.setProperty("--dock-h", `${el.offsetHeight}px`);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--dock-h");
+    };
+  }, []);
+
+  // G3 fix 1 — on-screen keyboard: where the browser overlays it instead of
+  // resizing the layout (iOS), --kb-inset lifts the dock above it and pads
+  // the transcript to match. 0 whenever the keyboard is closed or the layout
+  // viewport already resized (interactiveWidget: resizes-content).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const apply = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--kb-inset", `${Math.round(inset)}px`);
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+      document.documentElement.style.removeProperty("--kb-inset");
+    };
+  }, []);
+
   // Cleanup on unmount.
   useEffect(() => {
     return () => {
@@ -1579,7 +1616,7 @@ export default function Home() {
           outside dismissal). The dock and composer row re-enable their own events. */}
       <div
         ref={dockWrapRef}
-        className="dock-wrap pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
+        className="dock-wrap pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
       >
         {view === "terminal" &&
         panelOpen &&
