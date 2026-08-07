@@ -66,6 +66,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 - [x] Deploy a Vercel preview. *(feature/core-v2 pushed → august-wiiz preview: https://august-wiiz-git-feature-core-v2-maged210s-projects.vercel.app)*
 
 ### GATE G3 — notify Milek: preview URL for final review. DO NOT merge to main until approved.
+- [x] G3 round-1 feedback (2026-08-07) — two revisions, both shipped: **fix 1** composer overlap (measured --dock-h clearance, glass-strong composer, visualViewport keyboard inset, send-jumps/read-holds autoscroll); **fix 2** public Terminal rebuilt as a dense mono blotter (10-col grid, inline expansion, LIVE calls pinned hot above the tracked pipeline, ET clock + counts chrome). Redeployed to the same preview URL.
 - [ ] G3 approved. Merge to main.
 
 ---
