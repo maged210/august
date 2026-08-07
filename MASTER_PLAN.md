@@ -67,6 +67,7 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 
 ### GATE G3 — notify Milek: preview URL for final review. DO NOT merge to main until approved.
 - [x] G3 round-1 feedback (2026-08-07) — two revisions, both shipped: **fix 1** composer overlap (measured --dock-h clearance, glass-strong composer, visualViewport keyboard inset, send-jumps/read-holds autoscroll); **fix 2** public Terminal rebuilt as a dense mono blotter (10-col grid, inline expansion, LIVE calls pinned hot above the tracked pipeline, ET clock + counts chrome). Redeployed to the same preview URL.
+- [x] G3 rounds 3+4 feedback (2026-08-07) — fill the screen; all shipped: **three-zone desk** (left chart dock ~30% / center blotter / right rail; tablet stacks, phone DOCK toggle); **chart dock modules** A idea chart (Lightweight Charts lib, daily bars off the existing Yahoo pipeline, ENTRY/TARGET/STOP lines + TRIG marker, row-click selection), B market pulse, C desk stats (since-called basis); **desk tape** (lib/tape + public/admin APIs + /admin quick-add & queue + extraction v2 emits tape callouts as drafts; module D flow-density rows, desk-sourced tag), **E bias bars**; grid texture in empty zones. Data rules held: zero new/paid sources — bars ride the same free Yahoo endpoint already in use; tape is desk/extraction-sourced with a clean seam for a licensed feed later. Options flow NOT built (out of round, module stack is its home). Redeployed to the same preview URL.
 - [ ] G3 approved. Merge to main.
 
 ---
