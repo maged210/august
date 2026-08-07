@@ -27,13 +27,16 @@
 //   observations means no line;
 // - no demo/sample rows; an empty board shows the empty state.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
-import type { Direction, TimeHorizon } from "@/lib/intel/types";
-import { relativeTime, type IdeaRiskLevel, type PublicIdea } from "@/lib/ideas";
+import type { Direction } from "@/lib/intel/types";
+import { relativeTime, type PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
+import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
+import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
+import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
 import { liveSide, numOf } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 
@@ -52,14 +55,6 @@ type FeedPayload = {
 const px = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pctFmt = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
-const fmtDate = (ms: number) =>
-  new Date(ms)
-    .toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    .toUpperCase();
-const fmtDateTime = (ms: number) =>
-  new Date(ms)
-    .toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })
-    .toUpperCase();
 
 // ── vocab maps (consumer language; every state computable from real data) ─────
 
@@ -77,20 +72,6 @@ const LIFE_META: Record<TrackedStatus, { label: string; chip: string; family: st
   TARGET_HIT: { label: "TARGET HIT", chip: "if-life-tgt", family: "if-lc-tgt" },
   INVALIDATED: { label: "INVALIDATED", chip: "if-life-inval", family: "if-lc-inval" },
   CLOSED: { label: "CLOSED", chip: "if-life-exp", family: "if-lc-exp" },
-};
-
-const TF_LABEL: Record<TimeHorizon, string> = {
-  intraday: "INTRADAY",
-  next_session: "NEXT SESSION",
-  swing: "SWING",
-  long_term: "LONG-TERM",
-  unspecified: "TF NOT STATED",
-};
-
-const RISK_LABEL: Record<IdeaRiskLevel, string> = {
-  low: "LOW RISK",
-  medium: "MED RISK",
-  high: "HIGH RISK",
 };
 
 const FILTERS = ["ALL", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as const;
@@ -113,18 +94,6 @@ function matchesFilter(f: Filter, status: TrackedStatus): boolean {
 }
 
 // ── tiny leaf renderers ────────────────────────────────────────────────────────
-
-/** absent-value treatment — the exact .rd-abs recipe, never a dash-as-zero */
-function Absent({ text = "not stated" }: { text?: string }) {
-  return (
-    <span className="if-abs">
-      <span className="if-abs-g" aria-hidden="true">
-        ∅
-      </span>{" "}
-      {text}
-    </span>
-  );
-}
 
 /** blotter cell dash — column has no value for this row (title says why) */
 function Dash({ title }: { title?: string }) {
@@ -228,29 +197,27 @@ function LevelCell({ level, cls }: { level: TrackedLevel | null; cls: string }) 
 
 function LiveRow({
   idea,
-  open,
-  charted,
-  onToggle,
+  selected,
+  onSelect,
 }: {
   idea: PublicIdea;
-  open: boolean;
-  /** this row's ticker is on the dock chart */
-  charted: boolean;
-  onToggle: () => void;
+  /** the selection drives the dock chart AND the idea-detail panel (G3 r5) */
+  selected: boolean;
+  onSelect: () => void;
 }) {
   const side = liveSide(idea);
   return (
     <>
       <div
-        className={`if-brow if-brow-live${open ? " open" : ""}${charted ? " charted" : ""}`}
+        className={`if-brow if-brow-live${selected ? " sel" : ""}`}
         role="button"
         tabIndex={0}
-        aria-expanded={open}
-        onClick={onToggle}
+        aria-pressed={selected}
+        onClick={onSelect}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onToggle();
+            onSelect();
           }
         }}
       >
@@ -299,16 +266,6 @@ function LiveRow({
         </span>
         <span className="if-bc if-bc-age">{relativeTime(idea.createdAt)}</span>
       </div>
-      {open && (
-        <div className="if-xp">
-          <div className="if-sh-meta">
-            <span className={`if-risk if-risk-${idea.riskLevel}`}>{RISK_LABEL[idea.riskLevel]}</span> · CALLED{" "}
-            {fmtDate(idea.createdAt)}
-          </div>
-          <p className="if-sh-thesis">{idea.thesis}</p>
-          <div className="if-sh-foot">AUGUST DESK</div>
-        </div>
-      )}
     </>
   );
 }
@@ -317,15 +274,13 @@ function LiveRow({
 
 function TrackedRow({
   card,
-  open,
-  charted,
-  onToggle,
+  selected,
+  onSelect,
 }: {
   card: FeedCard;
-  open: boolean;
-  /** this row's ticker is on the dock chart */
-  charted: boolean;
-  onToggle: () => void;
+  /** the selection drives the dock chart AND the idea-detail panel (G3 r5) */
+  selected: boolean;
+  onSelect: () => void;
 }) {
   const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
   const dir = DIR_META[card.direction] ?? DIR_META.watch;
@@ -334,15 +289,15 @@ function TrackedRow({
   return (
     <>
       <div
-        className={`if-brow ${life.family}${open ? " open" : ""}${card.stale ? " stale" : ""}${charted ? " charted" : ""}`}
+        className={`if-brow ${life.family}${card.stale ? " stale" : ""}${selected ? " sel" : ""}`}
         role="button"
         tabIndex={0}
-        aria-expanded={open}
-        onClick={onToggle}
+        aria-pressed={selected}
+        onClick={onSelect}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onToggle();
+            onSelect();
           }
         }}
       >
@@ -419,120 +374,7 @@ function TrackedRow({
           {relativeTime(card.firstMentionAt)}
         </span>
       </div>
-      {open && (
-        <div className="if-xp">
-          <div className="if-sh-meta">
-            {TF_LABEL[card.timeframe] ?? card.timeframe} · FIRST MENTION {fmtDate(card.firstMentionAt)} · PUBLISHED{" "}
-            {fmtDate(card.publishedAt)}
-            {card.stale ? <span className="if-stale if-xp-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span> : null}
-          </div>
-          <p className="if-sh-thesis">{card.thesis}</p>
-
-          <div className="if-sh-sect">
-            <div className="if-sh-sect-h">STATED LEVELS</div>
-            <XpLevel label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
-            {targets.length === 0 ? (
-              <XpLevel label="TARGET" level={null} cls="if-lev-target" />
-            ) : (
-              targets.map((t, i) => (
-                <XpLevel
-                  key={i}
-                  label={targets.length > 1 ? `TARGET ${i + 1}` : "TARGET"}
-                  level={t}
-                  cls="if-lev-target"
-                />
-              ))
-            )}
-            <XpLevel label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
-          </div>
-
-          <div className="if-sh-sect">
-            <div className="if-sh-sect-h">PERFORMANCE</div>
-            {perf && card.pnl && card.pnl.kind !== "none" ? (
-              <>
-                <div className="if-sh-perf">
-                  <span className={`if-sh-perf-num ${perf.cls}`}>{perf.text}</span>
-                  <span className="if-sh-perf-sub">
-                    {perf.label} · basis {px(card.pnl.basis)}
-                  </span>
-                </div>
-                {card.mfeMae && (
-                  <div className="if-sh-perf" style={{ marginTop: 8 }}>
-                    <span className="if-sh-perf-sub">
-                      MFE <span className="if-pos">{pctFmt(card.mfeMae.mfePct)}</span> · MAE{" "}
-                      <span className="if-neg">{pctFmt(card.mfeMae.maePct)}</span>
-                    </span>
-                  </div>
-                )}
-                {card.pnl.kind === "since_first_mention" && (
-                  <p className="if-sh-note">° no stated trigger — price move since first mention, not trade P&L</p>
-                )}
-              </>
-            ) : (
-              <Absent
-                text={
-                  card.pnl && card.pnl.kind === "none"
-                    ? card.pnl.reason
-                    : card.evicted
-                      ? "live tracking ended"
-                      : "no measurement yet"
-                }
-              />
-            )}
-            {card.quote && (
-              <div className="if-sh-perf" style={{ marginTop: 10 }}>
-                <span className="if-sh-perf-sub">
-                  LAST <span className="if-blast" style={{ marginLeft: 0 }}>{px(card.quote.price)}</span> ·{" "}
-                  <span className={card.quote.chgPct >= 0 ? "if-pos" : "if-neg"}>{pctFmt(card.quote.chgPct)}</span> TODAY
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="if-sh-sect">
-            <div className="if-sh-sect-h">STATUS HISTORY</div>
-            {card.statusHistory.length > 0 ? (
-              <ul className="if-sh-hist">
-                {card.statusHistory.map((h, i) => (
-                  <li key={i}>
-                    <span className="if-sh-hist-top">
-                      <span>{LIFE_META[h.state]?.label ?? h.state}</span>
-                      {h.price != null && <span>@ {px(h.price)}</span>}
-                      <span className="if-sh-hist-at">{fmtDateTime(h.at)}</span>
-                    </span>
-                    <span className="if-sh-hist-reason">{h.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : card.evicted ? (
-              <Absent text="live tracking ended — last known state shown above" />
-            ) : (
-              <Absent text="no transitions observed yet" />
-            )}
-          </div>
-
-          <div className="if-sh-foot">{card.attribution}</div>
-        </div>
-      )}
     </>
-  );
-}
-
-function XpLevel({ label, level, cls }: { label: string; level: TrackedLevel | null; cls: string }) {
-  return (
-    <div className="if-sh-lev">
-      <span className="if-sh-lev-lab">{label}</span>
-      {level == null ? (
-        <Absent />
-      ) : (
-        <>
-          <span className={`if-sh-lev-val ${cls}`}>{level.value != null ? px(level.value) : "—"}</span>
-          <span className="if-sh-lev-txt" title={level.text}>
-            {level.text}
-          </span>
-        </>
-      )}
-    </div>
   );
 }
 
@@ -580,8 +422,6 @@ export default function IdeasFeed() {
   const [live, setLive] = useState<PublicIdea[] | null>(null);
   const [liveErr, setLiveErr] = useState(false);
   const [filter, setFilter] = useState<Filter>("ALL");
-  // one expansion at a time; keys are namespaced so the two sections can't collide
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const [clock, setClock] = useState("");
   // chart-dock selection (G3) — a row click charts that ticker; defaults to
   // the top LIVE idea once data lands
@@ -589,6 +429,8 @@ export default function IdeasFeed() {
   // desk tape (G3 round 4) — fetched here, rendered by the dock's TapeModule
   const [tapeRows, setTapeRows] = useState<PublicTapeEntry[] | null>(null);
   const [tapeErr, setTapeErr] = useState(false);
+  // desk wire ingest events (G3 round 5) — redacted counts off /api/wire
+  const [ingests, setIngests] = useState<PublicIngest[] | null>(null);
   // ≤700px: the dock hides behind a toggle
   const [dockOpen, setDockOpen] = useState(false);
 
@@ -617,6 +459,15 @@ export default function IdeasFeed() {
         setTapeErr(false);
       })
       .catch(() => setTapeErr(true));
+    fetch("/api/wire", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { ingests?: PublicIngest[] }) => {
+        setIngests(Array.isArray(j.ingests) ? j.ingests : []);
+      })
+      .catch(() => {
+        // the wire degrades to the three sources the client already holds
+        setIngests((prev) => prev ?? []);
+      });
   }, []);
 
   useEffect(() => {
@@ -656,15 +507,66 @@ export default function IdeasFeed() {
   const unreachable = feed === null && feedErr && live === null && liveErr;
   const empty = !loading && !unreachable && liveIdeas.length === 0 && tracked.length === 0;
 
-  // default chart = the top LIVE idea, else the first tracked row — set once
-  // when data first lands; every later change is a user click
+  // Initial selection (G3 r5): honor a shared ?idea= deep link first — waiting
+  // for the store that owns the key if it hasn't answered yet — then default
+  // to the top LIVE idea, else the first tracked row. Set once; every later
+  // change is a user click.
   useEffect(() => {
     if (selection !== null) return;
+    let want: string | null = null;
+    try {
+      want = new URL(window.location.href).searchParams.get("idea");
+    } catch {
+      /* no-op */
+    }
+    if (want?.startsWith("live:")) {
+      if (live === null && !liveErr) return; // that store hasn't answered yet
+      const i = liveIdeas.find((x) => `live:${x.id}` === want);
+      if (i) {
+        setSelection(selectionFromLive(i));
+        return;
+      }
+    } else if (want?.startsWith("trk:")) {
+      if (feed === null && !feedErr) return;
+      const c = tracked.find((x) => `trk:${x.id}` === want);
+      if (c) {
+        setSelection(selectionFromTracked(c));
+        return;
+      }
+    }
     if (liveIdeas.length > 0) setSelection(selectionFromLive(liveIdeas[0]));
     else if (tracked.length > 0) setSelection(selectionFromTracked(tracked[0]));
-  }, [selection, liveIdeas, tracked]);
+  }, [selection, liveIdeas, tracked, live, liveErr, feed, feedErr]);
 
-  const toggle = (key: string) => setOpenKey((k) => (k === key ? null : key));
+  // A user selection also lands in the URL (?idea=) so the exact view is
+  // shareable — replaceState, not push: row clicks must not stack history.
+  const applySelect = useCallback((sel: ChartSelection) => {
+    setSelection(sel);
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set("idea", sel.key);
+      window.history.replaceState({}, "", u.toString());
+    } catch {
+      /* no-op */
+    }
+  }, []);
+
+  // the wire — merged reverse-chron from the four public sources; null while
+  // every source is still pending (skeleton)
+  const wireEvents = useMemo(() => {
+    if (ingests === null && tapeRows === null && feed === null && live === null) return null;
+    return buildWire(ingests ?? [], liveIdeas, tracked, tapeRows ?? []);
+  }, [ingests, liveIdeas, tracked, tapeRows, feed, live]);
+
+  // the selected row's full objects for the detail panel
+  const selLive =
+    selection?.key.startsWith("live:") === true
+      ? liveIdeas.find((i) => `live:${i.id}` === selection.key) ?? null
+      : null;
+  const selCard =
+    selection?.key.startsWith("trk:") === true
+      ? tracked.find((c) => `trk:${c.id}` === selection.key) ?? null
+      : null;
 
   const colhead = (
     <div className="if-bhead" aria-hidden="true">
@@ -801,12 +703,8 @@ export default function IdeasFeed() {
                       <LiveRow
                         key={idea.id}
                         idea={idea}
-                        open={openKey === `live:${idea.id}`}
-                        charted={selection?.key === `live:${idea.id}`}
-                        onToggle={() => {
-                          toggle(`live:${idea.id}`);
-                          setSelection(selectionFromLive(idea));
-                        }}
+                        selected={selection?.key === `live:${idea.id}`}
+                        onSelect={() => applySelect(selectionFromLive(idea))}
                       />
                     ))}
                   </>
@@ -846,18 +744,25 @@ export default function IdeasFeed() {
                     <TrackedRow
                       key={card.id}
                       card={card}
-                      open={openKey === `trk:${card.id}`}
-                      charted={selection?.key === `trk:${card.id}`}
-                      onToggle={() => {
-                        toggle(`trk:${card.id}`);
-                        setSelection(selectionFromTracked(card));
-                      }}
+                      selected={selection?.key === `trk:${card.id}`}
+                      onSelect={() => applySelect(selectionFromTracked(card))}
                     />
                   ))
                 )}
               </div>
             </div>
           )}
+
+          {/* G3 r5 — the bottom band fills the center column under the
+              blotter: IDEA DETAIL (selection-driven, the one detail surface)
+              · DESK WIRE (pipeline activity). Hidden only while the whole
+              board is in its empty/unreachable state. */}
+          {!loading && !unreachable && !empty ? (
+            <div className="if-band">
+              <IdeaDetailPanel live={selLive} card={selCard} />
+              <DeskWirePanel events={wireEvents} />
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

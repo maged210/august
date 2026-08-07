@@ -326,6 +326,31 @@ export async function updateTranscript(
   }
 }
 
+/** The DESK WIRE's public shape (G3 round 5): counts, label, time — never
+ *  raw text, never draft contents, never failure detail (admin-only facts). */
+export type PublicIngest = {
+  id: string;
+  ts: number;
+  /** the owner-typed label ("video title or URL"); may be empty */
+  source: string;
+  ideaDrafts: number;
+  tapeDrafts: number;
+};
+
+/** Public wire view: PROCESSED ingests only, newest first, redacted. */
+export async function listPublicIngests(limit = 12): Promise<PublicIngest[]> {
+  const rows = await listTranscripts(limit);
+  return rows
+    .filter((r) => r.status === "processed")
+    .map((r) => ({
+      id: r.id,
+      ts: r.receivedAt,
+      source: r.source,
+      ideaDrafts: r.ideaIds.length,
+      tapeDrafts: r.tapeIds?.length ?? 0,
+    }));
+}
+
 /** Newest first. Records only — raw text stays server-side unless asked for. */
 export async function listTranscripts(limit = 10): Promise<TranscriptRecord[]> {
   const redis = getRedis();
