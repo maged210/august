@@ -21,8 +21,9 @@
 // - the performance numeral comes exclusively from the feed's pnl view and is
 //   labeled by its kind verbatim (SINCE CALLED / SINCE FIRST MENTION°, the °
 //   marking a price move that is NOT trade P&L);
-// - a LIVE idea's SIDE is only shown when derivable from its stated entry vs
-//   target numerals, and is styled as derived (the model stores no direction);
+// - a LIVE idea's SIDE renders solid only when the desk STATED one (UX4:
+//   extraction inference or /admin); otherwise the entry-vs-target derivation
+//   shows, styled as derived — never presented as stated;
 // - sparklines draw only the tracker's real priceHistory ring — fewer than two
 //   observations means no line;
 // - no demo/sample rows; an empty board shows the empty state.
@@ -37,7 +38,7 @@ import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
 import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
 import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
-import { liveSide, numOf } from "@/components/surfaces/dock/derive";
+import { numOf, sideOf } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
@@ -205,7 +206,9 @@ function LiveRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const side = liveSide(idea);
+  // UX4 — a stated side (extraction/admin) renders solid; the entry-vs-target
+  // derivation remains the clearly-marked fallback
+  const side = sideOf(idea);
   return (
     <>
       <div
@@ -226,16 +229,22 @@ function LiveRow({
         <span className="if-bc">
           {side ? (
             <span
-              className={`if-bside ${side === "LONG" ? "if-dir-bull" : "if-dir-bear"} derived`}
-              title="derived from entry vs target — the desk did not state a side"
+              className={`if-bside ${
+                side.side === "LONG" ? "if-dir-bull" : side.side === "SHORT" ? "if-dir-bear" : "if-dir-neut"
+              }${side.derived ? " derived" : ""}`}
+              title={
+                side.derived
+                  ? "derived from entry vs target — the desk did not state a side"
+                  : undefined
+              }
             >
               <span className="if-bside-g" aria-hidden="true">
-                {side === "LONG" ? "▲" : "▼"}
+                {side.side === "LONG" ? "▲" : side.side === "SHORT" ? "▼" : "◆"}
               </span>
-              {side}
+              {side.side}
             </span>
           ) : (
-            <Dash title="side not derivable from stated levels" />
+            <Dash title="side not stated and not derivable from levels" />
           )}
         </span>
         <span className="if-bc">

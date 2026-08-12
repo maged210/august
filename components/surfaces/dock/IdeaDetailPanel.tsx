@@ -10,6 +10,7 @@
 import type { FeedCard } from "@/lib/intel/publish";
 import type { TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { IdeaRiskLevel, PublicIdea } from "@/lib/ideas";
+import { sideOf } from "./derive";
 
 const px = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -92,6 +93,9 @@ export default function IdeaDetailPanel({
 }) {
   const title = live ? `${live.instrument} · LIVE` : card ? `${card.ticker} · ${LIFE_LABEL[card.status] ?? card.status}` : null;
 
+  // UX4 — the LIVE idea's side: stated renders solid, derived stays marked
+  const liveSideR = live ? sideOf(live) : null;
+
   // tracked performance pieces (all from the feed's own pnl view — labeled by kind)
   const pnl = card?.pnl ?? null;
   const perfNum =
@@ -121,6 +125,30 @@ export default function IdeaDetailPanel({
               </div>
               <p className="if-sh-thesis">{live.thesis}</p>
               <div className="if-sh-meta">
+                {liveSideR ? (
+                  <>
+                    <span
+                      className={`if-bside ${
+                        liveSideR.side === "LONG"
+                          ? "if-dir-bull"
+                          : liveSideR.side === "SHORT"
+                            ? "if-dir-bear"
+                            : "if-dir-neut"
+                      }${liveSideR.derived ? " derived" : ""}`}
+                      title={
+                        liveSideR.derived
+                          ? "derived from entry vs target — the desk did not state a side"
+                          : undefined
+                      }
+                    >
+                      <span className="if-bside-g" aria-hidden="true">
+                        {liveSideR.side === "LONG" ? "▲" : liveSideR.side === "SHORT" ? "▼" : "◆"}
+                      </span>
+                      {liveSideR.side}
+                    </span>{" "}
+                    ·{" "}
+                  </>
+                ) : null}
                 <span className={`if-risk if-risk-${live.riskLevel}`}>{RISK_LABEL[live.riskLevel]}</span> · CALLED{" "}
                 {fmtDate(live.createdAt)}
               </div>

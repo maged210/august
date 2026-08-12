@@ -91,6 +91,7 @@ export function normalizeCandidates(raw: unknown): IdeaCreateInput[] {
       entry: b.entry ?? "",
       target: b.target ?? "",
       riskLevel: b.riskLevel,
+      side: b.side, // optional — the validator rejects anything but a known side
       status: "draft",
       source: "extracted",
     });
@@ -142,6 +143,7 @@ TRADE IDEAS (the "ideas" list):
 - thesis: a tight 1-3 sentence paraphrase of the speaker's ACTUAL reasoning for this idea, in plain prose (max ${MAX_THESIS_CHARS} chars).
 - entry / target: the speaker's stated levels or conditions, near-verbatim ("21,450", "break of 600", "under the pivot") — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
 - riskLevel: "high" when the speaker frames the idea as aggressive, speculative, or a lottery; "low" when framed as conservative, core, or highest-conviction; otherwise "medium".
+- side: "long" ONLY when the speaker's entry language points up ("break above", "clears", "reclaims", "retest higher", buying calls/going long); "short" ONLY when it points down ("break below", "breakdown", "loses", "rejection at", shorting/buying puts); "watch" ONLY when they explicitly frame it as watch-only, no trade yet. When the direction is genuinely ambiguous, OMIT the field entirely — a wrong side is worse than no side. Never infer it from the thesis mood alone.
 - Skip pure market commentary with no actionable idea. Merge repeats of the same idea into one row.
 
 TAPE CALLOUTS (the "tape" list) — specific options or order-flow trades the speaker mentions seeing or making ("someone swept the 7600 SPX puts", "I bought the 600 calls for Friday"):
@@ -170,7 +172,14 @@ const EMIT_EXTRACTIONS_TOOL = {
             entry: { type: "string", description: "Stated entry level/condition, near-verbatim; empty string if none stated." },
             target: { type: "string", description: "Stated target, near-verbatim; empty string if none stated." },
             riskLevel: { type: "string", enum: ["low", "medium", "high"] },
+            side: {
+              type: "string",
+              enum: ["long", "short", "watch"],
+              description:
+                "Only when the speaker's entry language makes the direction unambiguous; OMIT when unclear — never guess.",
+            },
           },
+          // side deliberately NOT required — omission is the honest ambiguous state
           required: ["instrument", "thesis", "entry", "target", "riskLevel"],
         },
       },

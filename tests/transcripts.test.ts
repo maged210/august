@@ -64,6 +64,17 @@ test("normalize: valid candidates pass, stamped draft/extracted", () => {
   assert.equal(out[0].source, "extracted");
 });
 
+test("normalize: a stated side rides through; an invalid side drops the row (UX4)", () => {
+  const out = normalizeCandidates([
+    { ...GOOD, side: "long" },
+    { ...GOOD, side: "sideways" }, // not a side — dropped, never repaired
+    GOOD, // no side — passes with the field absent
+  ]);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].side, "long");
+  assert.ok(!("side" in out[1]));
+});
+
 test("normalize: the pipeline can NEVER publish — status/source from the model are ignored", () => {
   const sneaky = { ...GOOD, status: "live", source: "manual" };
   const out = normalizeCandidates([sneaky]);

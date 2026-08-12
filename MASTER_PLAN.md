@@ -94,9 +94,11 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Default: compact when more than 5 live ideas, expanded otherwise. *(per-card overrides ride on top of the count-driven default)*
 
 ## UX4 — SIDE (LONG/SHORT) FIX
-- [ ] Extraction: infer side from entry language (break above/clears/retest higher → long; break below/breakdown → short). Ambiguous → leave unset, never guess wrong.
-- [ ] Admin: one-click side setter (long / short / watch) on each idea, list and detail views.
-- [ ] Bias bars recompute from corrected sides.
+- NOTE: the Idea model stored NO side field (blotter SIDE was purely derived from entry-vs-target numerals) — added `side?: long|short|watch` as an OPTIONAL field: existing rows parse unchanged, absent stays absent on the wire (no schema breakage).
+- [x] Extraction: infer side from entry language (break above/clears/retest higher → long; break below/breakdown → short). Ambiguous → leave unset, never guess wrong. *(emit_extractions gains an optional side enum + a "OMIT when ambiguous — a wrong side is worse than no side" rule; not in required)*
+- [x] Admin: one-click side setter (long / short / watch) on each idea, list and detail views. *(SideSetter chips on every card + inside the edit form; PATCHes immediately; clicking the active side clears it — side:null in the patch validator)*
+- [x] Bias bars recompute from corrected sides. *(new sideOf() in dock/derive: stated side wins and renders SOLID in blotter + detail panel; the derived read remains the marked fallback; WATCH weighs nothing in bias)*
+- [x] Tests: +5 (create/patch/redaction/extraction pass-through) — 226 pass.
 
 ## UX5 — MATRIX RAIN v2: QUIETER + TICKER GLYPHS
 - [ ] Rain barely perceptible: lower drop opacity, smaller glyphs, tighter columns, slower fall. Panel text contrast untouched.

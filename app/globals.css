@@ -6129,6 +6129,63 @@ button.pulse-line:focus-visible {
   color: var(--ink-mute);
   margin-right: 3px;
 }
+/* UX4 — the one-click side setter row */
+.adm-sides {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.adm-sides-k {
+  margin-right: 2px;
+}
+.adm-side {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  background: none;
+  color: var(--ash);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.adm-side:hover {
+  color: var(--bone);
+}
+.adm-side:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.adm-side:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.adm-side-long.on {
+  color: var(--pos);
+  border-color: rgb(var(--pos-rgb) / 0.5);
+  background: rgb(var(--pos-rgb) / 0.1);
+}
+.adm-side-short.on {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.5);
+  background: rgb(var(--neg-rgb) / 0.1);
+}
+.adm-side-watch.on {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.5);
+  background: rgb(var(--amber-rgb) / 0.1);
+}
+.adm-sides-abs {
+  font-size: var(--fs-micro);
+  font-style: italic;
+  color: var(--ink-mute);
+}
 .adm-actions {
   display: flex;
   gap: 8px;
