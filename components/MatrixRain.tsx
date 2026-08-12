@@ -164,10 +164,11 @@ export default function MatrixRain() {
     const draw = () => {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       // One fillStyle per trail depth (not per glyph) keeps state changes at
-      // TRAIL+1 per frame instead of cols×TRAIL. Alphas well below v1
-      // (head 0.95 → 0.5, trail base 0.6 → 0.28): barely perceptible is the point.
+      // TRAIL+1 per frame instead of cols×TRAIL. Alphas midway between v1
+      // (head 0.95 / trail 0.6) and the invisible first quiet pass (0.5/0.28)
+      // — R1: faintly perceptible, never readable-loud.
       for (let t = 0; t <= TRAIL; t++) {
-        const a = t === 0 ? 0.5 : 0.28 * Math.pow(1 - t / TRAIL, 1.7);
+        const a = t === 0 ? 0.72 : 0.44 * Math.pow(1 - t / TRAIL, 1.7);
         if (a < 0.02) continue;
         ctx.fillStyle = `rgba(${rainRgb},${a})`;
         for (let c = 0; c < cols; c++) {

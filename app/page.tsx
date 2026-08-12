@@ -1032,7 +1032,8 @@ export default function Home() {
         if (j.ready && j.brief) {
           setBrief(j.brief); // always store so the summon trigger has it later
           if (fromPush) {
-            // Came from the push: always surface it (clear any same-day dismissal).
+            // Tapping the brief PUSH NOTIFICATION is an explicit open — the one
+            // arrival that may surface the card (clear any same-day dismissal).
             try {
               window.localStorage.removeItem(briefDismissKey);
             } catch {
@@ -1042,9 +1043,9 @@ export default function Home() {
             setBriefOpen(true);
           } else if (isBriefDismissed(j.brief.date)) {
             setBriefDismissed(true);
-          } else {
-            setBriefOpen(true); // on-open delivery
           }
+          // R4 — NO on-open auto-delivery: a plain load lands on the clean home
+          // state; the brief opens only from its own control (or the push tap).
           setBriefStatus("ready");
         } else {
           setBriefStatus("none");

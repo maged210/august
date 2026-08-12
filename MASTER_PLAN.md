@@ -116,6 +116,19 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 
 ### GATE UX-G1 — deploy Vercel preview; notify with screenshots: main page centered w/ quiet ticker rain, rail open, rail collapsed, one card w/ new hierarchy. HOLD for approval, then merge to main.
 - [x] Preview deployed (Vercel status: success on 3bb01d9). NOTE: the branch preview URL now sits behind Vercel deployment protection (SSO) — open it signed into Vercel; the Vercel MCP couldn't mint a bypass link (404/403 flakiness again). Gate screenshots delivered via Artifact from the identical local prod build against the same preview-scope data (all 6 required states + mobile/ultrawide).
+- [x] UX-G1 round-1 feedback (2026-08-12) — NOT approved; 8 revisions:
+
+## UX ROUND 1 — REVISION ROUND 2
+- [x] R1 RAIN: midway restored — --rain-opacity 0.07→0.09, canvas head 0.5→0.72 / trail 0.28→0.44 (v1 was 0.11/0.95/0.6); glyph size, column pitch, fall speed untouched.
+- [x] R2 TRUE CENTERING: new .hl-main frame between top bar and the ticker strip — idle group (orb · heading · ask bar · chips · threads) centers in the leftover height; flex 1 0 auto = short viewports grow past the fold and scroll with comfortable padding, never clip. Orb's old 6vh top offset removed.
+- [x] R3 RAIL DEFAULT: verified as already-built — nothing stored = OPEN; only an explicit toggle writes "collapsed"/"open" to localStorage.
+- [x] R4 BRIEF: on-open auto-delivery REMOVED — load lands on the clean home state; the brief opens only from its own top-bar control. (Kept: tapping the brief PUSH notification still opens it — that arrival IS the user pressing the brief's button.)
+- [x] R5 BOTTOM DEAD ZONE: WATCHING is now a thin full-width bottom strip (hairline top border, label left, static chips centered — no drift, reduced-motion safe by construction; absent entirely when no quotes resolve). The old two-column activity block keeps only RECENT THREADS, centered with the group.
+- [x] R6 LIVE DASH WALL: LIVE section renders its own grid (--if-cols-live): TICKER · SIDE · STATUS · ENTRY minmax(170px,2fr) w/ hover-full · TARGET only-when-stated (blank, not dashed) · REASONING · AGE; per-section column heads; absent SIDE/ENTRY are the desk's quiet ∅, and %SC/SPARK/LAST/STOP simply don't exist there.
+- [x] R7 DEAD RIGHT SPACE: both grids end in REASONING minmax(…,fr) + fixed AGE — the surplus right of AGE is spent on a muted one-line thesis preview (CSS ellipsis, click row for full). Blotter min-width 880→1000 (narrower spans keep the existing horizontal scroll).
+- [x] R8 IDEA DETAIL POLISH: ENTRY hero chip is the single entry source (STATED LEVELS = TARGET + STOP, both branches); empty PERFORMANCE / STATUS collapse to one compact muted QuietLine each (LIVE always, TRACKED when empty); section spacing tightened 14→10.
+
+### GATE UX-G1 (round 2) — redeploy preview; screenshots: main page (vertically centered, rain quiet-but-visible, rail open) + terminal (LIVE columns, full-width layout, polished detail). HOLD, then merge.
 - [ ] UX-G1 approved.
 
 ---

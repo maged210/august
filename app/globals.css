@@ -210,9 +210,10 @@
   /* rain-only tokens — the canvas layer's color, glyph alpha and overall
      strength (kept off the accent so moods/set_mood can never touch the rain) */
   --rain-rgb: 64 220 110;
-  /* UX5 — v1 was 0.11; the ticker rain is ambient texture, barely perceptible
-     (the canvas's own head/trail alphas came down with it) */
-  --rain-opacity: 0.07;
+  /* UX5/R1 — v1 was 0.11; the first quiet pass (0.07 + halved glyph alphas)
+     overshot to invisible. Midway: noticed at a glance, forgotten while
+     reading. Tuned WITH the canvas head/trail alphas in MatrixRain. */
+  --rain-opacity: 0.09;
 }
 
 /* ----------------------------------------------------------------------------
@@ -4812,7 +4813,8 @@ button.pulse-line:focus-visible {
    halo still burns an animated composite layer, and a dead --halo/--ring token
    just invites someone to switch it back on. --------------------------------- */
 .hl-orb {
-  margin-top: 6vh;
+  /* R2 — no top offset: the orb rides the vertically-centered group now */
+  margin-top: 0;
   width: 190px;
   height: 190px;
   position: relative;
@@ -5037,18 +5039,35 @@ button.pulse-line:focus-visible {
   border-color: var(--chip-hover);
   color: var(--ink);
 }
-.hl-spacer {
+/* R2 — the vertical-centering frame between the top bar and the ticker
+   strip. Idle: the home-state group centers in the leftover height; flex
+   1 0 auto means an overflowing (short) viewport grows the frame past the
+   fold and the landing scrolls — comfortable top padding, never clipped. */
+.hl-main {
+  flex: 1 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 0 26px;
+}
+/* conversation mode: the frame is exactly the leftover height (the
+   transcript owns scrolling inside it) and stacks from the top */
+.home-landing.convo .hl-main {
   flex: 1 1 auto;
-  min-height: 36px;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 0;
 }
 
-/* — activity grid: real threads · real quotes ------------------------------ */
+/* — activity: real threads (WATCHING moved to the bottom strip, R5) -------- */
 .hl-activity {
-  width: min(880px, 88vw);
+  width: min(var(--chat-col, 720px), 88%);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 40px 60px;
-  margin-bottom: 7vh;
+  margin-top: 36px;
   flex: none;
 }
 .hl-col {
@@ -5056,8 +5075,29 @@ button.pulse-line:focus-visible {
   flex-direction: column;
   min-width: 0;
 }
-.hl-watch {
-  gap: 13px;
+
+/* R5 — WATCHING: thin full-width bottom ticker strip, static chips */
+.hl-tape {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 28px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  border-top: 1px solid var(--hair2);
+}
+.hl-tape-label {
+  flex: none;
+}
+.hl-tape-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
 }
 .hl-label {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -5108,12 +5148,6 @@ button.pulse-line:focus-visible {
   font-size: 11px;
   font-weight: 400;
   color: var(--dim);
-}
-.hl-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  align-content: flex-start;
 }
 .hl-pill {
   border: 1px solid var(--hair);

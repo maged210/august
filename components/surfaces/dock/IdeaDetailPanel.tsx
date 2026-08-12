@@ -48,6 +48,16 @@ function Absent({ text = "not stated" }: { text?: string }) {
   );
 }
 
+/** R8 — an empty section is ONE compact muted line, not a header + absent row */
+function QuietLine({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="if-dt-quiet">
+      <span className="if-dt-quiet-k">{label}</span>
+      <span className="if-dt-quiet-t">{text}</span>
+    </div>
+  );
+}
+
 function LevelRow({ label, level, cls }: { label: string; level: TrackedLevel | null; cls: string }) {
   return (
     <div className="if-sh-lev">
@@ -154,18 +164,13 @@ export default function IdeaDetailPanel({
               </div>
             </div>
             <div className="if-detail-col">
+              {/* R8 — the ENTRY chip (left) is the single source of entry;
+                  levels here are only TARGET and STOP */}
               <div className="if-sh-sect-h">STATED LEVELS</div>
-              <TextLevelRow label="ENTRY" text={live.entry} cls="if-lev-entry" />
               <TextLevelRow label="TARGET" text={live.target} cls="if-lev-target" />
               <TextLevelRow label="STOP" text="" cls="if-lev-stop" />
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                PERFORMANCE
-              </div>
-              <Absent text="not tracked yet — a live call has no measurement" />
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                STATUS HISTORY
-              </div>
-              <Absent text="no transitions — the call stands as posted" />
+              <QuietLine label="PERFORMANCE" text="live — no measurement yet" />
+              <QuietLine label="STATUS" text="no transitions — the call stands as posted" />
             </div>
           </div>
         ) : card ? (
@@ -191,10 +196,10 @@ export default function IdeaDetailPanel({
                   <span className="if-stale if-xp-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
                 ) : null}
               </div>
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
+              {/* R8 — the ENTRY chip above is the single source of entry */}
+              <div className="if-sh-sect-h" style={{ marginTop: 10 }}>
                 STATED LEVELS
               </div>
-              <LevelRow label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
               {card.statedLevels.targets.length === 0 ? (
                 <LevelRow label="TARGET" level={null} cls="if-lev-target" />
               ) : (
@@ -210,9 +215,9 @@ export default function IdeaDetailPanel({
               <LevelRow label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
             </div>
             <div className="if-detail-col">
-              <div className="if-sh-sect-h">PERFORMANCE</div>
               {perfNum && pnl && pnl.kind !== "none" ? (
                 <>
+                  <div className="if-sh-sect-h">PERFORMANCE</div>
                   <div className="if-sh-perf">
                     {perfNum}
                     <span className="if-sh-perf-sub">
@@ -233,7 +238,9 @@ export default function IdeaDetailPanel({
                   ) : null}
                 </>
               ) : (
-                <Absent
+                /* R8 — empty performance is one compact muted line */
+                <QuietLine
+                  label="PERFORMANCE"
                   text={
                     pnl && pnl.kind === "none"
                       ? pnl.reason
@@ -254,26 +261,34 @@ export default function IdeaDetailPanel({
                   </span>
                 </div>
               ) : null}
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                STATUS HISTORY
-              </div>
               {card.statusHistory.length > 0 ? (
-                <ul className="if-sh-hist if-detail-hist">
-                  {card.statusHistory.map((h, i) => (
-                    <li key={i}>
-                      <span className="if-sh-hist-top">
-                        <span>{LIFE_LABEL[h.state] ?? h.state}</span>
-                        {h.price != null && <span>@ {px(h.price)}</span>}
-                        <span className="if-sh-hist-at">{fmtDateTime(h.at)}</span>
-                      </span>
-                      <span className="if-sh-hist-reason">{h.reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : card.evicted ? (
-                <Absent text="live tracking ended — last known state shown above" />
+                <>
+                  <div className="if-sh-sect-h" style={{ marginTop: 10 }}>
+                    STATUS HISTORY
+                  </div>
+                  <ul className="if-sh-hist if-detail-hist">
+                    {card.statusHistory.map((h, i) => (
+                      <li key={i}>
+                        <span className="if-sh-hist-top">
+                          <span>{LIFE_LABEL[h.state] ?? h.state}</span>
+                          {h.price != null && <span>@ {px(h.price)}</span>}
+                          <span className="if-sh-hist-at">{fmtDateTime(h.at)}</span>
+                        </span>
+                        <span className="if-sh-hist-reason">{h.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : (
-                <Absent text="no transitions observed yet" />
+                /* R8 — empty history is one compact muted line */
+                <QuietLine
+                  label="STATUS"
+                  text={
+                    card.evicted
+                      ? "live tracking ended — last known state shown above"
+                      : "no transitions observed yet"
+                  }
+                />
               )}
             </div>
           </div>
