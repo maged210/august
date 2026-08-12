@@ -115,6 +115,7 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - Zero regressions to the desk layout shipped in Core V2.
 
 ### GATE UX-G1 — deploy Vercel preview; notify with screenshots: main page centered w/ quiet ticker rain, rail open, rail collapsed, one card w/ new hierarchy. HOLD for approval, then merge to main.
+- [x] Preview deployed (Vercel status: success on 3bb01d9). NOTE: the branch preview URL now sits behind Vercel deployment protection (SSO) — open it signed into Vercel; the Vercel MCP couldn't mint a bypass link (404/403 flakiness again). Gate screenshots delivered via Artifact from the identical local prod build against the same preview-scope data (all 6 required states + mobile/ultrawide).
 - [ ] UX-G1 approved.
 
 ---
