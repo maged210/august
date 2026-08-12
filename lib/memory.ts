@@ -17,7 +17,7 @@
 import { Redis } from "@upstash/redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { USER_NAME } from "./persona";
-import { scopeKey } from "./user-scope";
+import { scopePrincipalKey, type StorePrincipal } from "./user-scope";
 
 const PROFILE_KEY = "august:profile";
 const SUMMARIES_KEY = "august:summaries";
@@ -60,7 +60,7 @@ export function memoryEnabled(): boolean {
 // Load (used by the chat route to inject memory into the system prompt)
 // ---------------------------------------------------------------------------
 
-export async function loadMemory(email: string | null): Promise<{
+export async function loadMemory(email: StorePrincipal): Promise<{
   profile: Profile | null;
   summaries: SessionSummary[];
 }> {
@@ -70,8 +70,8 @@ export async function loadMemory(email: string | null): Promise<{
     // One HTTP round trip, not two. MGET can't combine these (GET + LRANGE are
     // different types), but an Upstash pipeline ships both in a single request.
     const pipe = redis.pipeline();
-    pipe.get(scopeKey(email, PROFILE_KEY));
-    pipe.lrange(scopeKey(email, SUMMARIES_KEY), 0, SUMMARIES_LOAD - 1);
+    pipe.get(scopePrincipalKey(email, PROFILE_KEY));
+    pipe.lrange(scopePrincipalKey(email, SUMMARIES_KEY), 0, SUMMARIES_LOAD - 1);
     const [profile, summaries] = await pipe.exec<[Profile | null, SessionSummary[]]>();
     return { profile: profile ?? null, summaries: summaries ?? [] };
   } catch {
@@ -224,7 +224,7 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
 }
 
 export async function updateMemoryFromExchange(input: {
-  email: string | null;
+  email: StorePrincipal;
   sessionId: string;
   userText: string;
   assistantText: string;
@@ -234,8 +234,8 @@ export async function updateMemoryFromExchange(input: {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return;
 
-  const profileKey = scopeKey(input.email, PROFILE_KEY);
-  const summariesKey = scopeKey(input.email, SUMMARIES_KEY);
+  const profileKey = scopePrincipalKey(input.email, PROFILE_KEY);
+  const summariesKey = scopePrincipalKey(input.email, SUMMARIES_KEY);
 
   // Load current profile + the current session's rolling summary (if it's the head).
   let profile: Profile = {};
@@ -318,11 +318,11 @@ export async function updateMemoryFromExchange(input: {
 // Wipe
 // ---------------------------------------------------------------------------
 
-export async function clearMemory(email: string | null): Promise<void> {
+export async function clearMemory(email: StorePrincipal): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.del(scopeKey(email, PROFILE_KEY), scopeKey(email, SUMMARIES_KEY));
+    await redis.del(scopePrincipalKey(email, PROFILE_KEY), scopePrincipalKey(email, SUMMARIES_KEY));
   } catch {
     /* ignore */
   }

@@ -64,6 +64,19 @@ const LIMITS: Record<RouteKey, number> = {
   headlines: 30, // home-brief RSS headlines — 15min in-process cache upstream
 };
 
+/** Positive integer from env, else the fallback. 0/garbage → fallback. */
+function envInt(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
+}
+
+/** Per-route limit — the chat route (real Anthropic spend on anonymous
+ *  traffic) is env-tunable without a deploy: CHAT_RATE_PER_MIN. */
+function limitFor(key: RouteKey): number {
+  if (key === "chat") return envInt("CHAT_RATE_PER_MIN", LIMITS.chat);
+  return LIMITS[key];
+}
+
 const _limiters = new Map<RouteKey, Ratelimit>();
 
 function getLimiter(key: RouteKey): Ratelimit {
@@ -72,7 +85,7 @@ function getLimiter(key: RouteKey): Ratelimit {
       key,
       new Ratelimit({
         redis: getRedis(),
-        limiter: Ratelimit.slidingWindow(LIMITS[key], "60 s"),
+        limiter: Ratelimit.slidingWindow(limitFor(key), "60 s"),
         prefix: `rl:aug:${key}`,
         analytics: false,
       }),
@@ -113,6 +126,43 @@ export async function checkRateLimit(
     console.warn("[ratelimit] failing open:", (err as Error).message);
     return { ok: true };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Global daily chat budget (HOTFIX 2026-08-12) — the per-IP window bounds one
+// visitor; this bounds the WHOLE DAY across all visitors, because /api/chat
+// spends real Anthropic money on anonymous traffic. Env-tunable without a
+// deploy: CHAT_DAILY_CAP (default 400 turns/day; set 0/unset for the default —
+// there is deliberately no "off" value). Fail-open on Redis errors, same
+// contract as the sliding window above.
+// ---------------------------------------------------------------------------
+
+export const CHAT_DAILY_CAP_DEFAULT = 400;
+
+export async function checkChatDailyCap(): Promise<{ ok: boolean }> {
+  if (!CONFIGURED) return { ok: true };
+  const cap = envInt("CHAT_DAILY_CAP", CHAT_DAILY_CAP_DEFAULT);
+  try {
+    const day = new Date().toISOString().slice(0, 10); // UTC day bucket
+    const key = `rl:aug:chat:daily:${day}`;
+    const redis = getRedis();
+    const n = await redis.incr(key);
+    if (n === 1) await redis.expire(key, 90_000); // ~25h — outlives the bucket
+    return { ok: n <= cap };
+  } catch (err) {
+    console.warn("[ratelimit] daily cap failing open:", (err as Error).message);
+    return { ok: true };
+  }
+}
+
+export function dailyCapResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: "daily_budget",
+      message: "AUGUST has hit today's conversation budget — back tomorrow.",
+    }),
+    { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "3600" } },
+  );
 }
 
 export function rateLimitedResponse(reset: number): Response {

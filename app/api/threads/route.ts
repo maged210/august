@@ -12,7 +12,18 @@ import {
   upsertThread,
   type ThreadMessage,
 } from "@/lib/threads";
-import { resolveUserOr401 } from "@/lib/user-scope";
+import { resolveChatPrincipal } from "@/lib/user-scope";
+
+// HOTFIX (chat privacy): anonymous production traffic used to fall back to
+// the LEGACY SHARED keys — every visitor saw (and could overwrite) the same
+// thread list, including the owner's history. Threads now resolve a per-
+// visitor principal (httpOnly aug_vid cookie); the legacy namespace is
+// reachable only through the ADMIN-gated /api/admin/threads.
+
+function withCookie(res: Response, setCookie: string | null): Response {
+  if (setCookie) res.headers.append("Set-Cookie", setCookie);
+  return res;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,9 +47,8 @@ export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("threads", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
-  // Session → namespace (stage 2): null in the single-user fallback.
-  const user = await resolveUserOr401();
-  if (!user.ok) return user.response;
+  // Session → namespace: user / per-visitor / legacy (dev fallback only).
+  const { principal, setCookie } = await resolveChatPrincipal(req);
 
   let body: unknown;
   try {
@@ -56,28 +66,30 @@ export async function POST(req: Request): Promise<Response> {
   // one for unknown ids anyway, so clients can't pollute the key space.
   const id = typeof b.id === "string" && b.id.length > 0 && b.id.length <= 64 ? b.id : undefined;
 
-  const { id: threadId, title } = await upsertThread(user.email, { id, messages });
-  return Response.json(
-    { ok: true, id: threadId, title },
-    { headers: { "Cache-Control": "no-store" } },
+  const { id: threadId, title } = await upsertThread(principal, { id, messages });
+  return withCookie(
+    Response.json({ ok: true, id: threadId, title }, { headers: { "Cache-Control": "no-store" } }),
+    setCookie,
   );
 }
 
 export async function GET(req: Request): Promise<Response> {
-  const user = await resolveUserOr401();
-  if (!user.ok) return user.response;
+  const { principal, setCookie } = await resolveChatPrincipal(req);
 
   const url = new URL(req.url);
   const raw = Number(url.searchParams.get("limit") ?? "3");
   const limit = Math.min(10, Math.max(1, Number.isFinite(raw) ? Math.floor(raw) : 3));
   // label: the landing's relative date column (TODAY / YESTERDAY / MON / JUL 3),
   // computed server-side with the tested pure helper so the client stays thin.
-  const threads = (await listThreads(user.email, limit)).map((t) => ({
+  const threads = (await listThreads(principal, limit)).map((t) => ({
     ...t,
     label: threadDateLabel(t.updatedAt),
   }));
-  return Response.json(
-    { configured: threadsConfigured(), threads },
-    { headers: { "Cache-Control": "no-store" } },
+  return withCookie(
+    Response.json(
+      { configured: threadsConfigured(), threads },
+      { headers: { "Cache-Control": "no-store" } },
+    ),
+    setCookie,
   );
 }

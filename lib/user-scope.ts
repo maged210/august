@@ -70,6 +70,82 @@ export function scopeKey(email: string | null, legacyKey: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Chat-privacy principals (HOTFIX 2026-08-12)
+// ---------------------------------------------------------------------------
+//
+// THE BUG THIS CLOSES: with auth UNCONFIGURED in production (today's reality),
+// requireSessionEmail resolved null and every personal CHAT store — threads,
+// memory — fell back to the LEGACY SHARED keys for the entire anonymous
+// public: any visitor could list and read the owner's saved conversations,
+// overwrite them by id, wipe the shared memory with /forget, and leave their
+// own chats readable by the next stranger. The intel desk already failed
+// closed in this exact state; the chat stores now get their own principal:
+//
+//   signed-in session            → user:{email}:…      (unchanged)
+//   anonymous, dev/test, no auth → legacy keys          (single-user fallback)
+//   anonymous, PRODUCTION        → visitor:{vid}:…      (per-visitor, httpOnly cookie)
+//   configured, signed out       → visitor:{vid}:…      (defense-in-depth; the
+//                                   middleware 401s these routes first today)
+//
+// The legacy keys are NEVER deleted and NEVER served to anonymous production
+// traffic again — they remain readable solely through the ADMIN-gated
+// /api/admin/threads routes (bearer ADMIN_TOKEN, or the owner session once
+// auth is configured — whose first login also migrates them into user:{owner}).
+
+export type VisitorPrincipal = { visitorId: string };
+/** string = a session email · VisitorPrincipal = anonymous visitor · null = legacy */
+export type StorePrincipal = string | VisitorPrincipal | null;
+
+export const VISITOR_COOKIE = "aug_vid";
+export const VISITOR_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
+
+/** PURE. scopeKey extended over the chat principal. Unknown/invalid visitor
+ *  ids THROW — a malformed id must never alias into someone else's keys. */
+export function scopePrincipalKey(p: StorePrincipal, legacyKey: string): string {
+  if (!legacyKey) throw new Error("empty_key");
+  if (p === null) return legacyKey;
+  if (typeof p === "string") return `user:${normalizeEmail(p)}:${legacyKey}`;
+  if (!VISITOR_ID_RE.test(p.visitorId)) throw new Error("invalid_visitor_id");
+  return `visitor:${p.visitorId}:${legacyKey}`;
+}
+
+/** PURE. The principal-resolution decision table (unit-testable without a
+ *  session): see the block comment above. */
+export function deriveChatPrincipal(read: {
+  configured: boolean;
+  email: string | null;
+  production: boolean;
+  cookieVid: string | null;
+}): { kind: "user"; email: string } | { kind: "legacy" } | { kind: "visitor"; vid: string | null } {
+  if (read.email) return { kind: "user", email: read.email };
+  if (!read.configured && !read.production) return { kind: "legacy" };
+  return { kind: "visitor", vid: read.cookieVid };
+}
+
+/** Resolve the chat-store principal for a request. When a new visitor id is
+ *  minted, `setCookie` carries the Set-Cookie header value the route must
+ *  attach (httpOnly — the id never has to be readable by page script). */
+export async function resolveChatPrincipal(
+  req: Request,
+): Promise<{ principal: StorePrincipal; setCookie: string | null }> {
+  const { configured, email } = await readSession();
+  const production = process.env.NODE_ENV === "production";
+  const cookieHeader = req.headers.get("cookie") ?? "";
+  const m = new RegExp(`(?:^|;\\s*)${VISITOR_COOKIE}=([A-Za-z0-9-]{8,64})(?:;|$)`).exec(
+    cookieHeader,
+  );
+  const decided = deriveChatPrincipal({ configured, email, production, cookieVid: m ? m[1] : null });
+  if (decided.kind === "user") return { principal: decided.email, setCookie: null };
+  if (decided.kind === "legacy") return { principal: null, setCookie: null };
+  if (decided.vid) return { principal: { visitorId: decided.vid }, setCookie: null };
+  const vid = crypto.randomUUID();
+  const setCookie =
+    `${VISITOR_COOKIE}=${vid}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax` +
+    (production ? "; Secure" : "");
+  return { principal: { visitorId: vid }, setCookie };
+}
+
+// ---------------------------------------------------------------------------
 // Session → email (wraps auth(); dynamic import, see header note)
 // ---------------------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 // All Upstash + model work happens server-side.
 import { updateMemoryFromExchange, clearMemory } from "@/lib/memory";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
-import { resolveUserOr401 } from "@/lib/user-scope";
+import { resolveChatPrincipal } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,9 +12,12 @@ export async function POST(req: Request): Promise<Response> {
   const rl = await checkRateLimit("memory", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
-  // Session → namespace (stage 2): null in the single-user fallback.
-  const user = await resolveUserOr401();
-  if (!user.ok) return user.response;
+  // HOTFIX (chat privacy): memory is chat-derived personal data. Anonymous
+  // production traffic used to hit the LEGACY SHARED store — every visitor's
+  // exchanges fed one global memory, /forget wiped it for everyone, and the
+  // chat route leaked it back to strangers. Same per-visitor principal as
+  // threads now; legacy remains only as the dev single-user fallback.
+  const { principal, setCookie } = await resolveChatPrincipal(req);
 
   let body: unknown;
   try {
@@ -27,8 +30,8 @@ export async function POST(req: Request): Promise<Response> {
   const action = b.action;
 
   if (action === "forget") {
-    await clearMemory(user.email);
-    return new Response(null, { status: 204 });
+    await clearMemory(principal);
+    return new Response(null, { status: 204, headers: setCookie ? { "Set-Cookie": setCookie } : {} });
   }
 
   if (action === "update") {
@@ -40,8 +43,8 @@ export async function POST(req: Request): Promise<Response> {
     }
     // The CLIENT fires this without awaiting, so the reply is never blocked. We
     // await here so the function stays alive until the write completes.
-    await updateMemoryFromExchange({ email: user.email, sessionId, userText, assistantText });
-    return new Response(null, { status: 204 });
+    await updateMemoryFromExchange({ email: principal, sessionId, userText, assistantText });
+    return new Response(null, { status: 204, headers: setCookie ? { "Set-Cookie": setCookie } : {} });
   }
 
   return new Response("Unknown action.", { status: 400 });
