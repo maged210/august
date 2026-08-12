@@ -23,6 +23,20 @@
 import { useEffect, useRef } from "react";
 import { onRainSymbols, rainSymbolPool } from "@/lib/rain-symbols";
 
+// R1-REDO — the intensity dial. One preset = the layer's CSS opacity plus the
+// canvas's own head/trail alphas, tuned together. VISIBLE (the default) is
+// ~80% of the ORIGINAL pre-ux-1 loudness (0.11 · head 0.95 · trail 0.6);
+// FAINT is round-2's barely-there pass; LOUD is the original ceiling — still
+// under the panels' own backgrounds, so text contrast never degrades. OFF is
+// handled by the page (the canvas simply doesn't mount).
+export type RainPreset = "off" | "faint" | "visible" | "loud";
+export const RAIN_PRESETS: readonly RainPreset[] = ["off", "faint", "visible", "loud"];
+const RAIN_LEVELS: Record<Exclude<RainPreset, "off">, { layer: number; head: number; trail: number }> = {
+  faint: { layer: 0.055, head: 0.5, trail: 0.28 },
+  visible: { layer: 0.09, head: 0.76, trail: 0.48 },
+  loud: { layer: 0.12, head: 0.95, trail: 0.6 },
+};
+
 const CELL = 13; // px per column/row — v1 was 16 (smaller glyphs, tighter columns)
 const MAX_COLS = 260; // ultrawide guard: the cell scales up past ~3380px so the
 // per-step glyph count stays bounded on a 7680×2160 display
@@ -30,8 +44,19 @@ const STEP_MS = 115; // column advance cadence — v1 was 80ms (slower fall)
 const TRAIL = 14; // trail length in glyphs
 const GAP = " ";
 
-export default function MatrixRain() {
+export default function MatrixRain({ preset = "visible" }: { preset?: Exclude<RainPreset, "off"> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The dial applies LIVE: the draw loop reads this ref, and the layer's
+  // opacity is restyled in place — no teardown, no field reset, no reload.
+  const levelRef = useRef(RAIN_LEVELS[preset]);
+  const reducedRedrawRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    levelRef.current = RAIN_LEVELS[preset];
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.opacity = String(RAIN_LEVELS[preset].layer);
+    reducedRedrawRef.current?.(); // reduced-motion static field re-inks at the new level
+  }, [preset]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -136,9 +161,9 @@ export default function MatrixRain() {
 
     const drawStatic = () => {
       // Reduced motion: a dim, sparse, motionless field of ticker characters —
-      // presence without animation.
+      // presence without animation. Alpha follows the dial.
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      ctx.fillStyle = `rgba(${rainRgb},0.3)`;
+      ctx.fillStyle = `rgba(${rainRgb},${(levelRef.current.trail + 0.06).toFixed(2)})`;
       const chars = pool.join("");
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
@@ -164,11 +189,11 @@ export default function MatrixRain() {
     const draw = () => {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       // One fillStyle per trail depth (not per glyph) keeps state changes at
-      // TRAIL+1 per frame instead of cols×TRAIL. Alphas midway between v1
-      // (head 0.95 / trail 0.6) and the invisible first quiet pass (0.5/0.28)
-      // — R1: faintly perceptible, never readable-loud.
+      // TRAIL+1 per frame instead of cols×TRAIL. Head/trail alphas come from
+      // the live intensity dial (R1-REDO).
+      const lv = levelRef.current;
       for (let t = 0; t <= TRAIL; t++) {
-        const a = t === 0 ? 0.72 : 0.44 * Math.pow(1 - t / TRAIL, 1.7);
+        const a = t === 0 ? lv.head : lv.trail * Math.pow(1 - t / TRAIL, 1.7);
         if (a < 0.02) continue;
         ctx.fillStyle = `rgba(${rainRgb},${a})`;
         for (let c = 0; c < cols; c++) {
@@ -207,6 +232,9 @@ export default function MatrixRain() {
       cancelAnimationFrame(raf);
     };
 
+    // the dial's preset effect re-inks the static field through this hook
+    reducedRedrawRef.current = reduced ? drawStatic : null;
+
     const boot = () => {
       if (!size()) return;
       reflow();
@@ -234,6 +262,7 @@ export default function MatrixRain() {
     return () => {
       stop();
       offPool();
+      reducedRedrawRef.current = null;
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVis);
     };

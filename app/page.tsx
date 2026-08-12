@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
-import MatrixRain from "@/components/MatrixRain";
+import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
@@ -181,6 +181,10 @@ export default function Home() {
   // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
   // the theme, it re-tints only the accent family.
   const [mood, setMood] = useState<Mood>("steel");
+  // R1-REDO — the rain intensity dial (off | faint | visible | loud), persisted;
+  // VISIBLE (~80% of the original loudness) is the default. Lives beside the
+  // theme control; applies live to the page-level canvas behind both views.
+  const [rainPreset, setRainPreset] = useState<RainPreset>("visible");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
@@ -980,6 +984,28 @@ export default function Home() {
     }
   }, [mood]);
 
+  // Rain dial: same persistence contract as theme/mood — load once, then keep
+  // storage in sync on every change. No pre-paint step needed: the canvas is
+  // client-mounted anyway, so the stored preset applies before it first draws.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("aug-rain-level");
+      if ((RAIN_PRESETS as readonly string[]).includes(saved ?? "")) {
+        setRainPreset(saved as RainPreset);
+      }
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  const applyRainPreset = useCallback((p: RainPreset) => {
+    setRainPreset(p);
+    try {
+      window.localStorage.setItem("aug-rain-level", p);
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, []);
+
   // Set the accent mood — the switcher and the set_mood tool share this one
   // path. The token swap rides the same transient cross-fade as the theme flip.
   const applyMood = useCallback((m: Mood) => {
@@ -1538,8 +1564,9 @@ export default function Home() {
         {voiceAnnounce}
       </div>
 
-      {/* the code-rain — the matrix theme's stage layer, behind everything */}
-      {theme === "matrix" ? <MatrixRain /> : null}
+      {/* the code-rain — the matrix theme's stage layer, behind everything;
+          the intensity dial (R1-REDO) can switch it off entirely */}
+      {theme === "matrix" && rainPreset !== "off" ? <MatrixRain preset={rainPreset} /> : null}
 
       {/* CORE V2 — the top-bar view toggle, in the deck dots' old top-center
           slot. Two views only; the segmented control is the page's whole nav. */}
@@ -1624,6 +1651,8 @@ export default function Home() {
             soundOn={soundOn}
             onToggleSound={toggleSound}
             onToggleTheme={toggleTheme}
+            rainPreset={rainPreset}
+            onSetRainPreset={applyRainPreset}
           />
           {booted && briefOpen ? (
             <MorningBrief

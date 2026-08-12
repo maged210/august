@@ -4758,6 +4758,55 @@ button.pulse-line:focus-visible {
   outline-offset: 2px;
 }
 
+/* R1-REDO — the rain intensity dial's little menu (matrix theme only) */
+.hl-rainwrap {
+  position: relative;
+}
+.hl-rainmenu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--glass-strong, rgba(6, 12, 8, 0.92));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-2, 0 10px 30px rgba(0, 0, 0, 0.4));
+}
+.hl-rainopt {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.hl-rainopt:hover {
+  color: var(--ink);
+  background: var(--hair2);
+}
+.hl-rainopt.on {
+  color: var(--label);
+}
+.hl-rainopt:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 1px;
+}
+
 /* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
 .hl-session {
   display: flex;

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
+import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import type { PushState } from "@/lib/push-client";
 
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
@@ -83,6 +84,9 @@ type HomeLandingProps = {
   soundOn: boolean;
   onToggleSound: () => void;
   onToggleTheme: () => void;
+  /** R1-REDO — the rain intensity dial (matrix theme only) */
+  rainPreset: RainPreset;
+  onSetRainPreset: (p: RainPreset) => void;
 };
 
 export default function HomeLanding({
@@ -107,12 +111,17 @@ export default function HomeLanding({
   soundOn,
   onToggleSound,
   onToggleTheme,
+  rainPreset,
+  onSetRainPreset,
 }: HomeLandingProps) {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  // R1-REDO — the rain dial's little menu (matrix only); closes on outside tap
+  const [rainMenuOpen, setRainMenuOpen] = useState(false);
+  const rainWrapRef = useRef<HTMLDivElement | null>(null);
   // The symbols WATCHING quotes: the public macro five until a signed-in
   // session's watchlist loads (see the session effect below).
   const [watch, setWatch] = useState<Array<{ sym: string; label: string }>>(WATCH);
@@ -272,6 +281,17 @@ export default function HomeLanding({
     };
   }, [watch]);
 
+  // Close the rain menu on any outside pointer-down.
+  useEffect(() => {
+    if (!rainMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (t && rainWrapRef.current && !rainWrapRef.current.contains(t)) setRainMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [rainMenuOpen]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
@@ -404,6 +424,42 @@ export default function HomeLanding({
                 <RainGlyph />
               )}
             </button>
+            {/* R1-REDO — the rain intensity dial, beside the theme control;
+                matrix theme only (the rain doesn't exist elsewhere) */}
+            {theme === "matrix" ? (
+              <div className="hl-rainwrap" ref={rainWrapRef}>
+                <button
+                  type="button"
+                  className={`hl-ctl${rainPreset !== "visible" ? " on" : ""}`}
+                  onClick={() => setRainMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={rainMenuOpen}
+                  title={`Ticker rain: ${rainPreset.toUpperCase()}`}
+                  aria-label={`Ticker rain intensity — currently ${rainPreset}`}
+                >
+                  <RainGlyph />
+                </button>
+                {rainMenuOpen ? (
+                  <div className="hl-rainmenu" role="menu" aria-label="Rain intensity">
+                    {RAIN_PRESETS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={rainPreset === p}
+                        className={`hl-rainopt${rainPreset === p ? " on" : ""}`}
+                        onClick={() => {
+                          onSetRainPreset(p);
+                          setRainMenuOpen(false);
+                        }}
+                      >
+                        {p.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {/* SETTINGS — re-opens /welcome ("Your setup": watchlist + feeds).
                 Session-only: signed out and unconfigured instances never show it. */}
             {account ? (
