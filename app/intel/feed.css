@@ -572,12 +572,32 @@
            calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
 }
 :where(.intel-embed-frame) .if-blot-min {
-  /* TICKER SIDE STATUS ENTRY TARGET STOP %SINCE-CALL SPARK LAST AGE */
-  --if-cols: 64px 58px 100px 86px 86px 86px 92px 68px 82px minmax(52px, 1fr);
-  min-width: 880px;
+  /* R7 — proportional with sane maxima; the surplus goes to REASONING.
+     TRACKED: TICKER SIDE STATUS ENTRY TARGET STOP %SC SPARK LAST REASONING AGE */
+  --if-cols: 64px 58px 100px 86px 86px 86px 92px 68px 82px minmax(140px, 1fr) 56px;
+  /* R6 — the LIVE section's own set: TICKER SIDE STATUS ENTRY(wide) TARGET REASONING AGE */
+  --if-cols-live: 64px 64px 84px minmax(170px, 2fr) minmax(90px, 1.2fr) minmax(170px, 3fr) 56px;
+  min-width: 1000px;
   border: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
   border-radius: 2px;
   background: var(--rd-card, #0b0d10);
+}
+/* LIVE rows + their column head ride the live template */
+:where(.intel-embed-frame) .if-brow-live,
+:where(.intel-embed-frame) .if-bhead-live {
+  grid-template-columns: var(--if-cols-live);
+}
+/* R7 — the one-line reasoning preview: muted sans, never wraps */
+:where(.intel-embed-frame) .if-breason {
+  display: block; min-width: 0; max-width: 100%;
+  font-family: var(--rd-sans, "Hanken Grotesk", sans-serif);
+  font-size: 10.5px; line-height: 1.4;
+  color: var(--rd-t-dim, #8b929a);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* R6 — the LIVE entry carries real text at real width */
+:where(.intel-embed-frame) .if-bentry {
+  font-size: 11px;
 }
 
 /* column header — the desk's rd-colhead recipe at the P6 floor */
@@ -1043,7 +1063,51 @@
 }
 :where(.intel-embed-frame) .if-detail-col { min-width: 0; }
 :where(.intel-embed-frame) .if-detail-col .if-sh-sect-h { margin-bottom: 6px; }
-:where(.intel-embed-frame) .if-detail-col .if-sh-thesis { margin-top: 8px; }
+/* UX2 — the detail panel reads TICKER → ENTRY → REASONING → the rest.
+   ENTRY is the bright green hero chip; the thesis is a brighter accent
+   block; the meta line (dates/risk) drops below it, secondary. */
+:where(.intel-embed-frame) .if-entry-hero {
+  display: inline-flex; align-items: baseline; gap: 9px;
+  margin-top: 2px; padding: 5px 11px;
+  background: var(--rd-bull-soft08, rgba(111, 160, 133, 0.08));
+  border: 1px solid var(--rd-bull-soft32, rgba(111, 160, 133, 0.32));
+  border-radius: 4px;
+  max-width: 100%;
+}
+:where(.intel-embed-frame) .if-entry-hero-k {
+  flex-shrink: 0;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 8.5px; letter-spacing: 0.12em;
+  color: var(--rd-bull-dim, #5f8a72);
+}
+:where(.intel-embed-frame) .if-entry-hero-v {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--rd-bull, #6fa085);
+  overflow-wrap: anywhere;
+}
+:where(.intel-embed-frame) .if-detail-col .if-sh-thesis {
+  margin-top: 10px; padding-left: 10px;
+  border-left: 2px solid var(--rd-bull-soft32, rgba(111, 160, 133, 0.32));
+  color: var(--rd-t-chip, #dfe3e7);
+}
+:where(.intel-embed-frame) .if-detail-col .if-sh-meta { margin-top: 10px; }
+/* R8 — an empty section collapses to one compact muted line */
+:where(.intel-embed-frame) .if-dt-quiet {
+  display: flex; align-items: baseline; gap: 8px; margin-top: 10px; min-width: 0;
+}
+:where(.intel-embed-frame) .if-dt-quiet-k {
+  flex-shrink: 0;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 8.5px; letter-spacing: 0.12em;
+  color: var(--rd-t-ghost, #565c63);
+}
+:where(.intel-embed-frame) .if-dt-quiet-t {
+  font-family: var(--rd-sans, "Hanken Grotesk", sans-serif);
+  font-style: italic; font-size: 10.5px;
+  color: var(--rd-t-disabled, #4d535a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* long histories scroll inside the panel, never grow the band */
 :where(.intel-embed-frame) .if-detail-hist {
   max-height: 130px; overflow-y: auto; overscroll-behavior: contain;

@@ -15,6 +15,12 @@ import { Redis } from "@upstash/redis";
 export type IdeaStatus = "draft" | "live" | "closed";
 export type IdeaSource = "manual" | "extracted";
 export type IdeaRiskLevel = "low" | "medium" | "high";
+/** UX4 — the desk's stated direction. OPTIONAL and absent-by-default: the
+ *  extraction pipeline only sets it when the speaker's language makes the
+ *  direction unambiguous, and /admin can set/clear it in one click. Absent
+ *  side stays honest (the blotter falls back to its derived-from-levels
+ *  rendering, clearly marked as derived). */
+export type IdeaSide = "long" | "short" | "watch";
 
 export type Idea = {
   id: string;
@@ -26,6 +32,8 @@ export type Idea = {
   entry: string;
   target: string;
   riskLevel: IdeaRiskLevel;
+  /** stated direction — absent when never stated (see IdeaSide) */
+  side?: IdeaSide;
   status: IdeaStatus;
   source: IdeaSource;
   createdAt: number; // epoch ms
@@ -35,7 +43,15 @@ export type Idea = {
 /** What the public rail receives: live ideas, provenance stripped. */
 export type PublicIdea = Pick<
   Idea,
-  "id" | "instrument" | "thesis" | "entry" | "target" | "riskLevel" | "createdAt" | "updatedAt"
+  | "id"
+  | "instrument"
+  | "thesis"
+  | "entry"
+  | "target"
+  | "riskLevel"
+  | "side"
+  | "createdAt"
+  | "updatedAt"
 >;
 
 // Field caps — enforced by the validators, mirrored nowhere else.
@@ -47,6 +63,7 @@ export const MAX_IDEAS = 500;
 export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "live", "closed"];
 export const IDEA_SOURCES: readonly IdeaSource[] = ["manual", "extracted"];
 export const IDEA_RISKS: readonly IdeaRiskLevel[] = ["low", "medium", "high"];
+export const IDEA_SIDES: readonly IdeaSide[] = ["long", "short", "watch"];
 
 // --- pure helpers -----------------------------------------------------------
 
@@ -58,6 +75,8 @@ export function toPublicIdea(i: Idea): PublicIdea {
     entry: i.entry,
     target: i.target,
     riskLevel: i.riskLevel,
+    // absent side stays absent on the wire — no key, not null (house absents)
+    ...(i.side ? { side: i.side } : {}),
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
   };
@@ -85,10 +104,13 @@ export type IdeaCreateInput = {
   entry: string;
   target: string;
   riskLevel: IdeaRiskLevel;
+  side?: IdeaSide;
   status: IdeaStatus;
   source: IdeaSource;
 };
 
+/** `side: undefined` with the key PRESENT is a deliberate clear (the spread
+ *  in updateIdea overwrites, and JSON.stringify drops the undefined). */
 export type IdeaPatchInput = Partial<Omit<IdeaCreateInput, "source">>;
 
 type Ok<T> = { ok: true; value: T };
@@ -130,6 +152,12 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
   if (!IDEA_RISKS.includes(riskLevel as IdeaRiskLevel))
     return { ok: false, error: "risk_level_invalid" };
 
+  // side is optional — absent/null/"" all mean "not stated"; anything else
+  // must be a known side (a typo must not silently publish a direction)
+  const side = b.side === undefined || b.side === null || b.side === "" ? undefined : b.side;
+  if (side !== undefined && !IDEA_SIDES.includes(side as IdeaSide))
+    return { ok: false, error: "side_invalid" };
+
   const status = b.status === undefined ? "draft" : b.status;
   if (!IDEA_STATUSES.includes(status as IdeaStatus)) return { ok: false, error: "status_invalid" };
 
@@ -144,6 +172,7 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
       entry,
       target,
       riskLevel: riskLevel as IdeaRiskLevel,
+      ...(side !== undefined ? { side: side as IdeaSide } : {}),
       status: status as IdeaStatus,
       source: source as IdeaSource,
     },
@@ -187,6 +216,13 @@ export function validateIdeaPatch(body: unknown): Ok<IdeaPatchInput> | Err {
     if (!IDEA_RISKS.includes(b.riskLevel as IdeaRiskLevel))
       return { ok: false, error: "risk_level_invalid" };
     patch.riskLevel = b.riskLevel as IdeaRiskLevel;
+  }
+  if (b.side !== undefined) {
+    // null/"" clears the side (the admin one-click setter's un-set path)
+    if (b.side === null || b.side === "") patch.side = undefined;
+    else if (!IDEA_SIDES.includes(b.side as IdeaSide))
+      return { ok: false, error: "side_invalid" };
+    else patch.side = b.side as IdeaSide;
   }
   if (b.status !== undefined) {
     if (!IDEA_STATUSES.includes(b.status as IdeaStatus))

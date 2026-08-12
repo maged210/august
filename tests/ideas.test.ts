@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   IDEA_RISKS,
+  IDEA_SIDES,
   MAX_INSTRUMENT_CHARS,
   MAX_LEVEL_CHARS,
   MAX_THESIS_CHARS,
@@ -159,6 +160,46 @@ test("create: every declared risk level round-trips", () => {
     const r = validateIdeaCreate({ instrument: "NQ", thesis: "t", riskLevel: risk });
     assert.ok(r.ok);
   }
+});
+
+// --- side (UX4) ---------------------------------------------------------------
+
+test("side: create accepts each declared side; absent/null/empty stay absent", () => {
+  for (const s of IDEA_SIDES) {
+    const r = validateIdeaCreate({ instrument: "NQ", thesis: "t", riskLevel: "low", side: s });
+    assert.ok(r.ok);
+    if (r.ok) assert.equal(r.value.side, s);
+  }
+  for (const absent of [undefined, null, ""]) {
+    const r = validateIdeaCreate({ instrument: "NQ", thesis: "t", riskLevel: "low", side: absent });
+    assert.ok(r.ok);
+    if (r.ok) assert.ok(!("side" in r.value)); // absent = no key, never a default
+  }
+});
+
+test("side: unknown values reject the create (a typo must not publish a direction)", () => {
+  const r = validateIdeaCreate({ instrument: "NQ", thesis: "t", riskLevel: "low", side: "up" });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.error, "side_invalid");
+});
+
+test("side: patch sets, rejects unknowns, and null clears (key present, value undefined)", () => {
+  const set = validateIdeaPatch({ side: "short" });
+  assert.ok(set.ok);
+  if (set.ok) assert.equal(set.value.side, "short");
+  assert.equal(validateIdeaPatch({ side: "bearish" }).ok, false);
+  const clear = validateIdeaPatch({ side: null });
+  assert.ok(clear.ok); // a clear-only patch is a real patch, not "empty"
+  if (clear.ok) {
+    assert.ok("side" in clear.value); // the key must survive so the store spread overwrites
+    assert.equal(clear.value.side, undefined);
+  }
+});
+
+test("side: toPublicIdea carries a stated side and omits an absent one", () => {
+  const stated = toPublicIdea({ ...FULL, side: "long" });
+  assert.equal(stated.side, "long");
+  assert.ok(!("side" in toPublicIdea(FULL))); // absent stays absent on the wire
 });
 
 // --- validateIdeaPatch ------------------------------------------------------

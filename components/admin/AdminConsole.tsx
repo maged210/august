@@ -13,7 +13,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import WidgetState from "@/components/WidgetState";
-import { IDEA_RISKS, relativeTime, type Idea, type IdeaRiskLevel } from "@/lib/ideas";
+import {
+  IDEA_RISKS,
+  IDEA_SIDES,
+  relativeTime,
+  type Idea,
+  type IdeaRiskLevel,
+  type IdeaSide,
+} from "@/lib/ideas";
 import {
   TAPE_KINDS,
   TAPE_SENTIMENTS,
@@ -509,6 +516,13 @@ export default function AdminConsole() {
               placeholder="target"
             />
           </div>
+          {/* UX4 — the side setter works in the edit (detail) view too;
+              it PATCHes immediately, independent of the form's SAVE */}
+          <SideSetter
+            value={idea.side}
+            busy={busyId === idea.id}
+            onSet={(s) => mutate(idea.id, { side: idea.side === s ? null : s })}
+          />
           <div className="adm-actions">
             <button type="submit" className="adm-btn adm-btn-acc" disabled={busyId === idea.id}>
               SAVE
@@ -528,6 +542,12 @@ export default function AdminConsole() {
             <span className="adm-src">{idea.source.toUpperCase()}</span>
             <span className="adm-when">{relativeTime(idea.createdAt)}</span>
           </div>
+          {/* UX4 — one-click side setter; clicking the active side clears it */}
+          <SideSetter
+            value={idea.side}
+            busy={busyId === idea.id}
+            onSet={(s) => mutate(idea.id, { side: idea.side === s ? null : s })}
+          />
           <p className="adm-thesis">{idea.thesis}</p>
           {idea.entry || idea.target ? (
             <p className="adm-levels">
@@ -876,5 +896,39 @@ function RiskSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+// UX4 — the one-click side setter: three chips, the active one highlighted;
+// clicking the active side clears it (the caller sends side: null).
+const SIDE_GLYPH: Record<IdeaSide, string> = { long: "▲", short: "▼", watch: "◆" };
+
+function SideSetter({
+  value,
+  busy,
+  onSet,
+}: {
+  value: Idea["side"];
+  busy: boolean;
+  onSet: (s: IdeaSide) => void;
+}) {
+  return (
+    <div className="adm-sides" role="group" aria-label="Side">
+      <span className="adm-k adm-sides-k">SIDE</span>
+      {IDEA_SIDES.map((s) => (
+        <button
+          key={s}
+          type="button"
+          className={`adm-side adm-side-${s}${value === s ? " on" : ""}`}
+          disabled={busy}
+          aria-pressed={value === s}
+          title={value === s ? "click again to clear the side" : `mark ${s}`}
+          onClick={() => onSet(s)}
+        >
+          <span aria-hidden="true">{SIDE_GLYPH[s]}</span> {s.toUpperCase()}
+        </button>
+      ))}
+      {!value ? <span className="adm-sides-abs">∅ not set</span> : null}
+    </div>
   );
 }

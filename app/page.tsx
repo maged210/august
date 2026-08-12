@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
-import MatrixRain from "@/components/MatrixRain";
+import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
@@ -149,11 +149,20 @@ export default function Home() {
   // the top-bar toggle, the go_to_screen tool, ?view=terminal deep links, and
   // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
   const [view, setView] = useState<ViewId>("chat");
-  // Trade Ideas drawer (below 1100px; the desktop sidebar is always open and
-  // ignores this — see .ideas-rail's media query). The ref mirrors it for the
-  // Esc handler, which must not resubscribe per toggle.
+  // Trade Ideas drawer (below 1100px; the desktop sidebar ignores this — see
+  // .ideas-rail's media query). The ref mirrors it for the Esc handler, which
+  // must not resubscribe per toggle.
   const [railOpen, setRailOpen] = useState(false);
   const railOpenRef = useRef(false);
+  // UX1 — the DESKTOP sidebar's collapse (folds to a thin "IDEAS · N LIVE"
+  // edge tab; the desk reflows into the freed width). Persisted; layout.tsx
+  // applies the stored data-rail attribute pre-paint, and the mount effect
+  // below adopts it into React state (the first sync run is skipped so the
+  // default `false` can't strip the pre-paint attribute for a frame).
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const railSyncedRef = useRef(false);
+  // ≥1100px — decides what the top-bar IDEAS tab controls (collapse vs drawer).
+  const [deskWide, setDeskWide] = useState(false);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -172,6 +181,10 @@ export default function Home() {
   // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
   // the theme, it re-tints only the accent family.
   const [mood, setMood] = useState<Mood>("steel");
+  // R1-REDO — the rain intensity dial (off | faint | visible | loud), persisted;
+  // VISIBLE (~80% of the original loudness) is the default. Lives beside the
+  // theme control; applies live to the page-level canvas behind both views.
+  const [rainPreset, setRainPreset] = useState<RainPreset>("visible");
   // Hands-free voice mode: a continuous listen → think → speak → listen loop.
   const [voiceMode, setVoiceMode] = useState(false);
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
@@ -276,17 +289,41 @@ export default function Home() {
     railOpenRef.current = railOpen;
   }, [railOpen]);
 
-  // Crossing up past 1100px turns the drawer into the always-open sidebar —
-  // clear the drawer flag so a stale `open` can't silently eat an Esc later.
+  // Crossing up past 1100px turns the drawer into the sidebar — clear the
+  // drawer flag so a stale `open` can't silently eat an Esc later. The same
+  // query drives what the IDEAS tab toggles (collapse vs drawer).
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
+      setDeskWide(mq.matches);
       if (mq.matches) setRailOpen(false);
     };
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
+
+  // UX1 — adopt the pre-paint rail state, then keep attribute + storage in
+  // sync on every later toggle (theme persistence contract).
+  useEffect(() => {
+    setRailCollapsed(document.documentElement.getAttribute("data-rail") === "collapsed");
+  }, []);
+  useEffect(() => {
+    if (!railSyncedRef.current) {
+      railSyncedRef.current = true; // first run mirrors the pre-paint attribute — never overwrite it
+      return;
+    }
+    const el = document.documentElement;
+    if (railCollapsed) el.setAttribute("data-rail", "collapsed");
+    else el.removeAttribute("data-rail");
+    try {
+      window.localStorage.setItem("aug-rail", railCollapsed ? "collapsed" : "open");
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, [railCollapsed]);
+
+  const toggleRailCollapsed = useCallback(() => setRailCollapsed((v) => !v), []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -947,6 +984,28 @@ export default function Home() {
     }
   }, [mood]);
 
+  // Rain dial: same persistence contract as theme/mood — load once, then keep
+  // storage in sync on every change. No pre-paint step needed: the canvas is
+  // client-mounted anyway, so the stored preset applies before it first draws.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("aug-rain-level");
+      if ((RAIN_PRESETS as readonly string[]).includes(saved ?? "")) {
+        setRainPreset(saved as RainPreset);
+      }
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  const applyRainPreset = useCallback((p: RainPreset) => {
+    setRainPreset(p);
+    try {
+      window.localStorage.setItem("aug-rain-level", p);
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, []);
+
   // Set the accent mood — the switcher and the set_mood tool share this one
   // path. The token swap rides the same transient cross-fade as the theme flip.
   const applyMood = useCallback((m: Mood) => {
@@ -999,7 +1058,8 @@ export default function Home() {
         if (j.ready && j.brief) {
           setBrief(j.brief); // always store so the summon trigger has it later
           if (fromPush) {
-            // Came from the push: always surface it (clear any same-day dismissal).
+            // Tapping the brief PUSH NOTIFICATION is an explicit open — the one
+            // arrival that may surface the card (clear any same-day dismissal).
             try {
               window.localStorage.removeItem(briefDismissKey);
             } catch {
@@ -1009,9 +1069,9 @@ export default function Home() {
             setBriefOpen(true);
           } else if (isBriefDismissed(j.brief.date)) {
             setBriefDismissed(true);
-          } else {
-            setBriefOpen(true); // on-open delivery
           }
+          // R4 — NO on-open auto-delivery: a plain load lands on the clean home
+          // state; the brief opens only from its own control (or the push tap).
           setBriefStatus("ready");
         } else {
           setBriefStatus("none");
@@ -1504,8 +1564,9 @@ export default function Home() {
         {voiceAnnounce}
       </div>
 
-      {/* the code-rain — the matrix theme's stage layer, behind everything */}
-      {theme === "matrix" ? <MatrixRain /> : null}
+      {/* the code-rain — the matrix theme's stage layer, behind everything;
+          the intensity dial (R1-REDO) can switch it off entirely */}
+      {theme === "matrix" && rainPreset !== "off" ? <MatrixRain preset={rainPreset} /> : null}
 
       {/* CORE V2 — the top-bar view toggle, in the deck dots' old top-center
           slot. Two views only; the segmented control is the page's whole nav. */}
@@ -1526,19 +1587,29 @@ export default function Home() {
         >
           TERMINAL
         </button>
-        {/* drawer trigger — hidden ≥1100px where the rail is a fixed sidebar */}
+        {/* the rail toggle — drawer below 1100px, sidebar collapse above (UX1) */}
         <button
           type="button"
           className="view-tab view-tab-ideas"
-          aria-expanded={railOpen}
-          onClick={() => setRailOpen((v) => !v)}
+          aria-expanded={deskWide ? !railCollapsed : railOpen}
+          title={deskWide ? (railCollapsed ? "Open the trade ideas rail" : "Collapse the trade ideas rail") : undefined}
+          onClick={() => {
+            if (deskWide) toggleRailCollapsed();
+            else setRailOpen((v) => !v);
+          }}
         >
           IDEAS
         </button>
       </nav>
 
-      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px, drawer below */}
-      <IdeasRail open={railOpen} onClose={() => setRailOpen(false)} />
+      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
+          (collapsible to an edge tab, UX1), drawer below */}
+      <IdeasRail
+        open={railOpen}
+        onClose={() => setRailOpen(false)}
+        collapsed={railCollapsed}
+        onToggleCollapsed={toggleRailCollapsed}
+      />
 
       {/* The two-view stack. Both panels STAY MOUNTED once visited (chat always;
           the terminal latches its bodies internally) so chat state and desk
@@ -1580,6 +1651,8 @@ export default function Home() {
             soundOn={soundOn}
             onToggleSound={toggleSound}
             onToggleTheme={toggleTheme}
+            rainPreset={rainPreset}
+            onSetRainPreset={applyRainPreset}
           />
           {booted && briefOpen ? (
             <MorningBrief

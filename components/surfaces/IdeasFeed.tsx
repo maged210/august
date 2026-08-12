@@ -21,8 +21,9 @@
 // - the performance numeral comes exclusively from the feed's pnl view and is
 //   labeled by its kind verbatim (SINCE CALLED / SINCE FIRST MENTION°, the °
 //   marking a price move that is NOT trade P&L);
-// - a LIVE idea's SIDE is only shown when derivable from its stated entry vs
-//   target numerals, and is styled as derived (the model stores no direction);
+// - a LIVE idea's SIDE renders solid only when the desk STATED one (UX4:
+//   extraction inference or /admin); otherwise the entry-vs-target derivation
+//   shows, styled as derived — never presented as stated;
 // - sparklines draw only the tracker's real priceHistory ring — fewer than two
 //   observations means no line;
 // - no demo/sample rows; an empty board shows the empty state.
@@ -32,12 +33,13 @@ import type { FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { Direction } from "@/lib/intel/types";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
+import { publishRainSymbols } from "@/lib/rain-symbols";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
 import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
 import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
-import { liveSide, numOf } from "@/components/surfaces/dock/derive";
+import { numOf, sideOf } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
@@ -205,7 +207,9 @@ function LiveRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const side = liveSide(idea);
+  // UX4 — a stated side (extraction/admin) renders solid; the entry-vs-target
+  // derivation remains the clearly-marked fallback
+  const side = sideOf(idea);
   return (
     <>
       <div
@@ -226,16 +230,24 @@ function LiveRow({
         <span className="if-bc">
           {side ? (
             <span
-              className={`if-bside ${side === "LONG" ? "if-dir-bull" : "if-dir-bear"} derived`}
-              title="derived from entry vs target — the desk did not state a side"
+              className={`if-bside ${
+                side.side === "LONG" ? "if-dir-bull" : side.side === "SHORT" ? "if-dir-bear" : "if-dir-neut"
+              }${side.derived ? " derived" : ""}`}
+              title={
+                side.derived
+                  ? "derived from entry vs target — the desk did not state a side"
+                  : undefined
+              }
             >
               <span className="if-bside-g" aria-hidden="true">
-                {side === "LONG" ? "▲" : "▼"}
+                {side.side === "LONG" ? "▲" : side.side === "SHORT" ? "▼" : "◆"}
               </span>
-              {side}
+              {side.side}
             </span>
           ) : (
-            <Dash title="side not derivable from stated levels" />
+            <span className="if-abs-g" title="side not stated and not derivable from levels">
+              ∅
+            </span>
           )}
         </span>
         <span className="if-bc">
@@ -244,25 +256,31 @@ function LiveRow({
             LIVE
           </span>
         </span>
+        {/* R6 — ENTRY gets real width; full text rides the hover title */}
         <span className="if-bc">
-          <span className="if-bval if-lev-entry" title={idea.entry}>
-            {idea.entry}
+          {idea.entry ? (
+            <span className="if-bval if-lev-entry if-bentry" title={idea.entry}>
+              {idea.entry}
+            </span>
+          ) : (
+            <span className="if-abs-g" title="no entry stated">
+              ∅
+            </span>
+          )}
+        </span>
+        {/* R6 — TARGET renders only when stated; an unstated one is just empty */}
+        <span className="if-bc">
+          {idea.target ? (
+            <span className="if-bval if-lev-target" title={idea.target}>
+              {idea.target}
+            </span>
+          ) : null}
+        </span>
+        {/* R7 — one-line reasoning preview; the row click opens the full thesis */}
+        <span className="if-bc">
+          <span className="if-breason" title="click the row for the full thesis">
+            {idea.thesis.slice(0, 120)}
           </span>
-        </span>
-        <span className="if-bc">
-          <span className="if-bval if-lev-target" title={idea.target}>
-            {idea.target}
-          </span>
-        </span>
-        <span className="if-bc">
-          <Dash title="no stop stated" />
-        </span>
-        <span className="if-bc">
-          <Dash title="not yet tracked — no since-call measurement" />
-        </span>
-        <span className="if-bc" />
-        <span className="if-bc">
-          <Dash title="no live quote for this instrument" />
         </span>
         <span className="if-bc if-bc-age">{relativeTime(idea.createdAt)}</span>
       </div>
@@ -370,6 +388,12 @@ function TrackedRow({
             <Dash title="no live quote" />
           )}
         </span>
+        {/* R7 — one-line reasoning preview; the row click opens the full thesis */}
+        <span className="if-bc">
+          <span className="if-breason" title="click the row for the full thesis">
+            {card.thesis.slice(0, 120)}
+          </span>
+        </span>
         <span className="if-bc if-bc-age" title="since first mention">
           {relativeTime(card.firstMentionAt)}
         </span>
@@ -410,11 +434,35 @@ function selectionFromTracked(card: FeedCard): ChartSelection {
 
 // ── the terminal surface ───────────────────────────────────────────────────────
 
-const BLOT_COLS = [
-  "TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "STOP", "% SINCE CALL", "SPARK", "LAST", "AGE",
+// R6 — LIVE and TRACKED are different animals and carry different column
+// sets: a live call has no measurement, so the measurement columns simply
+// don't exist there (no em-dash walls). R7 — both sections spend their
+// surplus width on a one-line REASONING preview (muted; row click = full).
+const LIVE_COLS = ["TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "REASONING", "AGE"] as const;
+const TRACKED_COLS = [
+  "TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "STOP", "% SINCE CALL", "SPARK", "LAST", "REASONING", "AGE",
 ] as const;
 
-const SKEL_W = [42, 36, 60, 48, 48, 48, 44, 52, 44, 30];
+const SKEL_W = [42, 36, 60, 48, 48, 48, 44, 52, 44, 90, 30];
+
+function ColHead({ cols, live }: { cols: readonly string[]; live?: boolean }) {
+  return (
+    <div className={`if-bhead${live ? " if-bhead-live" : ""}`} aria-hidden="true">
+      {cols.map((c) => (
+        <span
+          key={c}
+          title={
+            c === "% SINCE CALL"
+              ? "signed vs stated trigger; ° = price since first mention"
+              : undefined
+          }
+        >
+          {c}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function IdeasFeed() {
   const [feed, setFeed] = useState<FeedPayload | null>(null);
@@ -443,6 +491,8 @@ export default function IdeasFeed() {
         if (!j || j.ok !== true || !Array.isArray(j.ideas)) throw new Error("malformed");
         setFeed(j);
         setFeedErr(false);
+        // UX5 — tracked tickers feed the rain's symbol pool (data already here)
+        publishRainSymbols("tracked", j.ideas.map((c) => c.ticker));
       })
       .catch(() => setFeedErr(true));
     fetch("/api/ideas", { cache: "no-store" })
@@ -568,16 +618,6 @@ export default function IdeasFeed() {
       ? tracked.find((c) => `trk:${c.id}` === selection.key) ?? null
       : null;
 
-  const colhead = (
-    <div className="if-bhead" aria-hidden="true">
-      {BLOT_COLS.map((c) => (
-        <span key={c} title={c === "% SINCE CALL" ? "signed vs stated trigger; ° = price since first mention" : undefined}>
-          {c}
-        </span>
-      ))}
-    </div>
-  );
-
   return (
     <div className="if-feed">
       <div className="if-chrome">
@@ -644,7 +684,7 @@ export default function IdeasFeed() {
           {loading ? (
             <div className="if-blot-wrap" aria-hidden="true">
               <div className="if-blot-min">
-                {colhead}
+                <ColHead cols={TRACKED_COLS} />
                 {[0, 1, 2, 3].map((r) => (
                   <div key={r} className="if-brow if-brow-skel">
                     <span className="if-brail" aria-hidden="true" />
@@ -685,9 +725,8 @@ export default function IdeasFeed() {
           ) : (
             <div className="if-blot-wrap">
               <div className="if-blot-min">
-                {colhead}
-
-                {/* LIVE — the desk's current calls lead the board */}
+                {/* LIVE — the desk's current calls lead the board, on their
+                    OWN column set (R6) */}
                 {liveIdeas.length > 0 && (
                   <>
                     <div className="if-bgroup hot">
@@ -699,6 +738,7 @@ export default function IdeasFeed() {
                         {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
                       </span>
                     </div>
+                    <ColHead cols={LIVE_COLS} live />
                     {liveIdeas.map((idea) => (
                       <LiveRow
                         key={idea.id}
@@ -728,6 +768,7 @@ export default function IdeasFeed() {
                     {visible.length} OF {tracked.length}
                   </span>
                 </div>
+                {tracked.length > 0 && visible.length > 0 ? <ColHead cols={TRACKED_COLS} /> : null}
                 {feed === null && feedErr ? (
                   <div className="if-bmiss">
                     TRACKED FEED UNREACHABLE

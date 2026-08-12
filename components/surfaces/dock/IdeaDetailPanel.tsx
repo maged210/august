@@ -10,6 +10,7 @@
 import type { FeedCard } from "@/lib/intel/publish";
 import type { TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { IdeaRiskLevel, PublicIdea } from "@/lib/ideas";
+import { sideOf } from "./derive";
 
 const px = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -44,6 +45,16 @@ function Absent({ text = "not stated" }: { text?: string }) {
       </span>{" "}
       {text}
     </span>
+  );
+}
+
+/** R8 — an empty section is ONE compact muted line, not a header + absent row */
+function QuietLine({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="if-dt-quiet">
+      <span className="if-dt-quiet-k">{label}</span>
+      <span className="if-dt-quiet-t">{text}</span>
+    </div>
   );
 }
 
@@ -92,6 +103,9 @@ export default function IdeaDetailPanel({
 }) {
   const title = live ? `${live.instrument} · LIVE` : card ? `${card.ticker} · ${LIFE_LABEL[card.status] ?? card.status}` : null;
 
+  // UX4 — the LIVE idea's side: stated renders solid, derived stays marked
+  const liveSideR = live ? sideOf(live) : null;
+
   // tracked performance pieces (all from the feed's own pnl view — labeled by kind)
   const pnl = card?.pnl ?? null;
   const perfNum =
@@ -113,42 +127,79 @@ export default function IdeaDetailPanel({
           <Absent text="select a blotter row" />
         ) : live ? (
           <div className="if-detail-grid">
+            {/* UX2 — reading order: TICKER (header) → ENTRY → REASONING → the rest */}
             <div className="if-detail-col">
+              <div className="if-entry-hero">
+                <span className="if-entry-hero-k">ENTRY</span>
+                {live.entry ? <span className="if-entry-hero-v">{live.entry}</span> : <Absent />}
+              </div>
+              <p className="if-sh-thesis">{live.thesis}</p>
               <div className="if-sh-meta">
+                {liveSideR ? (
+                  <>
+                    <span
+                      className={`if-bside ${
+                        liveSideR.side === "LONG"
+                          ? "if-dir-bull"
+                          : liveSideR.side === "SHORT"
+                            ? "if-dir-bear"
+                            : "if-dir-neut"
+                      }${liveSideR.derived ? " derived" : ""}`}
+                      title={
+                        liveSideR.derived
+                          ? "derived from entry vs target — the desk did not state a side"
+                          : undefined
+                      }
+                    >
+                      <span className="if-bside-g" aria-hidden="true">
+                        {liveSideR.side === "LONG" ? "▲" : liveSideR.side === "SHORT" ? "▼" : "◆"}
+                      </span>
+                      {liveSideR.side}
+                    </span>{" "}
+                    ·{" "}
+                  </>
+                ) : null}
                 <span className={`if-risk if-risk-${live.riskLevel}`}>{RISK_LABEL[live.riskLevel]}</span> · CALLED{" "}
                 {fmtDate(live.createdAt)}
               </div>
-              <p className="if-sh-thesis">{live.thesis}</p>
             </div>
             <div className="if-detail-col">
+              {/* R8 — the ENTRY chip (left) is the single source of entry;
+                  levels here are only TARGET and STOP */}
               <div className="if-sh-sect-h">STATED LEVELS</div>
-              <TextLevelRow label="ENTRY" text={live.entry} cls="if-lev-entry" />
               <TextLevelRow label="TARGET" text={live.target} cls="if-lev-target" />
               <TextLevelRow label="STOP" text="" cls="if-lev-stop" />
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                PERFORMANCE
-              </div>
-              <Absent text="not tracked yet — a live call has no measurement" />
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                STATUS HISTORY
-              </div>
-              <Absent text="no transitions — the call stands as posted" />
+              <QuietLine label="PERFORMANCE" text="live — no measurement yet" />
+              <QuietLine label="STATUS" text="no transitions — the call stands as posted" />
             </div>
           </div>
         ) : card ? (
           <div className="if-detail-grid">
+            {/* UX2 — same order as the LIVE branch: ENTRY hero → reasoning → meta */}
             <div className="if-detail-col">
+              <div className="if-entry-hero">
+                <span className="if-entry-hero-k">ENTRY</span>
+                {card.statedLevels.trigger ? (
+                  <span className="if-entry-hero-v" title={card.statedLevels.trigger.text}>
+                    {card.statedLevels.trigger.value != null
+                      ? px(card.statedLevels.trigger.value)
+                      : card.statedLevels.trigger.text}
+                  </span>
+                ) : (
+                  <Absent />
+                )}
+              </div>
+              <p className="if-sh-thesis">{card.thesis}</p>
               <div className="if-sh-meta">
                 FIRST MENTION {fmtDate(card.firstMentionAt)} · PUBLISHED {fmtDate(card.publishedAt)}
                 {card.stale ? (
                   <span className="if-stale if-xp-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
                 ) : null}
               </div>
-              <p className="if-sh-thesis">{card.thesis}</p>
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
+              {/* R8 — the ENTRY chip above is the single source of entry */}
+              <div className="if-sh-sect-h" style={{ marginTop: 10 }}>
                 STATED LEVELS
               </div>
-              <LevelRow label="ENTRY" level={card.statedLevels.trigger} cls="if-lev-entry" />
               {card.statedLevels.targets.length === 0 ? (
                 <LevelRow label="TARGET" level={null} cls="if-lev-target" />
               ) : (
@@ -164,9 +215,9 @@ export default function IdeaDetailPanel({
               <LevelRow label="STOP" level={card.statedLevels.invalidation} cls="if-lev-stop" />
             </div>
             <div className="if-detail-col">
-              <div className="if-sh-sect-h">PERFORMANCE</div>
               {perfNum && pnl && pnl.kind !== "none" ? (
                 <>
+                  <div className="if-sh-sect-h">PERFORMANCE</div>
                   <div className="if-sh-perf">
                     {perfNum}
                     <span className="if-sh-perf-sub">
@@ -187,7 +238,9 @@ export default function IdeaDetailPanel({
                   ) : null}
                 </>
               ) : (
-                <Absent
+                /* R8 — empty performance is one compact muted line */
+                <QuietLine
+                  label="PERFORMANCE"
                   text={
                     pnl && pnl.kind === "none"
                       ? pnl.reason
@@ -208,26 +261,34 @@ export default function IdeaDetailPanel({
                   </span>
                 </div>
               ) : null}
-              <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
-                STATUS HISTORY
-              </div>
               {card.statusHistory.length > 0 ? (
-                <ul className="if-sh-hist if-detail-hist">
-                  {card.statusHistory.map((h, i) => (
-                    <li key={i}>
-                      <span className="if-sh-hist-top">
-                        <span>{LIFE_LABEL[h.state] ?? h.state}</span>
-                        {h.price != null && <span>@ {px(h.price)}</span>}
-                        <span className="if-sh-hist-at">{fmtDateTime(h.at)}</span>
-                      </span>
-                      <span className="if-sh-hist-reason">{h.reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : card.evicted ? (
-                <Absent text="live tracking ended — last known state shown above" />
+                <>
+                  <div className="if-sh-sect-h" style={{ marginTop: 10 }}>
+                    STATUS HISTORY
+                  </div>
+                  <ul className="if-sh-hist if-detail-hist">
+                    {card.statusHistory.map((h, i) => (
+                      <li key={i}>
+                        <span className="if-sh-hist-top">
+                          <span>{LIFE_LABEL[h.state] ?? h.state}</span>
+                          {h.price != null && <span>@ {px(h.price)}</span>}
+                          <span className="if-sh-hist-at">{fmtDateTime(h.at)}</span>
+                        </span>
+                        <span className="if-sh-hist-reason">{h.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : (
-                <Absent text="no transitions observed yet" />
+                /* R8 — empty history is one compact muted line */
+                <QuietLine
+                  label="STATUS"
+                  text={
+                    card.evicted
+                      ? "live tracking ended — last known state shown above"
+                      : "no transitions observed yet"
+                  }
+                />
               )}
             </div>
           </div>

@@ -73,6 +73,73 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 
 ---
 
+# UX ROUND 1
+
+> Branch: `feature/ux-1` off main. Small round, one gate, then merge. Started 2026-08-12.
+
+## UX1 — COLLAPSIBLE TRADE IDEAS RAIL
+- [x] Toggle in the rail header (and top bar) that collapses the rail like a tab: collapsed state = thin edge tab on the right showing "IDEAS · N LIVE" vertically; click to reopen. *(rail-header » control + the IDEAS view-tab now lives at every width: drawer <1100px, collapse ≥1100px; edge tab is a vertical writing-mode strip at mid-right)*
+- [x] When collapsed, the center desk reflows to use the freed width. Smooth transition, no layout jank. *(--rail-w 276→30px; the offsets it feeds (view-panel/dock right, view-bar left) transition med; the rail slides on its own transform; reduced-motion = instant)*
+- [x] Persist open/closed state locally so it survives refresh. *(localStorage "aug-rail"; layout.tsx applies data-rail="collapsed" PRE-PAINT like the theme so a stored collapse never flashes open)*
+
+## UX2 — ENTRY + REASONING HIERARCHY
+Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → everything else.
+- [x] ENTRY: high-contrast treatment — bright green chip/box, larger mono type. First thing the eye lands on after the ticker. *(rail: .ir-entry chip off --pos tokens, 14px mono; detail: .if-entry-hero off --rd-bull, 15px mono; empty entry stays an honest ∅ "not stated")*
+- [x] REASONING (thesis): brighter text than surrounding metadata, left accent border so it reads as a distinct block. Metadata (target/stop/age/risk) stays visually secondary. *(thesis lifts one ramp step — --ash→--bone rail-side, t-body→t-chip desk-side — with a 2px green accent border; meta lines dropped BELOW the thesis)*
+- [x] Apply consistently: rail card, idea detail panel, blotter selected-row detail. *(the blotter's selected-row detail IS the IdeaDetailPanel since G3 r5 — both its LIVE and TRACKED branches restructured)*
+
+## UX3 — RAIL DENSITY MODE
+- [x] Compact one-line collapsed card mode: TICKER · risk badge · entry one-liner. Tap to expand in place. *(the card head is the toggle at either density; entry one-liner keeps the UX2 green, ∅ "no entry" when absent)*
+- [x] "Expand all / collapse all" in the rail header. *(one flip-all control that reads the current predominant state)*
+- [x] Default: compact when more than 5 live ideas, expanded otherwise. *(per-card overrides ride on top of the count-driven default)*
+
+## UX4 — SIDE (LONG/SHORT) FIX
+- NOTE: the Idea model stored NO side field (blotter SIDE was purely derived from entry-vs-target numerals) — added `side?: long|short|watch` as an OPTIONAL field: existing rows parse unchanged, absent stays absent on the wire (no schema breakage).
+- [x] Extraction: infer side from entry language (break above/clears/retest higher → long; break below/breakdown → short). Ambiguous → leave unset, never guess wrong. *(emit_extractions gains an optional side enum + a "OMIT when ambiguous — a wrong side is worse than no side" rule; not in required)*
+- [x] Admin: one-click side setter (long / short / watch) on each idea, list and detail views. *(SideSetter chips on every card + inside the edit form; PATCHes immediately; clicking the active side clears it — side:null in the patch validator)*
+- [x] Bias bars recompute from corrected sides. *(new sideOf() in dock/derive: stated side wins and renders SOLID in blotter + detail panel; the derived read remains the marked fallback; WATCH weighs nothing in bias)*
+- [x] Tests: +5 (create/patch/redaction/extraction pass-through) — 226 pass.
+
+## UX5 — MATRIX RAIN v2: QUIETER + TICKER GLYPHS
+- [x] Rain barely perceptible: lower drop opacity, smaller glyphs, tighter columns, slower fall. Panel text contrast untouched. *(--rain-opacity 0.11→0.07 AND canvas alphas head 0.95→0.5 / trail 0.6→0.28; CELL 16→13; STEP 80→115ms; speeds 0.55–1.3→0.4–0.9 rows/step; panels carry their own backgrounds — untouched)*
+- [x] Glyphs become stock symbols: live/tracked idea tickers + pulse symbols (SPY, QQQ, NQ, BTC, VIX) + small static filler; pool refreshes on data load. *(new lib/rain-symbols pub/sub pool — the rail's /api/ideas poll and the blotter's feed poll publish tickers they ALREADY fetch, zero extra network; each column spells symbols vertically with word gaps; pool refreshes in place, field never resets)*
+- [x] Still one canvas, capped FPS, honors prefers-reduced-motion. No perf regression. *(same skeleton: one canvas, ~8.7 steps/s accumulator (down from 12.5), hidden-tab park, reduced-motion static ticker field; per-frame fillStyle count unchanged)*
+
+## UX6 — CENTER THE MAIN (AUGUST CHAT) PAGE
+- [x] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open). *(one --chat-col token (720px) on the rail-aware main; the panel already excludes --rail-w, so the column re-centers as the rail opens/collapses)*
+- [x] Bubbles, new-chat control, composer all align to this column. No left-drift. *(the drift causes: composer-row was 770px vs the 720px transcript; transcript widths used 92vw (viewport) instead of 92% (panel); the transcript scrollbar nudged its centered content left of the fixed composer — fixed with scrollbar-gutter: stable both-edges; idle ask bar joins the same column)*
+- [x] Verify at ultrawide and mobile widths. *(headless-Chrome verified at 2560×1440 — column centered in the rail-aware space, both rail states — and 390×844)*
+
+## UX RULES
+- No new data sources, no schema breakage — side is an existing field, just populate it.
+- Zero regressions to the desk layout shipped in Core V2.
+
+### GATE UX-G1 — deploy Vercel preview; notify with screenshots: main page centered w/ quiet ticker rain, rail open, rail collapsed, one card w/ new hierarchy. HOLD for approval, then merge to main.
+- [x] Preview deployed (Vercel status: success on 3bb01d9). NOTE: the branch preview URL now sits behind Vercel deployment protection (SSO) — open it signed into Vercel; the Vercel MCP couldn't mint a bypass link (404/403 flakiness again). Gate screenshots delivered via Artifact from the identical local prod build against the same preview-scope data (all 6 required states + mobile/ultrawide).
+- [x] UX-G1 round-1 feedback (2026-08-12) — NOT approved; 8 revisions:
+
+## UX ROUND 1 — REVISION ROUND 2
+- [x] R1 RAIN: midway restored — --rain-opacity 0.07→0.09, canvas head 0.5→0.72 / trail 0.28→0.44 (v1 was 0.11/0.95/0.6); glyph size, column pitch, fall speed untouched.
+- [x] R2 TRUE CENTERING: new .hl-main frame between top bar and the ticker strip — idle group (orb · heading · ask bar · chips · threads) centers in the leftover height; flex 1 0 auto = short viewports grow past the fold and scroll with comfortable padding, never clip. Orb's old 6vh top offset removed.
+- [x] R3 RAIL DEFAULT: verified as already-built — nothing stored = OPEN; only an explicit toggle writes "collapsed"/"open" to localStorage.
+- [x] R4 BRIEF: on-open auto-delivery REMOVED — load lands on the clean home state; the brief opens only from its own top-bar control. (Kept: tapping the brief PUSH notification still opens it — that arrival IS the user pressing the brief's button.)
+- [x] R5 BOTTOM DEAD ZONE: WATCHING is now a thin full-width bottom strip (hairline top border, label left, static chips centered — no drift, reduced-motion safe by construction; absent entirely when no quotes resolve). The old two-column activity block keeps only RECENT THREADS, centered with the group.
+- [x] R6 LIVE DASH WALL: LIVE section renders its own grid (--if-cols-live): TICKER · SIDE · STATUS · ENTRY minmax(170px,2fr) w/ hover-full · TARGET only-when-stated (blank, not dashed) · REASONING · AGE; per-section column heads; absent SIDE/ENTRY are the desk's quiet ∅, and %SC/SPARK/LAST/STOP simply don't exist there.
+- [x] R7 DEAD RIGHT SPACE: both grids end in REASONING minmax(…,fr) + fixed AGE — the surplus right of AGE is spent on a muted one-line thesis preview (CSS ellipsis, click row for full). Blotter min-width 880→1000 (narrower spans keep the existing horizontal scroll).
+- [x] R8 IDEA DETAIL POLISH: ENTRY hero chip is the single entry source (STATED LEVELS = TARGET + STOP, both branches); empty PERFORMANCE / STATUS collapse to one compact muted QuietLine each (LIVE always, TRACKED when empty); section spacing tightened 14→10.
+
+### GATE UX-G1 (round 2) — redeploy preview; screenshots: main page (vertically centered, rain quiet-but-visible, rail open) + terminal (LIVE columns, full-width layout, polished detail). HOLD, then merge.
+- [x] Round 2 redeployed (Vercel status: success on 9e9dcb1); evidence artifact updated with the three required screenshots. Holding.
+- [x] UX-G1 round-2 feedback (2026-08-12) — final revision, then merge:
+
+## UX ROUND 1 — REVISION ROUND 3
+- [x] R1-REDO RAIN INTENSITY DIAL: OFF / FAINT / VISIBLE / LOUD presets, each = layer opacity + canvas head/trail alphas tuned together. VISIBLE (default) = 80% of the original pre-ux-1 values (0.09 · 0.76 · 0.48 vs 0.11 · 0.95 · 0.6); FAINT = round-2's quiet pass; LOUD = the original ceiling (panels carry their own backgrounds — text contrast untouched); OFF unmounts the canvas. Control = rain-glyph button beside the theme toggle (matrix only) opening a 4-option menu; persisted as aug-rain-level; applies LIVE through a ref the draw loop reads — no teardown, no field reset, no reload; reduced-motion static field re-inks at the new level. Ticker glyphs / column pitch / fall speed untouched.
+
+### GATE UX-G1 (round 3) — screenshots at all four presets. On approval: merge feature/ux-1 to main.
+- [x] UX-G1 approved 2026-08-12 (round 3, via the UX ROUND 2 kickoff: "branch feature/ux-2 off main AFTER ux-1 merges"). Merging feature/ux-1 → main; production deploy follows the push.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

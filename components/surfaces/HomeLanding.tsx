@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
+import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import type { PushState } from "@/lib/push-client";
 
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
@@ -83,6 +84,9 @@ type HomeLandingProps = {
   soundOn: boolean;
   onToggleSound: () => void;
   onToggleTheme: () => void;
+  /** R1-REDO — the rain intensity dial (matrix theme only) */
+  rainPreset: RainPreset;
+  onSetRainPreset: (p: RainPreset) => void;
 };
 
 export default function HomeLanding({
@@ -107,12 +111,17 @@ export default function HomeLanding({
   soundOn,
   onToggleSound,
   onToggleTheme,
+  rainPreset,
+  onSetRainPreset,
 }: HomeLandingProps) {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  // R1-REDO — the rain dial's little menu (matrix only); closes on outside tap
+  const [rainMenuOpen, setRainMenuOpen] = useState(false);
+  const rainWrapRef = useRef<HTMLDivElement | null>(null);
   // The symbols WATCHING quotes: the public macro five until a signed-in
   // session's watchlist loads (see the session effect below).
   const [watch, setWatch] = useState<Array<{ sym: string; label: string }>>(WATCH);
@@ -272,6 +281,17 @@ export default function HomeLanding({
     };
   }, [watch]);
 
+  // Close the rain menu on any outside pointer-down.
+  useEffect(() => {
+    if (!rainMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (t && rainWrapRef.current && !rainWrapRef.current.contains(t)) setRainMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [rainMenuOpen]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
@@ -295,7 +315,7 @@ export default function HomeLanding({
           ? "SPEAKING"
           : "SYSTEMS STEADY";
 
-  const showActivity = threads.length > 0 || pills.length > 0;
+  const showThreads = threads.length > 0;
 
   return (
     <div className={`home-landing${conversationActive ? " convo" : ""}`}>
@@ -404,6 +424,42 @@ export default function HomeLanding({
                 <RainGlyph />
               )}
             </button>
+            {/* R1-REDO — the rain intensity dial, beside the theme control;
+                matrix theme only (the rain doesn't exist elsewhere) */}
+            {theme === "matrix" ? (
+              <div className="hl-rainwrap" ref={rainWrapRef}>
+                <button
+                  type="button"
+                  className={`hl-ctl${rainPreset !== "visible" ? " on" : ""}`}
+                  onClick={() => setRainMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={rainMenuOpen}
+                  title={`Ticker rain: ${rainPreset.toUpperCase()}`}
+                  aria-label={`Ticker rain intensity — currently ${rainPreset}`}
+                >
+                  <RainGlyph />
+                </button>
+                {rainMenuOpen ? (
+                  <div className="hl-rainmenu" role="menu" aria-label="Rain intensity">
+                    {RAIN_PRESETS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={rainPreset === p}
+                        className={`hl-rainopt${rainPreset === p ? " on" : ""}`}
+                        onClick={() => {
+                          onSetRainPreset(p);
+                          setRainMenuOpen(false);
+                        }}
+                      >
+                        {p.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {/* SETTINGS — re-opens /welcome ("Your setup": watchlist + feeds).
                 Session-only: signed out and unconfigured instances never show it. */}
             {account ? (
@@ -420,6 +476,11 @@ export default function HomeLanding({
         </div>
       </div>
 
+      {/* R2 — the vertical-centering frame: everything between the top bar and
+          the bottom ticker strip; idle state centers in the leftover height
+          (comfortable top padding on short viewports — flex 1 0 auto grows
+          past the fold and the landing scrolls instead of clipping). */}
+      <div className="hl-main">
       {/* the orb — design halo/ring/glow layers around the living WebGL sphere */}
       <div className="hl-orb">
         <div className="hl-orb-halo" aria-hidden />
@@ -498,45 +559,45 @@ export default function HomeLanding({
         </div>
       ) : null}
 
-      {!conversationActive ? <div className="hl-spacer" /> : null}
-
-      {/* activity — real threads, real quotes; absent when there are none,
-          and yielded entirely while the transcript owns the screen */}
-      {showActivity && !conversationActive ? (
+      {/* activity — real threads; absent when there are none, and yielded
+          entirely while the transcript owns the screen (WATCHING moved to
+          the bottom ticker strip, R5) */}
+      {showThreads && !conversationActive ? (
         <div className="hl-activity">
-          {threads.length > 0 ? (
-            <div className="hl-col">
-              <span className="hl-label">RECENT THREADS</span>
-              <div className="hl-threads">
-                {threads.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className="hl-thread"
-                    onClick={() => onOpenThread(t.id)}
-                  >
-                    <span className="hl-thread-title">{t.title}</span>
-                    {t.label ? <span className="hl-thread-date">{t.label}</span> : null}
-                  </button>
-                ))}
-              </div>
+          <div className="hl-col">
+            <span className="hl-label">RECENT THREADS</span>
+            <div className="hl-threads">
+              {threads.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="hl-thread"
+                  onClick={() => onOpenThread(t.id)}
+                >
+                  <span className="hl-thread-title">{t.title}</span>
+                  {t.label ? <span className="hl-thread-date">{t.label}</span> : null}
+                </button>
+              ))}
             </div>
-          ) : null}
-          {pills.length > 0 ? (
-            <div className="hl-col hl-watch">
-              <span className="hl-label">WATCHING</span>
-              <div className="hl-pills">
-                {pills.map((p) => (
-                  <span key={p.label} className="hl-pill">
-                    {p.label} {fmtPrice(p.price)}{" "}
-                    <span className={p.chgPct >= 0 ? "hl-up" : "hl-down"}>
-                      {fmtChg(p.chgPct)}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          </div>
+        </div>
+      ) : null}
+      </div>
+
+      {/* R5 — WATCHING as a thin full-width bottom ticker strip: static chips
+          (deliberately no drift — reduced-motion safe by construction), real
+          quotes only, absent entirely when none resolve */}
+      {!conversationActive && pills.length > 0 ? (
+        <div className="hl-tape" aria-label="Watching — live quotes">
+          <span className="hl-label hl-tape-label">WATCHING</span>
+          <div className="hl-tape-chips">
+            {pills.map((p) => (
+              <span key={p.label} className="hl-pill">
+                {p.label} {fmtPrice(p.price)}{" "}
+                <span className={p.chgPct >= 0 ? "hl-up" : "hl-down"}>{fmtChg(p.chgPct)}</span>
+              </span>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

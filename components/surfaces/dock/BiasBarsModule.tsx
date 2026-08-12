@@ -2,14 +2,14 @@
 
 // MODULE E — DESK BIAS BARS (G3 round 4). Two opposing horizontal bars —
 // bullish weight vs bearish — computed ONLY from data already on screen:
-// tracked ideas (direction), LIVE ideas (derived side), and live tape rows
-// (sentiment). Count-weighted, per-side ticker chips, collapsible.
+// tracked ideas (direction), LIVE ideas (stated side, else derived — UX4),
+// and live tape rows (sentiment). Count-weighted, per-side chips, collapsible.
 
 import { useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
-import { liveSide } from "./derive";
+import { sideOf } from "./derive";
 
 export default function BiasBarsModule({
   cards,
@@ -31,9 +31,10 @@ export default function BiasBarsModule({
     else if (c.direction === "bearish") bearSyms.push(c.ticker);
   }
   for (const i of liveIdeas) {
-    const side = liveSide(i);
-    if (side === "LONG") bullSyms.push(i.instrument);
-    else if (side === "SHORT") bearSyms.push(i.instrument);
+    // UX4 — a stated side wins over the derived fallback; WATCH weighs nothing
+    const side = sideOf(i);
+    if (side?.side === "LONG") bullSyms.push(i.instrument);
+    else if (side?.side === "SHORT") bearSyms.push(i.instrument);
   }
   for (const t of tape) {
     if (t.sentiment === "bull") bullSyms.push(t.symbol);

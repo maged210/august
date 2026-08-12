@@ -210,7 +210,10 @@
   /* rain-only tokens — the canvas layer's color, glyph alpha and overall
      strength (kept off the accent so moods/set_mood can never touch the rain) */
   --rain-rgb: 64 220 110;
-  --rain-opacity: 0.11;
+  /* UX5/R1 — v1 was 0.11; the first quiet pass (0.07 + halved glyph alphas)
+     overshot to invisible. Midway: noticed at a glance, forgotten while
+     reading. Tuned WITH the canvas head/trail alphas in MatrixRain. */
+  --rain-opacity: 0.09;
 }
 
 /* ----------------------------------------------------------------------------
@@ -896,13 +899,19 @@ body::after {
    view panels, dock, and view bar so the sidebar never covers content. — */
 .has-rail {
   --rail-w: 0px;
+  /* UX6 — THE chat column width: transcript, its head row, the ask bar and
+     the composer dock all align to this one centered column (measured inside
+     the rail-aware panel, so it re-centers when the rail opens/collapses) */
+  --chat-col: 720px;
 }
 @media (min-width: 1100px) {
   .has-rail {
-    --rail-w: 276px;
+    --rail-open-w: 276px; /* the sidebar's real width — .ideas-rail keeps it while sliding */
+    --rail-w: var(--rail-open-w);
   }
-  .view-tab-ideas {
-    display: none;
+  /* UX1 — collapsed sidebar: the desk keeps only the edge tab's sliver */
+  :root[data-rail="collapsed"] .has-rail {
+    --rail-w: 30px;
   }
 }
 .has-rail .view-panel {
@@ -913,6 +922,24 @@ body::after {
 }
 .has-rail .view-bar {
   left: calc(50% - var(--rail-w) / 2);
+}
+/* UX1 — the reflow is animated (desktop only; --rail-w itself can't
+   transition, but the offsets it feeds can) */
+@media (min-width: 1100px) {
+  .has-rail .view-panel,
+  .has-rail .dock-wrap {
+    transition: right var(--dur-med) var(--ease);
+  }
+  .has-rail .view-bar {
+    transition: left var(--dur-med) var(--ease);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .has-rail .view-panel,
+  .has-rail .dock-wrap,
+  .has-rail .view-bar {
+    transition: none;
+  }
 }
 
 .ideas-rail {
@@ -946,14 +973,21 @@ body::after {
   background: rgba(0, 0, 0, 0.45);
 }
 @media (min-width: 1100px) {
-  /* sidebar mode: always open, ambient, below the dock */
+  /* sidebar mode: ambient, below the dock; collapsible to the edge tab (UX1) */
   .ideas-rail {
-    width: var(--rail-w);
+    width: var(--rail-open-w, 276px); /* NOT --rail-w — must not shrink to the collapsed sliver while sliding out */
     transform: none;
     visibility: visible;
-    transition: none;
+    transition: transform var(--dur-med) var(--ease);
     z-index: 15;
     background: var(--glass);
+  }
+  :root[data-rail="collapsed"] .ideas-rail {
+    transform: translateX(102%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-med) var(--ease),
+      visibility 0s linear var(--dur-med);
   }
   .ir-scrim,
   .ir-close {
@@ -963,6 +997,80 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .ideas-rail {
     transition: none;
+  }
+}
+
+/* UX1 — the collapsed sidebar's edge tab: a thin vertical "IDEAS · N LIVE"
+   strip hugging the right edge. Desktop only — below 1100px the drawer owns
+   the rail and this never renders usefully. */
+.ir-tab {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .ir-tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: 16;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    writing-mode: vertical-rl;
+    padding: 16px 6px;
+    border: 1px solid var(--line);
+    border-right: none;
+    border-radius: var(--r-md) 0 0 var(--r-md);
+    background: var(--glass-strong);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: var(--track-label);
+    color: var(--ash);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-snappy);
+  }
+  .ir-tab:hover {
+    color: var(--bone);
+  }
+  .ir-tab:focus-visible {
+    outline: 1px solid var(--steel);
+    outline-offset: 1px;
+  }
+  .ir-tab-count {
+    color: var(--steel);
+  }
+}
+
+/* rail-header action cluster (collapse »  ·  drawer ✕) */
+.ir-head-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ir-collapse {
+  display: none; /* desktop-only control — the drawer has ✕ */
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ash);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+}
+.ir-collapse:hover {
+  color: var(--bone);
+}
+.ir-collapse:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (min-width: 1100px) {
+  .ir-collapse {
+    display: inline-flex;
   }
 }
 
@@ -1045,11 +1153,78 @@ body::after {
   flex-direction: column;
   gap: 7px;
 }
-.ir-card-top {
+/* UX3 — the card head is the density toggle: TICKER · (entry one-liner when
+   compact) · risk · caret */
+.ir-card-head {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  min-height: 22px;
+}
+.ir-card-head:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.ir-head-sp {
+  flex: 1;
+}
+.ir-line-entry {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--pos);
+}
+.ir-line-entry.ir-absent {
+  color: var(--ink-mute);
+}
+.ir-caret {
+  flex: none;
+  font-size: 9px;
+  color: var(--ink-mute);
+}
+.ir-card.compact {
+  padding: 8px 12px;
+}
+/* the header's flip-all control */
+.ir-headctl {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.ir-headctl:hover {
+  color: var(--bone);
+}
+.ir-headctl:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (max-width: 700px) {
+  .ir-card-head,
+  .ir-headctl {
+    min-height: 40px;
+  }
 }
 .ir-sym {
   font-family: var(--font-mono);
@@ -1078,19 +1253,55 @@ body::after {
   color: var(--neg);
   border-color: rgb(var(--neg-rgb) / 0.4);
 }
+/* UX2 — ENTRY leads: a bright green chip in larger mono, the first thing
+   after the ticker */
+.ir-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ir-entry-k {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: rgb(var(--pos-rgb) / 0.75);
+}
+.ir-entry-v {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pos);
+  background: rgb(var(--pos-rgb) / 0.1);
+  border: 1px solid rgb(var(--pos-rgb) / 0.35);
+  border-radius: var(--r-sm);
+  padding: 3px 9px;
+  overflow-wrap: anywhere;
+}
+.ir-absent {
+  font-size: var(--fs-caption);
+  font-style: italic;
+  color: var(--ink-mute);
+}
+/* UX2 — REASONING is a distinct block: brighter than the metadata, left
+   accent border */
 .ir-thesis {
   margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid rgb(var(--pos-rgb) / 0.4);
   font-size: var(--fs-caption);
   line-height: 1.5;
-  color: var(--ash);
+  color: var(--bone);
 }
-.ir-levels {
+/* secondary metadata row — target · age, visually quiet */
+.ir-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 4px 14px;
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
-  color: var(--bone);
+  color: var(--ash);
 }
 .ir-level-k {
   margin-right: 3px;
@@ -2763,7 +2974,9 @@ a.mb-btn {
 .composer-row {
   display: flex;
   width: 100%;
-  max-width: 770px;
+  /* UX6 — was 770px: the composer must sit on the SAME column as the
+     transcript (the dock wrapper is already rail-aware via --rail-w) */
+  max-width: var(--chat-col, 720px);
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -4545,6 +4758,55 @@ button.pulse-line:focus-visible {
   outline-offset: 2px;
 }
 
+/* R1-REDO — the rain intensity dial's little menu (matrix theme only) */
+.hl-rainwrap {
+  position: relative;
+}
+.hl-rainmenu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--glass-strong, rgba(6, 12, 8, 0.92));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-2, 0 10px 30px rgba(0, 0, 0, 0.4));
+}
+.hl-rainopt {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.hl-rainopt:hover {
+  color: var(--ink);
+  background: var(--hair2);
+}
+.hl-rainopt.on {
+  color: var(--label);
+}
+.hl-rainopt:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 1px;
+}
+
 /* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
 .hl-session {
   display: flex;
@@ -4600,7 +4862,8 @@ button.pulse-line:focus-visible {
    halo still burns an animated composite layer, and a dead --halo/--ring token
    just invites someone to switch it back on. --------------------------------- */
 .hl-orb {
-  margin-top: 6vh;
+  /* R2 — no top offset: the orb rides the vertically-centered group now */
+  margin-top: 0;
   width: 190px;
   height: 190px;
   position: relative;
@@ -4730,7 +4993,9 @@ button.pulse-line:focus-visible {
 }
 .hl-bar {
   margin-top: 30px;
-  width: min(760px, 88vw);
+  /* UX6 — the idle ask bar rides the same centered column as the transcript
+     and composer (was 760px/88vw) */
+  width: min(var(--chat-col, 720px), 88%);
   min-height: 62px;
   box-sizing: border-box;
   display: flex;
@@ -4823,18 +5088,35 @@ button.pulse-line:focus-visible {
   border-color: var(--chip-hover);
   color: var(--ink);
 }
-.hl-spacer {
+/* R2 — the vertical-centering frame between the top bar and the ticker
+   strip. Idle: the home-state group centers in the leftover height; flex
+   1 0 auto means an overflowing (short) viewport grows the frame past the
+   fold and the landing scrolls — comfortable top padding, never clipped. */
+.hl-main {
+  flex: 1 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 0 26px;
+}
+/* conversation mode: the frame is exactly the leftover height (the
+   transcript owns scrolling inside it) and stacks from the top */
+.home-landing.convo .hl-main {
   flex: 1 1 auto;
-  min-height: 36px;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 0;
 }
 
-/* — activity grid: real threads · real quotes ------------------------------ */
+/* — activity: real threads (WATCHING moved to the bottom strip, R5) -------- */
 .hl-activity {
-  width: min(880px, 88vw);
+  width: min(var(--chat-col, 720px), 88%);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 40px 60px;
-  margin-bottom: 7vh;
+  margin-top: 36px;
   flex: none;
 }
 .hl-col {
@@ -4842,8 +5124,29 @@ button.pulse-line:focus-visible {
   flex-direction: column;
   min-width: 0;
 }
-.hl-watch {
-  gap: 13px;
+
+/* R5 — WATCHING: thin full-width bottom ticker strip, static chips */
+.hl-tape {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 28px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  border-top: 1px solid var(--hair2);
+}
+.hl-tape-label {
+  flex: none;
+}
+.hl-tape-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
 }
 .hl-label {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -4894,12 +5197,6 @@ button.pulse-line:focus-visible {
   font-size: 11px;
   font-weight: 400;
   color: var(--dim);
-}
-.hl-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  align-content: flex-start;
 }
 .hl-pill {
   border: 1px solid var(--hair);
@@ -5014,7 +5311,9 @@ button.pulse-line:focus-visible {
 
 /* head row — the one transcript control, quiet and out of the flow */
 .hl-convo-head {
-  width: min(720px, 92vw);
+  /* UX6 — % of the rail-aware panel, NOT vw: the column centers in the
+     available space at every rail state */
+  width: min(var(--chat-col, 720px), 92%);
   display: flex;
   justify-content: flex-end;
   padding: 10px 0 0;
@@ -5056,9 +5355,12 @@ button.pulse-line:focus-visible {
   flex-direction: column;
   align-items: center;
   scrollbar-width: thin;
+  /* UX6 — reserve symmetric gutters so the scrollbar can't nudge the
+     centered column left of the (fixed, unaffected) composer */
+  scrollbar-gutter: stable both-edges;
 }
 .hl-convo-inner {
-  width: min(720px, 92vw);
+  width: min(var(--chat-col, 720px), 92%);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -5924,6 +6226,63 @@ button.pulse-line:focus-visible {
   letter-spacing: var(--track-label);
   color: var(--ink-mute);
   margin-right: 3px;
+}
+/* UX4 — the one-click side setter row */
+.adm-sides {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.adm-sides-k {
+  margin-right: 2px;
+}
+.adm-side {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  background: none;
+  color: var(--ash);
+  transition:
+    color var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy),
+    background var(--dur-fast) var(--ease-snappy);
+}
+.adm-side:hover {
+  color: var(--bone);
+}
+.adm-side:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.adm-side:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.adm-side-long.on {
+  color: var(--pos);
+  border-color: rgb(var(--pos-rgb) / 0.5);
+  background: rgb(var(--pos-rgb) / 0.1);
+}
+.adm-side-short.on {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.5);
+  background: rgb(var(--neg-rgb) / 0.1);
+}
+.adm-side-watch.on {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.5);
+  background: rgb(var(--amber-rgb) / 0.1);
+}
+.adm-sides-abs {
+  font-size: var(--fs-micro);
+  font-style: italic;
+  color: var(--ink-mute);
 }
 .adm-actions {
   display: flex;

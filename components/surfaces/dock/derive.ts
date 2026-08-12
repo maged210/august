@@ -12,13 +12,26 @@ export function numOf(s: string): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
-/** SIDE derived from entry vs target numerals — the model stores no direction,
- *  so callers render this in the derived style; null when not derivable (∅) */
+/** SIDE derived from entry vs target numerals — the fallback when the desk
+ *  never stated one; callers render it in the derived style; null when not
+ *  derivable (∅) */
 export function liveSide(idea: PublicIdea): "LONG" | "SHORT" | null {
   const e = numOf(idea.entry);
   const t = numOf(idea.target);
   if (e == null || t == null || e === t) return null;
   return t > e ? "LONG" : "SHORT";
+}
+
+/** UX4 — the ONE side resolution for a LIVE idea: a stated side (extraction
+ *  or /admin) wins and renders solid; otherwise fall back to the derived
+ *  entry-vs-target read, marked derived; null = ∅. */
+export type ResolvedSide = { side: "LONG" | "SHORT" | "WATCH"; derived: boolean };
+export function sideOf(idea: PublicIdea): ResolvedSide | null {
+  if (idea.side === "long") return { side: "LONG", derived: false };
+  if (idea.side === "short") return { side: "SHORT", derived: false };
+  if (idea.side === "watch") return { side: "WATCH", derived: false };
+  const d = liveSide(idea);
+  return d ? { side: d, derived: true } : null;
 }
 
 // Desk shorthand → Yahoo chart symbol, for the chart/pulse ONLY (the server's
