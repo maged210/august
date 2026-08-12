@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
+import ThreadsSidebar from "@/components/ThreadsSidebar";
 import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
@@ -163,6 +164,15 @@ export default function Home() {
   const railSyncedRef = useRef(false);
   // ≥1100px — decides what the top-bar IDEAS tab controls (collapse vs drawer).
   const [deskWide, setDeskWide] = useState(false);
+  // UX2-T1 — the chat view's LEFT threads sidebar: drawer below 1100px,
+  // collapsible fixed sidebar above (same contracts as the ideas rail:
+  // data-threads applied pre-paint, aug-threads in localStorage).
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const threadsOpenRef = useRef(false);
+  const [threadsCollapsed, setThreadsCollapsed] = useState(false);
+  const threadsSyncedRef = useRef(false);
+  // the conversation on screen (drives the sidebar's active highlight)
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -277,6 +287,7 @@ export default function Home() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (voiceModeRef.current) exitVoiceMode();
+      else if (threadsOpenRef.current) setThreadsOpen(false);
       else if (railOpenRef.current) setRailOpen(false);
       else closePanel();
     };
@@ -289,6 +300,10 @@ export default function Home() {
     railOpenRef.current = railOpen;
   }, [railOpen]);
 
+  useEffect(() => {
+    threadsOpenRef.current = threadsOpen;
+  }, [threadsOpen]);
+
   // Crossing up past 1100px turns the drawer into the sidebar — clear the
   // drawer flag so a stale `open` can't silently eat an Esc later. The same
   // query drives what the IDEAS tab toggles (collapse vs drawer).
@@ -296,7 +311,10 @@ export default function Home() {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
       setDeskWide(mq.matches);
-      if (mq.matches) setRailOpen(false);
+      if (mq.matches) {
+        setRailOpen(false);
+        setThreadsOpen(false); // drawer → sidebar; clear the drawer flag
+      }
     };
     apply();
     mq.addEventListener("change", apply);
@@ -324,6 +342,27 @@ export default function Home() {
   }, [railCollapsed]);
 
   const toggleRailCollapsed = useCallback(() => setRailCollapsed((v) => !v), []);
+
+  // UX2-T1 — threads sidebar collapse: same adopt-then-sync contract.
+  useEffect(() => {
+    setThreadsCollapsed(document.documentElement.getAttribute("data-threads") === "collapsed");
+  }, []);
+  useEffect(() => {
+    if (!threadsSyncedRef.current) {
+      threadsSyncedRef.current = true; // first run mirrors the pre-paint attribute
+      return;
+    }
+    const el = document.documentElement;
+    if (threadsCollapsed) el.setAttribute("data-threads", "collapsed");
+    else el.removeAttribute("data-threads");
+    try {
+      window.localStorage.setItem("aug-threads", threadsCollapsed ? "collapsed" : "open");
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, [threadsCollapsed]);
+
+  const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed((v) => !v), []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -1250,6 +1289,7 @@ export default function Home() {
     messagesRef.current = [];
     setMessages([]);
     threadIdRef.current = null;
+    setActiveThreadId(null);
     setInterim("");
     setReplyText("");
     setHistoryOpen(false);
@@ -1269,6 +1309,7 @@ export default function Home() {
     messagesRef.current = [];
     setMessages([]);
     threadIdRef.current = null; // the wiped conversation is over — next exchange opens a new thread
+    setActiveThreadId(null);
     setInterim("");
     openPanel();
     setHistoryOpen(false);
@@ -1300,6 +1341,7 @@ export default function Home() {
       messagesRef.current = msgs;
       setMessages(msgs);
       threadIdRef.current = t.id;
+      setActiveThreadId(t.id);
       setInterim("");
       const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
       setReplyText(lastAssistant?.content ?? "");
@@ -1488,7 +1530,10 @@ export default function Home() {
         })
           .then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null))
           .then((d) => {
-            if (d && typeof d.id === "string") threadIdRef.current = d.id;
+            if (d && typeof d.id === "string") {
+              threadIdRef.current = d.id;
+              setActiveThreadId(d.id);
+            }
           })
           .catch(() => {});
       } else {
@@ -1555,7 +1600,9 @@ export default function Home() {
   const intelPanelIdle = view === "terminal" && !conversationLive;
 
   return (
-    <main className="stage-vignette has-rail relative h-[100dvh] w-screen overflow-hidden">
+    <main
+      className={`stage-vignette has-rail${view === "chat" ? " has-threads" : ""} relative h-[100dvh] w-screen overflow-hidden`}
+    >
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1602,6 +1649,21 @@ export default function Home() {
         </button>
       </nav>
 
+      {/* UX2-T1 — the chat view's LEFT threads sidebar (Claude-style IA);
+          the terminal view unmounts it and reclaims the width */}
+      {view === "chat" ? (
+        <ThreadsSidebar
+          open={threadsOpen}
+          onClose={() => setThreadsOpen(false)}
+          collapsed={threadsCollapsed}
+          onToggleCollapsed={toggleThreadsCollapsed}
+          activeThreadId={activeThreadId}
+          onOpenThread={openThread}
+          onNewChat={startNewChat}
+          refreshKey={messages.length}
+        />
+      ) : null}
+
       {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
           (collapsible to an edge tab, UX1), drawer below */}
       <IdeasRail
@@ -1631,11 +1693,10 @@ export default function Home() {
             listening={state === "listening"}
             busy={state === "thinking"}
             voiceMode={voiceMode}
-            messagesCount={messages.length}
             onSend={handleSend}
             onToggleMic={toggleMic}
             onToggleVoiceMode={toggleVoiceMode}
-            onOpenThread={openThread}
+            onOpenThreads={() => setThreadsOpen(true)}
             transcript={
               <ChatTranscript
                 messages={messages}

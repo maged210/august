@@ -91,6 +91,8 @@ export default function RootLayout({
               // RAIL (UX1) — a persisted collapse must apply before first paint,
               // exactly like the theme, or the sidebar flashes open then slides shut.
               "try{if(localStorage.getItem('aug-rail')==='collapsed'){d.setAttribute('data-rail','collapsed');}}catch(e){}" +
+              // THREADS SIDEBAR (UX2-T1) — same pre-paint contract as the rail.
+              "try{if(localStorage.getItem('aug-threads')==='collapsed'){d.setAttribute('data-threads','collapsed');}}catch(e){}" +
               "})();",
           }}
         />

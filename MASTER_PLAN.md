@@ -146,9 +146,9 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 > Visual reference: Finviz homepage density, translated to OUR data. HARD RULE: zero new paid data sources — everything runs on existing stores + the existing price pipeline; the single exception is headlines via free public RSS (RSS only, no scraping).
 
 ## UX2-T1 — CHAT IA: LEFT THREADS SIDEBAR (Claude-style)
-- [ ] Recent threads move to a collapsible LEFT sidebar on the chat view: + NEW CHAT at top, thread list (title · age), active thread highlighted.
-- [ ] Collapses to a thin edge tab; state persists locally. Mobile: slide-over drawer.
-- [ ] Main chat column stays centered in the space between sidebar and rail at every open/closed combination.
+- [x] Recent threads move to a collapsible LEFT sidebar on the chat view: + NEW CHAT at top, thread list (title · age), active thread highlighted. *(new ThreadsSidebar off GET /api/threads?limit=30, 60s poll + post-exchange refresh; activeThreadId now real page state so the highlight tracks open/new/forget/save)*
+- [x] Collapses to a thin edge tab; state persists locally. Mobile: slide-over drawer. *(vertical THREADS tab mid-left; aug-threads + data-threads pre-paint, the rail's exact contract; drawer trigger = a lines glyph by the wordmark, mobile only; Esc stack: voice → threads drawer → rail drawer → panel)*
+- [x] Main chat column stays centered in the space between sidebar and rail at every open/closed combination. *(--sb-w joins --rail-w: view panels/dock get left+right offsets, the view bar centers on (--sb-w − --rail-w)/2 — terminal view drops .has-threads and reclaims the width)*
 
 ## UX2-T2 — DAILY BRIEF = HOME CENTER
 - [ ] The brief stops existing as a popup entirely; it renders AS the home state of the chat view (no thread open):

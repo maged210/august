@@ -899,9 +899,12 @@ body::after {
    view panels, dock, and view bar so the sidebar never covers content. — */
 .has-rail {
   --rail-w: 0px;
+  /* UX2-T1 — the LEFT threads sidebar's footprint; 0 unless the chat view
+     carries .has-threads at desktop width */
+  --sb-w: 0px;
   /* UX6 — THE chat column width: transcript, its head row, the ask bar and
      the composer dock all align to this one centered column (measured inside
-     the rail-aware panel, so it re-centers when the rail opens/collapses) */
+     the sidebar+rail-aware panel, so it re-centers as either edge moves) */
   --chat-col: 720px;
 }
 @media (min-width: 1100px) {
@@ -913,22 +916,34 @@ body::after {
   :root[data-rail="collapsed"] .has-rail {
     --rail-w: 30px;
   }
+  /* UX2-T1 — threads sidebar footprint (chat view only) */
+  .has-threads {
+    --sb-open-w: 244px;
+    --sb-w: var(--sb-open-w);
+  }
+  :root[data-threads="collapsed"] .has-threads {
+    --sb-w: 30px;
+  }
 }
 .has-rail .view-panel {
   right: var(--rail-w);
+  left: var(--sb-w);
 }
 .has-rail .dock-wrap {
   right: var(--rail-w);
+  left: var(--sb-w);
 }
 .has-rail .view-bar {
-  left: calc(50% - var(--rail-w) / 2);
+  left: calc(50% + (var(--sb-w) - var(--rail-w)) / 2);
 }
-/* UX1 — the reflow is animated (desktop only; --rail-w itself can't
-   transition, but the offsets it feeds can) */
+/* UX1/UX2-T1 — the reflow is animated (desktop only; the vars can't
+   transition, but the offsets they feed can) */
 @media (min-width: 1100px) {
   .has-rail .view-panel,
   .has-rail .dock-wrap {
-    transition: right var(--dur-med) var(--ease);
+    transition:
+      right var(--dur-med) var(--ease),
+      left var(--dur-med) var(--ease);
   }
   .has-rail .view-bar {
     transition: left var(--dur-med) var(--ease);
@@ -1071,6 +1086,248 @@ body::after {
 @media (min-width: 1100px) {
   .ir-collapse {
     display: inline-flex;
+  }
+}
+
+/* — UX2-T1 · the chat view's LEFT threads sidebar ---------------------------
+   Same anatomy as the ideas rail, mirrored: fixed left sidebar ≥1100px
+   (collapsible to a vertical THREADS edge tab), slide-over drawer below. */
+.threads-sb {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40; /* drawer mode: above the dock and view bar */
+  width: min(300px, 86vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right: 1px solid var(--line);
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition:
+    transform var(--dur-med) var(--ease),
+    visibility 0s linear var(--dur-med);
+}
+.threads-sb.open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-med) var(--ease);
+}
+.ts-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.45);
+}
+@media (min-width: 1100px) {
+  .threads-sb {
+    width: var(--sb-open-w, 244px);
+    transform: none;
+    visibility: visible;
+    transition: transform var(--dur-med) var(--ease);
+    z-index: 15;
+    background: var(--glass);
+  }
+  :root[data-threads="collapsed"] .threads-sb {
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-med) var(--ease),
+      visibility 0s linear var(--dur-med);
+  }
+  .ts-scrim,
+  .ts-close {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .threads-sb {
+    transition: none;
+  }
+}
+
+/* the collapsed sidebar's edge tab — vertical, mid-left */
+.ts-tab {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .ts-tab {
+    position: fixed;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    z-index: 16;
+    display: inline-flex;
+    align-items: center;
+    writing-mode: vertical-rl;
+    rotate: 180deg;
+    padding: 16px 6px;
+    border: 1px solid var(--line);
+    border-left: none;
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    background: var(--glass-strong);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: var(--track-label);
+    color: var(--ash);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-snappy);
+  }
+  .ts-tab:hover {
+    color: var(--bone);
+  }
+  .ts-tab:focus-visible {
+    outline: 1px solid var(--steel);
+    outline-offset: 1px;
+  }
+}
+
+.ts-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 12px 10px;
+}
+.ts-new {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: rgb(var(--steel-rgb) / 0.1);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--bone);
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    border-color var(--dur-fast) var(--ease-snappy);
+}
+.ts-new:hover {
+  background: rgb(var(--steel-rgb) / 0.18);
+}
+.ts-new:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.ts-collapse,
+.ts-close {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ash);
+  font-size: 13px;
+  line-height: 1;
+  padding: 6px 7px;
+  border-radius: var(--r-sm);
+}
+.ts-collapse {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .ts-collapse {
+    display: inline-flex;
+  }
+}
+.ts-collapse:hover,
+.ts-close:hover {
+  color: var(--bone);
+}
+.ts-collapse:focus-visible,
+.ts-close:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.ts-label {
+  padding: 8px 16px 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+}
+.ts-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 0 8px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ts-thread {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--r-md);
+  text-align: left;
+  color: var(--ash);
+  transition:
+    background var(--dur-fast) var(--ease-snappy),
+    color var(--dur-fast) var(--ease-snappy);
+}
+.ts-thread:hover {
+  background: var(--glass);
+  color: var(--bone);
+}
+.ts-thread.on {
+  background: rgb(var(--steel-rgb) / 0.14);
+  color: var(--bone);
+}
+.ts-thread:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.ts-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+}
+.ts-age {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+.ts-empty {
+  margin-top: 22px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ts-empty-sub {
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+@media (max-width: 700px) {
+  .ts-thread,
+  .ts-new {
+    min-height: 44px;
   }
 }
 
@@ -5047,8 +5304,7 @@ button.pulse-line:focus-visible {
   background: rgba(201, 169, 106, 0.14);
 }
 .hl-mic:focus-visible,
-.hl-chip:focus-visible,
-.hl-thread:focus-visible {
+.hl-chip:focus-visible {
   outline: 1px solid var(--label);
   outline-offset: 2px;
 }
@@ -5111,18 +5367,32 @@ button.pulse-line:focus-visible {
 }
 
 /* — activity: real threads (WATCHING moved to the bottom strip, R5) -------- */
-.hl-activity {
-  width: min(var(--chat-col, 720px), 88%);
+/* UX2-T1 — threads moved to the LEFT sidebar; the mobile trigger sits by the
+   wordmark (hidden ≥1100px where the sidebar is fixed) */
+.hl-threads-btn {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 40px 60px;
-  margin-top: 36px;
-  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-snappy);
 }
-.hl-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.hl-threads-btn:hover {
+  color: var(--ink);
+}
+.hl-threads-btn:focus-visible {
+  outline: 1px solid var(--label);
+  outline-offset: 2px;
+}
+@media (min-width: 1100px) {
+  .hl-threads-btn {
+    display: none;
+  }
 }
 
 /* R5 — WATCHING: thin full-width bottom ticker strip, static chips */
@@ -5154,49 +5424,6 @@ button.pulse-line:focus-visible {
   font-weight: 600;
   letter-spacing: 0.26em;
   color: var(--label);
-}
-.hl-threads {
-  display: flex;
-  flex-direction: column;
-}
-.hl-thread {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  padding: 12px 0;
-  border: none;
-  border-bottom: 1px solid var(--hair2);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  min-width: 0;
-  transition: opacity var(--dur-fast) var(--ease-snappy);
-}
-.hl-thread:first-child {
-  padding: 13px 0 11px;
-}
-.hl-thread:last-child {
-  border-bottom: none;
-}
-.hl-thread:hover {
-  opacity: 0.7;
-}
-.hl-thread-title {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--thread);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hl-thread-date {
-  flex: none;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--dim);
 }
 .hl-pill {
   border: 1px solid var(--hair);
