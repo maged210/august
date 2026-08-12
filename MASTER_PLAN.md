@@ -108,7 +108,7 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 ## UX6 — CENTER THE MAIN (AUGUST CHAT) PAGE
 - [x] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open). *(one --chat-col token (720px) on the rail-aware main; the panel already excludes --rail-w, so the column re-centers as the rail opens/collapses)*
 - [x] Bubbles, new-chat control, composer all align to this column. No left-drift. *(the drift causes: composer-row was 770px vs the 720px transcript; transcript widths used 92vw (viewport) instead of 92% (panel); the transcript scrollbar nudged its centered content left of the fixed composer — fixed with scrollbar-gutter: stable both-edges; idle ask bar joins the same column)*
-- [ ] Verify at ultrawide and mobile widths. *(→ verified with gate screenshots)*
+- [x] Verify at ultrawide and mobile widths. *(headless-Chrome verified at 2560×1440 — column centered in the rail-aware space, both rail states — and 390×844)*
 
 ## UX RULES
 - No new data sources, no schema breakage — side is an existing field, just populate it.
