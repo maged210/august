@@ -139,6 +139,8 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
   );
 }
 
+// UX2 — reading order: TICKER → ENTRY (the bright chip) → REASONING (accent
+// block) → secondary metadata (target · age; risk stays a quiet top badge).
 function IdeaCard({ idea }: { idea: PublicIdea }) {
   return (
     <article className="ir-card">
@@ -146,16 +148,23 @@ function IdeaCard({ idea }: { idea: PublicIdea }) {
         <span className="ir-sym">{idea.instrument}</span>
         <span className={`ir-risk ir-risk-${idea.riskLevel}`}>{RISK_LABEL[idea.riskLevel]}</span>
       </div>
-      <p className="ir-thesis">{idea.thesis}</p>
-      <div className="ir-levels">
-        <span className="ir-level">
-          <span className="ir-level-k">ENTRY</span> {idea.entry}
-        </span>
-        <span className="ir-level">
-          <span className="ir-level-k">TARGET</span> {idea.target}
-        </span>
+      <div className="ir-entry">
+        <span className="ir-entry-k">ENTRY</span>
+        {idea.entry ? (
+          <span className="ir-entry-v">{idea.entry}</span>
+        ) : (
+          <span className="ir-absent">∅ not stated</span>
+        )}
       </div>
-      <div className="ir-when">{relativeTime(idea.createdAt)}</div>
+      <p className="ir-thesis">{idea.thesis}</p>
+      <div className="ir-meta">
+        {idea.target ? (
+          <span className="ir-level">
+            <span className="ir-level-k">TARGET</span> {idea.target}
+          </span>
+        ) : null}
+        <span className="ir-when">{relativeTime(idea.createdAt)}</span>
+      </div>
     </article>
   );
 }

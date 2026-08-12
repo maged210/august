@@ -113,12 +113,17 @@ export default function IdeaDetailPanel({
           <Absent text="select a blotter row" />
         ) : live ? (
           <div className="if-detail-grid">
+            {/* UX2 — reading order: TICKER (header) → ENTRY → REASONING → the rest */}
             <div className="if-detail-col">
+              <div className="if-entry-hero">
+                <span className="if-entry-hero-k">ENTRY</span>
+                {live.entry ? <span className="if-entry-hero-v">{live.entry}</span> : <Absent />}
+              </div>
+              <p className="if-sh-thesis">{live.thesis}</p>
               <div className="if-sh-meta">
                 <span className={`if-risk if-risk-${live.riskLevel}`}>{RISK_LABEL[live.riskLevel]}</span> · CALLED{" "}
                 {fmtDate(live.createdAt)}
               </div>
-              <p className="if-sh-thesis">{live.thesis}</p>
             </div>
             <div className="if-detail-col">
               <div className="if-sh-sect-h">STATED LEVELS</div>
@@ -137,14 +142,27 @@ export default function IdeaDetailPanel({
           </div>
         ) : card ? (
           <div className="if-detail-grid">
+            {/* UX2 — same order as the LIVE branch: ENTRY hero → reasoning → meta */}
             <div className="if-detail-col">
+              <div className="if-entry-hero">
+                <span className="if-entry-hero-k">ENTRY</span>
+                {card.statedLevels.trigger ? (
+                  <span className="if-entry-hero-v" title={card.statedLevels.trigger.text}>
+                    {card.statedLevels.trigger.value != null
+                      ? px(card.statedLevels.trigger.value)
+                      : card.statedLevels.trigger.text}
+                  </span>
+                ) : (
+                  <Absent />
+                )}
+              </div>
+              <p className="if-sh-thesis">{card.thesis}</p>
               <div className="if-sh-meta">
                 FIRST MENTION {fmtDate(card.firstMentionAt)} · PUBLISHED {fmtDate(card.publishedAt)}
                 {card.stale ? (
                   <span className="if-stale if-xp-stale">{card.evicted ? "ARCHIVED" : "STALE"}</span>
                 ) : null}
               </div>
-              <p className="if-sh-thesis">{card.thesis}</p>
               <div className="if-sh-sect-h" style={{ marginTop: 14 }}>
                 STATED LEVELS
               </div>

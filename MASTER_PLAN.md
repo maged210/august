@@ -84,9 +84,9 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 
 ## UX2 — ENTRY + REASONING HIERARCHY
 Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → everything else.
-- [ ] ENTRY: high-contrast treatment — bright green chip/box, larger mono type. First thing the eye lands on after the ticker.
-- [ ] REASONING (thesis): brighter text than surrounding metadata, left accent border so it reads as a distinct block. Metadata (target/stop/age/risk) stays visually secondary.
-- [ ] Apply consistently: rail card, idea detail panel, blotter selected-row detail.
+- [x] ENTRY: high-contrast treatment — bright green chip/box, larger mono type. First thing the eye lands on after the ticker. *(rail: .ir-entry chip off --pos tokens, 14px mono; detail: .if-entry-hero off --rd-bull, 15px mono; empty entry stays an honest ∅ "not stated")*
+- [x] REASONING (thesis): brighter text than surrounding metadata, left accent border so it reads as a distinct block. Metadata (target/stop/age/risk) stays visually secondary. *(thesis lifts one ramp step — --ash→--bone rail-side, t-body→t-chip desk-side — with a 2px green accent border; meta lines dropped BELOW the thesis)*
+- [x] Apply consistently: rail card, idea detail panel, blotter selected-row detail. *(the blotter's selected-row detail IS the IdeaDetailPanel since G3 r5 — both its LIVE and TRACKED branches restructured)*
 
 ## UX3 — RAIL DENSITY MODE
 - [ ] Compact one-line collapsed card mode: TICKER · risk badge · entry one-liner. Tap to expand in place.

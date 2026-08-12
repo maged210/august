@@ -1179,19 +1179,55 @@ body::after {
   color: var(--neg);
   border-color: rgb(var(--neg-rgb) / 0.4);
 }
+/* UX2 — ENTRY leads: a bright green chip in larger mono, the first thing
+   after the ticker */
+.ir-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ir-entry-k {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: rgb(var(--pos-rgb) / 0.75);
+}
+.ir-entry-v {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pos);
+  background: rgb(var(--pos-rgb) / 0.1);
+  border: 1px solid rgb(var(--pos-rgb) / 0.35);
+  border-radius: var(--r-sm);
+  padding: 3px 9px;
+  overflow-wrap: anywhere;
+}
+.ir-absent {
+  font-size: var(--fs-caption);
+  font-style: italic;
+  color: var(--ink-mute);
+}
+/* UX2 — REASONING is a distinct block: brighter than the metadata, left
+   accent border */
 .ir-thesis {
   margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid rgb(var(--pos-rgb) / 0.4);
   font-size: var(--fs-caption);
   line-height: 1.5;
-  color: var(--ash);
+  color: var(--bone);
 }
-.ir-levels {
+/* secondary metadata row — target · age, visually quiet */
+.ir-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 4px 14px;
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
-  color: var(--bone);
+  color: var(--ash);
 }
 .ir-level-k {
   margin-right: 3px;
