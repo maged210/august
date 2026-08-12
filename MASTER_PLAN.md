@@ -129,6 +129,7 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] R8 IDEA DETAIL POLISH: ENTRY hero chip is the single entry source (STATED LEVELS = TARGET + STOP, both branches); empty PERFORMANCE / STATUS collapse to one compact muted QuietLine each (LIVE always, TRACKED when empty); section spacing tightened 14→10.
 
 ### GATE UX-G1 (round 2) — redeploy preview; screenshots: main page (vertically centered, rain quiet-but-visible, rail open) + terminal (LIVE columns, full-width layout, polished detail). HOLD, then merge.
+- [x] Round 2 redeployed (Vercel status: success on 9e9dcb1); evidence artifact updated with the three required screenshots. Holding.
 - [ ] UX-G1 approved.
 
 ---
