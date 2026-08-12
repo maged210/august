@@ -1,0 +1,193 @@
+"use client";
+
+// UX2-T4/T5 — THE DESK HEATMAP + MOVERS STRIP. A Finviz-style map of OUR
+// book: one equal tile per live + tracked idea (no position data exists, so
+// equal sizing is the honest layout — a plain filled grid IS the squarified
+// treemap for equal weights; hand-rolled, zero dependencies). Color encodes
+// TODAY's % move off the existing price pipeline: tracked rows already carry
+// their quote; live instruments ride one /api/intel/quotes call (the desk
+// shorthand mapped through chartSymbolFor). No quote → a neutral ∅ tile,
+// never a fabricated zero. Tile click = the desk's ONE selection (chart dock
+// + detail panel + ?idea=). Under the map: today's top/bottom three.
+//
+// T3 folded the old Desk Bias here: the header carries the long/short book
+// counts ("BOOK — n LONG · n SHORT · n unset").
+
+import { useEffect, useMemo, useState } from "react";
+import type { FeedCard } from "@/lib/intel/publish";
+import type { PublicIdea } from "@/lib/ideas";
+import type { ChartSelection } from "./IdeaChartModule";
+import { chartSymbolFor, selectionFromLive, selectionFromTracked, sideOf } from "./derive";
+
+type Quote = { price: number; chgPct: number };
+
+const fmtPx = (n: number) =>
+  n >= 1000
+    ? Math.round(n).toLocaleString("en-US")
+    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+
+type Tile = {
+  key: string;
+  ticker: string;
+  side: "LONG" | "SHORT" | null;
+  quote: Quote | null;
+  select: ChartSelection;
+};
+
+export default function BookHeatmapModule({
+  cards,
+  liveIdeas,
+  selection,
+  onSelect,
+}: {
+  cards: FeedCard[];
+  liveIdeas: PublicIdea[];
+  selection: ChartSelection | null;
+  onSelect: (sel: ChartSelection) => void;
+}) {
+  // today's % for LIVE instruments — one quotes call over the existing route
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, Quote>>({});
+  const liveSyms = useMemo(
+    () => [...new Set(liveIdeas.map((i) => chartSymbolFor(i.instrument)))].sort().join(","),
+    [liveIdeas],
+  );
+  useEffect(() => {
+    if (!liveSyms) return;
+    let cancelled = false;
+    const pull = () => {
+      fetch(`/api/intel/quotes?symbols=${encodeURIComponent(liveSyms)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+        .then((j: { quotes?: Record<string, Quote> }) => {
+          if (!cancelled && j.quotes) setLiveQuotes(j.quotes);
+        })
+        .catch(() => {
+          /* tiles fall back to their honest ∅ state */
+        });
+    };
+    pull();
+    const id = window.setInterval(() => {
+      if (!document.hidden) pull();
+    }, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [liveSyms]);
+
+  const tiles: Tile[] = useMemo(() => {
+    const out: Tile[] = [];
+    for (const i of liveIdeas) {
+      const s = sideOf(i);
+      const q = liveQuotes[chartSymbolFor(i.instrument)];
+      out.push({
+        key: `live:${i.id}`,
+        ticker: i.instrument.toUpperCase(),
+        side: s?.side === "LONG" ? "LONG" : s?.side === "SHORT" ? "SHORT" : null,
+        quote: q && Number.isFinite(q.chgPct) && q.price > 0 ? q : null,
+        select: selectionFromLive(i),
+      });
+    }
+    for (const c of cards) {
+      out.push({
+        key: `trk:${c.id}`,
+        ticker: c.ticker.toUpperCase(),
+        side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
+        quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
+        select: selectionFromTracked(c),
+      });
+    }
+    return out;
+  }, [liveIdeas, cards, liveQuotes]);
+
+  const longs = tiles.filter((t) => t.side === "LONG").length;
+  const shorts = tiles.filter((t) => t.side === "SHORT").length;
+  const unset = tiles.length - longs - shorts;
+
+  // movers — one entry per ticker (best-informed quote), today's extremes
+  const movers = useMemo(() => {
+    const byTicker = new Map<string, Tile>();
+    for (const t of tiles) {
+      if (!t.quote) continue;
+      if (!byTicker.has(t.ticker)) byTicker.set(t.ticker, t);
+    }
+    const rows = [...byTicker.values()].sort((a, b) => b.quote!.chgPct - a.quote!.chgPct);
+    // top 3 and bottom 3, never overlapping when the book is small
+    const top = rows.slice(0, 3);
+    const bottom = rows.slice(Math.max(3, rows.length - 3)).reverse();
+    return { top, bottom };
+  }, [tiles]);
+
+  // color intensity: |today %| → alpha, capped so tile labels stay readable
+  const tileStyle = (t: Tile): React.CSSProperties => {
+    if (!t.quote) return {};
+    const a = Math.min(0.62, 0.1 + Math.abs(t.quote.chgPct) * 0.13);
+    return {
+      background:
+        t.quote.chgPct >= 0
+          ? `rgba(111, 160, 133, ${a.toFixed(2)})`
+          : `rgba(205, 126, 109, ${a.toFixed(2)})`,
+    };
+  };
+
+  return (
+    <section className="ifm" aria-label="Desk heatmap">
+      <div className="ifm-h">
+        <span className="ifm-title">BOOK</span>
+        <span className="ifm-sub">
+          {longs} LONG · {shorts} SHORT · {unset} UNSET
+        </span>
+      </div>
+      {tiles.length === 0 ? (
+        <div className="ifm-body">
+          <span className="if-abs">
+            <span className="if-abs-g" aria-hidden="true">
+              ∅
+            </span>{" "}
+            nothing on the book yet
+          </span>
+        </div>
+      ) : (
+        <div className="ifm-body">
+          <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per idea">
+            {tiles.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="option"
+                aria-selected={selection?.key === t.key}
+                className={`if-hm-tile${selection?.key === t.key ? " sel" : ""}${t.quote ? "" : " noq"}`}
+                style={tileStyle(t)}
+                title={`${t.ticker}${t.quote ? ` · ${fmtPct(t.quote.chgPct)} today` : " · no quote"} — click to select`}
+                onClick={() => onSelect(t.select)}
+              >
+                <span className="if-hm-tkr">{t.ticker}</span>
+                <span className="if-hm-pct">{t.quote ? fmtPct(t.quote.chgPct) : "∅"}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* T5 — movers: today's top/bottom three across the book */}
+          {movers.top.length > 0 || movers.bottom.length > 0 ? (
+            <div className="if-mv">
+              {movers.top.map((t) => (
+                <span key={`t${t.ticker}`} className="if-mv-row">
+                  <span className="if-mv-tkr">{t.ticker}</span>
+                  <span className="if-mv-px">{fmtPx(t.quote!.price)}</span>
+                  <span className="if-mv-pct if-pos">{fmtPct(t.quote!.chgPct)}</span>
+                </span>
+              ))}
+              {movers.bottom.map((t) => (
+                <span key={`b${t.ticker}`} className="if-mv-row">
+                  <span className="if-mv-tkr">{t.ticker}</span>
+                  <span className="if-mv-px">{fmtPx(t.quote!.price)}</span>
+                  <span className="if-mv-pct if-neg">{fmtPct(t.quote!.chgPct)}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}

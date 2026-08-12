@@ -160,15 +160,15 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Opening a thread replaces the brief with the conversation; returning home shows the brief again. *(rides the existing conversationActive split — a thread open = transcript, + NEW CHAT = home/brief)*
 
 ## UX2-T3 — KILL BIAS + STATS PANELS
-- [ ] Remove Desk Bias and Desk Stats from the terminal (park, don't delete). Long/short counts → heatmap header; win rate / MFE / MAE → the brief's DESK LINE. No orphaned data, no empty slots.
+- [x] Remove Desk Bias and Desk Stats from the terminal (park, don't delete). Long/short counts → heatmap header; win rate / MFE / MAE → the brief's DESK LINE. No orphaned data, no empty slots. *(BiasBarsModule + DeskStatsModule parked by un-import; the dock stack is chart → heatmap(+movers) → pulse → tape)*
 
 ## UX2-T4 — DESK HEATMAP (takes the freed dock slot)
-- [ ] Finviz-style treemap of OUR book: one tile per live + tracked idea, equal sizing, color = today's % move (green/red intensity), label = ticker + %.
-- [ ] Tile click = selects the idea (drives chart dock + detail panel, same selection state).
-- [ ] Header: "BOOK — n LONG · n SHORT · n unset". Hand-rolled layout, no heavy new dependencies.
+- [x] Finviz-style treemap of OUR book: one tile per live + tracked idea, equal sizing, color = today's % move (green/red intensity), label = ticker + %. *(equal weights → a filled CSS grid IS the squarified layout; hand-rolled, zero deps; intensity = |%|-scaled alpha capped for label contrast; tracked rows use their existing quote, live instruments ride ONE /api/intel/quotes call via chartSymbolFor; no quote = honest ∅ tile)*
+- [x] Tile click = selects the idea (drives chart dock + detail panel, same selection state). *(selectionFromLive/Tracked moved to dock/derive so tiles and blotter rows build byte-identical selections; applySelect keeps ?idea= shareable; selected tile carries the desk's sel ring)*
+- [x] Header: "BOOK — n LONG · n SHORT · n unset". Hand-rolled layout, no heavy new dependencies. *(counts from stated/derived sides for LIVE + direction for TRACKED)*
 
 ## UX2-T5 — MOVERS STRIP
-- [ ] Compact strip under the heatmap: top 3 and bottom 3 today across the book — ticker · last · % today. Existing price data only.
+- [x] Compact strip under the heatmap: top 3 and bottom 3 today across the book — ticker · last · % today. Existing price data only. *(deduped per ticker, non-overlapping when the book is small)*
 
 ## UX2-T6 — WIRE v2 (fix, don't delete)
 - [ ] Collapse batch events: "11 ideas → LIVE · 15:11" renders as ONE expandable row.

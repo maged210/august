@@ -1092,6 +1092,58 @@
   color: var(--rd-t-chip, #dfe3e7);
 }
 :where(.intel-embed-frame) .if-detail-col .if-sh-meta { margin-top: 10px; }
+/* UX2-T4 — the desk heatmap: equal tiles (no position data → the honest
+   squarified layout for equal weights IS a filled grid), color = today's % */
+:where(.intel-embed-frame) .if-hm {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  grid-auto-rows: 46px;
+  gap: 3px;
+}
+:where(.intel-embed-frame) .if-hm-tile {
+  appearance: none; cursor: pointer; min-width: 0;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px; padding: 4px 7px;
+  border: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
+  border-radius: 2px;
+  background: var(--rd-hover-item, rgba(255, 255, 255, 0.03));
+  transition: filter 120ms ease;
+}
+:where(.intel-embed-frame) .if-hm-tile:hover { filter: brightness(1.25); }
+:where(.intel-embed-frame) .if-hm-tile.sel {
+  box-shadow: var(--rd-sel-ring-flat, inset 0 0 0 1px rgba(95, 176, 173, 0.4));
+  border-color: transparent;
+}
+:where(.intel-embed-frame) .if-hm-tile:focus-visible {
+  outline: 1px solid var(--rd-teal, #5fb0ad); outline-offset: 1px;
+}
+:where(.intel-embed-frame) .if-hm-tkr {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--rd-t-primary, #e9ebee);
+}
+:where(.intel-embed-frame) .if-hm-pct {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; font-variant-numeric: tabular-nums;
+  color: var(--rd-t-chip, #dfe3e7);
+}
+:where(.intel-embed-frame) .if-hm-tile.noq .if-hm-pct { color: var(--rd-t-absent, #3a4047); }
+
+/* UX2-T5 — the movers strip under the map: top/bottom three today */
+:where(.intel-embed-frame) .if-mv {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--rd-hair-06, rgba(255, 255, 255, 0.06));
+}
+:where(.intel-embed-frame) .if-mv-row {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace); font-size: 10px;
+}
+:where(.intel-embed-frame) .if-mv-tkr { font-weight: 600; color: var(--rd-t-primary, #e9ebee); }
+:where(.intel-embed-frame) .if-mv-px { color: var(--rd-t-dim, #8b929a); font-variant-numeric: tabular-nums; }
+:where(.intel-embed-frame) .if-mv-pct { font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* R8 — an empty section collapses to one compact muted line */
 :where(.intel-embed-frame) .if-dt-quiet {
   display: flex; align-items: baseline; gap: 8px; margin-top: 10px; min-width: 0;
