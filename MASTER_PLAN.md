@@ -151,13 +151,13 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Main chat column stays centered in the space between sidebar and rail at every open/closed combination. *(--sb-w joins --rail-w: view panels/dock get left+right offsets, the view bar centers on (--sb-w − --rail-w)/2 — terminal view drops .has-threads and reclaims the width)*
 
 ## UX2-T2 — DAILY BRIEF = HOME CENTER
-- [ ] The brief stops existing as a popup entirely; it renders AS the home state of the chat view (no thread open):
-- [ ] Date + session line (pre-market / open / after-hours by ET clock).
-- [ ] PULSE ROW: existing pulse symbols, last · % · spark.
-- [ ] DESK LINE: N live · N tracked · N triggered · win rate · best + worst today.
-- [ ] LATEST INGEST: most recent transcript → "N idea drafts · N tape drafts" + time.
-- [ ] HEADLINES: top 5 from 2–3 quality free RSS feeds, server-cached ~15 min, publisher + timestamp, links out. RSS only — no scraping.
-- [ ] Opening a thread replaces the brief with the conversation; returning home shows the brief again.
+- [x] The brief stops existing as a popup entirely; it renders AS the home state of the chat view (no thread open). *(MorningBrief popup + its top-bar control + suggestion chips + the old heading parked; new HomeBrief component owns the idle center under the ask bar; ?brief=1 push arrivals just land home; "brief me" by voice still plays the compiled read when one is waiting)*
+- [x] Date + session line (pre-market / open / after-hours by ET clock). *(4:00–9:30 PRE-MARKET · 9:30–16:00 MARKET OPEN w/ live dot · 16:00–20:00 AFTER HOURS · else/weekend CLOSED)*
+- [x] PULSE ROW: existing pulse symbols, last · % · spark. *(the dock's pulse five off /api/intel/quotes closes)*
+- [x] DESK LINE: N live · N tracked · N triggered · win rate · best + worst today. *(+ avg MFE/MAE per T3; win rate = since_called only, DeskStats semantics; today = tracked quotes' chgPct extremes)*
+- [x] LATEST INGEST: most recent transcript → "N idea drafts · N tape drafts" + time. *(/api/wire first row; honest ∅ when nothing ingested)*
+- [x] HEADLINES: top 5 from 2–3 quality free RSS feeds, server-cached ~15 min, publisher + timestamp, links out. RSS only — no scraping. *(new lib/headlines: CNBC Top News + MarketWatch Top Stories (Dow Jones public feed) + Yahoo Finance; tolerant no-dependency RSS parse, per-feed failure isolation, in-process 15-min cache that never caches a blackout; /api/headlines rate-limited + CDN 5-min; +3 tests → 229)*
+- [x] Opening a thread replaces the brief with the conversation; returning home shows the brief again. *(rides the existing conversationActive split — a thread open = transcript, + NEW CHAT = home/brief)*
 
 ## UX2-T3 — KILL BIAS + STATS PANELS
 - [ ] Remove Desk Bias and Desk Stats from the terminal (park, don't delete). Long/short counts → heatmap header; win rate / MFE / MAE → the brief's DESK LINE. No orphaned data, no empty slots.

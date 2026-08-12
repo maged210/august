@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
+import HomeBrief from "@/components/HomeBrief";
 import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import type { PushState } from "@/lib/push-client";
 
@@ -26,13 +27,7 @@ const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false
 const ORB_GL_BLEED = 65;
 const ORB_GL_FRACTION = 95 / (190 + 2 * ORB_GL_BLEED);
 
-// Suggestion chips — honest prompts only, wired to real capabilities
-// (markets pivot levels, the world/intel wires, the intel board).
-const CHIPS = [
-  "Why is NQ above pivot?",
-  "Summarize overnight intel",
-  "What's on the intel board?",
-];
+// Suggestion chips retired (UX2-T2) — the daily brief owns the home state.
 
 // WATCHING — the PUBLIC DEFAULT (stage 3): signed out, or on an instance where
 // auth isn't configured, the pills show exactly this macro five — symbols
@@ -77,7 +72,6 @@ type HomeLandingProps = {
       the landing's heading/chips/activity yield to it and the orb compacts. */
   transcript?: React.ReactNode;
   // Quiet top-bar cluster — everything the design omits but the app keeps.
-  onSummonBrief: () => void;
   pushState: PushState;
   onNotify: () => void;
   soundOn: boolean;
@@ -103,7 +97,6 @@ export default function HomeLanding({
   onToggleVoiceMode,
   onOpenThreads,
   transcript,
-  onSummonBrief,
   pushState,
   onNotify,
   soundOn,
@@ -268,11 +261,6 @@ export default function HomeLanding({
     setDraft("");
   };
 
-  const fillChip = (text: string) => {
-    setDraft(text);
-    inputRef.current?.focus();
-  };
-
   // The real system state word — 'SYSTEMS STEADY' only when he actually is.
   const stateWord =
     state === "listening"
@@ -324,15 +312,7 @@ export default function HomeLanding({
             </span>
           ) : null}
           <div className="hl-ctls">
-            <button
-              type="button"
-              className="hl-ctl"
-              onClick={onSummonBrief}
-              title="Today's brief"
-              aria-label="Open today's brief"
-            >
-              <BriefGlyph />
-            </button>
+            {/* the brief control retired (UX2-T2) — the brief IS the home state */}
             {pushState !== "unsupported" && (
               <button
                 type="button"
@@ -473,9 +453,7 @@ export default function HomeLanding({
         </div>
       </div>
 
-      {!conversationActive ? (
-        <h1 className="hl-heading">What do you want to know?</h1>
-      ) : null}
+      {/* the heading yielded to the brief's own date + session line (UX2-T2) */}
 
       {/* CORE V2 P5 — a live conversation replaces the landing's idle body:
           the Claude-style transcript column owns the middle of the screen
@@ -525,18 +503,9 @@ export default function HomeLanding({
         </form>
       ) : null}
 
-      {/* suggestion chips — idle-state only (showSuggestions semantics) */}
-      {!conversationActive ? (
-        <div className="hl-chips">
-          {CHIPS.map((c) => (
-            <button key={c} type="button" className="hl-chip" onClick={() => fillChip(c)}>
-              {c}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {/* RECENT THREADS moved to the LEFT sidebar (UX2-T1) */}
+      {/* UX2-T2 — the daily brief IS the home state (no thread open):
+          date/session · pulse · desk line · latest ingest · headlines */}
+      {!conversationActive ? <HomeBrief /> : null}
       </div>
 
       {/* R5 — WATCHING as a thin full-width bottom ticker strip: static chips
@@ -637,25 +606,7 @@ function WaveGlyph() {
   );
 }
 
-// Sunrise-over-line — the morning brief.
-function BriefGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <circle cx="8" cy="8" r="3.4" />
-      <line x1="2" y1="13.4" x2="14" y2="13.4" />
-      <path d="M8 1.4v1.4M3.3 3.3l1 1M12.7 3.3l-1 1" />
-    </svg>
-  );
-}
+// BriefGlyph retired with the popup (UX2-T2) — the brief is the home state.
 
 function BellGlyph({ off = false, on = false }: { off?: boolean; on?: boolean }) {
   if (off) {
