@@ -199,6 +199,20 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# HOTFIX — CHAT PRIVACY (2026-08-12, priority over ux-2 gate queue)
+
+> Branch: `hotfix/chat-privacy` off main. AUDIT FINDING (verified live in production): threads/messages live in Upstash via /api/threads (localStorage holds only UI prefs). Auth is UNCONFIGURED in Vercel Production, so `requireSessionEmail()` resolved null and every personal chat store fell back to the LEGACY SHARED keys — any anonymous visitor could list the owner's threads, read full message bodies by id, OVERWRITE them via upsert, share one global chat memory (and wipe it via /forget), and read the owner's personal morning brief. Chat rate limit was per-IP 10/min with NO daily cap.
+
+- [x] Per-visitor isolation: anonymous traffic now resolves a `visitor:{vid}` principal from an httpOnly `aug_vid` cookie (SameSite=Lax, Secure in prod, 1y). Decision table (pure, tested): session → user:{email}; anonymous dev+unconfigured → legacy (single-user fallback unchanged); anonymous PRODUCTION → visitor scope, NEVER legacy; configured+signed-out → visitor (defense-in-depth). threads + memory stores widened to the principal; /api/chat's memory context and /forget are caller-scoped; watcher tools refuse anonymous principals (no per-visitor watcher store exists).
+- [x] Owner's Jul–Aug history: DELETED NOTHING — the legacy namespace is simply no longer reachable anonymously; it serves only through new ADMIN-gated GET /api/admin/threads(/[id]) (Bearer ADMIN_TOKEN today; owner session once auth is configured — first owner login also migrates the history into user:{owner} via the existing copyThreads).
+- [x] Chat spend: per-visitor per-minute cap now env-tunable (CHAT_RATE_PER_MIN, default 10/min/IP) + NEW global daily cap across all visitors (CHAT_DAILY_CAP, default 400/day, UTC bucket, fail-open on Redis error like the house limiter). 429 with an honest budget message.
+- [x] Adjacent leak closed in the same class: /api/brief GET/POST fail closed in unconfigured production (the owner's calendar+inbox brief was public).
+- [x] Verified (local prod build = the exact production auth state): visitor A sees only its thread; visitor B and a clean browser profile see []; B reading A's id → 404; anonymous reading the owner's legacy id → 404 (was 200 + full messages in production); ADMIN_TOKEN → legacy history 200; tokenless admin → 403; CHAT_DAILY_CAP=2 → third chat POST 429; /api/brief anonymous → ready:false. Tests 234/234 (+3 for the principal table + key scoping).
+- [x] Deployed to production; verified live post-deploy.
+- NOTE (owner actions): configure AUTH_SECRET + Google client in Vercel Production to enable the owner session (until then the history is ADMIN_TOKEN-only); ensure ADMIN_TOKEN is present in Production env. /api/speak + /api/deepgram-token remain open in unconfigured production (quota spend, own per-IP limits) — same class, flag for the next round.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

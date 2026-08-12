@@ -27,6 +27,8 @@ import {
   setFeedPrefsWith,
   setOnboardedWith,
   setWatchlist,
+  deriveChatPrincipal,
+  scopePrincipalKey,
   validateFeedPrefs,
   validateWatchlist,
   type PrefsKv,
@@ -475,4 +477,54 @@ test("onboarded flag: normalizes the email the same way every store does", async
   const { kv } = mockPrefsKv();
   await setOnboardedWith(kv, "  Viv@Example.COM ");
   assert.equal(await getOnboardedWith(kv, "viv@example.com"), true);
+});
+
+// ── chat-privacy hotfix: principal scoping + the decision table ──────────────
+
+test("scopePrincipalKey: email/user, visitor, and legacy branches", () => {
+  assert.equal(scopePrincipalKey(null, "august:threads:index"), "august:threads:index");
+  assert.equal(
+    scopePrincipalKey("A@B.com", "august:threads:index"),
+    "user:a@b.com:august:threads:index",
+  );
+  assert.equal(
+    scopePrincipalKey({ visitorId: "9f3c1c8e-aaaa-bbbb-cccc-000000000001" }, "august:profile"),
+    "visitor:9f3c1c8e-aaaa-bbbb-cccc-000000000001:august:profile",
+  );
+});
+
+test("scopePrincipalKey: malformed visitor ids THROW — never alias into other keys", () => {
+  for (const bad of ["", "short", "has space", "semi;colon", "x".repeat(65), "a:b:c"]) {
+    assert.throws(() => scopePrincipalKey({ visitorId: bad }, "august:profile"));
+  }
+  assert.throws(() => scopePrincipalKey(null, "")); // empty key still rejected
+});
+
+test("deriveChatPrincipal: THE decision table — anonymous production NEVER reaches legacy", () => {
+  const vid = "9f3c1c8e-aaaa-bbbb-cccc-000000000001";
+  // signed-in session → user namespace, every environment
+  assert.deepEqual(
+    deriveChatPrincipal({ configured: true, email: "a@b.com", production: true, cookieVid: vid }),
+    { kind: "user", email: "a@b.com" },
+  );
+  // anonymous + unconfigured + dev → the single-user legacy fallback (unchanged)
+  assert.deepEqual(
+    deriveChatPrincipal({ configured: false, email: null, production: false, cookieVid: null }),
+    { kind: "legacy" },
+  );
+  // anonymous + unconfigured + PRODUCTION → per-visitor (THE hole this closes)
+  assert.deepEqual(
+    deriveChatPrincipal({ configured: false, email: null, production: true, cookieVid: vid }),
+    { kind: "visitor", vid },
+  );
+  // no cookie yet → visitor with a to-be-minted id
+  assert.deepEqual(
+    deriveChatPrincipal({ configured: false, email: null, production: true, cookieVid: null }),
+    { kind: "visitor", vid: null },
+  );
+  // configured + signed out → visitor too (defense-in-depth behind the middleware 401)
+  assert.deepEqual(
+    deriveChatPrincipal({ configured: true, email: null, production: false, cookieVid: vid }),
+    { kind: "visitor", vid },
+  );
 });

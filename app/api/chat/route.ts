@@ -6,8 +6,14 @@ import { resolveView } from "@/lib/screens";
 import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
-import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
-import { resolveUserOr401 } from "@/lib/user-scope";
+import {
+  checkChatDailyCap,
+  checkRateLimit,
+  dailyCapResponse,
+  getIp,
+  rateLimitedResponse,
+} from "@/lib/ratelimit";
+import { resolveChatPrincipal } from "@/lib/user-scope";
 
 // Claude proxy. The API key lives on the server and never reaches the client.
 //
@@ -43,15 +49,19 @@ function getClient(apiKey: string): Anthropic {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Per-visitor cap (per-IP sliding window, CHAT_RATE_PER_MIN/min) …
   const rl = await checkRateLimit("chat", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
+  // … AND the global daily budget (CHAT_DAILY_CAP/day across ALL visitors) —
+  // this route spends real Anthropic money on anonymous traffic (HOTFIX).
+  const daily = await checkChatDailyCap();
+  if (!daily.ok) return dailyCapResponse();
 
-  // Session → namespace, resolved ONCE and passed down (stage 2). Unconfigured
-  // auth resolves null (single-user fallback → legacy keys); configured with no
-  // session 401s here as defense-in-depth behind the middleware.
-  const user = await resolveUserOr401();
-  if (!user.ok) return user.response;
-  const userEmail = user.email;
+  // HOTFIX (chat privacy): the memory this route injects into the prompt is
+  // now the CALLER's own namespace — signed-in user, or the per-visitor
+  // principal; never the legacy shared store in production.
+  const { principal } = await resolveChatPrincipal(req);
+  const userEmail = principal;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -236,11 +246,17 @@ export async function POST(req: Request): Promise<Response> {
               ? `The deck is re-lit — the accent is ${mood} now.`
               : "No such mood — the lights stayed as they were.";
           } else if (isWatcher) {
-            try {
-              resultText = await runWatcherTool(userEmail, tb.name, input);
-            } catch (e) {
-              console.error("[chat] watcher tool failed:", e instanceof Error ? e.message : e);
-              resultText = "That watcher action hit an error on the server.";
+            // HOTFIX (chat privacy): the watcher store has no per-visitor
+            // namespace — anonymous visitors must not write the shared one.
+            if (typeof userEmail === "object" && userEmail !== null) {
+              resultText = "Watchers need a signed-in session — not available for guests.";
+            } else {
+              try {
+                resultText = await runWatcherTool(userEmail, tb.name, input);
+              } catch (e) {
+                console.error("[chat] watcher tool failed:", e instanceof Error ? e.message : e);
+                resultText = "That watcher action hit an error on the server.";
+              }
             }
           } else {
             resultText = "Done.";

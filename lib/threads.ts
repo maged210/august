@@ -24,7 +24,7 @@
 // scopeKey — null email = single-user fallback = the legacy keys, unchanged.
 
 import { Redis } from "@upstash/redis";
-import { scopeKey } from "./user-scope";
+import { scopePrincipalKey, type StorePrincipal } from "./user-scope";
 
 export type ThreadMessage = { role: "user" | "assistant"; content: string };
 
@@ -46,9 +46,9 @@ export const MAX_MESSAGE_CHARS = 8192;
 export const MAX_TITLE_CHARS = 48;
 
 const NS = "august:threads:";
-const K = (email: string | null) => ({
-  index: scopeKey(email, NS + "index"),
-  thread: (id: string) => scopeKey(email, `${NS}t:${id}`),
+const K = (email: StorePrincipal) => ({
+  index: scopePrincipalKey(email, NS + "index"),
+  thread: (id: string) => scopePrincipalKey(email, `${NS}t:${id}`),
 });
 
 let _redis: Redis | null | undefined;
@@ -145,7 +145,7 @@ function newThreadId(): string {
   return `th_${rand}`;
 }
 
-export async function getThread(email: string | null, id: string): Promise<Thread | null> {
+export async function getThread(email: StorePrincipal, id: string): Promise<Thread | null> {
   const redis = getRedis();
   if (!redis || !id) return null;
   try {
@@ -158,7 +158,7 @@ export async function getThread(email: string | null, id: string): Promise<Threa
 }
 
 /** Newest first by updatedAt. Empty when Redis is unconfigured or errors. */
-export async function listThreads(email: string | null, limit = 3): Promise<ThreadSummary[]> {
+export async function listThreads(email: StorePrincipal, limit = 3): Promise<ThreadSummary[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
@@ -184,7 +184,7 @@ export async function listThreads(email: string | null, limit = 3): Promise<Thre
  * (computed, not written) so the caller's bookkeeping stays uniform.
  */
 export async function upsertThread(
-  email: string | null,
+  email: StorePrincipal,
   input: {
     id?: string | null;
     messages: ThreadMessage[];
