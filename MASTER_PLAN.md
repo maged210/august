@@ -89,9 +89,9 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Apply consistently: rail card, idea detail panel, blotter selected-row detail. *(the blotter's selected-row detail IS the IdeaDetailPanel since G3 r5 — both its LIVE and TRACKED branches restructured)*
 
 ## UX3 — RAIL DENSITY MODE
-- [ ] Compact one-line collapsed card mode: TICKER · risk badge · entry one-liner. Tap to expand in place.
-- [ ] "Expand all / collapse all" in the rail header.
-- [ ] Default: compact when more than 5 live ideas, expanded otherwise.
+- [x] Compact one-line collapsed card mode: TICKER · risk badge · entry one-liner. Tap to expand in place. *(the card head is the toggle at either density; entry one-liner keeps the UX2 green, ∅ "no entry" when absent)*
+- [x] "Expand all / collapse all" in the rail header. *(one flip-all control that reads the current predominant state)*
+- [x] Default: compact when more than 5 live ideas, expanded otherwise. *(per-card overrides ride on top of the count-driven default)*
 
 ## UX4 — SIDE (LONG/SHORT) FIX
 - [ ] Extraction: infer side from entry language (break above/clears/retest higher → long; break below/breakdown → short). Ambiguous → leave unset, never guess wrong.

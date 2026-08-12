@@ -31,6 +31,10 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
   const [failed, setFailed] = useState(false);
   // Re-render minutes-scale timestamps without refetching.
   const [, setTick] = useState(0);
+  // UX3 — per-card density overrides. Absent id = the count-driven default
+  // (compact when the rail holds more than 5 live ideas, expanded otherwise);
+  // a tap flips one card in place, the header control flips them all.
+  const [cardMode, setCardMode] = useState<Record<string, boolean>>({});
   const railRef = useRef<HTMLElement | null>(null);
 
   const pull = useCallback(() => {
@@ -61,6 +65,19 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
 
   const count = ideas?.length ?? 0;
 
+  // UX3 — density: compact by default only when the rail is crowded.
+  const defaultExpanded = count <= 5;
+  const isExpanded = (id: string) => cardMode[id] ?? defaultExpanded;
+  const allExpanded = count > 0 && ideas!.every((i) => isExpanded(i.id));
+  const toggleAll = () => {
+    const target = !allExpanded;
+    const next: Record<string, boolean> = {};
+    for (const i of ideas ?? []) next[i.id] = target;
+    setCardMode(next);
+  };
+  const toggleCard = (id: string) =>
+    setCardMode((m) => ({ ...m, [id]: !(m[id] ?? defaultExpanded) }));
+
   return (
     <>
       {/* drawer scrim — mobile only (CSS hides it ≥1100px) */}
@@ -88,6 +105,12 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
             {count > 0 ? <span className="ir-count">{count} LIVE</span> : null}
           </span>
           <span className="ir-head-acts">
+            {/* UX3 — flip every card's density at once */}
+            {count > 0 ? (
+              <button type="button" className="ir-headctl" onClick={toggleAll}>
+                {allExpanded ? "COLLAPSE ALL" : "EXPAND ALL"}
+              </button>
+            ) : null}
             {/* desktop only (CSS): fold the sidebar to its edge tab */}
             <button
               type="button"
@@ -129,7 +152,12 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
                 </div>
               ) : null}
               {ideas!.map((idea) => (
-                <IdeaCard key={idea.id} idea={idea} />
+                <IdeaCard
+                  key={idea.id}
+                  idea={idea}
+                  expanded={isExpanded(idea.id)}
+                  onToggle={() => toggleCard(idea.id)}
+                />
               ))}
             </>
           )}
@@ -141,13 +169,45 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
 
 // UX2 — reading order: TICKER → ENTRY (the bright chip) → REASONING (accent
 // block) → secondary metadata (target · age; risk stays a quiet top badge).
-function IdeaCard({ idea }: { idea: PublicIdea }) {
+// UX3 — a card can fold to one line (TICKER · risk · entry one-liner); the
+// head row is the toggle either way.
+function IdeaCard({
+  idea,
+  expanded,
+  onToggle,
+}: {
+  idea: PublicIdea;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <article className="ir-card">
-      <div className="ir-card-top">
+    <article className={`ir-card${expanded ? "" : " compact"}`}>
+      <button type="button" className="ir-card-head" onClick={onToggle} aria-expanded={expanded}>
         <span className="ir-sym">{idea.instrument}</span>
+        {expanded ? (
+          <span className="ir-head-sp" aria-hidden />
+        ) : idea.entry ? (
+          <span className="ir-line-entry" title={idea.entry}>
+            {idea.entry}
+          </span>
+        ) : (
+          <span className="ir-line-entry ir-absent">∅ no entry</span>
+        )}
         <span className={`ir-risk ir-risk-${idea.riskLevel}`}>{RISK_LABEL[idea.riskLevel]}</span>
-      </div>
+        <span className="ir-caret" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+      </button>
+      {expanded ? (
+        <ExpandedBody idea={idea} />
+      ) : null}
+    </article>
+  );
+}
+
+function ExpandedBody({ idea }: { idea: PublicIdea }) {
+  return (
+    <>
       <div className="ir-entry">
         <span className="ir-entry-k">ENTRY</span>
         {idea.entry ? (
@@ -165,6 +225,6 @@ function IdeaCard({ idea }: { idea: PublicIdea }) {
         ) : null}
         <span className="ir-when">{relativeTime(idea.createdAt)}</span>
       </div>
-    </article>
+    </>
   );
 }

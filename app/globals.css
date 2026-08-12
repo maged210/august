@@ -1146,11 +1146,78 @@ body::after {
   flex-direction: column;
   gap: 7px;
 }
-.ir-card-top {
+/* UX3 — the card head is the density toggle: TICKER · (entry one-liner when
+   compact) · risk · caret */
+.ir-card-head {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  min-height: 22px;
+}
+.ir-card-head:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.ir-head-sp {
+  flex: 1;
+}
+.ir-line-entry {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--pos);
+}
+.ir-line-entry.ir-absent {
+  color: var(--ink-mute);
+}
+.ir-caret {
+  flex: none;
+  font-size: 9px;
+  color: var(--ink-mute);
+}
+.ir-card.compact {
+  padding: 8px 12px;
+}
+/* the header's flip-all control */
+.ir-headctl {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ash);
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.ir-headctl:hover {
+  color: var(--bone);
+}
+.ir-headctl:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (max-width: 700px) {
+  .ir-card-head,
+  .ir-headctl {
+    min-height: 40px;
+  }
 }
 .ir-sym {
   font-family: var(--font-mono);
