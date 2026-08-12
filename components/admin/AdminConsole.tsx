@@ -233,6 +233,46 @@ export default function AdminConsole() {
     }
   };
 
+  // F6 — DEMOTE TO TAPE: the thesis becomes a tape note (side → sentiment),
+  // the idea leaves the book (closed). Live ideas demote to LIVE tape — the
+  // call was already public; drafts demote to a draft note.
+  const demoteToTape = async (idea: Idea) => {
+    setBusyId(idea.id);
+    setActionError("");
+    try {
+      const res = await fetch("/api/admin/tape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          symbol: idea.instrument,
+          note: idea.thesis.slice(0, 200),
+          kind: "note",
+          sentiment: idea.side === "long" ? "bull" : idea.side === "short" ? "bear" : "neutral",
+          status: idea.status === "live" ? "live" : "draft",
+          source: "desk",
+        }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? String(res.status));
+      }
+      const patch = await fetch(`/api/admin/ideas/${encodeURIComponent(idea.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status: "closed" }),
+      });
+      if (!patch.ok) {
+        const j = (await patch.json().catch(() => ({}))) as { error?: string };
+        throw new Error(`note created but the idea stayed on the book: ${j.error ?? patch.status}`);
+      }
+      await Promise.all([load(), loadTape()]);
+    } catch (e) {
+      setActionError(`Demote failed: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const processTranscript = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = trText.trim();
@@ -549,9 +589,19 @@ export default function AdminConsole() {
             onSet={(s) => mutate(idea.id, { side: idea.side === s ? null : s })}
           />
           <p className="adm-thesis">{idea.thesis}</p>
-          {idea.entry || idea.target ? (
+          {/* F6 — live ideas edit their entry INLINE (Enter/SET applies);
+              non-live keep the static line */}
+          {idea.status === "live" ? (
+            <InlineEntry
+              key={idea.id}
+              idea={idea}
+              busy={busyId === idea.id}
+              onSave={(entry) => mutate(idea.id, { entry })}
+            />
+          ) : null}
+          {(idea.entry && idea.status !== "live") || idea.target ? (
             <p className="adm-levels">
-              {idea.entry ? (
+              {idea.entry && idea.status !== "live" ? (
                 <>
                   <span className="adm-k">ENTRY</span> {idea.entry}
                 </>
@@ -605,6 +655,16 @@ export default function AdminConsole() {
             )}
             <button type="button" className="adm-btn" onClick={() => beginEdit(idea)}>
               EDIT
+            </button>
+            {/* F6 — thesis → tape note, idea leaves the book */}
+            <button
+              type="button"
+              className="adm-btn"
+              disabled={busyId === idea.id}
+              title="move the thesis to a tape note and close the idea"
+              onClick={() => demoteToTape(idea)}
+            >
+              DEMOTE → TAPE
             </button>
           </div>
         </>
@@ -899,6 +959,46 @@ function RiskSelect({
   );
 }
 
+// F6 — inline entry editor for LIVE ideas: type, Enter or SET applies.
+function InlineEntry({
+  idea,
+  busy,
+  onSave,
+}: {
+  idea: Idea;
+  busy: boolean;
+  onSave: (entry: string) => void;
+}) {
+  const [v, setV] = useState(idea.entry);
+  useEffect(() => setV(idea.entry), [idea.entry]);
+  const dirty = v.trim() !== idea.entry;
+  return (
+    <form
+      className="adm-inline-entry"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty && !busy) onSave(v.trim());
+      }}
+    >
+      <span className="adm-k">ENTRY</span>
+      <input
+        className="adm-input adm-input-inline"
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        placeholder="entry level / condition"
+        aria-label={`Entry for ${idea.instrument}`}
+        disabled={busy}
+        spellCheck={false}
+      />
+      {dirty ? (
+        <button type="submit" className="adm-btn adm-btn-acc" disabled={busy}>
+          SET
+        </button>
+      ) : null}
+    </form>
+  );
+}
+
 // UX4 — the one-click side setter: three chips, the active one highlighted;
 // clicking the active side clears it (the caller sends side: null).
 const SIDE_GLYPH: Record<IdeaSide, string> = { long: "▲", short: "▼", watch: "◆" };
@@ -928,7 +1028,7 @@ function SideSetter({
           <span aria-hidden="true">{SIDE_GLYPH[s]}</span> {s.toUpperCase()}
         </button>
       ))}
-      {!value ? <span className="adm-sides-abs">∅ not set</span> : null}
+      {!value ? <span className="adm-sides-abs">not set</span> : null}
     </div>
   );
 }

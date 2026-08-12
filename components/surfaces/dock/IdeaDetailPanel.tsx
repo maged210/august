@@ -41,7 +41,7 @@ function Absent({ text = "not stated" }: { text?: string }) {
   return (
     <span className="if-abs">
       <span className="if-abs-g" aria-hidden="true">
-        ∅
+        ·
       </span>{" "}
       {text}
     </span>
@@ -108,11 +108,11 @@ export default function IdeaDetailPanel({
 
   // tracked performance pieces (all from the feed's own pnl view — labeled by kind)
   const pnl = card?.pnl ?? null;
+  // F3 — no ° suffix on the numeral; the basis line below names the kind
   const perfNum =
     pnl && pnl.kind !== "none" ? (
       <span className={`if-sh-perf-num ${pnl.pct >= 0 ? "if-pos" : "if-neg"}`}>
         {pctFmt(pnl.pct)}
-        {pnl.kind === "since_first_mention" ? "°" : ""}
       </span>
     ) : null;
 
@@ -234,7 +234,7 @@ export default function IdeaDetailPanel({
                     </div>
                   ) : null}
                   {pnl.kind === "since_first_mention" ? (
-                    <p className="if-sh-note">° no stated trigger — not trade P&L</p>
+                    <p className="if-sh-note">no stated trigger — price move, not trade P&L</p>
                   ) : null}
                 </>
               ) : (

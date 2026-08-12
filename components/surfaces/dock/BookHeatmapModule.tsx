@@ -97,6 +97,14 @@ export default function BookHeatmapModule({
         select: selectionFromTracked(c),
       });
     }
+    // F4 — Finviz reading order: hottest gainers first, losers last, the
+    // quote-less tail at the end
+    out.sort((a, b) => {
+      if (!a.quote && !b.quote) return 0;
+      if (!a.quote) return 1;
+      if (!b.quote) return -1;
+      return b.quote.chgPct - a.quote.chgPct;
+    });
     return out;
   }, [liveIdeas, cards, liveQuotes]);
 
@@ -118,10 +126,11 @@ export default function BookHeatmapModule({
     return { top, bottom };
   }, [tiles]);
 
-  // color intensity: |today %| → alpha, capped so tile labels stay readable
+  // F4 — saturation scales with |today %|: ±1% faint (~0.15), ±5% clear
+  // (~0.42), ±10%+ hot (capped so tile labels stay readable)
   const tileStyle = (t: Tile): React.CSSProperties => {
     if (!t.quote) return {};
-    const a = Math.min(0.62, 0.1 + Math.abs(t.quote.chgPct) * 0.13);
+    const a = Math.min(0.78, 0.08 + Math.abs(t.quote.chgPct) * 0.068);
     return {
       background:
         t.quote.chgPct >= 0
@@ -142,7 +151,7 @@ export default function BookHeatmapModule({
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
-              ∅
+              ·
             </span>{" "}
             nothing on the book yet
           </span>
@@ -162,7 +171,7 @@ export default function BookHeatmapModule({
                 onClick={() => onSelect(t.select)}
               >
                 <span className="if-hm-tkr">{t.ticker}</span>
-                <span className="if-hm-pct">{t.quote ? fmtPct(t.quote.chgPct) : "∅"}</span>
+                <span className="if-hm-pct">{t.quote ? fmtPct(t.quote.chgPct) : "·"}</span>
               </button>
             ))}
           </div>

@@ -14,6 +14,7 @@ import {
   MAX_TRANSCRIPT_CHARS,
   aiConfigured,
   listTranscripts,
+  applyEntryRule,
   normalizeCandidates,
   storeTranscript,
   transcriptsConfigured,
@@ -73,6 +74,25 @@ test("normalize: a stated side rides through; an invalid side drops the row (UX4
   assert.equal(out.length, 2);
   assert.equal(out[0].side, "long");
   assert.ok(!("side" in out[1]));
+});
+
+test("entry rule (F6): an entry-less call is not an idea — it demotes to a tape note", () => {
+  const { ideas, tape } = applyEntryRule(
+    normalizeCandidates([
+      GOOD,
+      { ...GOOD, instrument: "XLE", entry: "", side: "short", thesis: "Strategic reserve refill chatter." },
+    ]),
+    [],
+  );
+  assert.equal(ideas.length, 1);
+  assert.equal(ideas[0].instrument, "NQ"); // the stated-entry idea survives
+  assert.equal(tape.length, 1);
+  assert.equal(tape[0].symbol, "XLE");
+  assert.equal(tape[0].kind, "note");
+  assert.equal(tape[0].sentiment, "bear"); // side → sentiment
+  assert.equal(tape[0].status, "draft");
+  assert.equal(tape[0].source, "extracted");
+  assert.equal(tape[0].note, "Strategic reserve refill chatter.");
 });
 
 test("normalize: the pipeline can NEVER publish — status/source from the model are ignored", () => {

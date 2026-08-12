@@ -572,12 +572,15 @@
            calc(var(--rd-safe-left, env(safe-area-inset-left, 0px)) + 16px);
 }
 :where(.intel-embed-frame) .if-blot-min {
-  /* R7 — proportional with sane maxima; the surplus goes to REASONING.
-     TRACKED: TICKER SIDE STATUS ENTRY TARGET STOP %SC SPARK LAST REASONING AGE */
-  --if-cols: 64px 58px 100px 86px 86px 86px 92px 68px 82px minmax(140px, 1fr) 56px;
-  /* R6 — the LIVE section's own set: TICKER SIDE STATUS ENTRY(wide) TARGET REASONING AGE */
-  --if-cols-live: 64px 64px 84px minmax(170px, 2fr) minmax(90px, 1.2fr) minmax(170px, 3fr) 56px;
-  min-width: 1000px;
+  /* R7/F2 — REASONING is the ONLY fr track (it absorbs ALL surplus width);
+     level columns are minmax(min, auto) so empty cells never reserve more
+     than their minimum. TRACKED: TICKER SIDE STATUS ENTRY TARGET STOP %SC
+     SPARK LAST REASONING AGE */
+  --if-cols: 64px 58px 100px minmax(72px, auto) minmax(64px, auto) minmax(56px, auto) 92px 68px 82px minmax(160px, 1fr) 56px;
+  /* R6/F2 — LIVE: TICKER SIDE STATUS ENTRY(min-width, wraps to two lines)
+     TARGET(min when empty) REASONING(all surplus) AGE */
+  --if-cols-live: 64px 64px 84px minmax(150px, auto) minmax(64px, auto) minmax(160px, 1fr) 56px;
+  min-width: 940px;
   border: 1px solid var(--rd-hair-07, rgba(255, 255, 255, 0.07));
   border-radius: 2px;
   background: var(--rd-card, #0b0d10);
@@ -595,9 +598,30 @@
   color: var(--rd-t-dim, #8b929a);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* R6 — the LIVE entry carries real text at real width */
+/* R6/F2 — the LIVE entry carries real text: min width + a TWO-LINE wrap
+   (breaks at spaces only — a price is never ellipsized mid-number) */
 :where(.intel-embed-frame) .if-bentry {
   font-size: 11px;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: clip;
+  line-height: 1.35;
+  max-width: 34ch; /* the column's auto track tops out here — surplus stays with REASONING */
+}
+/* F2 — the other level cells cap too, so a wordy stated level can't stretch
+   its auto track and eat the REASONING surplus (ellipsis + hover-full remain) */
+:where(.intel-embed-frame) .if-brow .if-lev-target,
+:where(.intel-embed-frame) .if-brow .if-lev-stop {
+  max-width: 16ch;
+}
+:where(.intel-embed-frame) .if-brow .if-lev-entry:not(.if-bentry) {
+  max-width: 14ch;
 }
 
 /* column header — the desk's rd-colhead recipe at the P6 floor */
@@ -1193,6 +1217,19 @@
   font-size: 10px; color: var(--rd-t-secondary, #c0c6cc);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* F5 — tape rows: one-line clamp, click unfolds in place */
+:where(.intel-embed-frame) .if-wire-textbtn {
+  appearance: none; border: none; background: none; cursor: pointer;
+  flex: 1 1 auto; min-width: 0; padding: 0; text-align: left;
+}
+:where(.intel-embed-frame) .if-wire-textbtn:focus-visible {
+  outline: 1px solid var(--rd-teal, #5fb0ad); outline-offset: 1px;
+}
+:where(.intel-embed-frame) .if-wire-textbtn .if-wire-text { display: block; }
+:where(.intel-embed-frame) .if-wire-textbtn.open .if-wire-text {
+  white-space: normal; overflow: visible; text-overflow: clip;
+}
+
 /* UX2-T6 — digest rows: one expandable line per bulk approval */
 :where(.intel-embed-frame) .if-wire-row { flex-wrap: wrap; }
 :where(.intel-embed-frame) .if-wire-batchbtn {

@@ -916,6 +916,10 @@ body::after {
   :root[data-rail="collapsed"] .has-rail {
     --rail-w: 30px;
   }
+  /* F9 — the IDEAS tab is mobile-only again (desktop has » + the edge tab) */
+  .view-tab-ideas {
+    display: none;
+  }
   /* UX2-T1 — threads sidebar footprint (chat view only) */
   .has-threads {
     --sb-open-w: 244px;
@@ -5026,7 +5030,7 @@ button.pulse-line:focus-visible {
   z-index: 45;
   display: flex;
   flex-direction: column;
-  min-width: 96px;
+  min-width: 136px;
   padding: 4px;
   border: 1px solid var(--hair);
   border-radius: 10px;
@@ -5062,6 +5066,30 @@ button.pulse-line:focus-visible {
 .hl-rainopt:focus-visible {
   outline: 1px solid var(--label);
   outline-offset: 1px;
+}
+/* F7 — the menu's little section labels + option glyphs */
+.hl-menu-k {
+  padding: 7px 12px 3px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--label);
+}
+.hl-menu-k + .hl-menu-k,
+.hl-rainopt + .hl-menu-k {
+  margin-top: 5px;
+  border-top: 1px solid var(--hair2);
+}
+.hl-rainopt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hl-opt-glyph {
+  display: inline-flex;
+  color: inherit;
+  opacity: 0.75;
 }
 
 /* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
@@ -5249,7 +5277,7 @@ button.pulse-line:focus-visible {
   color: var(--ink);
 }
 .hl-bar {
-  margin-top: 30px;
+  margin-top: 16px; /* F8 — pulled up (was 30px) */
   /* UX6 — the idle ask bar rides the same centered column as the transcript
      and composer (was 760px/88vw) */
   width: min(var(--chat-col, 720px), 88%);
@@ -5344,18 +5372,18 @@ button.pulse-line:focus-visible {
   border-color: var(--chip-hover);
   color: var(--ink);
 }
-/* R2 — the vertical-centering frame between the top bar and the ticker
-   strip. Idle: the home-state group centers in the leftover height; flex
-   1 0 auto means an overflowing (short) viewport grows the frame past the
-   fold and the landing scrolls — comfortable top padding, never clipped. */
+/* R2/F8 — the frame between the top bar and the ticker strip. F8 pulled the
+   group UP (flex-start, compact padding) and the frame no longer grows to pin
+   the strip to the bottom — the strip rides directly under the content, so no
+   dead band can open above it. Short viewports still just scroll. */
 .hl-main {
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 14px 0 26px;
+  justify-content: flex-start;
+  padding: 6px 0 0;
 }
 /* conversation mode: the frame is exactly the leftover height (the
    transcript owns scrolling inside it) and stacks from the top */
@@ -5401,8 +5429,9 @@ button.pulse-line:focus-visible {
   width: min(var(--chat-col, 720px), 92%);
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  margin-top: 26px;
+  gap: 14px; /* F8 — tighter rhythm (was 18/26) */
+  margin-top: 16px;
+  padding-bottom: 16px;
 }
 .hb-top {
   display: flex;
@@ -5705,6 +5734,13 @@ button.pulse-line:focus-visible {
     transform 0.45s var(--ease-snappy),
     margin-top 0.45s var(--ease-snappy),
     margin-bottom 0.45s var(--ease-snappy);
+}
+/* F8 — the idle orb compacts ~30%; the reclaimed height pulls the composer
+   and the brief up (the .convo rule further down still wins in conversation) */
+.home-landing:not(.convo) .hl-orb {
+  transform: scale(0.7);
+  transform-origin: 50% 0;
+  margin-bottom: -54px;
 }
 .home-landing.convo .hl-orb {
   margin-top: 1.2vh;
@@ -6634,6 +6670,19 @@ button.pulse-line:focus-visible {
   color: var(--ink-mute);
   margin-right: 3px;
 }
+/* F6 — inline entry editor on live idea cards */
+.adm-inline-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-input-inline {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 /* UX4 — the one-click side setter row */
 .adm-sides {
   display: flex;

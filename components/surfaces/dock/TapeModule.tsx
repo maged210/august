@@ -54,7 +54,7 @@ export default function TapeModule({
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
-              ∅
+              ·
             </span>{" "}
             tape unreachable
           </span>
@@ -66,7 +66,7 @@ export default function TapeModule({
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
-              ∅
+              ·
             </span>{" "}
             the tape is quiet
           </span>

@@ -165,8 +165,8 @@ export default function Home() {
   // default `false` can't strip the pre-paint attribute for a frame).
   const [railCollapsed, setRailCollapsed] = useState(false);
   const railSyncedRef = useRef(false);
-  // ≥1100px — decides what the top-bar IDEAS tab controls (collapse vs drawer).
-  const [deskWide, setDeskWide] = useState(false);
+  // (F9 removed the desktop IDEAS-tab behavior — the media-query effect below
+  // now only clears stale drawer flags when crossing up past 1100px.)
   // UX2-T1 — the chat view's LEFT threads sidebar: drawer below 1100px,
   // collapsible fixed sidebar above (same contracts as the ideas rail:
   // data-threads applied pre-paint, aug-threads in localStorage).
@@ -311,10 +311,9 @@ export default function Home() {
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
-      setDeskWide(mq.matches);
       if (mq.matches) {
         setRailOpen(false);
-        setThreadsOpen(false); // drawer → sidebar; clear the drawer flag
+        setThreadsOpen(false); // drawer → sidebar; clear the drawer flags
       }
     };
     apply();
@@ -979,19 +978,17 @@ export default function Home() {
     }
   }, [theme]);
 
-  // Flip the theme with a transient app-wide colour cross-fade — the brief
-  // [data-theming] window applies a one-off transition to everything, then clears
-  // (so there's no permanent transition cost). No hard flash.
-  function toggleTheme() {
+  // Set the theme with a transient app-wide colour cross-fade — the brief
+  // [data-theming] window applies a one-off transition to everything, then
+  // clears (no permanent transition cost). F7: the old cycle button became a
+  // menu, so this takes the target theme directly.
+  const applyTheme = useCallback((t: Theme) => {
     const root = document.documentElement;
     root.setAttribute("data-theming", "");
     window.clearTimeout(themingTimerRef.current);
     themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    // four-way cycle: matrix → dark → light → batman (Gotham) → matrix
-    setTheme((t) =>
-      t === "matrix" ? "dark" : t === "dark" ? "light" : t === "light" ? "batman" : "matrix",
-    );
-  }
+    setTheme(t);
+  }, []);
 
   // Mood: same persistence contract as the theme — load the saved choice once,
   // then keep <html data-mood> + storage in sync (layout.tsx sets the attribute
@@ -1540,16 +1537,14 @@ export default function Home() {
         >
           TERMINAL
         </button>
-        {/* the rail toggle — drawer below 1100px, sidebar collapse above (UX1) */}
+        {/* F9 — IDEAS is NOT a view: it is the rail's MOBILE drawer trigger
+            only (hidden ≥1100px, where the rail header » and the edge tab
+            own open/collapse — the tab there was a duplicate control). */}
         <button
           type="button"
           className="view-tab view-tab-ideas"
-          aria-expanded={deskWide ? !railCollapsed : railOpen}
-          title={deskWide ? (railCollapsed ? "Open the trade ideas rail" : "Collapse the trade ideas rail") : undefined}
-          onClick={() => {
-            if (deskWide) toggleRailCollapsed();
-            else setRailOpen((v) => !v);
-          }}
+          aria-expanded={railOpen}
+          onClick={() => setRailOpen((v) => !v)}
         >
           IDEAS
         </button>
@@ -1616,7 +1611,7 @@ export default function Home() {
             onNotify={handleNotify}
             soundOn={soundOn}
             onToggleSound={toggleSound}
-            onToggleTheme={toggleTheme}
+            onSetTheme={applyTheme}
             rainPreset={rainPreset}
             onSetRainPreset={applyRainPreset}
           />

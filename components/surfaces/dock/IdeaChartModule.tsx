@@ -184,7 +184,7 @@ export default function IdeaChartModule({ selection }: { selection: ChartSelecti
           <div className="ifm-veil">
             <span className="if-abs">
               <span className="if-abs-g" aria-hidden="true">
-                ∅
+                ·
               </span>{" "}
               no chart data for {selection.ticker}
             </span>
@@ -194,7 +194,7 @@ export default function IdeaChartModule({ selection }: { selection: ChartSelecti
           <div className="ifm-veil">
             <span className="if-abs">
               <span className="if-abs-g" aria-hidden="true">
-                ∅
+                ·
               </span>{" "}
               select a blotter row to chart it
             </span>
