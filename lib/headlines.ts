@@ -41,6 +41,11 @@ function decodeEntities(s: string): string {
       const c = Number(n);
       return Number.isFinite(c) && c > 31 && c < 0x10000 ? String.fromCharCode(c) : "";
     })
+    // hex entities (&#x2019; — MarketWatch/Dow Jones encode apostrophes this way)
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => {
+      const c = parseInt(n, 16);
+      return Number.isFinite(c) && c > 31 && c < 0x10000 ? String.fromCharCode(c) : "";
+    })
     .replace(/\s+/g, " ")
     .trim();
 }

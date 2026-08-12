@@ -7,7 +7,7 @@ import { mergeHeadlines, parseRss, type Headline } from "../lib/headlines";
 
 const RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>Feed</title>
-<item><title>Fed holds &amp; markets pop</title><link>https://ex.com/a</link><pubDate>Wed, 12 Aug 2026 14:00:00 GMT</pubDate></item>
+<item><title>Fed holds &amp; markets pop &#x2019;again&#8217; they say</title><link>https://ex.com/a</link><pubDate>Wed, 12 Aug 2026 14:00:00 GMT</pubDate></item>
 <item><title><![CDATA[CPI comes in hot <again>]]></title><link>https://ex.com/b</link><pubDate>Wed, 12 Aug 2026 13:00:00 GMT</pubDate></item>
 <item><title>No link — dropped</title><link>not-a-url</link></item>
 <item><title></title><link>https://ex.com/c</link></item>
@@ -17,7 +17,7 @@ const RSS = `<?xml version="1.0" encoding="UTF-8"?>
 test("parseRss: decodes entities/CDATA, requires title + http link, tolerates bad dates", () => {
   const rows = parseRss(RSS, "TestWire");
   assert.equal(rows.length, 3);
-  assert.equal(rows[0].title, "Fed holds & markets pop");
+  assert.equal(rows[0].title, "Fed holds & markets pop ’again’ they say");
   assert.equal(rows[0].publisher, "TestWire");
   assert.ok(rows[0].publishedAt > 0);
   assert.equal(rows[1].title, "CPI comes in hot <again>");
