@@ -171,9 +171,9 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Compact strip under the heatmap: top 3 and bottom 3 today across the book — ticker · last · % today. Existing price data only. *(deduped per ticker, non-overlapping when the book is small)*
 
 ## UX2-T6 — WIRE v2 (fix, don't delete)
-- [ ] Collapse batch events: "11 ideas → LIVE · 15:11" renders as ONE expandable row.
-- [ ] Individual rows only for distinct events: TRIGGERED @ price · transcript ingested (→ counts) · tape posted · status change.
-- [ ] Cap visible rows (~10), digest tone, expand for history.
+- [x] Collapse batch events: "11 ideas → LIVE · 15:11" renders as ONE expandable row. *(buildWire folds same-minute LIVE approvals into a batch event; the row's caret expands to member ticker chips inline)*
+- [x] Individual rows only for distinct events: TRIGGERED @ price · transcript ingested (→ counts) · tape posted · status change. *(single-idea approvals stay individual too)*
+- [x] Cap visible rows (~10), digest tone, expand for history. *(10 visible + SHOW ALL · N toggle; buildWire returns the full history now, display owns the cap)*
 
 ## UX2 NON-GOALS
 No market-wide breadth, screener tables, insider tables, or economic calendar (licensed feeds — behind the revenue gate with options flow).
