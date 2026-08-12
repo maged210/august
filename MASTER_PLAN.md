@@ -180,7 +180,22 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ### GATE UX2-G1 — deploy preview; screenshots: home brief, sidebar open + collapsed, terminal with heatmap + movers + wire v2. HOLD for approval, then merge to main.
 - [x] Preview deployed (Vercel status: success on 1edc201, still behind deployment protection — open signed into Vercel); evidence artifact posted with the three required screenshots. 229/229 tests. Holding.
-- [x] UX2-G1 approved 2026-08-12. Merged feature/ux-2 → main; production deploy follows the push.
+- [x] UX2-G1 approved 2026-08-12 (round 1). Merged feature/ux-2 → main (dd0bfe2); production deployed.
+- [x] UX2-G1 round-2 feedback (2026-08-12) — fix round F1–F9 (NOTE: round 1 was already merged on the earlier explicit approval; this round ships on feature/ux-2 and holds before a second merge):
+
+## UX ROUND 2 — FIX ROUND (F1–F9)
+- [x] F1 EMPTY VALUES: every inline ∅ on the new/public surfaces → dim middot or true blank (blotter cells ·, labeled absents lose the glyph, heatmap ∅ tile → ·). The owner-only IntelDashboard keeps its legacy rd-* treatment (predates these rounds — flag if it should follow).
+- [x] F2 COLUMN ECONOMY: REASONING is the only fr track (absorbs ALL surplus); TARGET/STOP/ENTRY are minmax(min, auto) so empties collapse to minimum; LIVE ENTRY wraps to two lines (space-breaks only, hover full — never mid-number ellipsis, max 34ch so it can't eat REASONING); blotter min-width 1000→940. Verified rail-open + rail-collapsed.
+- [x] F3 BUG: the ° was the since-first-mention marker (perfOf + detail panel) — removed everywhere; the kind now rides the hover title / basis line in words.
+- [x] F4 HEATMAP COLOR: alpha = 0.08 + |%|·0.068 (±1% ≈ 0.15 faint · ±5% ≈ 0.42 clear · ±10% ≈ 0.76 hot, capped for label contrast); tiles sorted by % desc, quote-less tail last; header counts unchanged.
+- [x] F5 WIRE TAPE ROWS: tape text clamps to one line; clicking unfolds that row in place (flex-basis 100% expansion, never across the grid).
+- [x] F6 PIPELINE RULE + DEMOTE: applyEntryRule (pure, enforced in code AND prompted) demotes entry-less idea candidates to tape-note drafts (side→sentiment); /admin gets DEMOTE → TAPE on every card (thesis → note, live→live/draft→draft, idea closed) + an inline ENTRY editor on live cards (Enter/SET applies); side setter already inline. +2 tests → 231.
+- [x] F7 RAIN DIAL PLACEMENT: the separate rain button is gone — the moon button opens ONE theme menu (THEME radio w/ glyphs + TICKER RAIN presets, matrix only), glass-styled to theme. LOUD raised to ~2× the v1 ceiling AND a real bug fixed: columns seeded only above the viewport, leaving tall (4K) screens rain-less for ~30s — heads now seed throughout the field with pre-run trails. 4K LOUD screenshot at the gate.
+- [x] F8 HOME RHYTHM: idle orb scaled 0.7 (reclaimed height pulled up), ask bar/brief margins tightened, .hl-main no longer grows — the WATCHING strip rides directly under the content, so no dead band can open above it (the stage + rain own the space below). threadTitle skips greeting-only openers for the first substantive line ("hi" can't title a real exchange).
+- [x] F9 IDEAS TAB: it was never a view — it toggled the rail (drawer on mobile, collapse on desktop). The desktop behavior duplicated the rail-header » and the edge tab, so it's now hidden ≥1100px and remains ONLY as the mobile drawer trigger.
+
+### GATE UX2-G1 (round 2) — preview + screenshots (terminal both rail states, home, one LOUD 4K rain shot). HOLD, then merge feature/ux-2 → main.
+- [ ] UX2-G1 round 2 approved.
 
 ---
 

@@ -55,6 +55,17 @@ test("threadTitle falls back when there is no usable user message", () => {
   assert.equal(threadTitle([u("   \n\t ")]), "Conversation");
 });
 
+test("threadTitle (F8): greeting-only openers yield to the first substantive line", () => {
+  assert.equal(
+    threadTitle([u("hi"), a("Hey."), u("what's the NQ setup today?")]),
+    "what's the NQ setup today?",
+  );
+  // a greeting with nothing better after it stays the honest title
+  assert.equal(threadTitle([u("hi"), a("Hey — what's on your mind?")]), "hi");
+  // short but substantive lines still win ("NQ pivot?" is not a greeting)
+  assert.equal(threadTitle([u("yo"), u("NQ pivot?")]), "NQ pivot?");
+});
+
 // ── per-thread caps ──────────────────────────────────────────────────────────
 
 test("capThreadMessages keeps the most recent 40 and flags truncation", () => {

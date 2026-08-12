@@ -110,6 +110,8 @@ export default function DeskWirePanel({
 }) {
   const [showAll, setShowAll] = useState(false);
   const [openBatch, setOpenBatch] = useState<string | null>(null);
+  // F5 — long tape text clamps to one line; a click unfolds THAT row only
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const rows = events === null ? null : showAll ? events : events.slice(0, VISIBLE);
   const hidden = events === null ? 0 : events.length - VISIBLE;
@@ -132,7 +134,7 @@ export default function DeskWirePanel({
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
-              ∅
+              ·
             </span>{" "}
             no pipeline activity yet
           </span>
@@ -161,6 +163,17 @@ export default function DeskWirePanel({
                       <span className="if-wire-caret" aria-hidden="true">
                         {open ? "▾" : "▸"}
                       </span>
+                    </button>
+                  ) : e.kind === "TAPE" ? (
+                    // F5 — tape notes are the long ones: one-line clamp,
+                    // click to unfold in place (never wraps the column grid)
+                    <button
+                      type="button"
+                      className={`if-wire-textbtn${openRow === bkey ? " open" : ""}`}
+                      aria-expanded={openRow === bkey}
+                      onClick={() => setOpenRow(openRow === bkey ? null : bkey)}
+                    >
+                      <span className="if-wire-text">{e.text}</span>
                     </button>
                   ) : (
                     <span className="if-wire-text" title={e.text}>

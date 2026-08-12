@@ -163,8 +163,8 @@ function perfOf(card: FeedCard): { text: string; label: string; cls: string } | 
   if (!pnl || pnl.kind === "none") return null;
   const cls = pnl.pct >= 0 ? "if-pos" : "if-neg";
   if (pnl.kind === "since_called") return { text: pctFmt(pnl.pct), label: "SINCE CALLED", cls };
-  // ° marks a price move since first mention — not trade P&L (desk convention)
-  return { text: `${pctFmt(pnl.pct)}°`, label: "SINCE FIRST MENTION", cls };
+  // F3 — no glyph suffix: the kind rides the hover title, the numeral stays clean
+  return { text: pctFmt(pnl.pct), label: "SINCE FIRST MENTION — price move, not trade P&L", cls };
 }
 
 /** spark tone: the perf sign when a pnl exists, else the real measured drift
@@ -250,7 +250,7 @@ function LiveRow({
             </span>
           ) : (
             <span className="if-abs-g" title="side not stated and not derivable from levels">
-              ∅
+              ·
             </span>
           )}
         </span>
@@ -268,7 +268,7 @@ function LiveRow({
             </span>
           ) : (
             <span className="if-abs-g" title="no entry stated">
-              ∅
+              ·
             </span>
           )}
         </span>
@@ -430,7 +430,7 @@ function ColHead({ cols, live }: { cols: readonly string[]; live?: boolean }) {
           key={c}
           title={
             c === "% SINCE CALL"
-              ? "signed vs stated trigger; ° = price since first mention"
+              ? "signed vs stated trigger; watch-type rows show price since first mention"
               : undefined
           }
         >
@@ -681,7 +681,7 @@ export default function IdeasFeed() {
           ) : unreachable ? (
             <div className="if-state">
               <div className="if-state-glyph" aria-hidden="true">
-                ∅
+                ·
               </div>
               <div className="if-state-title">FEED UNREACHABLE</div>
               <p className="if-state-copy">The ideas feed could not be loaded.</p>
@@ -692,7 +692,7 @@ export default function IdeasFeed() {
           ) : empty ? (
             <div className="if-state">
               <div className="if-state-glyph" aria-hidden="true">
-                ∅
+                ·
               </div>
               <div className="if-state-title">NO IDEAS ON THE BOARD</div>
               <p className="if-state-copy">

@@ -196,7 +196,7 @@ function IdeaCard({
             {idea.entry}
           </span>
         ) : (
-          <span className="ir-line-entry ir-absent">∅ no entry</span>
+          <span className="ir-line-entry ir-absent">no entry</span>
         )}
         <span className={`ir-risk ir-risk-${idea.riskLevel}`}>{RISK_LABEL[idea.riskLevel]}</span>
         <span className="ir-caret" aria-hidden="true">
@@ -218,7 +218,7 @@ function ExpandedBody({ idea }: { idea: PublicIdea }) {
         {idea.entry ? (
           <span className="ir-entry-v">{idea.entry}</span>
         ) : (
-          <span className="ir-absent">∅ not stated</span>
+          <span className="ir-absent">not stated</span>
         )}
       </div>
       <p className="ir-thesis">{idea.thesis}</p>

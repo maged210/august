@@ -34,7 +34,7 @@ export const RAIN_PRESETS: readonly RainPreset[] = ["off", "faint", "visible", "
 const RAIN_LEVELS: Record<Exclude<RainPreset, "off">, { layer: number; head: number; trail: number }> = {
   faint: { layer: 0.055, head: 0.5, trail: 0.28 },
   visible: { layer: 0.09, head: 0.76, trail: 0.48 },
-  loud: { layer: 0.12, head: 0.95, trail: 0.6 },
+  loud: { layer: 0.22, head: 1, trail: 0.75 }, // F7 — genuinely loud: ~2× the v1 ceiling
 };
 
 const CELL = 13; // px per column/row — v1 was 16 (smaller glyphs, tighter columns)
@@ -128,12 +128,22 @@ export default function MatrixRain({ preset = "visible" }: { preset?: Exclude<Ra
       wordAt.length = Math.min(wordAt.length, cols);
       gaps.length = Math.min(gaps.length, cols);
       while (heads.length < cols) {
-        heads.push(-Math.random() * rows * 1.5);
+        const c = heads.length;
+        // F7 — seed heads THROUGHOUT the field, not only above it: on a tall
+        // (4K) viewport an above-only spawn left the rain invisible for ~30s
+        // while the slow heads crawled down into view. ~30% still start above
+        // so fresh columns keep entering; the cells a mid-field head has
+        // already "passed" are pre-run through the word feeder so its trail
+        // draws from the very first frame.
+        const start = Math.random() * rows * 1.4 - rows * 0.4;
+        heads.push(start);
         speeds.push(0.4 + Math.random() * 0.5); // v1 was 0.55–1.3 rows/step
         grid.push(Array.from({ length: rows }, () => GAP));
         words.push(pickWord());
         wordAt.push(0);
         gaps.push((Math.random() * 3) | 0);
+        const filled = Math.min(Math.floor(start), rows - 1);
+        for (let r = 0; r <= filled; r++) grid[c][r] = nextGlyph(c);
       }
       for (let c = 0; c < cols; c++) {
         const col = grid[c];

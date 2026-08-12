@@ -100,7 +100,7 @@ export default function MarketPulseModule() {
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
-              ∅
+              ·
             </span>{" "}
             quotes unreachable
           </span>

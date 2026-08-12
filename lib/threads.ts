@@ -66,10 +66,19 @@ export function threadsConfigured(): boolean {
 
 // --- pure helpers -----------------------------------------------------------
 
-/** Auto-title: first user message, whitespace collapsed, capped at 48 chars + '…'. */
+// F8 — bare greetings/acks make useless titles ("hi"); when the exchange has
+// a substantive user line, title from THAT instead. Mechanical, still no LLM.
+const GREETING_RE =
+  /^(hi+|hey+( there)?|hello+|yo+|sup|ok(ay)?|thanks?|test(ing)?|good (morning|afternoon|evening)|what'?s up|how are you\??)[\s!.,?]*$/i;
+
+/** Auto-title: first SUBSTANTIVE user message (greeting-only lines skipped
+ *  when something better follows), whitespace collapsed, capped at 48 + '…'. */
 export function threadTitle(messages: ThreadMessage[]): string {
-  const first = messages.find((m) => m.role === "user")?.content ?? "";
-  const collapsed = first.replace(/\s+/g, " ").trim();
+  const users = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const collapsed = users.find((t) => t.length >= 8 && !GREETING_RE.test(t)) ?? users[0] ?? "";
   if (!collapsed) return "Conversation";
   return collapsed.length > MAX_TITLE_CHARS
     ? collapsed.slice(0, MAX_TITLE_CHARS) + "…"

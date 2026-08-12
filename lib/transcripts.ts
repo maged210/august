@@ -127,6 +127,40 @@ export function normalizeTapeCandidates(raw: unknown): TapeCreateInput[] {
   return out;
 }
 
+/**
+ * PURE (F6). THE PIPELINE RULE: a call WITHOUT a stated entry is not an idea —
+ * it's commentary. Any idea candidate whose entry is empty demotes to a TAPE
+ * NOTE draft (thesis → note, side → sentiment) and leaves the ideas list.
+ * Runs AFTER both normalizers, so every demoted row still passed the idea
+ * validator and re-passes the tape validator (drop-on-failure, never repair).
+ */
+export function applyEntryRule(
+  ideas: IdeaCreateInput[],
+  tape: TapeCreateInput[],
+): { ideas: IdeaCreateInput[]; tape: TapeCreateInput[] } {
+  const keptIdeas: IdeaCreateInput[] = [];
+  const outTape = [...tape];
+  for (const i of ideas) {
+    if (i.entry.trim() !== "") {
+      keptIdeas.push(i);
+      continue;
+    }
+    const parsed = validateTapeCreate({
+      symbol: i.instrument,
+      note: i.thesis.slice(0, MAX_TAPE_NOTE_CHARS),
+      expiry: "",
+      premium: "",
+      kind: "note",
+      sentiment: i.side === "long" ? "bull" : i.side === "short" ? "bear" : "neutral",
+      status: "draft",
+      source: "extracted",
+    });
+    if (parsed.ok) outTape.push(parsed.value);
+    // a demotion that can't re-validate simply drops — never repaired
+  }
+  return { ideas: keptIdeas, tape: outTape.slice(0, MAX_TAPE_PER_TRANSCRIPT) };
+}
+
 // --- extraction -------------------------------------------------------------
 
 export function aiConfigured(): boolean {
@@ -142,6 +176,7 @@ const EXTRACT_SYSTEM = `You extract trade ideas AND options/flow callouts from t
 TRADE IDEAS (the "ideas" list):
 - thesis: a tight 1-3 sentence paraphrase of the speaker's ACTUAL reasoning for this idea, in plain prose (max ${MAX_THESIS_CHARS} chars).
 - entry / target: the speaker's stated levels or conditions, near-verbatim ("21,450", "break of 600", "under the pivot") — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
+- A call WITHOUT a stated entry is NOT an idea — emit it as a TAPE NOTE (the "tape" list, kind "note") instead. Ideas require an actionable entry.
 - riskLevel: "high" when the speaker frames the idea as aggressive, speculative, or a lottery; "low" when framed as conservative, core, or highest-conviction; otherwise "medium".
 - side: "long" ONLY when the speaker's entry language points up ("break above", "clears", "reclaims", "retest higher", buying calls/going long); "short" ONLY when it points down ("break below", "breakdown", "loses", "rejection at", shorting/buying puts); "watch" ONLY when they explicitly frame it as watch-only, no trade yet. When the direction is genuinely ambiguous, OMIT the field entirely — a wrong side is worse than no side. Never infer it from the thesis mood alone.
 - Skip pure market commentary with no actionable idea. Merge repeats of the same idea into one row.
@@ -238,10 +273,9 @@ export async function extractFromTranscript(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "emit_extractions",
   );
   const input = toolUse?.input as { ideas?: unknown; tape?: unknown } | undefined;
-  return {
-    ideas: normalizeCandidates(input?.ideas),
-    tape: normalizeTapeCandidates(input?.tape),
-  };
+  // F6 — the entry rule is enforced in code, not just prompted: entry-less
+  // idea candidates demote to tape notes no matter what the model emitted
+  return applyEntryRule(normalizeCandidates(input?.ideas), normalizeTapeCandidates(input?.tape));
 }
 
 // --- store ------------------------------------------------------------------

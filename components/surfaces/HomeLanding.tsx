@@ -76,11 +76,19 @@ type HomeLandingProps = {
   onNotify: () => void;
   soundOn: boolean;
   onToggleSound: () => void;
-  onToggleTheme: () => void;
-  /** R1-REDO — the rain intensity dial (matrix theme only) */
+  /** F7 — the moon button opens the theme menu; selection applies directly */
+  onSetTheme: (t: Theme) => void;
+  /** the rain intensity dial — lives INSIDE the theme menu (matrix only) */
   rainPreset: RainPreset;
   onSetRainPreset: (p: RainPreset) => void;
 };
+
+const THEME_OPTIONS: Array<{ id: Theme; label: string }> = [
+  { id: "matrix", label: "MATRIX" },
+  { id: "dark", label: "DARK" },
+  { id: "light", label: "LIGHT" },
+  { id: "batman", label: "GOTHAM" },
+];
 
 export default function HomeLanding({
   state,
@@ -101,7 +109,7 @@ export default function HomeLanding({
   onNotify,
   soundOn,
   onToggleSound,
-  onToggleTheme,
+  onSetTheme,
   rainPreset,
   onSetRainPreset,
 }: HomeLandingProps) {
@@ -345,78 +353,66 @@ export default function HomeLanding({
             >
               <ToneGlyph off={!soundOn} />
             </button>
-            <button
-              type="button"
-              className="hl-ctl"
-              onClick={onToggleTheme}
-              title={
-                theme === "matrix"
-                  ? "Switch to dark theme"
-                  : theme === "dark"
-                    ? "Switch to light theme"
-                    : theme === "light"
-                      ? "Switch to Gotham theme"
-                      : "Switch to Matrix theme"
-              }
-              aria-label={
-                theme === "matrix"
-                  ? "Switch to dark theme"
-                  : theme === "dark"
-                    ? "Switch to light theme"
-                    : theme === "light"
-                      ? "Switch to Gotham theme"
-                      : "Switch to Matrix theme"
-              }
-            >
-              {/* the glyph previews the NEXT stop in the cycle:
-                  matrix→dark (moon), dark→light (sun), light→gotham (signal),
-                  gotham→matrix (rain) */}
-              {theme === "matrix" ? (
+            {/* F7 — THE moon menu: theme selection + (matrix only) the ticker
+                rain intensity dial, one quiet dropdown styled to the theme */}
+            <div className="hl-rainwrap" ref={rainWrapRef}>
+              <button
+                type="button"
+                className="hl-ctl"
+                onClick={() => setRainMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={rainMenuOpen}
+                title="Theme & rain"
+                aria-label="Theme and ticker-rain settings"
+              >
                 <MoonGlyph />
-              ) : theme === "dark" ? (
-                <SunGlyph />
-              ) : theme === "light" ? (
-                <SignalGlyph />
-              ) : (
-                <RainGlyph />
-              )}
-            </button>
-            {/* R1-REDO — the rain intensity dial, beside the theme control;
-                matrix theme only (the rain doesn't exist elsewhere) */}
-            {theme === "matrix" ? (
-              <div className="hl-rainwrap" ref={rainWrapRef}>
-                <button
-                  type="button"
-                  className={`hl-ctl${rainPreset !== "visible" ? " on" : ""}`}
-                  onClick={() => setRainMenuOpen((v) => !v)}
-                  aria-haspopup="menu"
-                  aria-expanded={rainMenuOpen}
-                  title={`Ticker rain: ${rainPreset.toUpperCase()}`}
-                  aria-label={`Ticker rain intensity — currently ${rainPreset}`}
-                >
-                  <RainGlyph />
-                </button>
-                {rainMenuOpen ? (
-                  <div className="hl-rainmenu" role="menu" aria-label="Rain intensity">
-                    {RAIN_PRESETS.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={rainPreset === p}
-                        className={`hl-rainopt${rainPreset === p ? " on" : ""}`}
-                        onClick={() => {
-                          onSetRainPreset(p);
-                          setRainMenuOpen(false);
-                        }}
-                      >
-                        {p.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+              </button>
+              {rainMenuOpen ? (
+                <div className="hl-rainmenu" role="menu" aria-label="Theme and rain">
+                  <span className="hl-menu-k">THEME</span>
+                  {THEME_OPTIONS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={theme === t.id}
+                      className={`hl-rainopt${theme === t.id ? " on" : ""}`}
+                      onClick={() => onSetTheme(t.id)}
+                    >
+                      <span className="hl-opt-glyph" aria-hidden="true">
+                        {t.id === "matrix" ? (
+                          <RainGlyph />
+                        ) : t.id === "dark" ? (
+                          <MoonGlyph />
+                        ) : t.id === "light" ? (
+                          <SunGlyph />
+                        ) : (
+                          <SignalGlyph />
+                        )}
+                      </span>
+                      {t.label}
+                    </button>
+                  ))}
+                  {theme === "matrix" ? (
+                    <>
+                      <span className="hl-menu-k">TICKER RAIN</span>
+                      {RAIN_PRESETS.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={rainPreset === p}
+                          className={`hl-rainopt${rainPreset === p ? " on" : ""}`}
+                          onClick={() => onSetRainPreset(p)}
+                        >
+                          {p.toUpperCase()}
+                        </button>
+                      ))}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             {/* SETTINGS — re-opens /welcome ("Your setup": watchlist + feeds).
                 Session-only: signed out and unconfigured instances never show it. */}
             {account ? (

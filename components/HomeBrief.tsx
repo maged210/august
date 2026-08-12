@@ -289,7 +289,7 @@ export default function HomeBrief() {
         <div className="hb-row">
           <span className="hb-label">LATEST INGEST</span>
           {ingest === null ? (
-            <span className="hb-absent">∅ nothing ingested yet</span>
+            <span className="hb-absent">nothing ingested yet</span>
           ) : (
             <span className="hb-ingest">
               {ingest.source || "transcript"} → {ingest.ideaDrafts} idea draft
@@ -307,7 +307,7 @@ export default function HomeBrief() {
         {news === null ? (
           <span className="hb-absent">loading…</span>
         ) : news.length === 0 ? (
-          <span className="hb-absent">∅ {newsErr ? "headlines unreachable" : "no headlines right now"}</span>
+          <span className="hb-absent">{newsErr ? "headlines unreachable" : "no headlines right now"}</span>
         ) : (
           <ul className="hb-news-list">
             {news.slice(0, 5).map((h) => (
