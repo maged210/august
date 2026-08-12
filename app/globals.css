@@ -899,10 +899,12 @@ body::after {
 }
 @media (min-width: 1100px) {
   .has-rail {
-    --rail-w: 276px;
+    --rail-open-w: 276px; /* the sidebar's real width — .ideas-rail keeps it while sliding */
+    --rail-w: var(--rail-open-w);
   }
-  .view-tab-ideas {
-    display: none;
+  /* UX1 — collapsed sidebar: the desk keeps only the edge tab's sliver */
+  :root[data-rail="collapsed"] .has-rail {
+    --rail-w: 30px;
   }
 }
 .has-rail .view-panel {
@@ -913,6 +915,24 @@ body::after {
 }
 .has-rail .view-bar {
   left: calc(50% - var(--rail-w) / 2);
+}
+/* UX1 — the reflow is animated (desktop only; --rail-w itself can't
+   transition, but the offsets it feeds can) */
+@media (min-width: 1100px) {
+  .has-rail .view-panel,
+  .has-rail .dock-wrap {
+    transition: right var(--dur-med) var(--ease);
+  }
+  .has-rail .view-bar {
+    transition: left var(--dur-med) var(--ease);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .has-rail .view-panel,
+  .has-rail .dock-wrap,
+  .has-rail .view-bar {
+    transition: none;
+  }
 }
 
 .ideas-rail {
@@ -946,14 +966,21 @@ body::after {
   background: rgba(0, 0, 0, 0.45);
 }
 @media (min-width: 1100px) {
-  /* sidebar mode: always open, ambient, below the dock */
+  /* sidebar mode: ambient, below the dock; collapsible to the edge tab (UX1) */
   .ideas-rail {
-    width: var(--rail-w);
+    width: var(--rail-open-w, 276px); /* NOT --rail-w — must not shrink to the collapsed sliver while sliding out */
     transform: none;
     visibility: visible;
-    transition: none;
+    transition: transform var(--dur-med) var(--ease);
     z-index: 15;
     background: var(--glass);
+  }
+  :root[data-rail="collapsed"] .ideas-rail {
+    transform: translateX(102%);
+    visibility: hidden;
+    transition:
+      transform var(--dur-med) var(--ease),
+      visibility 0s linear var(--dur-med);
   }
   .ir-scrim,
   .ir-close {
@@ -963,6 +990,80 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .ideas-rail {
     transition: none;
+  }
+}
+
+/* UX1 — the collapsed sidebar's edge tab: a thin vertical "IDEAS · N LIVE"
+   strip hugging the right edge. Desktop only — below 1100px the drawer owns
+   the rail and this never renders usefully. */
+.ir-tab {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .ir-tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: 16;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    writing-mode: vertical-rl;
+    padding: 16px 6px;
+    border: 1px solid var(--line);
+    border-right: none;
+    border-radius: var(--r-md) 0 0 var(--r-md);
+    background: var(--glass-strong);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: var(--track-label);
+    color: var(--ash);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-snappy);
+  }
+  .ir-tab:hover {
+    color: var(--bone);
+  }
+  .ir-tab:focus-visible {
+    outline: 1px solid var(--steel);
+    outline-offset: 1px;
+  }
+  .ir-tab-count {
+    color: var(--steel);
+  }
+}
+
+/* rail-header action cluster (collapse »  ·  drawer ✕) */
+.ir-head-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ir-collapse {
+  display: none; /* desktop-only control — the drawer has ✕ */
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ash);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+}
+.ir-collapse:hover {
+  color: var(--bone);
+}
+.ir-collapse:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+@media (min-width: 1100px) {
+  .ir-collapse {
+    display: inline-flex;
   }
 }
 

@@ -149,11 +149,20 @@ export default function Home() {
   // the top-bar toggle, the go_to_screen tool, ?view=terminal deep links, and
   // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
   const [view, setView] = useState<ViewId>("chat");
-  // Trade Ideas drawer (below 1100px; the desktop sidebar is always open and
-  // ignores this — see .ideas-rail's media query). The ref mirrors it for the
-  // Esc handler, which must not resubscribe per toggle.
+  // Trade Ideas drawer (below 1100px; the desktop sidebar ignores this — see
+  // .ideas-rail's media query). The ref mirrors it for the Esc handler, which
+  // must not resubscribe per toggle.
   const [railOpen, setRailOpen] = useState(false);
   const railOpenRef = useRef(false);
+  // UX1 — the DESKTOP sidebar's collapse (folds to a thin "IDEAS · N LIVE"
+  // edge tab; the desk reflows into the freed width). Persisted; layout.tsx
+  // applies the stored data-rail attribute pre-paint, and the mount effect
+  // below adopts it into React state (the first sync run is skipped so the
+  // default `false` can't strip the pre-paint attribute for a frame).
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const railSyncedRef = useRef(false);
+  // ≥1100px — decides what the top-bar IDEAS tab controls (collapse vs drawer).
+  const [deskWide, setDeskWide] = useState(false);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -276,17 +285,41 @@ export default function Home() {
     railOpenRef.current = railOpen;
   }, [railOpen]);
 
-  // Crossing up past 1100px turns the drawer into the always-open sidebar —
-  // clear the drawer flag so a stale `open` can't silently eat an Esc later.
+  // Crossing up past 1100px turns the drawer into the sidebar — clear the
+  // drawer flag so a stale `open` can't silently eat an Esc later. The same
+  // query drives what the IDEAS tab toggles (collapse vs drawer).
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
+      setDeskWide(mq.matches);
       if (mq.matches) setRailOpen(false);
     };
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
+
+  // UX1 — adopt the pre-paint rail state, then keep attribute + storage in
+  // sync on every later toggle (theme persistence contract).
+  useEffect(() => {
+    setRailCollapsed(document.documentElement.getAttribute("data-rail") === "collapsed");
+  }, []);
+  useEffect(() => {
+    if (!railSyncedRef.current) {
+      railSyncedRef.current = true; // first run mirrors the pre-paint attribute — never overwrite it
+      return;
+    }
+    const el = document.documentElement;
+    if (railCollapsed) el.setAttribute("data-rail", "collapsed");
+    else el.removeAttribute("data-rail");
+    try {
+      window.localStorage.setItem("aug-rail", railCollapsed ? "collapsed" : "open");
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, [railCollapsed]);
+
+  const toggleRailCollapsed = useCallback(() => setRailCollapsed((v) => !v), []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -1526,19 +1559,29 @@ export default function Home() {
         >
           TERMINAL
         </button>
-        {/* drawer trigger — hidden ≥1100px where the rail is a fixed sidebar */}
+        {/* the rail toggle — drawer below 1100px, sidebar collapse above (UX1) */}
         <button
           type="button"
           className="view-tab view-tab-ideas"
-          aria-expanded={railOpen}
-          onClick={() => setRailOpen((v) => !v)}
+          aria-expanded={deskWide ? !railCollapsed : railOpen}
+          title={deskWide ? (railCollapsed ? "Open the trade ideas rail" : "Collapse the trade ideas rail") : undefined}
+          onClick={() => {
+            if (deskWide) toggleRailCollapsed();
+            else setRailOpen((v) => !v);
+          }}
         >
           IDEAS
         </button>
       </nav>
 
-      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px, drawer below */}
-      <IdeasRail open={railOpen} onClose={() => setRailOpen(false)} />
+      {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
+          (collapsible to an edge tab, UX1), drawer below */}
+      <IdeasRail
+        open={railOpen}
+        onClose={() => setRailOpen(false)}
+        collapsed={railCollapsed}
+        onToggleCollapsed={toggleRailCollapsed}
+      />
 
       {/* The two-view stack. Both panels STAY MOUNTED once visited (chat always;
           the terminal latches its bodies internally) so chat state and desk

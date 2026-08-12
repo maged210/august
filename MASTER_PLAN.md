@@ -73,6 +73,50 @@ No payments/subscriptions. No NinjaTrader integration. No character/bedroom page
 
 ---
 
+# UX ROUND 1
+
+> Branch: `feature/ux-1` off main. Small round, one gate, then merge. Started 2026-08-12.
+
+## UX1 — COLLAPSIBLE TRADE IDEAS RAIL
+- [x] Toggle in the rail header (and top bar) that collapses the rail like a tab: collapsed state = thin edge tab on the right showing "IDEAS · N LIVE" vertically; click to reopen. *(rail-header » control + the IDEAS view-tab now lives at every width: drawer <1100px, collapse ≥1100px; edge tab is a vertical writing-mode strip at mid-right)*
+- [x] When collapsed, the center desk reflows to use the freed width. Smooth transition, no layout jank. *(--rail-w 276→30px; the offsets it feeds (view-panel/dock right, view-bar left) transition med; the rail slides on its own transform; reduced-motion = instant)*
+- [x] Persist open/closed state locally so it survives refresh. *(localStorage "aug-rail"; layout.tsx applies data-rail="collapsed" PRE-PAINT like the theme so a stored collapse never flashes open)*
+
+## UX2 — ENTRY + REASONING HIERARCHY
+Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → everything else.
+- [ ] ENTRY: high-contrast treatment — bright green chip/box, larger mono type. First thing the eye lands on after the ticker.
+- [ ] REASONING (thesis): brighter text than surrounding metadata, left accent border so it reads as a distinct block. Metadata (target/stop/age/risk) stays visually secondary.
+- [ ] Apply consistently: rail card, idea detail panel, blotter selected-row detail.
+
+## UX3 — RAIL DENSITY MODE
+- [ ] Compact one-line collapsed card mode: TICKER · risk badge · entry one-liner. Tap to expand in place.
+- [ ] "Expand all / collapse all" in the rail header.
+- [ ] Default: compact when more than 5 live ideas, expanded otherwise.
+
+## UX4 — SIDE (LONG/SHORT) FIX
+- [ ] Extraction: infer side from entry language (break above/clears/retest higher → long; break below/breakdown → short). Ambiguous → leave unset, never guess wrong.
+- [ ] Admin: one-click side setter (long / short / watch) on each idea, list and detail views.
+- [ ] Bias bars recompute from corrected sides.
+
+## UX5 — MATRIX RAIN v2: QUIETER + TICKER GLYPHS
+- [ ] Rain barely perceptible: lower drop opacity, smaller glyphs, tighter columns, slower fall. Panel text contrast untouched.
+- [ ] Glyphs become stock symbols: live/tracked idea tickers + pulse symbols (SPY, QQQ, NQ, BTC, VIX) + small static filler; pool refreshes on data load.
+- [ ] Still one canvas, capped FPS, honors prefers-reduced-motion. No perf regression.
+
+## UX6 — CENTER THE MAIN (AUGUST CHAT) PAGE
+- [ ] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open).
+- [ ] Bubbles, new-chat control, composer all align to this column. No left-drift.
+- [ ] Verify at ultrawide and mobile widths.
+
+## UX RULES
+- No new data sources, no schema breakage — side is an existing field, just populate it.
+- Zero regressions to the desk layout shipped in Core V2.
+
+### GATE UX-G1 — deploy Vercel preview; notify with screenshots: main page centered w/ quiet ticker rain, rail open, rail collapsed, one card w/ new hierarchy. HOLD for approval, then merge to main.
+- [ ] UX-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

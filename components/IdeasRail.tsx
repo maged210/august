@@ -20,9 +20,13 @@ type Props = {
   /** drawer state — meaningful below 1100px; the desktop sidebar ignores it */
   open: boolean;
   onClose: () => void;
+  /** UX1 — desktop sidebar collapse (folds to the "IDEAS · N LIVE" edge tab);
+      meaningless below 1100px, where the drawer owns the rail */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 };
 
-export default function IdeasRail({ open, onClose }: Props) {
+export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed }: Props) {
   const [ideas, setIdeas] = useState<PublicIdea[] | null>(null); // null = loading
   const [failed, setFailed] = useState(false);
   // Re-render minutes-scale timestamps without refetching.
@@ -61,6 +65,18 @@ export default function IdeasRail({ open, onClose }: Props) {
     <>
       {/* drawer scrim — mobile only (CSS hides it ≥1100px) */}
       {open ? <div className="ir-scrim" onClick={onClose} aria-hidden /> : null}
+      {/* UX1 — the collapsed sidebar's edge tab (desktop only, CSS-gated):
+          the rail folds away and this thin vertical strip is the way back */}
+      {collapsed ? (
+        <button
+          type="button"
+          className="ir-tab"
+          onClick={onToggleCollapsed}
+          aria-label={`Open the trade ideas rail — ${count} live`}
+        >
+          IDEAS <span className="ir-tab-count">· {count} LIVE</span>
+        </button>
+      ) : null}
       <aside
         ref={railRef}
         className={`ideas-rail${open ? " open" : ""}`}
@@ -71,14 +87,26 @@ export default function IdeasRail({ open, onClose }: Props) {
             TRADE IDEAS
             {count > 0 ? <span className="ir-count">{count} LIVE</span> : null}
           </span>
-          <button
-            type="button"
-            className="ir-close"
-            onClick={onClose}
-            aria-label="Close trade ideas"
-          >
-            ✕
-          </button>
+          <span className="ir-head-acts">
+            {/* desktop only (CSS): fold the sidebar to its edge tab */}
+            <button
+              type="button"
+              className="ir-collapse"
+              onClick={onToggleCollapsed}
+              aria-label="Collapse the trade ideas rail"
+              title="Collapse rail"
+            >
+              »
+            </button>
+            <button
+              type="button"
+              className="ir-close"
+              onClick={onClose}
+              aria-label="Close trade ideas"
+            >
+              ✕
+            </button>
+          </span>
         </div>
         <div className="ir-body">
           {ideas === null && !failed ? (
