@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import WidgetState from "@/components/WidgetState";
 import { relativeTime, type PublicIdea, type IdeaRiskLevel } from "@/lib/ideas";
+import { publishRainSymbols } from "@/lib/rain-symbols";
 
 const RISK_LABEL: Record<IdeaRiskLevel, string> = {
   low: "LOW RISK",
@@ -41,8 +42,12 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
     fetch("/api/ideas", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((j: { ideas?: PublicIdea[] }) => {
-        setIdeas(Array.isArray(j.ideas) ? j.ideas : []);
+        const rows = Array.isArray(j.ideas) ? j.ideas : [];
+        setIdeas(rows);
         setFailed(false);
+        // UX5 — the rail is the always-mounted /api/ideas reader, so it feeds
+        // the rain's symbol pool (no extra network anywhere)
+        publishRainSymbols("ideas", rows.map((i) => i.instrument));
       })
       .catch(() => setFailed(true)); // rows (if any) stay — marked stale below
   }, []);

@@ -210,7 +210,9 @@
   /* rain-only tokens — the canvas layer's color, glyph alpha and overall
      strength (kept off the accent so moods/set_mood can never touch the rain) */
   --rain-rgb: 64 220 110;
-  --rain-opacity: 0.11;
+  /* UX5 — v1 was 0.11; the ticker rain is ambient texture, barely perceptible
+     (the canvas's own head/trail alphas came down with it) */
+  --rain-opacity: 0.07;
 }
 
 /* ----------------------------------------------------------------------------

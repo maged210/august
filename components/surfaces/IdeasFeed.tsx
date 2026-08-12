@@ -33,6 +33,7 @@ import type { FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { Direction } from "@/lib/intel/types";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
+import { publishRainSymbols } from "@/lib/rain-symbols";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
@@ -452,6 +453,8 @@ export default function IdeasFeed() {
         if (!j || j.ok !== true || !Array.isArray(j.ideas)) throw new Error("malformed");
         setFeed(j);
         setFeedErr(false);
+        // UX5 — tracked tickers feed the rain's symbol pool (data already here)
+        publishRainSymbols("tracked", j.ideas.map((c) => c.ticker));
       })
       .catch(() => setFeedErr(true));
     fetch("/api/ideas", { cache: "no-store" })

@@ -101,9 +101,9 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Tests: +5 (create/patch/redaction/extraction pass-through) — 226 pass.
 
 ## UX5 — MATRIX RAIN v2: QUIETER + TICKER GLYPHS
-- [ ] Rain barely perceptible: lower drop opacity, smaller glyphs, tighter columns, slower fall. Panel text contrast untouched.
-- [ ] Glyphs become stock symbols: live/tracked idea tickers + pulse symbols (SPY, QQQ, NQ, BTC, VIX) + small static filler; pool refreshes on data load.
-- [ ] Still one canvas, capped FPS, honors prefers-reduced-motion. No perf regression.
+- [x] Rain barely perceptible: lower drop opacity, smaller glyphs, tighter columns, slower fall. Panel text contrast untouched. *(--rain-opacity 0.11→0.07 AND canvas alphas head 0.95→0.5 / trail 0.6→0.28; CELL 16→13; STEP 80→115ms; speeds 0.55–1.3→0.4–0.9 rows/step; panels carry their own backgrounds — untouched)*
+- [x] Glyphs become stock symbols: live/tracked idea tickers + pulse symbols (SPY, QQQ, NQ, BTC, VIX) + small static filler; pool refreshes on data load. *(new lib/rain-symbols pub/sub pool — the rail's /api/ideas poll and the blotter's feed poll publish tickers they ALREADY fetch, zero extra network; each column spells symbols vertically with word gaps; pool refreshes in place, field never resets)*
+- [x] Still one canvas, capped FPS, honors prefers-reduced-motion. No perf regression. *(same skeleton: one canvas, ~8.7 steps/s accumulator (down from 12.5), hidden-tab park, reduced-motion static ticker field; per-frame fillStyle count unchanged)*
 
 ## UX6 — CENTER THE MAIN (AUGUST CHAT) PAGE
 - [ ] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open).
