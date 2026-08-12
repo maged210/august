@@ -195,7 +195,7 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 - [x] F9 IDEAS TAB: it was never a view — it toggled the rail (drawer on mobile, collapse on desktop). The desktop behavior duplicated the rail-header » and the edge tab, so it's now hidden ≥1100px and remains ONLY as the mobile drawer trigger.
 
 ### GATE UX2-G1 (round 2) — preview + screenshots (terminal both rail states, home, one LOUD 4K rain shot). HOLD, then merge feature/ux-2 → main.
-- [ ] UX2-G1 round 2 approved.
+- [x] UX2-G1 fix round approved 2026-08-12. Merged feature/ux-2 → main; production deploy follows the push. UX ROUND 2 closed out.
 
 ---
 
