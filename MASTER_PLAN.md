@@ -136,7 +136,7 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] R1-REDO RAIN INTENSITY DIAL: OFF / FAINT / VISIBLE / LOUD presets, each = layer opacity + canvas head/trail alphas tuned together. VISIBLE (default) = 80% of the original pre-ux-1 values (0.09 · 0.76 · 0.48 vs 0.11 · 0.95 · 0.6); FAINT = round-2's quiet pass; LOUD = the original ceiling (panels carry their own backgrounds — text contrast untouched); OFF unmounts the canvas. Control = rain-glyph button beside the theme toggle (matrix only) opening a 4-option menu; persisted as aug-rain-level; applies LIVE through a ref the draw loop reads — no teardown, no field reset, no reload; reduced-motion static field re-inks at the new level. Ticker glyphs / column pitch / fall speed untouched.
 
 ### GATE UX-G1 (round 3) — screenshots at all four presets. On approval: merge feature/ux-1 to main.
-- [ ] UX-G1 approved.
+- [x] UX-G1 approved 2026-08-12 (round 3, via the UX ROUND 2 kickoff: "branch feature/ux-2 off main AFTER ux-1 merges"). Merging feature/ux-1 → main; production deploy follows the push.
 
 ---
 
