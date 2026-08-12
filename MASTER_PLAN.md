@@ -180,7 +180,7 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ### GATE UX2-G1 — deploy preview; screenshots: home brief, sidebar open + collapsed, terminal with heatmap + movers + wire v2. HOLD for approval, then merge to main.
 - [x] Preview deployed (Vercel status: success on 1edc201, still behind deployment protection — open signed into Vercel); evidence artifact posted with the three required screenshots. 229/229 tests. Holding.
-- [ ] UX2-G1 approved.
+- [x] UX2-G1 approved 2026-08-12. Merged feature/ux-2 → main; production deploy follows the push.
 
 ---
 
