@@ -898,6 +898,10 @@ body::after {
    view panels, dock, and view bar so the sidebar never covers content. — */
 .has-rail {
   --rail-w: 0px;
+  /* UX6 — THE chat column width: transcript, its head row, the ask bar and
+     the composer dock all align to this one centered column (measured inside
+     the rail-aware panel, so it re-centers when the rail opens/collapses) */
+  --chat-col: 720px;
 }
 @media (min-width: 1100px) {
   .has-rail {
@@ -2969,7 +2973,9 @@ a.mb-btn {
 .composer-row {
   display: flex;
   width: 100%;
-  max-width: 770px;
+  /* UX6 — was 770px: the composer must sit on the SAME column as the
+     transcript (the dock wrapper is already rail-aware via --rail-w) */
+  max-width: var(--chat-col, 720px);
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -4936,7 +4942,9 @@ button.pulse-line:focus-visible {
 }
 .hl-bar {
   margin-top: 30px;
-  width: min(760px, 88vw);
+  /* UX6 — the idle ask bar rides the same centered column as the transcript
+     and composer (was 760px/88vw) */
+  width: min(var(--chat-col, 720px), 88%);
   min-height: 62px;
   box-sizing: border-box;
   display: flex;
@@ -5220,7 +5228,9 @@ button.pulse-line:focus-visible {
 
 /* head row — the one transcript control, quiet and out of the flow */
 .hl-convo-head {
-  width: min(720px, 92vw);
+  /* UX6 — % of the rail-aware panel, NOT vw: the column centers in the
+     available space at every rail state */
+  width: min(var(--chat-col, 720px), 92%);
   display: flex;
   justify-content: flex-end;
   padding: 10px 0 0;
@@ -5262,9 +5272,12 @@ button.pulse-line:focus-visible {
   flex-direction: column;
   align-items: center;
   scrollbar-width: thin;
+  /* UX6 — reserve symmetric gutters so the scrollbar can't nudge the
+     centered column left of the (fixed, unaffected) composer */
+  scrollbar-gutter: stable both-edges;
 }
 .hl-convo-inner {
-  width: min(720px, 92vw);
+  width: min(var(--chat-col, 720px), 92%);
   display: flex;
   flex-direction: column;
   gap: 14px;

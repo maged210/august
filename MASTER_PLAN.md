@@ -106,9 +106,9 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 - [x] Still one canvas, capped FPS, honors prefers-reduced-motion. No perf regression. *(same skeleton: one canvas, ~8.7 steps/s accumulator (down from 12.5), hidden-tab park, reduced-motion static ticker field; per-frame fillStyle count unchanged)*
 
 ## UX6 — CENTER THE MAIN (AUGUST CHAT) PAGE
-- [ ] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open).
-- [ ] Bubbles, new-chat control, composer all align to this column. No left-drift.
-- [ ] Verify at ultrawide and mobile widths.
+- [x] Orb, transcript, composer in one centered max-width column (ChatGPT/Claude-style), centered relative to available space (accounting for the rail when open). *(one --chat-col token (720px) on the rail-aware main; the panel already excludes --rail-w, so the column re-centers as the rail opens/collapses)*
+- [x] Bubbles, new-chat control, composer all align to this column. No left-drift. *(the drift causes: composer-row was 770px vs the 720px transcript; transcript widths used 92vw (viewport) instead of 92% (panel); the transcript scrollbar nudged its centered content left of the fixed composer — fixed with scrollbar-gutter: stable both-edges; idle ask bar joins the same column)*
+- [ ] Verify at ultrawide and mobile widths. *(→ verified with gate screenshots)*
 
 ## UX RULES
 - No new data sources, no schema breakage — side is an existing field, just populate it.
