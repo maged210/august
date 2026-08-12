@@ -140,6 +140,49 @@ Reading order in every idea surface becomes: TICKER → ENTRY → REASONING → 
 
 ---
 
+# UX ROUND 2
+
+> Branch: `feature/ux-2` off main (post ux-1 merge 6dde9a0). One gate at the end. Started 2026-08-12.
+> Visual reference: Finviz homepage density, translated to OUR data. HARD RULE: zero new paid data sources — everything runs on existing stores + the existing price pipeline; the single exception is headlines via free public RSS (RSS only, no scraping).
+
+## UX2-T1 — CHAT IA: LEFT THREADS SIDEBAR (Claude-style)
+- [ ] Recent threads move to a collapsible LEFT sidebar on the chat view: + NEW CHAT at top, thread list (title · age), active thread highlighted.
+- [ ] Collapses to a thin edge tab; state persists locally. Mobile: slide-over drawer.
+- [ ] Main chat column stays centered in the space between sidebar and rail at every open/closed combination.
+
+## UX2-T2 — DAILY BRIEF = HOME CENTER
+- [ ] The brief stops existing as a popup entirely; it renders AS the home state of the chat view (no thread open):
+- [ ] Date + session line (pre-market / open / after-hours by ET clock).
+- [ ] PULSE ROW: existing pulse symbols, last · % · spark.
+- [ ] DESK LINE: N live · N tracked · N triggered · win rate · best + worst today.
+- [ ] LATEST INGEST: most recent transcript → "N idea drafts · N tape drafts" + time.
+- [ ] HEADLINES: top 5 from 2–3 quality free RSS feeds, server-cached ~15 min, publisher + timestamp, links out. RSS only — no scraping.
+- [ ] Opening a thread replaces the brief with the conversation; returning home shows the brief again.
+
+## UX2-T3 — KILL BIAS + STATS PANELS
+- [ ] Remove Desk Bias and Desk Stats from the terminal (park, don't delete). Long/short counts → heatmap header; win rate / MFE / MAE → the brief's DESK LINE. No orphaned data, no empty slots.
+
+## UX2-T4 — DESK HEATMAP (takes the freed dock slot)
+- [ ] Finviz-style treemap of OUR book: one tile per live + tracked idea, equal sizing, color = today's % move (green/red intensity), label = ticker + %.
+- [ ] Tile click = selects the idea (drives chart dock + detail panel, same selection state).
+- [ ] Header: "BOOK — n LONG · n SHORT · n unset". Hand-rolled layout, no heavy new dependencies.
+
+## UX2-T5 — MOVERS STRIP
+- [ ] Compact strip under the heatmap: top 3 and bottom 3 today across the book — ticker · last · % today. Existing price data only.
+
+## UX2-T6 — WIRE v2 (fix, don't delete)
+- [ ] Collapse batch events: "11 ideas → LIVE · 15:11" renders as ONE expandable row.
+- [ ] Individual rows only for distinct events: TRIGGERED @ price · transcript ingested (→ counts) · tape posted · status change.
+- [ ] Cap visible rows (~10), digest tone, expand for history.
+
+## UX2 NON-GOALS
+No market-wide breadth, screener tables, insider tables, or economic calendar (licensed feeds — behind the revenue gate with options flow).
+
+### GATE UX2-G1 — deploy preview; screenshots: home brief, sidebar open + collapsed, terminal with heatmap + movers + wire v2. HOLD for approval, then merge to main.
+- [ ] UX2-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
