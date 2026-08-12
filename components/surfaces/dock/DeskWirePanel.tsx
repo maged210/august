@@ -1,31 +1,40 @@
 "use client";
 
-// PANEL 2 — DESK WIRE (G3 round 5). Reverse-chronological pipeline activity,
-// assembled ENTIRELY from stores that already exist: transcript ingests
-// (redacted /api/wire — counts + owner label only), ideas going live
-// (/api/ideas), TRIGGERED transitions (the tracked feed's own status
-// history), tape posts (/api/tape). Public-safe wording by construction —
-// every fact here is already on a public wire or reduced to counts. ~12
-// visible, capped, tail fades (the Desk Tape density contract).
+// PANEL 2 — DESK WIRE (G3 round 5; v2 in UX2-T6). Reverse-chronological
+// pipeline activity, assembled ENTIRELY from stores that already exist:
+// transcript ingests (redacted /api/wire — counts + owner label only), ideas
+// going live (/api/ideas), TRIGGERED transitions (the tracked feed's own
+// status history), tape posts (/api/tape). Public-safe wording by
+// construction — every fact here is already on a public wire or reduced to
+// counts.
+//
+// v2 (T6): digest tone. Same-minute LIVE approvals collapse into ONE
+// expandable batch row ("11 ideas → LIVE") instead of eleven identical
+// lines; individual rows remain only for distinct events (TRIGGERED @ price,
+// ingests, tape posts). ~10 rows visible; the rest sit behind SHOW ALL.
 
+import { useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 
-const VISIBLE = 12;
+const VISIBLE = 10;
 
 export type WireEvent = {
   ts: number;
   kind: "INGEST" | "LIVE" | "TRIG" | "TAPE";
   sym?: string;
   text: string;
+  /** batch members — present only on collapsed batch rows (T6) */
+  batch?: string[];
 };
 
 const px = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** PURE. Merge the four public sources into one reverse-chron wire. */
+/** PURE. Merge the four public sources into one reverse-chron wire; bulk
+ *  approvals (same-minute LIVE flips) fold into one batch event each. */
 export function buildWire(
   ingests: PublicIngest[],
   liveIdeas: PublicIdea[],
@@ -40,9 +49,25 @@ export function buildWire(
       text: `${g.source || "transcript"} → ${g.ideaDrafts} idea draft${g.ideaDrafts === 1 ? "" : "s"} · ${g.tapeDrafts} tape draft${g.tapeDrafts === 1 ? "" : "s"}`,
     });
   }
+  // LIVE approvals — updatedAt is the approval moment; a bulk approval sweep
+  // lands in the same minute and reads as ONE digest row (T6)
+  const byMinute = new Map<number, { ts: number; syms: string[] }>();
   for (const i of liveIdeas) {
-    // updatedAt is the approval moment for a live idea (drafts flip there)
-    out.push({ ts: i.updatedAt, kind: "LIVE", sym: i.instrument, text: "idea live on the rail" });
+    const m = Math.floor(i.updatedAt / 60_000);
+    const g = byMinute.get(m);
+    if (g) {
+      g.ts = Math.max(g.ts, i.updatedAt);
+      g.syms.push(i.instrument);
+    } else {
+      byMinute.set(m, { ts: i.updatedAt, syms: [i.instrument] });
+    }
+  }
+  for (const g of byMinute.values()) {
+    if (g.syms.length === 1) {
+      out.push({ ts: g.ts, kind: "LIVE", sym: g.syms[0], text: "idea live on the rail" });
+    } else {
+      out.push({ ts: g.ts, kind: "LIVE", text: `${g.syms.length} ideas → LIVE`, batch: g.syms });
+    }
   }
   for (const c of cards) {
     for (const h of c.statusHistory) {
@@ -59,7 +84,7 @@ export function buildWire(
     out.push({ ts: t.ts, kind: "TAPE", sym: t.symbol, text: t.note });
   }
   out.sort((a, b) => b.ts - a.ts);
-  return out.slice(0, VISIBLE);
+  return out;
 }
 
 function fmtTime(ms: number): string {
@@ -83,6 +108,12 @@ export default function DeskWirePanel({
   /** null = still loading (all sources pending) */
   events: WireEvent[] | null;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const [openBatch, setOpenBatch] = useState<string | null>(null);
+
+  const rows = events === null ? null : showAll ? events : events.slice(0, VISIBLE);
+  const hidden = events === null ? 0 : events.length - VISIBLE;
+
   return (
     <section className="ifm if-wire" aria-label="Desk wire">
       <div className="ifm-h">
@@ -91,13 +122,13 @@ export default function DeskWirePanel({
           PIPELINE ACTIVITY
         </span>
       </div>
-      {events === null ? (
+      {rows === null ? (
         <div className="ifm-body" aria-hidden="true">
           {[0, 1, 2].map((i) => (
             <span key={i} className="if-skel-bar" style={{ width: `${80 - i * 16}%`, marginBottom: 8 }} />
           ))}
         </div>
-      ) : events.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
@@ -107,18 +138,58 @@ export default function DeskWirePanel({
           </span>
         </div>
       ) : (
-        <ul className="if-wire-list">
-          {events.map((e, i) => (
-            <li key={`${e.kind}-${e.ts}-${i}`} className="if-wire-row">
-              <span className="ifm-t-time">{fmtTime(e.ts)}</span>
-              <span className={`if-wire-kind if-wk-${e.kind.toLowerCase()}`}>{e.kind}</span>
-              {e.sym ? <span className="ifm-t-sym">{e.sym}</span> : null}
-              <span className="if-wire-text" title={e.text}>
-                {e.text}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="if-wire-list">
+            {rows.map((e, i) => {
+              const bkey = `${e.ts}-${i}`;
+              const open = openBatch === bkey;
+              return (
+                <li key={bkey} className="if-wire-row">
+                  <span className="ifm-t-time">{fmtTime(e.ts)}</span>
+                  <span className={`if-wire-kind if-wk-${e.kind.toLowerCase()}`}>{e.kind}</span>
+                  {e.sym ? <span className="ifm-t-sym">{e.sym}</span> : null}
+                  {e.batch ? (
+                    // T6 — the digest row: one line for the whole sweep,
+                    // members behind the caret
+                    <button
+                      type="button"
+                      className="if-wire-batchbtn"
+                      aria-expanded={open}
+                      onClick={() => setOpenBatch(open ? null : bkey)}
+                    >
+                      <span className="if-wire-text">{e.text}</span>
+                      <span className="if-wire-caret" aria-hidden="true">
+                        {open ? "▾" : "▸"}
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="if-wire-text" title={e.text}>
+                      {e.text}
+                    </span>
+                  )}
+                  {e.batch && open ? (
+                    <span className="if-wire-batch">
+                      {e.batch.map((s, j) => (
+                        <span key={`${s}${j}`} className="if-wire-bsym">
+                          {s.toUpperCase()}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {hidden > 0 || showAll ? (
+            <button
+              type="button"
+              className="if-wire-more"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              {showAll ? "SHOW LESS" : `SHOW ALL · ${events!.length}`}
+            </button>
+          ) : null}
+        </>
       )}
     </section>
   );

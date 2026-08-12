@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
+import HomeBrief from "@/components/HomeBrief";
 import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import type { PushState } from "@/lib/push-client";
 
@@ -26,13 +27,7 @@ const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false
 const ORB_GL_BLEED = 65;
 const ORB_GL_FRACTION = 95 / (190 + 2 * ORB_GL_BLEED);
 
-// Suggestion chips — honest prompts only, wired to real capabilities
-// (markets pivot levels, the world/intel wires, the intel board).
-const CHIPS = [
-  "Why is NQ above pivot?",
-  "Summarize overnight intel",
-  "What's on the intel board?",
-];
+// Suggestion chips retired (UX2-T2) — the daily brief owns the home state.
 
 // WATCHING — the PUBLIC DEFAULT (stage 3): signed out, or on an instance where
 // auth isn't configured, the pills show exactly this macro five — symbols
@@ -48,7 +43,6 @@ const WATCH: Array<{ sym: string; label: string }> = [
   { sym: "^VIX", label: "VIX" },
 ];
 
-type ThreadRow = { id: string; title: string; updatedAt: number; label?: string };
 type Pill = { label: string; price: number; chgPct: number };
 
 // Session chip state: undefined = unknown or auth unconfigured (render
@@ -67,18 +61,17 @@ type HomeLandingProps = {
   listening: boolean;
   busy: boolean;
   voiceMode: boolean;
-  /** Bumps when an exchange completes — triggers a thread-list refresh. */
-  messagesCount: number;
   onSend: (text: string) => void;
   onToggleMic: () => void;
   onToggleVoiceMode: () => void;
-  onOpenThread: (id: string) => void;
+  /** UX2-T1 — opens the threads slide-over drawer (mobile only; the desktop
+      sidebar manages itself) */
+  onOpenThreads: () => void;
   /** CORE V2 P5 — the conversation column (ChatTranscript), rendered by the
       page so message state stays there. Shown while a conversation is active;
       the landing's heading/chips/activity yield to it and the orb compacts. */
   transcript?: React.ReactNode;
   // Quiet top-bar cluster — everything the design omits but the app keeps.
-  onSummonBrief: () => void;
   pushState: PushState;
   onNotify: () => void;
   soundOn: boolean;
@@ -99,13 +92,11 @@ export default function HomeLanding({
   listening,
   busy,
   voiceMode,
-  messagesCount,
   onSend,
   onToggleMic,
   onToggleVoiceMode,
-  onOpenThread,
+  onOpenThreads,
   transcript,
-  onSummonBrief,
   pushState,
   onNotify,
   soundOn,
@@ -116,7 +107,6 @@ export default function HomeLanding({
 }: HomeLandingProps) {
   const [draft, setDraft] = useState("");
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
-  const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
   // R1-REDO — the rain dial's little menu (matrix only); closes on outside tap
@@ -217,37 +207,8 @@ export default function HomeLanding({
     };
   }, []);
 
-  // RECENT THREADS — the real store. Unconfigured or empty → the column
-  // simply doesn't render.
-  const fetchThreads = useCallback(() => {
-    fetch("/api/threads?limit=3", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((j: { threads?: ThreadRow[] }) => {
-        const rows = Array.isArray(j.threads)
-          ? j.threads.filter(
-              (t) => t && typeof t.id === "string" && typeof t.title === "string",
-            )
-          : [];
-        setThreads(rows.slice(0, 3));
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetchThreads();
-    const id = window.setInterval(() => {
-      if (!document.hidden) fetchThreads();
-    }, 60_000);
-    return () => window.clearInterval(id);
-  }, [fetchThreads]);
-
-  // A completed exchange persists its thread fire-and-forget — refresh the
-  // list shortly after the message count moves so the new row appears.
-  useEffect(() => {
-    if (messagesCount === 0) return;
-    const id = window.setTimeout(fetchThreads, 1500);
-    return () => window.clearTimeout(id);
-  }, [messagesCount, fetchThreads]);
+  // RECENT THREADS moved to the LEFT sidebar (UX2-T1) — the landing keeps
+  // only the WATCHING quotes for its bottom strip.
 
   // WATCHING — live quotes, gentle 60s poll riding the server's 60s cache.
   // Re-keyed on `watch` (the public five, or the signed-in watchlist once it
@@ -300,11 +261,6 @@ export default function HomeLanding({
     setDraft("");
   };
 
-  const fillChip = (text: string) => {
-    setDraft(text);
-    inputRef.current?.focus();
-  };
-
   // The real system state word — 'SYSTEMS STEADY' only when he actually is.
   const stateWord =
     state === "listening"
@@ -315,13 +271,22 @@ export default function HomeLanding({
           ? "SPEAKING"
           : "SYSTEMS STEADY";
 
-  const showThreads = threads.length > 0;
-
   return (
     <div className={`home-landing${conversationActive ? " convo" : ""}`}>
       {/* top bar — wordmark · live clock + live state · quiet control cluster */}
       <div className="hl-top">
         <div className="hl-brand">
+          {/* UX2-T1 — mobile-only threads drawer trigger (the desktop
+              sidebar lives beside the panel and manages itself) */}
+          <button
+            type="button"
+            className="hl-threads-btn"
+            onClick={onOpenThreads}
+            aria-label="Open conversations"
+            title="Conversations"
+          >
+            <ThreadsGlyph />
+          </button>
           <span className="hl-brand-dot" aria-hidden />
           <span className="hl-wordmark">AUGUST</span>
         </div>
@@ -347,15 +312,7 @@ export default function HomeLanding({
             </span>
           ) : null}
           <div className="hl-ctls">
-            <button
-              type="button"
-              className="hl-ctl"
-              onClick={onSummonBrief}
-              title="Today's brief"
-              aria-label="Open today's brief"
-            >
-              <BriefGlyph />
-            </button>
+            {/* the brief control retired (UX2-T2) — the brief IS the home state */}
             {pushState !== "unsupported" && (
               <button
                 type="button"
@@ -496,9 +453,7 @@ export default function HomeLanding({
         </div>
       </div>
 
-      {!conversationActive ? (
-        <h1 className="hl-heading">What do you want to know?</h1>
-      ) : null}
+      {/* the heading yielded to the brief's own date + session line (UX2-T2) */}
 
       {/* CORE V2 P5 — a live conversation replaces the landing's idle body:
           the Claude-style transcript column owns the middle of the screen
@@ -548,40 +503,9 @@ export default function HomeLanding({
         </form>
       ) : null}
 
-      {/* suggestion chips — idle-state only (showSuggestions semantics) */}
-      {!conversationActive ? (
-        <div className="hl-chips">
-          {CHIPS.map((c) => (
-            <button key={c} type="button" className="hl-chip" onClick={() => fillChip(c)}>
-              {c}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {/* activity — real threads; absent when there are none, and yielded
-          entirely while the transcript owns the screen (WATCHING moved to
-          the bottom ticker strip, R5) */}
-      {showThreads && !conversationActive ? (
-        <div className="hl-activity">
-          <div className="hl-col">
-            <span className="hl-label">RECENT THREADS</span>
-            <div className="hl-threads">
-              {threads.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="hl-thread"
-                  onClick={() => onOpenThread(t.id)}
-                >
-                  <span className="hl-thread-title">{t.title}</span>
-                  {t.label ? <span className="hl-thread-date">{t.label}</span> : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* UX2-T2 — the daily brief IS the home state (no thread open):
+          date/session · pulse · desk line · latest ingest · headlines */}
+      {!conversationActive ? <HomeBrief /> : null}
       </div>
 
       {/* R5 — WATCHING as a thin full-width bottom ticker strip: static chips
@@ -619,6 +543,26 @@ function fmtChg(n: number): string {
 // Glyphs — same stroke language as the app's control icons, sized for the
 // landing's quiet cluster.
 // ---------------------------------------------------------------------------
+
+/* UX2-T1 — the mobile threads-drawer trigger: three conversation lines. */
+function ThreadsGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="16" y2="12" />
+      <line x1="4" y1="17" x2="12" y2="17" />
+    </svg>
+  );
+}
 
 function MicGlyph({ active }: { active: boolean }) {
   return (
@@ -662,25 +606,7 @@ function WaveGlyph() {
   );
 }
 
-// Sunrise-over-line — the morning brief.
-function BriefGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <circle cx="8" cy="8" r="3.4" />
-      <line x1="2" y1="13.4" x2="14" y2="13.4" />
-      <path d="M8 1.4v1.4M3.3 3.3l1 1M12.7 3.3l-1 1" />
-    </svg>
-  );
-}
+// BriefGlyph retired with the popup (UX2-T2) — the brief is the home state.
 
 function BellGlyph({ off = false, on = false }: { off?: boolean; on?: boolean }) {
   if (off) {

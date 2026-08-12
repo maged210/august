@@ -39,7 +39,11 @@ import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
 import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
 import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
-import { numOf, sideOf } from "@/components/surfaces/dock/derive";
+import {
+  selectionFromLive,
+  selectionFromTracked,
+  sideOf,
+} from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
@@ -402,35 +406,8 @@ function TrackedRow({
   );
 }
 
-// ── chart-dock selection (G3) — built from the same row data the grid shows ──
-
-function selectionFromLive(idea: PublicIdea): ChartSelection {
-  return {
-    key: `live:${idea.id}`,
-    ticker: idea.instrument,
-    label: "LIVE",
-    levels: {
-      entry: numOf(idea.entry) ?? undefined,
-      target: numOf(idea.target) ?? undefined,
-    },
-    triggeredAt: null,
-  };
-}
-
-function selectionFromTracked(card: FeedCard): ChartSelection {
-  const trig = card.statusHistory.find((h) => h.state === "TRIGGERED");
-  return {
-    key: `trk:${card.id}`,
-    ticker: card.ticker,
-    label: (LIFE_META[card.status] ?? LIFE_META.CLOSED).label,
-    levels: {
-      entry: card.statedLevels.trigger?.value ?? undefined,
-      target: card.statedLevels.targets[0]?.value ?? undefined,
-      stop: card.statedLevels.invalidation?.value ?? undefined,
-    },
-    triggeredAt: trig ? trig.at : null,
-  };
-}
+// Chart-dock selection constructors moved to dock/derive.ts (UX2-T4) — the
+// blotter rows and the heatmap tiles must build byte-identical selections.
 
 // ── the terminal surface ───────────────────────────────────────────────────────
 
@@ -672,6 +649,7 @@ export default function IdeasFeed() {
         <aside className={`if-dock${dockOpen ? " open" : ""}`} aria-label="Chart dock">
           <ChartDock
             selection={selection}
+            onSelect={applySelect}
             cards={tracked}
             liveIdeas={liveIdeas}
             tape={tapeRows}

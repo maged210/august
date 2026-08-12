@@ -4,8 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
+import ThreadsSidebar from "@/components/ThreadsSidebar";
 import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
-import MorningBrief, { type MorningBriefData, type BriefStatus } from "@/components/MorningBrief";
+// MorningBrief popup parked (UX2-T2) — the daily brief renders AS the chat
+// view's home state (HomeBrief inside HomeLanding); only the spoken "brief
+// me" voice path still reads the compiled text below.
+import type { MorningBriefData } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import { resolveView, type ViewId } from "@/lib/screens";
@@ -163,18 +167,25 @@ export default function Home() {
   const railSyncedRef = useRef(false);
   // ≥1100px — decides what the top-bar IDEAS tab controls (collapse vs drawer).
   const [deskWide, setDeskWide] = useState(false);
+  // UX2-T1 — the chat view's LEFT threads sidebar: drawer below 1100px,
+  // collapsible fixed sidebar above (same contracts as the ideas rail:
+  // data-threads applied pre-paint, aug-threads in localStorage).
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const threadsOpenRef = useRef(false);
+  const [threadsCollapsed, setThreadsCollapsed] = useState(false);
+  const threadsSyncedRef = useRef(false);
+  // the conversation on screen (drives the sidebar's active highlight)
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dockClosing, setDockClosing] = useState(false);
   const [muted, setMuted] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  // Morning Brief — the once-a-day spoken read, now a summonable Presence panel.
+  // Morning Brief — the compiled spoken read. UX2-T2 removed its popup; the
+  // text is kept only so "brief me" (voice) can still play it.
   const [brief, setBrief] = useState<MorningBriefData | null>(null);
-  const [briefStatus, setBriefStatus] = useState<BriefStatus>("checking");
   const [briefPlaying, setBriefPlaying] = useState(false);
-  const [briefDismissed, setBriefDismissed] = useState(false);
-  const [briefOpen, setBriefOpen] = useState(false);
   // Matrix / dark / light / gotham theme — persisted; the toggle flips the
   // whole token system. Matrix is the CORE V2 default stage.
   const [theme, setTheme] = useState<Theme>("matrix");
@@ -277,6 +288,7 @@ export default function Home() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (voiceModeRef.current) exitVoiceMode();
+      else if (threadsOpenRef.current) setThreadsOpen(false);
       else if (railOpenRef.current) setRailOpen(false);
       else closePanel();
     };
@@ -289,6 +301,10 @@ export default function Home() {
     railOpenRef.current = railOpen;
   }, [railOpen]);
 
+  useEffect(() => {
+    threadsOpenRef.current = threadsOpen;
+  }, [threadsOpen]);
+
   // Crossing up past 1100px turns the drawer into the sidebar — clear the
   // drawer flag so a stale `open` can't silently eat an Esc later. The same
   // query drives what the IDEAS tab toggles (collapse vs drawer).
@@ -296,7 +312,10 @@ export default function Home() {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
       setDeskWide(mq.matches);
-      if (mq.matches) setRailOpen(false);
+      if (mq.matches) {
+        setRailOpen(false);
+        setThreadsOpen(false); // drawer → sidebar; clear the drawer flag
+      }
     };
     apply();
     mq.addEventListener("change", apply);
@@ -324,6 +343,27 @@ export default function Home() {
   }, [railCollapsed]);
 
   const toggleRailCollapsed = useCallback(() => setRailCollapsed((v) => !v), []);
+
+  // UX2-T1 — threads sidebar collapse: same adopt-then-sync contract.
+  useEffect(() => {
+    setThreadsCollapsed(document.documentElement.getAttribute("data-threads") === "collapsed");
+  }, []);
+  useEffect(() => {
+    if (!threadsSyncedRef.current) {
+      threadsSyncedRef.current = true; // first run mirrors the pre-paint attribute
+      return;
+    }
+    const el = document.documentElement;
+    if (threadsCollapsed) el.setAttribute("data-threads", "collapsed");
+    else el.removeAttribute("data-threads");
+    try {
+      window.localStorage.setItem("aug-threads", threadsCollapsed ? "collapsed" : "open");
+    } catch {
+      /* private mode — won't persist */
+    }
+  }, [threadsCollapsed]);
+
+  const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed((v) => !v), []);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -855,8 +895,9 @@ export default function Home() {
     handleSend(t);
   }
 
-  // "Brief me" by voice: play it if ready, else summon + compile and keep the
-  // loop alive (the card offers playback once it lands).
+  // "Brief me" by voice: play the compiled read if one is waiting; otherwise
+  // say so plainly (UX2-T2 removed the popup/compile-on-demand path — the
+  // home screen already shows the live brief).
   function voiceBrief() {
     setInterim("");
     if (brief) {
@@ -869,21 +910,9 @@ export default function Home() {
       }
       return;
     }
-    summonBrief(); // compiles if none yet + opens the card
-    setReplyText("Pulling your brief together…");
+    setReplyText("No compiled brief is waiting — the home screen carries today's live read.");
     openPanel();
     concludeSpeech();
-  }
-
-  // --- Morning Brief --------------------------------------------------------
-  // Dismissal persists per-day so it doesn't reappear on every app open.
-  const briefDismissKey = "aug-brief-dismissed";
-  function isBriefDismissed(date: string): boolean {
-    try {
-      return window.localStorage.getItem(briefDismissKey) === date;
-    } catch {
-      return false;
-    }
   }
 
   // --- View routing (CORE V2) ------------------------------------------------
@@ -1021,19 +1050,16 @@ export default function Home() {
     applyMood(MOODS[(MOODS.indexOf(mood) + 1) % MOODS.length]);
   }
 
-  // On boot, ask whether today's brief is already waiting (cheap GET, never
-  // compiles). If one's ready and not dismissed today, auto-deliver it (on-open).
+  // On boot, ask whether today's compiled brief is waiting (cheap GET, never
+  // compiles) so the "brief me" voice command can play it. UX2-T2: no popup —
+  // a ?brief=1 push arrival just lands home (the home IS the brief now); the
+  // param is stripped so a reload doesn't linger.
   useEffect(() => {
     if (!booted) return;
     let cancelled = false;
-    // Arrived from the morning-brief push (notificationclick → "/?brief=1")? Force the
-    // card open with its one-tap play control regardless of today's dismissal, then
-    // strip the param so a later reload doesn't re-trigger it.
-    let fromPush = false;
     try {
       const u = new URL(window.location.href);
       if (u.searchParams.has("brief")) {
-        fromPush = true;
         u.searchParams.delete("brief");
         window.history.replaceState({}, "", u.toString());
       }
@@ -1041,45 +1067,13 @@ export default function Home() {
       /* no-op */
     }
     fetch("/api/brief", { cache: "no-store" })
-      .then<{ ready?: boolean; brief?: MorningBriefData | null } | "signedout">((r) => {
-        // 401 = auth configured, no session (middleware gate) — the brief is
-        // personal, so the card offers sign-in instead of a compile.
-        if (r.status === 401) return "signedout";
-        return r.ok
-          ? (r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>)
-          : Promise.reject(r);
-      })
+      .then((r) =>
+        r.ok ? (r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>) : null,
+      )
       .then((j) => {
-        if (cancelled) return;
-        if (j === "signedout") {
-          setBriefStatus("signedout");
-          return;
-        }
-        if (j.ready && j.brief) {
-          setBrief(j.brief); // always store so the summon trigger has it later
-          if (fromPush) {
-            // Tapping the brief PUSH NOTIFICATION is an explicit open — the one
-            // arrival that may surface the card (clear any same-day dismissal).
-            try {
-              window.localStorage.removeItem(briefDismissKey);
-            } catch {
-              /* private mode */
-            }
-            setBriefDismissed(false);
-            setBriefOpen(true);
-          } else if (isBriefDismissed(j.brief.date)) {
-            setBriefDismissed(true);
-          }
-          // R4 — NO on-open auto-delivery: a plain load lands on the clean home
-          // state; the brief opens only from its own control (or the push tap).
-          setBriefStatus("ready");
-        } else {
-          setBriefStatus("none");
-        }
+        if (!cancelled && j?.ready && j.brief) setBrief(j.brief);
       })
-      .catch(() => {
-        if (!cancelled) setBriefStatus("none");
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -1128,13 +1122,6 @@ export default function Home() {
     }
   }, []);
 
-  // Summon the brief panel on demand; compile if none exists yet.
-  function summonBrief() {
-    setBriefDismissed(false);
-    setBriefOpen(true);
-    if (briefStatus === "none" || briefStatus === "error") compileBriefNow();
-  }
-
   // Speak the brief — reuses the chat speech path so AUGUST's orb pulses to his
   // real voice. Gated behind this click so the browser autoplay policy is satisfied.
   function playBrief() {
@@ -1167,49 +1154,7 @@ export default function Home() {
     });
   }
 
-  // "Brief me" — compile on demand when none is waiting yet.
-  function compileBriefNow() {
-    setBriefStatus("compiling");
-    fetch("/api/brief", { method: "POST" })
-      .then(async (r) => {
-        if (r.status === 401) throw new Error("signedout");
-        if (r.status === 429) throw new Error("rate");
-        if (!r.ok) throw new Error("compile");
-        return r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>;
-      })
-      .then((j) => {
-        if (j.ready && j.brief) {
-          // Deliberate re-request: clear any same-day dismissal so it survives reload.
-          try {
-            window.localStorage.removeItem(briefDismissKey);
-          } catch {
-            /* private mode */
-          }
-          setBrief(j.brief);
-          setBriefDismissed(false);
-          setBriefOpen(true);
-          setBriefStatus("ready");
-        } else {
-          setBriefStatus("error");
-        }
-      })
-      .catch((e) =>
-        setBriefStatus((e as Error)?.message === "signedout" ? "signedout" : "error"),
-      );
-  }
-
-  function dismissBrief() {
-    if (brief) {
-      try {
-        window.localStorage.setItem(briefDismissKey, brief.date);
-      } catch {
-        /* private mode — won't persist */
-      }
-    }
-    if (briefPlaying) stopSpeaking();
-    setBriefDismissed(true);
-    setBriefOpen(false);
-  }
+  // compileBriefNow / dismissBrief retired with the popup (UX2-T2).
 
   // Flag the next surface change as AUGUST-driven so it doesn't dismiss his reply.
   function markAugNav() {
@@ -1250,6 +1195,7 @@ export default function Home() {
     messagesRef.current = [];
     setMessages([]);
     threadIdRef.current = null;
+    setActiveThreadId(null);
     setInterim("");
     setReplyText("");
     setHistoryOpen(false);
@@ -1269,6 +1215,7 @@ export default function Home() {
     messagesRef.current = [];
     setMessages([]);
     threadIdRef.current = null; // the wiped conversation is over — next exchange opens a new thread
+    setActiveThreadId(null);
     setInterim("");
     openPanel();
     setHistoryOpen(false);
@@ -1300,6 +1247,7 @@ export default function Home() {
       messagesRef.current = msgs;
       setMessages(msgs);
       threadIdRef.current = t.id;
+      setActiveThreadId(t.id);
       setInterim("");
       const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
       setReplyText(lastAssistant?.content ?? "");
@@ -1488,7 +1436,10 @@ export default function Home() {
         })
           .then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null))
           .then((d) => {
-            if (d && typeof d.id === "string") threadIdRef.current = d.id;
+            if (d && typeof d.id === "string") {
+              threadIdRef.current = d.id;
+              setActiveThreadId(d.id);
+            }
           })
           .catch(() => {});
       } else {
@@ -1555,7 +1506,9 @@ export default function Home() {
   const intelPanelIdle = view === "terminal" && !conversationLive;
 
   return (
-    <main className="stage-vignette has-rail relative h-[100dvh] w-screen overflow-hidden">
+    <main
+      className={`stage-vignette has-rail${view === "chat" ? " has-threads" : ""} relative h-[100dvh] w-screen overflow-hidden`}
+    >
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
       {/* Always-present live region for the privacy-critical voice transitions —
@@ -1602,6 +1555,21 @@ export default function Home() {
         </button>
       </nav>
 
+      {/* UX2-T1 — the chat view's LEFT threads sidebar (Claude-style IA);
+          the terminal view unmounts it and reclaims the width */}
+      {view === "chat" ? (
+        <ThreadsSidebar
+          open={threadsOpen}
+          onClose={() => setThreadsOpen(false)}
+          collapsed={threadsCollapsed}
+          onToggleCollapsed={toggleThreadsCollapsed}
+          activeThreadId={activeThreadId}
+          onOpenThread={openThread}
+          onNewChat={startNewChat}
+          refreshKey={messages.length}
+        />
+      ) : null}
+
       {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
           (collapsible to an edge tab, UX1), drawer below */}
       <IdeasRail
@@ -1631,11 +1599,10 @@ export default function Home() {
             listening={state === "listening"}
             busy={state === "thinking"}
             voiceMode={voiceMode}
-            messagesCount={messages.length}
             onSend={handleSend}
             onToggleMic={toggleMic}
             onToggleVoiceMode={toggleVoiceMode}
-            onOpenThread={openThread}
+            onOpenThreads={() => setThreadsOpen(true)}
             transcript={
               <ChatTranscript
                 messages={messages}
@@ -1645,7 +1612,6 @@ export default function Home() {
                 onNewChat={startNewChat}
               />
             }
-            onSummonBrief={summonBrief}
             pushState={pushState}
             onNotify={handleNotify}
             soundOn={soundOn}
@@ -1654,17 +1620,7 @@ export default function Home() {
             rainPreset={rainPreset}
             onSetRainPreset={applyRainPreset}
           />
-          {booted && briefOpen ? (
-            <MorningBrief
-              brief={brief}
-              status={briefStatus}
-              playing={briefPlaying}
-              onPlay={playBrief}
-              onStop={stopVoice}
-              onCompile={compileBriefNow}
-              onDismiss={dismissBrief}
-            />
-          ) : null}
+          {/* MorningBrief popup parked (UX2-T2) — HomeBrief owns the home state */}
         </div>
       </section>
       <section
