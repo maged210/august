@@ -240,7 +240,7 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 - [x] Quick-add infers sentiment from the note text (buy/call/long → bull, sell/put/short → bear, both/neither → leave) as an editable default that stops auto-updating once the select is touched.
 
 ### GATE AD-G1 — preview + screenshots: desktop two-column, phone view, a draft showing "UPDATE to <ticker>", book manager with a STALE row. Approve → merge → AUTH-1 begins.
-- [ ] AD-G1 approved.
+- [x] AD-G1 approved 2026-08-13. Merged feature/admin-1 → main; production deploy follows the push. AUTH-1 is next.
 
 ---
 
