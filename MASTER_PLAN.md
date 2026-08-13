@@ -213,6 +213,38 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# ADMIN-1 — MORNING CONTROL ROOM
+
+> Branch: `feature/admin-1` off main (post ux-2 + chat-privacy hotfix, 515c8bc). Runs BEFORE AUTH-1. One gate. Started 2026-08-12.
+> DRIVING METRIC: transcript paste → reviewed → approved → clean public board in under 2 minutes on desktop, fully doable from a phone.
+
+## AD-A — LAYOUT + LOOK
+- [ ] Admin adopts the terminal design language: same panels, mono headers, chips, spacing — the desk's backstage, not a form stack.
+- [ ] Desktop: two columns — LEFT intake + create (transcript, new idea, tape quick-add); RIGHT queues + live book. Mobile: stacked, action buttons thumb-reachable.
+- [ ] Header becomes a status strip: LIVE n · TRACKED n · DRAFTS n · TAPE n · last ingest age.
+
+## AD-B — LIVE BOOK MANAGER (the core of this round)
+- [ ] Full table of every idea across statuses: inline edit side · entry · target · stop · risk. Status actions: close · invalidate · re-arm. DEMOTE TO TAPE. Delete with confirm.
+- [ ] STALE surfacing: ideas past a configurable age with no trigger get a STALE chip, float to the top with refresh/close prompts.
+
+## AD-C — DRAFT REVIEW v2
+- [ ] Draft cards editable inline before approval (side/entry/target/risk/thesis). APPROVE / REJECT per card + APPROVE ALL / REJECT ALL.
+- [ ] DEDUPE/ATTACH: a draft matching a LIVE ticker renders "UPDATE to <ticker>" — approving REFRESHES the existing idea (levels updated, thesis appended to history, age reset). Unmatched tickers create new ideas.
+- [ ] Side auto-suggested from entry language (F6 rule), pre-filled and editable.
+
+## AD-D — INTAKE POLISH
+- [ ] Transcript box: drag-drop .txt, character count, auto-title from source label or first line.
+- [ ] Ingest log rows expand to show exactly what each transcript produced (ideas + tape) with links to those records.
+
+## AD-E — TAPE MANAGEMENT
+- [ ] REMOVE on live tape gets an undo window (public-facing deletion).
+- [ ] Quick-add infers sentiment from note text (buy/call → bull, sell/put → bear) as an editable default.
+
+### GATE AD-G1 — preview + screenshots: desktop two-column, phone view, a draft showing "UPDATE to <ticker>", book manager with a STALE row. Approve → merge → AUTH-1 begins.
+- [ ] AD-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
