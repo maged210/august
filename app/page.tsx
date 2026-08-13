@@ -364,6 +364,13 @@ export default function Home() {
 
   const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed((v) => !v), []);
 
+  // M3 — while a sheet is open, the page behind it must not scroll (the
+  // sheets scroll internally; the scrim owns the rest of the screen).
+  useEffect(() => {
+    document.documentElement.classList.toggle("sheet-open", railOpen || threadsOpen);
+    return () => document.documentElement.classList.remove("sheet-open");
+  }, [railOpen, threadsOpen]);
+
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
     if (!panelOpen) return;
@@ -1543,6 +1550,36 @@ export default function Home() {
         <button
           type="button"
           className="view-tab view-tab-ideas"
+          aria-expanded={railOpen}
+          onClick={() => setRailOpen((v) => !v)}
+        >
+          IDEAS
+        </button>
+      </nav>
+
+      {/* M1 — the PHONE bottom tab bar (≤700px; the floating center toggle
+          hides there). IDEAS opens the rail sheet — the book-at-a-glance
+          from inside a conversation (the F9 ruling, argued at the gate). */}
+      <nav className="tab-bar" aria-label="AUGUST views">
+        <button
+          type="button"
+          className={`tab-item${view === "chat" ? " on" : ""}`}
+          aria-pressed={view === "chat"}
+          onClick={() => switchView("chat")}
+        >
+          AUGUST
+        </button>
+        <button
+          type="button"
+          className={`tab-item${view === "terminal" ? " on" : ""}`}
+          aria-pressed={view === "terminal"}
+          onClick={() => switchView("terminal")}
+        >
+          TERMINAL
+        </button>
+        <button
+          type="button"
+          className="tab-item"
           aria-expanded={railOpen}
           onClick={() => setRailOpen((v) => !v)}
         >

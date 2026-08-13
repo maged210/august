@@ -244,6 +244,40 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# MOBILE-1 — MOBILE IS A REDESIGN, NOT A SHRINK
+
+> Branch: `feature/mobile-1` off main (post admin-1, 0208fa5). Runs BEFORE AUTH-1. One gate. Started 2026-08-13.
+> PRINCIPLE: below the phone breakpoint (≤700px, the codebase's md), every surface gets a layout DESIGNED for a phone. Nothing horizontal-scrolls, nothing overlaps, nothing renders desktop-sized.
+
+## M1 — NAVIGATION
+- [x] Fixed BOTTOM tab bar (AUGUST · TERMINAL · IDEAS) replaces the floating center toggle ≤700px; active tab underlined; the composer dock and surfaces clear it (max(kb-inset, tabbar) keeps it under the keyboard). F9 ruling argued: IDEAS stays — it is the book-at-a-glance from inside a conversation, the compact/expand rail cards don't duplicate the terminal's full cards, and the sheet is gate-required.
+- [x] Header = menu (threads) · wordmark · status/clock; the bell/sound/settings/session cluster folds into the moon menu as a phone-only CONTROLS section. Safe-area top respected.
+
+## M2 — TERMINAL, PHONE LAYOUT
+- [x] The blotter tree does not render at ≤700px (conditional render, not CSS hiding — no double-mounted charts): LIVE + TRACKED are stacked cards (ticker · side · status chip · entry chip · one-line reasoning · age; TRACKED adds % since call + last).
+- [x] TAP → full-screen IDEA DETAIL sheet: CHART 38dvh (same Lightweight Charts module, ENTRY/TARGET/STOP lines + TRIG mark, touch-action pan) → ENTRY chip · side · risk/status · age → full thesis → compact facts + history rendering only what exists. Opaque literal background (a token cascade made it transparent once — fixed), page tree visibility-hidden underneath, fixed × in the safe area, Esc closes.
+- [x] Modules = segmented strip (CHART · BOOK · PULSE · TAPE · WIRE), one mounted at a time; the heatmap reflows to a 58px-min phone grid; movers ride the BOOK segment.
+- [x] LIVE/status chips + side glyphs + wordmark scale down ≤700px.
+
+## M3 — SHEETS
+- [x] Threads + rail are full-height sheets <1100px: dim scrim (touch-action none), page scroll locked (html.sheet-open), slide-in (reduced-motion instant), close via × / scrim / 70px swipe-away; width min(360px, 92vw) + shadow — nothing readable behind.
+
+## M4 — HOME
+- [x] Pulse tiles: 2-per-row grid ≤700px (sparks yield — the % tells the story; tiles were clipping the viewport edge with them).
+- [x] Brief keeps its order; WATCHING pinned as a fixed strip above the tab bar (glass, safe-area aware, horizontal scroll, label dropped); content padding clears it.
+
+## M5 — CLUTTER + CENTERING PASS
+- [x] Audit: view-bar (gone ≤700), MorningBrief popup (gone since ux-2), edge tabs (desktop-only), dock composer (offset above tab bar), reply-dock (terminal/desktop only). Remaining overlays = sheets w/ scrims, the tab bar, fixed ×, pinned WATCHING strip — all sanctioned. (The "purple slider" died in ux-2 F7; re-verified the dial lives in the moon menu.)
+- [x] Column axis: --chat-col governs orb/composer/brief; cards/segments share the terminal gutter; tab bar contents centered.
+
+## M6 — HYGIENE
+- [x] 100dvh main + dvh sheet/chart heights; no horizontal scroll (entry chips wrap, reasoning clamps, heatmap reflows); ≥44px touch targets (tabs, segments, cards, menu rows, ×); reduced-motion on sheet/segment animation. iPhone-Safari specifics: safe-area insets everywhere fixed elements touch edges, -webkit-backdrop-filter, touch-action pan on the chart.
+
+### GATE MB-G1 — preview + iPhone-width shots of ALL: home, sidebar sheet, rail sheet (compact + expanded), terminal cards, heatmap segment, idea detail sheet w/ chart + entry/target lines. HOLD, then merge.
+- [x] MB-G1 approved 2026-08-13 (verification pass ran first: held state, commits, preview URL, and the three per-view behaviors confirmed from the built code — then "MERGE IT"). Merged feature/mobile-1 → main; production deploy follows. AUTH-1 is next.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

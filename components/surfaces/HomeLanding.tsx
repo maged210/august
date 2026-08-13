@@ -358,12 +358,12 @@ export default function HomeLanding({
             <div className="hl-rainwrap" ref={rainWrapRef}>
               <button
                 type="button"
-                className="hl-ctl"
+                className="hl-ctl hl-menu-trigger"
                 onClick={() => setRainMenuOpen((v) => !v)}
                 aria-haspopup="menu"
                 aria-expanded={rainMenuOpen}
                 title="Theme & rain"
-                aria-label="Theme and ticker-rain settings"
+                aria-label="Theme, rain and controls"
               >
                 <MoonGlyph />
               </button>
@@ -410,6 +410,37 @@ export default function HomeLanding({
                       ))}
                     </>
                   ) : null}
+                  {/* M1 — on phones the header keeps only menu · wordmark ·
+                      clock; the control cluster folds in here */}
+                  <div className="hl-menu-mobile">
+                    <span className="hl-menu-k">CONTROLS</span>
+                    <button type="button" className="hl-rainopt" onClick={onToggleSound}>
+                      {soundOn ? "SOUND · ON" : "SOUND · OFF"}
+                    </button>
+                    {pushState !== "unsupported" ? (
+                      <button type="button" className="hl-rainopt" onClick={onNotify}>
+                        NOTIFICATIONS{pushState === "granted" ? " · ON" : ""}
+                      </button>
+                    ) : null}
+                    {account ? (
+                      <a className="hl-rainopt" href="/welcome">
+                        SETUP
+                      </a>
+                    ) : null}
+                    {account === null ? (
+                      <a className="hl-rainopt" href="/login">
+                        SIGN IN
+                      </a>
+                    ) : account ? (
+                      <button
+                        type="button"
+                        className="hl-rainopt"
+                        onClick={() => void signOut({ redirectTo: "/" })}
+                      >
+                        SIGN OUT
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>

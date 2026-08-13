@@ -11,7 +11,7 @@
 // it pre-paint via data-threads). Below 1100px it is a slide-over drawer.
 // Chat view only — the page unmounts it on the terminal.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { relativeTime } from "@/lib/ideas";
 
 type ThreadRow = { id: string; title: string; updatedAt: number; label?: string };
@@ -44,6 +44,7 @@ export default function ThreadsSidebar({
   const [threads, setThreads] = useState<ThreadRow[] | null>(null); // null = loading
   // re-render the age labels without refetching
   const [, setTick] = useState(0);
+  const swipeX = useRef<number | null>(null);
 
   const pull = useCallback(() => {
     fetch("/api/threads?limit=30", { cache: "no-store" })
@@ -93,7 +94,20 @@ export default function ThreadsSidebar({
           THREADS
         </button>
       ) : null}
-      <aside className={`threads-sb${open ? " open" : ""}`} aria-label="Conversations">
+      <aside
+        className={`threads-sb${open ? " open" : ""}`}
+        aria-label="Conversations"
+        // M3 — swipe the left-hand sheet leftwards to dismiss (phone/tablet)
+        onTouchStart={(e) => {
+          swipeX.current = e.touches[0].clientX;
+        }}
+        onTouchEnd={(e) => {
+          if (swipeX.current != null && swipeX.current - e.changedTouches[0].clientX > 70) {
+            onClose();
+          }
+          swipeX.current = null;
+        }}
+      >
         <div className="ts-head">
           <button
             type="button"
