@@ -278,6 +278,34 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# GAME-2 — THE PIT, ARCADE REWRITE
+
+> Branch: `feature/game-2` off main (7d386db). GAME-1 was NEVER merged — carry its identity/leaderboard/simulated pieces over from `feature/game-1` by hand; the ride/fade + daily pick modes are DEAD, do not port them. One gate: a playable build — the bar is the reviewer playing three runs back-to-back unprompted. Started 2026-08-13.
+> NORTH STAR: moment-to-moment fun. One session = one trading day (60–90s). Instantly replayable.
+
+## GA-A — CARRY-OVER (from feature/game-1, unchanged semantics)
+- [ ] lib/pit identity + leaderboard (pids `v:{vid}`/`u:{email}` for AUTH-1 claims), nickname + validatePitName filter, /api/admin/pit purge route, "pit" rate-limit key, PIT tab/view (bottom tab mobile + desktop toggle, ?view=pit, resolveView "pit"), permanent styled SIMULATED label.
+- [ ] Boards: TODAY'S TAPE (best run on today's seed) + ALL-TIME BEST RUN. Player record gains { bestRun, bestRunDate, todayRun, todayDate }.
+
+## GA-B — CORE LOOP (v1 scope, this and nothing more)
+- [ ] Full-screen canvas, Matrix green: perspective grid floor, glowing price line, price chip at the head, entry-line marker while holding, target bar filling across the top, cash counter animating every tick.
+- [ ] THE TAPE: 60–90s generated day, seeded DAILY by ET date (mulberry32(seed) — one tape a day, identical for everyone). Quotes pipeline is DAILY closes (no intraday) → SHIP SYNTHETIC per the spec ("fun beats purity"): drift segments + spikes + dumps + fakeouts + one clean dip-and-rip arc, fictional ticker name from the seed.
+- [ ] CONTROLS: BUY (all-in) / SELL (flatten). One position, no sizing. Huge bottom thumb buttons + keyboard space/B/S on desktop.
+- [ ] RULES: start 10,000 fictional cash; TARGET +15% equity by the bell; MARGIN CALL ends the run if equity < 40% of start.
+- [ ] JUICE (non-negotiable): PERFECT DIP combo multiplier (entry within 1.5% of the rolling local low / exit near local high — combo multiplies the fill's P&L pop), green screen-glow on up-ticks while holding, red pulse on drawdown (reduced-motion: static tint, no pulse/shake), last-10s closing-bell tension (clock pulses, grid speeds), P&L pop on every fill.
+- [ ] EVENTS: 2–3 per day from the daily seed, clearly fictional, banner-based, silent ("FLASH CRASH", "SQUEEZE — ×2 WINDOW" doubling gains inside the window).
+- [ ] END SCREEN: BEAT THE BELL / MISSED THE TARGET / MARGIN CALLED, run stats (trades, win rate, best trade, perfect dips), a NOT-REAL-WINNINGS line with personality, nickname save to boards, RUN IT BACK as the biggest element.
+
+## GA-C — TECH RAILS
+- [ ] One canvas, rAF, 60fps on a mid-range phone, battery-sane (pause on tab blur/visibilitychange), no network mid-run except the end-of-run score submit (POST /api/pit {action:"run", score, stats} — server clamps/validates).
+
+## V2 — DO NOT BUILD: districts/seasons/meta, sound beyond one off-default toggle, multiple tickers, desk-call integration, share cards.
+
+### GATE GA-G1 — playable preview; three unprompted back-to-back runs is the bar. HOLD.
+- [ ] GA-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
