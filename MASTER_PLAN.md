@@ -306,6 +306,46 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# GAME-3 — THE PIT: CAREER LOOP
+
+> Evolving `feature/game-2` IN PLACE (unmerged, per spec). One gate: playable — the bar is finishing R1 and starting R2 unprompted, then finishing the run. Started 2026-08-13.
+> NORTH STAR: finish Round 1 and immediately want Round 2. Terminal × strategy × arcade progression × financial education. NOT a casino.
+> V1 SCOPE: ROUND → STOCK SELECTION → MOVEMENT → CATALYST → LONG/SHORT → P&L → SCORE → XP → NEXT ROUND. Nothing else ships.
+
+## GP1 — ROUND ENGINE
+- [ ] State machine: ROUND BRIEF → LIVE TRADING → BELL → ROUND COMPLETE → NEXT. Run = one career attempt; margin call at 40% of round start ends the run.
+- [ ] Ladder: R1 OPENING BELL ($10K, 4 stocks, LONG only, 90s, gentle) · R2 MOMENTUM (faster tape, SHORT unlocks, first catalysts) · R3 EARNINGS (one binary catalyst/stock, before/after decision, 2 positions unlock) · R4 THE CRASH (selloff regime, correlated, 45s) · R5 BOSS (simultaneous catalysts, 120s, brutal).
+- [ ] Controls: per-stock LONG / SHORT / FLATTEN (+WAIT = do nothing). Position model supports N, level/round-gated (1 in R1–R2, 2 from R3).
+
+## GP2 — STOCK UNIVERSE
+- [ ] Categorized pools w/ per-category vol/drift personality (Mega Cap, Tech/AI, Semis, Banks, Energy, Consumer, Healthcare, Crypto-adj, High-Vol). Round draws 4–6 from theme-appropriate mixes, seeded per round+runSeed so lineups rotate.
+- [ ] Real tickers, simulated tapes with the category's texture. SIM chip everywhere.
+
+## GP3 — MISSIONS
+- [ ] One per round: BEAT THE MARKET (vs SPY sim line) · MOMENTUM HUNTER (profit on the day's fastest riser) · SHORT SELLER (profit on a short) · LOW RISK (finish ≥ start w/ max DD < 5%) · SURVIVOR (never breach 20% DD). Shown in the brief, tracked live, scored at the bell.
+
+## GP4 — EVENTS/CATALYSTS
+- [ ] 2–3/round max; ALWAYS a clue first (ticker flicker + volume swell + countdown banner). Archetype headlines only w/ SIM chip ("EARNINGS BEAT", "ANALYST DOWNGRADE", "SQUEEZE — ×2 WINDOW") — never a factual claim about the real company; no real names in event copy.
+
+## GP5 — SCORE + XP + LEVELS
+- [ ] PIT SCORE (deterministic, breakdown shown): pnlPts + missionBonus + timingPts (entry/exit vs local extremes) + drawdownPenalty + accuracyPts.
+- [ ] XP → levels: L1 ROOKIE → L2 SCOUT (bigger universe) → L3 MOMENTUM (high-vol pool) → L4 VOLATILITY (2 positions anywhere) → L5+ reserved (options). Level/XP persist on the visitor pid (AUTH-1 claimable).
+
+## GP6 — FEEDBACK + TRANSITIONS
+- [ ] Live: P&L pops, GOOD ENTRY / CATALYST CAPTURED / POSITION STOPPED moments.
+- [ ] ROUND COMPLETE is the reward: $10,000 → $12,480 · +24.8% · SPY +1.2% · OUTPERFORMED MARKET · SCORE breakdown · +XP bar filling · NEXT ROUND → dominant.
+
+## VISUAL LAW: near-black, deep green, terminal type, thin borders, density, subtle grid, glow accents, amber/red warnings. Motion + tension + hierarchy. Never casino.
+
+## ARCHITECTED NOW, BUILT LATER (types/stubs only in lib/pit-stubs.ts): options card iface, Terminal-idea→PIT challenge schema, game-modes registry (CAREER ships), boards + BEST ROUND + streak fields.
+
+## CARRY-OVER unchanged: anonymous identity/nickname/purge · SIMULATED label · reduced-motion · one canvas 60fps · pause on blur · no network mid-round (state GET on entry, POST per round complete).
+
+### GATE GC-G1 — playable preview; bar: finish R1 → start R2 unprompted → finish the run. Report the quit round. HOLD.
+- [ ] GC-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
