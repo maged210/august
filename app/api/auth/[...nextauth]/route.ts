@@ -11,11 +11,16 @@ import { handlers, authConfigured } from "@/auth";
 
 export const runtime = "nodejs";
 
-// Honest unconfigured mode: a clean machine-readable 501 instead of
-// @auth/core's MissingSecret 500 error page. The landing hides its session
-// chip on any non-ok response from /api/auth/session.
-async function unconfigured(_req: NextRequest): Promise<Response> {
-  return Response.json({ error: "auth_not_configured" }, { status: 501 });
+// Honest unconfigured mode instead of @auth/core's MissingSecret 500 page.
+// /session answers a VALID signed-out response (200 null — NextAuth's own
+// no-session shape) so no production path ever sees a 5xx from this route;
+// the landing's `j?.user?.email` check hides the chip either way. The other
+// NextAuth endpoints (signin/csrf/...) simply don't exist until AUTH-1: 404.
+async function unconfigured(req: NextRequest): Promise<Response> {
+  if (new URL(req.url).pathname.endsWith("/session")) {
+    return Response.json(null, { headers: { "Cache-Control": "no-store" } });
+  }
+  return Response.json({ error: "auth_not_configured" }, { status: 404 });
 }
 
 export const GET = authConfigured ? handlers.GET : unconfigured;
