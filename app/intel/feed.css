@@ -1316,3 +1316,193 @@
   :where(.intel-embed-frame) .if-live-chip .if-life-dot,
   :where(.intel-embed-frame) .if-sheet { animation: none; }
 }
+
+/* ============================================================================
+   MOBILE-1 · M2 — the terminal's PHONE layout: segmented modules, stacked
+   cards, and the full-screen idea sheet. (The desktop desk tree does not
+   render at ≤700px at all — these are not overrides, they are the layout.)
+   ========================================================================== */
+
+:where(.intel-embed-frame) .if-mobile {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px 10px calc(var(--tabbar-h, 0px) + 18px);
+}
+
+/* segment strip — one module at a time */
+:where(.intel-embed-frame) .if-seg {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  padding-bottom: 2px;
+}
+:where(.intel-embed-frame) .if-seg-btn {
+  appearance: none; cursor: pointer; flex: none;
+  min-height: 44px; padding: 8px 16px;
+  border: 1px solid var(--rd-hair-08, rgba(255,255,255,0.08));
+  border-radius: 999px; background: none;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+  color: var(--rd-t-dim, #8b929a);
+}
+:where(.intel-embed-frame) .if-seg-btn.on {
+  color: var(--rd-t-primary, #e9ebee);
+  border-color: var(--rd-teal, #5fb0ad);
+  background: var(--rd-acc-soft04, rgba(95,176,173,0.04));
+}
+:where(.intel-embed-frame) .if-seg-btn:focus-visible {
+  outline: 1px solid var(--rd-teal, #5fb0ad); outline-offset: 1px;
+}
+
+/* the cards */
+:where(.intel-embed-frame) .if-mgroup {
+  margin-top: 6px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; font-weight: 600; letter-spacing: 0.14em;
+  color: var(--rd-t-faint, #6b727a);
+}
+:where(.intel-embed-frame) .if-mcards {
+  display: flex; flex-direction: column; gap: 8px;
+}
+:where(.intel-embed-frame) .if-mcard {
+  appearance: none; cursor: pointer; text-align: left;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 11px 12px; min-height: 44px;
+  border: 1px solid var(--rd-hair-07, rgba(255,255,255,0.07));
+  border-radius: 6px;
+  background: var(--rd-card, #0b0d10);
+  color: inherit;
+}
+:where(.intel-embed-frame) .if-mcard.sel {
+  box-shadow: var(--rd-sel-ring-flat, inset 0 0 0 1px rgba(95,176,173,0.4));
+}
+:where(.intel-embed-frame) .if-mcard:focus-visible {
+  outline: 1px solid var(--rd-teal, #5fb0ad); outline-offset: 1px;
+}
+:where(.intel-embed-frame) .if-mcard-top {
+  display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%;
+}
+:where(.intel-embed-frame) .if-mcard-tkr {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 13px; font-weight: 600; color: var(--rd-t-primary, #e9ebee);
+}
+:where(.intel-embed-frame) .if-mcard-age {
+  margin-left: auto;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9px; color: var(--rd-t-faint, #6b727a); white-space: nowrap;
+}
+:where(.intel-embed-frame) .if-mcard-entry {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 12px; font-weight: 600; color: var(--rd-bull, #6fa085);
+  overflow-wrap: anywhere;
+}
+:where(.intel-embed-frame) .if-mcard-entry-k {
+  font-size: 8.5px; letter-spacing: 0.12em; color: var(--rd-bull-dim, #5f8a72);
+  margin-right: 3px;
+}
+:where(.intel-embed-frame) .if-mcard-reason {
+  font-family: var(--rd-sans, "Hanken Grotesk", sans-serif);
+  font-size: 11.5px; line-height: 1.45; color: var(--rd-t-dim, #8b929a);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+  line-clamp: 1; overflow: hidden;
+}
+:where(.intel-embed-frame) .if-mcard-foot {
+  display: flex; align-items: baseline; gap: 12px;
+  font-size: 11px;
+}
+
+/* the full-screen idea sheet */
+:where(.intel-embed-frame).im-sheet {
+  position: fixed; inset: 0; z-index: 60;
+  /* literal, not a token — the sheet must be OPAQUE on any cascade */
+  background: #07090b;
+  isolation: isolate;
+  animation: im-in 200ms ease-out;
+}
+@keyframes im-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.intel-embed-frame).im-sheet { animation: none; }
+}
+:where(.intel-embed-frame) .im-close {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  z-index: 61;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  appearance: none; cursor: pointer;
+  border: 1px solid var(--rd-hair-10, rgba(255,255,255,0.1));
+  border-radius: 50%;
+  background: var(--rd-mbar1-bg, rgba(7,8,10,0.86));
+  color: var(--rd-t-secondary, #aeb4bb);
+  font-size: 15px;
+}
+:where(.intel-embed-frame) .im-close:focus-visible {
+  outline: 1px solid var(--rd-teal, #5fb0ad); outline-offset: 1px;
+}
+:where(.intel-embed-frame) .im-scroll {
+  height: 100dvh; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 14px;
+  /* bottom clears the tab bar (a permitted fixed overlay that stays
+     reachable above the sheet) */
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 14px
+    calc(var(--tabbar-h, env(safe-area-inset-bottom, 0px)) + 24px);
+}
+/* 1 · chart ~40% of the viewport; touch-scrub without pinch-fights */
+:where(.intel-embed-frame) .im-chart .ifm-h { padding-right: 52px; }
+:where(.intel-embed-frame) .im-chart .ifm-chart {
+  height: 38dvh; touch-action: pan-x pan-y;
+}
+/* 2 · meta */
+:where(.intel-embed-frame) .im-meta {
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+}
+:where(.intel-embed-frame) .im-meta-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+:where(.intel-embed-frame) .im-age {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px; color: var(--rd-t-faint, #6b727a);
+}
+/* 3 · thesis */
+:where(.intel-embed-frame) .im-thesis {
+  margin: 0; padding-left: 10px;
+  border-left: 2px solid var(--rd-bull-soft32, rgba(111,160,133,0.32));
+  font-family: var(--rd-sans, "Hanken Grotesk", sans-serif);
+  font-size: 14px; line-height: 1.55; color: var(--rd-t-chip, #dfe3e7);
+}
+/* 4 · compact facts */
+:where(.intel-embed-frame) .im-facts {
+  display: flex; flex-direction: column; gap: 6px;
+}
+:where(.intel-embed-frame) .im-fact {
+  display: flex; align-items: baseline; gap: 10px; min-width: 0;
+}
+:where(.intel-embed-frame) .im-fact-k {
+  flex: none; width: 72px;
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 8.5px; letter-spacing: 0.12em; color: var(--rd-t-ghost, #565c63);
+}
+:where(.intel-embed-frame) .im-fact-v {
+  font-family: var(--rd-mono, "IBM Plex Mono", monospace);
+  font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--rd-t-chip, #dfe3e7); overflow-wrap: anywhere;
+}
+:where(.intel-embed-frame) .im-hist {
+  margin-top: 2px;
+}
+
+/* — M2 · chips + heatmap scale down on phones — */
+@media (max-width: 700px) {
+  :where(.intel-embed-frame) .if-live-chip,
+  :where(.intel-embed-frame) .if-life {
+    font-size: 8px; padding: 1px 6px;
+  }
+  :where(.intel-embed-frame) .if-bside { font-size: 9px; }
+  :where(.intel-embed-frame) .if-hm {
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    grid-auto-rows: 40px;
+  }
+  :where(.intel-embed-frame) .if-chrome { padding-bottom: 0; }
+  :where(.intel-embed-frame) .if-wordmark { font-size: 11px; }
+}

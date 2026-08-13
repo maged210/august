@@ -7184,3 +7184,170 @@ button.pulse-line:focus-visible {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ============================================================================
+   MOBILE-1 — the phone redesign (≤700px). Nothing horizontal-scrolls,
+   nothing overlaps; the only overlays are sheets w/ scrims, the bottom tab
+   bar, and fixed close buttons in safe areas.
+   ========================================================================== */
+
+/* — M1 · bottom tab bar (phone only) — */
+.tab-bar {
+  display: none;
+}
+@media (max-width: 700px) {
+  :root {
+    --tabbar-h: calc(54px + env(safe-area-inset-bottom, 0px));
+  }
+  .tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 35;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    height: var(--tabbar-h);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--glass-strong);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+  }
+  .tab-item {
+    appearance: none;
+    border: none;
+    background: none;
+    cursor: pointer;
+    flex: 1;
+    max-width: 160px;
+    min-height: 44px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    color: var(--ash);
+  }
+  .tab-item.on {
+    color: var(--bone);
+    box-shadow: inset 0 2px 0 var(--steel);
+  }
+  .tab-item:focus-visible {
+    outline: 1px solid var(--steel);
+    outline-offset: -2px;
+  }
+
+  /* the floating center toggle dies on phones — the tab bar is the nav */
+  .view-bar {
+    display: none;
+  }
+
+  /* the composer dock and terminal surfaces clear the tab bar (max() keeps
+     the dock above the keyboard when it opens instead of stacking both) */
+  .dock-wrap {
+    bottom: max(var(--kb-inset, 0px), var(--tabbar-h));
+  }
+  .view-panel {
+    bottom: var(--tabbar-h);
+  }
+
+  /* — M1 · header simplifies: menu · wordmark · status/clock. The control
+     cluster folds into the moon menu (see .hl-menu-mobile rows). — */
+  .hl-top {
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
+    gap: 8px;
+  }
+  .hl-ctls > .hl-ctl:not(.hl-menu-trigger),
+  .hl-ctls > a.hl-ctl {
+    display: none;
+  }
+  .hl-session {
+    display: none; /* account chip lives in the menu on phones */
+  }
+  .hl-clock {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* — M4 · WATCHING pinned above the tab bar, safe-area aware — */
+  .hl-tape {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--tabbar-h);
+    z-index: 20;
+    background: var(--glass-strong);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 8px 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .hl-tape-chips {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+  }
+  .hl-tape-label {
+    display: none; /* the chips speak for themselves at this width */
+  }
+  /* the landing content clears the pinned strip + tab bar */
+  .home-landing:not(.convo) .hl-main {
+    padding-bottom: calc(var(--tabbar-h) + 56px);
+  }
+
+  /* — M4 · pulse tiles: two per row — */
+  .hb-pulse {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .hb-tile {
+    justify-content: space-between;
+    min-height: 44px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .hb-tile .hb-spark {
+    display: none; /* the % already tells the story at this width */
+  }
+}
+
+/* the menu's phone-only control rows (hidden on desktop, where the cluster
+   carries them) */
+.hl-menu-mobile {
+  display: none;
+}
+@media (max-width: 700px) {
+  .hl-menu-mobile {
+    display: contents;
+  }
+  .hl-rainopt {
+    min-height: 44px;
+  }
+}
+
+/* — M3 · sheets: scroll-lock behind, slide + scrim everywhere <1100px — */
+html.sheet-open .home-landing,
+html.sheet-open .hl-convo,
+html.sheet-open .view-panel {
+  overflow: hidden !important;
+}
+.ir-scrim,
+.ts-scrim {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+.ir-body,
+.ts-body {
+  overscroll-behavior: contain;
+}
+@media (max-width: 1100px) {
+  .ideas-rail,
+  .threads-sb {
+    width: min(360px, 92vw);
+    box-shadow: var(--shadow-3, 0 20px 60px rgba(0, 0, 0, 0.55));
+  }
+}

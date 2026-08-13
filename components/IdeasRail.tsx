@@ -103,6 +103,15 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
         ref={railRef}
         className={`ideas-rail${open ? " open" : ""}`}
         aria-label="Trade ideas"
+        // M3 — swipe the right-hand sheet rightwards to dismiss (phone/tablet)
+        onTouchStart={(e) => {
+          (railRef.current as HTMLElement & { _sx?: number })._sx = e.touches[0].clientX;
+        }}
+        onTouchEnd={(e) => {
+          const el = railRef.current as (HTMLElement & { _sx?: number }) | null;
+          if (el?._sx != null && e.changedTouches[0].clientX - el._sx > 70) onClose();
+          if (el) el._sx = undefined;
+        }}
       >
         <div className="ir-head">
           <span className="ir-title">

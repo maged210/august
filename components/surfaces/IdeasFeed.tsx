@@ -37,8 +37,12 @@ import { publishRainSymbols } from "@/lib/rain-symbols";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
+import BookHeatmapModule from "@/components/surfaces/dock/BookHeatmapModule";
 import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
+import IdeaChartModule from "@/components/surfaces/dock/IdeaChartModule";
 import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
+import MarketPulseModule from "@/components/surfaces/dock/MarketPulseModule";
+import TapeModule from "@/components/surfaces/dock/TapeModule";
 import {
   selectionFromLive,
   selectionFromTracked,
@@ -456,8 +460,21 @@ export default function IdeasFeed() {
   const [tapeErr, setTapeErr] = useState(false);
   // desk wire ingest events (G3 round 5) — redacted counts off /api/wire
   const [ingests, setIngests] = useState<PublicIngest[] | null>(null);
-  // ≤700px: the dock hides behind a toggle
+  // ≤700px: the dock hides behind a toggle (tablet band 701–1179 keeps it)
   const [dockOpen, setDockOpen] = useState(false);
+  // M2 — the PHONE redesign: at ≤700px the blotter does not render; the desk
+  // becomes a segmented module strip + stacked cards + a full-screen sheet.
+  const [phone, setPhone] = useState(false);
+  const [seg, setSeg] = useState<"chart" | "book" | "pulse" | "tape" | "wire">("chart");
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 700px)");
+    const apply = () => setPhone(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const load = useCallback(() => {
     // two independent sources — one failing never blanks the other; a refresh
@@ -612,15 +629,17 @@ export default function IdeasFeed() {
               {trig} TRIG
             </span>
             <span className={`if-count if-count-arm${arm === 0 ? " if-count-zero" : ""}`}>{arm} ARM</span>
-            {/* phones only (CSS): the chart dock hides behind this toggle */}
-            <button
-              type="button"
-              className={`if-dock-toggle${dockOpen ? " on" : ""}`}
-              aria-expanded={dockOpen}
-              onClick={() => setDockOpen((v) => !v)}
-            >
-              DOCK
-            </button>
+            {/* tablets only — phones get the segmented strip instead (M2) */}
+            {!phone ? (
+              <button
+                type="button"
+                className={`if-dock-toggle${dockOpen ? " on" : ""}`}
+                aria-expanded={dockOpen}
+                onClick={() => setDockOpen((v) => !v)}
+              >
+                DOCK
+              </button>
+            ) : null}
           </span>
         </div>
         <div className="if-pills" role="tablist" aria-label="Filter tracked ideas by lifecycle">
@@ -641,10 +660,132 @@ export default function IdeasFeed() {
         </div>
       </div>
 
-      {/* G3 — the full-bleed three-zone desk: LEFT chart dock · CENTER
-          blotter · RIGHT the page-level Trade Ideas rail (outside this
-          surface, untouched). Tablet stacks the dock above the blotter;
-          phones hide it behind the DOCK toggle. */}
+      {/* M2 — PHONE: segmented modules + stacked cards + full-screen sheet.
+          The desktop/tablet desk below does not render at all here. */}
+      {phone ? (
+        // hidden (not unmounted) under the sheet: no double-rendered chart
+        // behind it, no scroll, state preserved for the return
+        <div className="if-mobile" style={sheetOpen ? { visibility: "hidden" } : undefined}>
+          <div className="if-seg" role="tablist" aria-label="Desk modules">
+            {(
+              [
+                ["chart", "CHART"],
+                ["book", "BOOK"],
+                ["pulse", "PULSE"],
+                ["tape", "TAPE"],
+                ["wire", "WIRE"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={seg === id}
+                className={`if-seg-btn${seg === id ? " on" : ""}`}
+                onClick={() => setSeg(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="if-seg-body">
+            {seg === "chart" ? <IdeaChartModule selection={selection} /> : null}
+            {seg === "book" ? (
+              <BookHeatmapModule
+                cards={tracked}
+                liveIdeas={liveIdeas}
+                selection={selection}
+                onSelect={applySelect}
+              />
+            ) : null}
+            {seg === "pulse" ? <MarketPulseModule /> : null}
+            {seg === "tape" ? (
+              <TapeModule entries={tapeRows} failed={tapeErr} onRetry={load} />
+            ) : null}
+            {seg === "wire" ? <DeskWirePanel events={wireEvents} /> : null}
+          </div>
+
+          {loading ? (
+            <div className="if-mcards" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="if-mcard">
+                  <span className="if-skel-bar hi" style={{ width: 90 }} />
+                  <span className="if-skel-bar" style={{ width: "80%" }} />
+                </div>
+              ))}
+            </div>
+          ) : unreachable ? (
+            <div className="if-state">
+              <div className="if-state-glyph" aria-hidden="true">
+                ·
+              </div>
+              <div className="if-state-title">FEED UNREACHABLE</div>
+              <button type="button" className="if-retry" onClick={load}>
+                RETRY
+              </button>
+            </div>
+          ) : empty ? (
+            <div className="if-state">
+              <div className="if-state-glyph" aria-hidden="true">
+                ·
+              </div>
+              <div className="if-state-title">NO IDEAS ON THE BOARD</div>
+            </div>
+          ) : (
+            <div className="if-mcards">
+              {liveIdeas.length > 0 ? <div className="if-mgroup">LIVE — DESK CALLS</div> : null}
+              {liveIdeas.map((idea) => (
+                <MobileCard
+                  key={idea.id}
+                  selected={selection?.key === `live:${idea.id}`}
+                  onOpen={() => {
+                    applySelect(selectionFromLive(idea));
+                    setSheetOpen(true);
+                  }}
+                  ticker={idea.instrument}
+                  side={sideOf(idea)}
+                  statusChip={{ label: "LIVE", cls: "if-live-chip" }}
+                  entry={idea.entry}
+                  reason={idea.thesis}
+                  age={relativeTime(idea.createdAt)}
+                />
+              ))}
+              <div className="if-mgroup">
+                TRACKED — {visible.length} OF {tracked.length}
+              </div>
+              {visible.map((card) => {
+                const dir = DIR_META[card.direction] ?? DIR_META.watch;
+                const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
+                const perf = perfOf(card);
+                return (
+                  <MobileCard
+                    key={card.id}
+                    selected={selection?.key === `trk:${card.id}`}
+                    onOpen={() => {
+                      applySelect(selectionFromTracked(card));
+                      setSheetOpen(true);
+                    }}
+                    ticker={card.ticker}
+                    side={{ side: dir.label as "LONG" | "SHORT" | "WATCH", derived: false }}
+                    statusChip={{ label: life.label, cls: `if-life ${life.chip}` }}
+                    entry={
+                      card.statedLevels.trigger
+                        ? card.statedLevels.trigger.value != null
+                          ? px(card.statedLevels.trigger.value)
+                          : card.statedLevels.trigger.text
+                        : ""
+                    }
+                    reason={card.thesis}
+                    age={relativeTime(card.firstMentionAt)}
+                    perf={perf ? { text: perf.text, cls: perf.cls } : null}
+                    last={card.quote ? px(card.quote.price) : null}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="if-desk">
         <aside className={`if-dock${dockOpen ? " open" : ""}`} aria-label="Chart dock">
           <ChartDock
@@ -784,6 +925,215 @@ export default function IdeasFeed() {
           ) : null}
         </section>
       </div>
+      )}
+
+      {/* M2 — the full-screen idea detail sheet (phone) */}
+      {phone && sheetOpen && selection ? (
+        <MobileIdeaSheet
+          selection={selection}
+          live={selLive}
+          card={selCard}
+          onClose={() => setSheetOpen(false)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// ── M2 · the phone card (rail-card pattern; TRACKED adds perf + last) ─────────
+
+function MobileCard({
+  ticker,
+  side,
+  statusChip,
+  entry,
+  reason,
+  age,
+  perf,
+  last,
+  selected,
+  onOpen,
+}: {
+  ticker: string;
+  side: { side: "LONG" | "SHORT" | "WATCH" | "NEUT"; derived: boolean } | null;
+  statusChip: { label: string; cls: string };
+  entry: string;
+  reason: string;
+  age: string;
+  perf?: { text: string; cls: string } | null;
+  last?: string | null;
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button type="button" className={`if-mcard${selected ? " sel" : ""}`} onClick={onOpen}>
+      <span className="if-mcard-top">
+        <span className="if-mcard-tkr">{ticker}</span>
+        {side ? (
+          <span
+            className={`if-bside ${
+              side.side === "LONG" ? "if-dir-bull" : side.side === "SHORT" ? "if-dir-bear" : "if-dir-neut"
+            }${side.derived ? " derived" : ""}`}
+          >
+            <span className="if-bside-g" aria-hidden="true">
+              {side.side === "LONG" ? "▲" : side.side === "SHORT" ? "▼" : "◆"}
+            </span>
+            {side.side}
+          </span>
+        ) : null}
+        <span className={statusChip.cls.includes("live-chip") ? statusChip.cls : statusChip.cls}>
+          <span className="if-life-dot" aria-hidden="true" />
+          {statusChip.label}
+        </span>
+        <span className="if-mcard-age">{age}</span>
+      </span>
+      {entry ? (
+        <span className="if-mcard-entry">
+          <span className="if-mcard-entry-k">ENTRY</span> {entry}
+        </span>
+      ) : null}
+      <span className="if-mcard-reason">{reason.slice(0, 110)}</span>
+      {perf || last ? (
+        <span className="if-mcard-foot">
+          {perf ? <span className={`if-bpct ${perf.cls}`}>{perf.text}</span> : null}
+          {last ? <span className="if-blast">{last}</span> : null}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+// ── M2 · the full-screen idea detail sheet ────────────────────────────────────
+
+function MobileIdeaSheet({
+  selection,
+  live,
+  card,
+  onClose,
+}: {
+  selection: ChartSelection;
+  live: PublicIdea | null;
+  card: FeedCard | null;
+  onClose: () => void;
+}) {
+  // page scroll locks under the sheet; Esc closes (hardware keyboards exist)
+  useEffect(() => {
+    document.documentElement.classList.add("sheet-open");
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.documentElement.classList.remove("sheet-open");
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const side = live ? sideOf(live) : null;
+  const dir = card ? DIR_META[card.direction] ?? DIR_META.watch : null;
+  const life = card ? LIFE_META[card.status] ?? LIFE_META.CLOSED : null;
+  const perf = card ? perfOf(card) : null;
+  const entryText = live
+    ? live.entry
+    : card?.statedLevels.trigger
+      ? card.statedLevels.trigger.value != null
+        ? px(card.statedLevels.trigger.value)
+        : card.statedLevels.trigger.text
+      : "";
+  const thesis = live ? live.thesis : card?.thesis ?? "";
+  const age = live ? relativeTime(live.createdAt) : card ? relativeTime(card.firstMentionAt) : "";
+
+  return (
+    <div className="im-sheet intel-embed-frame" role="dialog" aria-modal="true" aria-label={`${selection.ticker} detail`}>
+      <button type="button" className="im-close" onClick={onClose} aria-label="Close idea detail">
+        ✕
+      </button>
+      <div className="im-scroll">
+        {/* 1 · the chart — entry/target/stop lines + TRIG mark ride the
+            existing module; ~40dvh via CSS */}
+        <div className="im-chart">
+          <IdeaChartModule selection={selection} />
+        </div>
+
+        {/* 2 · entry chip · side · risk/status · age */}
+        <div className="im-meta">
+          {entryText ? (
+            <span className="if-entry-hero">
+              <span className="if-entry-hero-k">ENTRY</span>
+              <span className="if-entry-hero-v">{entryText}</span>
+            </span>
+          ) : null}
+          <span className="im-meta-row">
+            {side ? (
+              <span
+                className={`if-bside ${
+                  side.side === "LONG" ? "if-dir-bull" : side.side === "SHORT" ? "if-dir-bear" : "if-dir-neut"
+                }${side.derived ? " derived" : ""}`}
+              >
+                {side.side}
+              </span>
+            ) : null}
+            {dir ? <span className={`if-bside ${dir.cls}`}>{dir.label}</span> : null}
+            {live ? (
+              <span className="if-risk">{live.riskLevel.toUpperCase()} RISK</span>
+            ) : null}
+            {life ? <span className={`if-life ${life.chip}`}>{life.label}</span> : null}
+            <span className="im-age">{age}</span>
+          </span>
+        </div>
+
+        {/* 3 · the full thesis */}
+        <p className="im-thesis">{thesis}</p>
+
+        {/* 4 · compact facts — only what exists */}
+        <div className="im-facts">
+          {live?.target ? <FactRow k="TARGET" v={live.target} cls="if-lev-target" /> : null}
+          {live?.stop ? <FactRow k="STOP" v={live.stop} cls="if-lev-stop" /> : null}
+          {card?.statedLevels.targets.map((t, i) => (
+            <FactRow
+              key={i}
+              k={card.statedLevels.targets.length > 1 ? `TARGET ${i + 1}` : "TARGET"}
+              v={t.value != null ? px(t.value) : t.text}
+              cls="if-lev-target"
+            />
+          ))}
+          {card?.statedLevels.invalidation ? (
+            <FactRow
+              k="STOP"
+              v={
+                card.statedLevels.invalidation.value != null
+                  ? px(card.statedLevels.invalidation.value)
+                  : card.statedLevels.invalidation.text
+              }
+              cls="if-lev-stop"
+            />
+          ) : null}
+          {perf ? <FactRow k="PERF" v={perf.text} cls={perf.cls} /> : null}
+          {card?.quote ? <FactRow k="LAST" v={`${px(card.quote.price)} · ${pctFmt(card.quote.chgPct)} today`} cls="" /> : null}
+        </div>
+        {card && card.statusHistory.length > 0 ? (
+          <ul className="if-sh-hist im-hist">
+            {card.statusHistory.map((h, i) => (
+              <li key={i}>
+                <span className="if-sh-hist-top">
+                  <span>{(LIFE_META[h.state] ?? LIFE_META.CLOSED).label}</span>
+                  {h.price != null && <span>@ {px(h.price)}</span>}
+                </span>
+                <span className="if-sh-hist-reason">{h.reason}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function FactRow({ k, v, cls }: { k: string; v: string; cls: string }) {
+  return (
+    <span className="im-fact">
+      <span className="im-fact-k">{k}</span>
+      <span className={`im-fact-v ${cls}`}>{v}</span>
+    </span>
   );
 }
