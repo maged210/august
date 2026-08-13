@@ -21,6 +21,7 @@ import {
   listIdeas,
   listLiveIdeas,
   relativeTime,
+  suggestSide,
   toPublicIdea,
   updateIdea,
   validateIdeaCreate,
@@ -200,6 +201,62 @@ test("side: toPublicIdea carries a stated side and omits an absent one", () => {
   const stated = toPublicIdea({ ...FULL, side: "long" });
   assert.equal(stated.side, "long");
   assert.ok(!("side" in toPublicIdea(FULL))); // absent stays absent on the wire
+});
+
+// --- ADMIN-1: stop · invalidated · archiveThesis · suggestSide ---------------
+
+test("stop (ADMIN-1): create accepts/collapses, omits when absent; patch clears on null/empty", () => {
+  const r = validateIdeaCreate({
+    instrument: "NQ", thesis: "t", riskLevel: "low", stop: "  21,300  hard stop ",
+  });
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.value.stop, "21,300 hard stop");
+  const absent = validateIdeaCreate({ instrument: "NQ", thesis: "t", riskLevel: "low" });
+  assert.ok(absent.ok);
+  if (absent.ok) assert.ok(!("stop" in absent.value));
+  const set = validateIdeaPatch({ stop: "21,300" });
+  assert.ok(set.ok);
+  if (set.ok) assert.equal(set.value.stop, "21,300");
+  for (const clearing of [null, "", "   "]) {
+    const clear = validateIdeaPatch({ stop: clearing });
+    assert.ok(clear.ok, JSON.stringify(clearing));
+    if (clear.ok) {
+      assert.ok("stop" in clear.value); // key present → the store spread clears
+      assert.equal(clear.value.stop, undefined);
+    }
+  }
+});
+
+test("invalidated (ADMIN-1): a real status that never reaches the public wire shape", () => {
+  assert.ok(validateIdeaPatch({ status: "invalidated" }).ok);
+  const r = validateIdeaCreate({
+    instrument: "NQ", thesis: "t", riskLevel: "low", status: "invalidated",
+  });
+  assert.ok(r.ok);
+});
+
+test("archiveThesis (ADMIN-1): boolean-only patch directive", () => {
+  const ok = validateIdeaPatch({ thesis: "new read", archiveThesis: true });
+  assert.ok(ok.ok);
+  if (ok.ok) assert.equal(ok.value.archiveThesis, true);
+  assert.equal(validateIdeaPatch({ archiveThesis: "yes" }).ok, false);
+});
+
+test("toPublicIdea: stop rides the wire when present, absent stays absent; thesisHistory NEVER", () => {
+  const pub = toPublicIdea({ ...FULL, stop: "21,300", thesisHistory: ["old take"] });
+  assert.equal(pub.stop, "21,300");
+  assert.ok(!("thesisHistory" in pub));
+  assert.ok(!("stop" in toPublicIdea(FULL)));
+});
+
+test("suggestSide (ADMIN-1): the F6 entry-language rule, never guessing", () => {
+  assert.equal(suggestSide("break above 21,450"), "long");
+  assert.equal(suggestSide("clears $188 with volume"), "long");
+  assert.equal(suggestSide("break below 74.50"), "short");
+  assert.equal(suggestSide("rejection at 200"), "short");
+  assert.equal(suggestSide("21,450"), null); // a bare level says nothing
+  assert.equal(suggestSide(""), null);
+  assert.equal(suggestSide("break above 100 then short the failure below 90"), null); // both → ambiguous
 });
 
 // --- validateIdeaPatch ------------------------------------------------------

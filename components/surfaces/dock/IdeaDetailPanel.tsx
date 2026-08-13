@@ -168,7 +168,7 @@ export default function IdeaDetailPanel({
                   levels here are only TARGET and STOP */}
               <div className="if-sh-sect-h">STATED LEVELS</div>
               <TextLevelRow label="TARGET" text={live.target} cls="if-lev-target" />
-              <TextLevelRow label="STOP" text="" cls="if-lev-stop" />
+              <TextLevelRow label="STOP" text={live.stop ?? ""} cls="if-lev-stop" />
               <QuietLine label="PERFORMANCE" text="live — no measurement yet" />
               <QuietLine label="STATUS" text="no transitions — the call stands as posted" />
             </div>

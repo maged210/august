@@ -6425,10 +6425,11 @@ button.pulse-line:focus-visible {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 .adm-shell {
-  width: min(760px, 100%);
+  /* ADMIN-1 — the control room runs two columns on desktop */
+  width: min(1480px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 18px;
 }
 .adm-head {
   display: flex;
@@ -6862,4 +6863,324 @@ button.pulse-line:focus-visible {
   display: flex;
   gap: 6px;
   margin-left: auto;
+}
+
+/* ============================================================================
+   ADMIN-1 — THE MORNING CONTROL ROOM. The desk's backstage in the desk's
+   design language: hairline panels, tiny mono headers, chips, tabular rows.
+   Everything below extends the adm-* base styles above.
+   ========================================================================== */
+
+/* — the status strip (replaces the old adm-head) — */
+.adm-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+}
+.adm-strip-mid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px 18px;
+  flex-wrap: wrap;
+}
+.adm-strip-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--bone);
+  white-space: nowrap;
+}
+.adm-strip-k {
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  color: var(--ink-mute);
+  margin-right: 2px;
+}
+
+/* — the two columns — */
+.adm-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .adm-cols {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+.adm-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* — panels: the desk's module shell — */
+.adm-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adm-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.adm-panel-t {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  color: var(--bone);
+}
+.adm-panel-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.adm-panel-acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* — intake polish — */
+.adm-charcount {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.adm-trrow-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.adm-trrow {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  padding: 3px 0;
+}
+.adm-trrow:hover .adm-trmeta {
+  color: var(--bone);
+}
+.adm-trrow:focus-visible {
+  outline: 1px solid var(--steel);
+  outline-offset: 1px;
+}
+.adm-trcaret {
+  flex: none;
+  font-size: 9px;
+  color: var(--ink-mute);
+  margin-left: 6px;
+}
+.adm-trdetail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px 20px;
+}
+.adm-trlink {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--ash);
+}
+.adm-trlink:hover:not(:disabled) {
+  color: var(--bone);
+  border-color: var(--steel);
+}
+.adm-trlink:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* — draft review v2 — */
+.adm-update-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  color: var(--amber);
+  border: 1px solid rgb(var(--amber-rgb) / 0.55);
+  background: rgb(var(--amber-rgb) / 0.1);
+  white-space: nowrap;
+}
+.adm-side.suggested {
+  border-style: dashed;
+  color: var(--bone);
+}
+.adm-levels-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+/* — the live book manager — */
+.adm-book {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adm-bookrow {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--r-md);
+  background: var(--glass);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adm-bookrow.adm-st-live {
+  border-left-color: rgb(var(--pos-rgb) / 0.7);
+}
+.adm-bookrow.adm-st-closed {
+  border-left-color: var(--line-strong);
+  opacity: 0.82;
+}
+.adm-bookrow.adm-st-invalidated {
+  border-left-color: rgb(var(--neg-rgb) / 0.7);
+  opacity: 0.88;
+}
+.adm-bookrow.stale {
+  border-color: rgb(var(--amber-rgb) / 0.45);
+  border-left-color: var(--amber);
+}
+.adm-book-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adm-book-head .adm-when {
+  margin-left: auto;
+}
+.adm-status {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-label);
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  color: var(--ash);
+}
+.adm-status-live {
+  color: var(--pos);
+  border-color: rgb(var(--pos-rgb) / 0.5);
+}
+.adm-status-invalidated {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.5);
+}
+.adm-stale-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  color: var(--amber);
+  border: 1px solid rgb(var(--amber-rgb) / 0.55);
+  background: rgb(var(--amber-rgb) / 0.12);
+}
+.adm-stale-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.adm-stale-in {
+  width: 52px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.adm-hist {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  color: var(--ink-mute);
+  cursor: help;
+}
+.adm-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.adm-inline .adm-input-inline {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.adm-btn-set {
+  padding: 5px 9px;
+}
+.adm-btn-danger {
+  color: var(--neg);
+  border-color: rgb(var(--neg-rgb) / 0.5);
+}
+.adm-btn-danger:hover {
+  background: rgb(var(--neg-rgb) / 0.12);
+}
+
+/* — phones: stacked, thumb-reachable — */
+@media (max-width: 700px) {
+  .admin-page {
+    padding-top: 14px;
+  }
+  /* brand + back on line one, the count chips on their own full row */
+  .adm-strip {
+    row-gap: 6px;
+  }
+  .adm-strip-mid {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .adm-btn {
+    min-height: 44px;
+  }
+  .adm-strip {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .adm-levels-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }

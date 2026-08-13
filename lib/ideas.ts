@@ -12,7 +12,10 @@
 
 import { Redis } from "@upstash/redis";
 
-export type IdeaStatus = "draft" | "live" | "closed";
+/** ADMIN-1: "invalidated" joins the lifecycle — a call that broke its premise.
+ *  Like closed it never reaches the public wire (only "live" is served); the
+ *  book manager keeps the two apart so the desk's record stays honest. */
+export type IdeaStatus = "draft" | "live" | "closed" | "invalidated";
 export type IdeaSource = "manual" | "extracted";
 export type IdeaRiskLevel = "low" | "medium" | "high";
 /** UX4 — the desk's stated direction. OPTIONAL and absent-by-default: the
@@ -31,11 +34,16 @@ export type Idea = {
   /** free-form level ("21,450", "break of 600") — honest to the source, never coerced to a number */
   entry: string;
   target: string;
+  /** stop / invalidation level — free-form like the others (ADMIN-1) */
+  stop?: string;
   riskLevel: IdeaRiskLevel;
   /** stated direction — absent when never stated (see IdeaSide) */
   side?: IdeaSide;
   status: IdeaStatus;
   source: IdeaSource;
+  /** prior theses, oldest first — populated when a dedupe-approve REFRESHES a
+   *  live idea (ADMIN-1); admin-side only, never on the public wire */
+  thesisHistory?: string[];
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 };
@@ -48,6 +56,7 @@ export type PublicIdea = Pick<
   | "thesis"
   | "entry"
   | "target"
+  | "stop"
   | "riskLevel"
   | "side"
   | "createdAt"
@@ -60,7 +69,8 @@ export const MAX_THESIS_CHARS = 2000;
 export const MAX_LEVEL_CHARS = 120;
 export const MAX_IDEAS = 500;
 
-export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "live", "closed"];
+export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "live", "closed", "invalidated"];
+export const MAX_THESIS_HISTORY = 10;
 export const IDEA_SOURCES: readonly IdeaSource[] = ["manual", "extracted"];
 export const IDEA_RISKS: readonly IdeaRiskLevel[] = ["low", "medium", "high"];
 export const IDEA_SIDES: readonly IdeaSide[] = ["long", "short", "watch"];
@@ -74,8 +84,9 @@ export function toPublicIdea(i: Idea): PublicIdea {
     thesis: i.thesis,
     entry: i.entry,
     target: i.target,
+    // absent stop/side stay absent on the wire — no key, not null (house absents)
+    ...(i.stop ? { stop: i.stop } : {}),
     riskLevel: i.riskLevel,
-    // absent side stays absent on the wire — no key, not null (house absents)
     ...(i.side ? { side: i.side } : {}),
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
@@ -103,6 +114,7 @@ export type IdeaCreateInput = {
   thesis: string;
   entry: string;
   target: string;
+  stop?: string;
   riskLevel: IdeaRiskLevel;
   side?: IdeaSide;
   status: IdeaStatus;
@@ -110,8 +122,12 @@ export type IdeaCreateInput = {
 };
 
 /** `side: undefined` with the key PRESENT is a deliberate clear (the spread
- *  in updateIdea overwrites, and JSON.stringify drops the undefined). */
-export type IdeaPatchInput = Partial<Omit<IdeaCreateInput, "source">>;
+ *  in updateIdea overwrites, and JSON.stringify drops the undefined).
+ *  `archiveThesis` (ADMIN-1) rides a patch that REPLACES the thesis: the old
+ *  thesis is pushed onto thesisHistory before the new one lands. */
+export type IdeaPatchInput = Partial<Omit<IdeaCreateInput, "source">> & {
+  archiveThesis?: boolean;
+};
 
 type Ok<T> = { ok: true; value: T };
 type Err = { ok: false; error: string };
@@ -148,6 +164,12 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
   if (target === null || target.length > MAX_LEVEL_CHARS)
     return { ok: false, error: fieldError("target", MAX_LEVEL_CHARS) };
 
+  // stop is optional like side — absent/null/"" all mean "not stated"
+  const stopRaw = b.stop === undefined || b.stop === null ? "" : b.stop;
+  const stop = typeof stopRaw === "string" ? collapse(stopRaw) : null;
+  if (stop === null || stop.length > MAX_LEVEL_CHARS)
+    return { ok: false, error: fieldError("stop", MAX_LEVEL_CHARS) };
+
   const riskLevel = b.riskLevel;
   if (!IDEA_RISKS.includes(riskLevel as IdeaRiskLevel))
     return { ok: false, error: "risk_level_invalid" };
@@ -171,6 +193,7 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
       thesis,
       entry,
       target,
+      ...(stop ? { stop } : {}),
       riskLevel: riskLevel as IdeaRiskLevel,
       ...(side !== undefined ? { side: side as IdeaSide } : {}),
       status: status as IdeaStatus,
@@ -217,12 +240,25 @@ export function validateIdeaPatch(body: unknown): Ok<IdeaPatchInput> | Err {
       return { ok: false, error: "risk_level_invalid" };
     patch.riskLevel = b.riskLevel as IdeaRiskLevel;
   }
+  if (b.stop !== undefined) {
+    // null/"" clears (an emptied inline field is a clear — key present,
+    // value undefined → the store spread overwrites, stringify drops it)
+    const v = b.stop === null ? "" : typeof b.stop === "string" ? collapse(b.stop) : null;
+    if (v === null || v.length > MAX_LEVEL_CHARS)
+      return { ok: false, error: fieldError("stop", MAX_LEVEL_CHARS) };
+    patch.stop = v === "" ? undefined : v;
+  }
   if (b.side !== undefined) {
     // null/"" clears the side (the admin one-click setter's un-set path)
     if (b.side === null || b.side === "") patch.side = undefined;
     else if (!IDEA_SIDES.includes(b.side as IdeaSide))
       return { ok: false, error: "side_invalid" };
     else patch.side = b.side as IdeaSide;
+  }
+  if (b.archiveThesis !== undefined) {
+    if (typeof b.archiveThesis !== "boolean")
+      return { ok: false, error: "archive_thesis_invalid" };
+    if (b.archiveThesis) patch.archiveThesis = true; // meaningful only WITH a thesis
   }
   if (b.status !== undefined) {
     if (!IDEA_STATUSES.includes(b.status as IdeaStatus))
@@ -339,11 +375,55 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
   if (!redis) return null;
   const existing = await getIdea(id);
   if (!existing) return null;
-  const updated: Idea = { ...existing, ...patch, id: existing.id, updatedAt: Date.now() };
+  // ADMIN-1 — a dedupe-approve REFRESH: the replaced thesis is preserved,
+  // oldest first, capped (archiveThesis is a directive, never stored)
+  const { archiveThesis, ...fields } = patch;
+  const archives =
+    archiveThesis && typeof fields.thesis === "string" && fields.thesis !== existing.thesis
+      ? [...(existing.thesisHistory ?? []), existing.thesis].slice(-MAX_THESIS_HISTORY)
+      : undefined;
+  const updated: Idea = {
+    ...existing,
+    ...fields,
+    ...(archives ? { thesisHistory: archives } : {}),
+    id: existing.id,
+    updatedAt: Date.now(),
+  };
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
     return updated;
   } catch {
     return null;
   }
+}
+
+/** ADMIN-1 — hard delete (confirmed in the UI): the blob and its index entry. */
+export async function deleteIdea(id: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis || !id) return false;
+  try {
+    await redis.del(K.idea(id));
+    await redis.zrem(K.index, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ADMIN-1 — the F6 entry-language rule as a SUGGESTION (pure, editable in the
+// UI): upward entry language → long, downward → short, nothing certain → null.
+const LONG_ENTRY_RE =
+  /\b(break(s|ing)? above|clears?|reclaims?|retest(s)? higher|above|breakout|hold(s)? support|bounce|calls?\b|long\b|buy(s|ing)?\b)/i;
+const SHORT_ENTRY_RE =
+  /\b(break(s|ing)? below|breakdown|loses?|below|rejection( at)?|fails? at|resistance holds?|puts?\b|short\b|sell(s|ing)?\b|fade(s)?\b)/i;
+
+/** PURE. Suggest a side from stated entry language; null when ambiguous
+ *  (both patterns, neither pattern, or no entry at all — never guess). */
+export function suggestSide(entry: string): IdeaSide | null {
+  const e = entry.trim();
+  if (!e) return null;
+  const long = LONG_ENTRY_RE.test(e);
+  const short = SHORT_ENTRY_RE.test(e);
+  if (long === short) return null;
+  return long ? "long" : "short";
 }

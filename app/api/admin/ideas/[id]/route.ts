@@ -1,6 +1,6 @@
 import { gateAdminOrRespond } from "@/lib/admin";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
-import { getIdea, ideasConfigured, updateIdea, validateIdeaPatch } from "@/lib/ideas";
+import { deleteIdea, getIdea, ideasConfigured, updateIdea, validateIdeaPatch } from "@/lib/ideas";
 
 // Admin single-idea route: edit fields / drive the lifecycle. Approve is
 // PATCH {status:"live"}, close is {status:"closed"}, reject (a draft) is
@@ -47,4 +47,23 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
   const idea = await updateIdea(id, parsed.value);
   if (!idea) return Response.json({ ok: false, error: "not_found" }, { status: 404 });
   return Response.json({ ok: true, idea });
+}
+
+// ADMIN-1 — hard delete. The UI confirms first; the API just needs the gate.
+export async function DELETE(req: Request, ctx: Ctx): Promise<Response> {
+  const rl = await checkRateLimit("admin", getIp(req));
+  if (!rl.ok) return rateLimitedResponse(rl.reset);
+  const denied = await gateAdminOrRespond(req);
+  if (denied) return denied;
+  if (!ideasConfigured()) {
+    return Response.json({ ok: false, error: "storage_not_configured" }, { status: 501 });
+  }
+
+  const { id } = await ctx.params;
+  const existing = await getIdea(id);
+  if (!existing) return Response.json({ ok: false, error: "not_found" }, { status: 404 });
+  const ok = await deleteIdea(id);
+  return ok
+    ? Response.json({ ok: true, deleted: id })
+    : Response.json({ ok: false, error: "delete_failed" }, { status: 500 });
 }

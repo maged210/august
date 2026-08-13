@@ -213,6 +213,37 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# ADMIN-1 — MORNING CONTROL ROOM
+
+> Branch: `feature/admin-1` off main (post ux-2 + chat-privacy hotfix, 515c8bc). Runs BEFORE AUTH-1. One gate. Started 2026-08-12.
+> DRIVING METRIC: transcript paste → reviewed → approved → clean public board in under 2 minutes on desktop, fully doable from a phone.
+
+## AD-A — LAYOUT + LOOK
+- [x] Admin adopts the terminal design language: hairline panels, tiny mono headers, chips, tabular rows — the desk's backstage. *(adm-panel/adm-panel-h module shells over the app tokens)*
+- [x] Desktop: two columns — LEFT intake + create; RIGHT draft queue · live book manager · tape queues. Mobile: stacked, 44px buttons, sticky status strip. *(5fr/7fr grid ≥1100px)*
+- [x] Header becomes a status strip: LIVE n · TRACKED n · DRAFTS n · TAPE n · last ingest age. *(tracked count off the public feed; counts hidden while locked)*
+
+## AD-B — LIVE BOOK MANAGER (the core of this round)
+- [x] Full table of every idea across statuses: inline edit side · entry · target · stop · risk (Enter/SET applies). Status actions: close · invalidate · re-arm. DEMOTE TO TAPE. Delete with confirm. *(model grew stop + "invalidated" + hard DELETE /api/admin/ideas/[id]; status-tinted left rails)*
+- [x] STALE surfacing: live ideas past a configurable age (STALE AFTER n D control, persisted, default 5) get an amber STALE chip and float to the top with REFRESH (age reset) / CLOSE. 
+## AD-C — DRAFT REVIEW v2
+- [x] Draft cards editable inline before approval (side/entry/target/stop/risk/thesis) — the edits ride the approving PATCH. APPROVE / REJECT per card + APPROVE ALL / REJECT ALL (batch runs the unedited per-card logic).
+- [x] DEDUPE/ATTACH: a draft matching a LIVE ticker renders the amber "UPDATE to <ticker>" chip — approving PATCHes the existing idea (levels updated, thesis archived into new thesisHistory, age reset) and consumes the draft. Unmatched tickers create new ideas.
+- [x] Side auto-suggested from entry language (suggestSide — the F6 rule, pure + tested): rendered as a dashed "LONG?" chip, editable; the suggestion applies on approve unless overridden.
+
+## AD-D — INTAKE POLISH
+- [x] Transcript box: drag-drop .txt (name → source label), live character count, auto-title from source label or the first transcript line.
+- [x] Ingest log rows expand to exactly what each transcript produced — idea/tape chips with live status labels that scroll to the record (honest "deleted/removed" when gone).
+
+## AD-E — TAPE MANAGEMENT
+- [x] REMOVE on live tape gets a 6s undo window (the delete only fires after the grace; UNDO cancels). Draft rejects stay immediate — they were never public.
+- [x] Quick-add infers sentiment from the note text (buy/call/long → bull, sell/put/short → bear, both/neither → leave) as an editable default that stops auto-updating once the select is touched.
+
+### GATE AD-G1 — preview + screenshots: desktop two-column, phone view, a draft showing "UPDATE to <ticker>", book manager with a STALE row. Approve → merge → AUTH-1 begins.
+- [x] AD-G1 approved 2026-08-13. Merged feature/admin-1 → main; production deploy follows the push. AUTH-1 is next.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
