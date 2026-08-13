@@ -7424,3 +7424,22 @@ html.sheet-open .view-panel {
 .pit2-boards .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pit2-boards .sc { font-variant-numeric: tabular-nums; }
 .pit2-boards .empty { color: var(--ink-mute); font-style: italic; }
+
+/* GAME-3 — career loop additions */
+.pit3-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 6px 12px 0; }
+.pit3-chip {
+  appearance: none; cursor: pointer; flex: none; min-height: 44px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--bone);
+}
+.pit3-chip .up { color: var(--pos); } .pit3-chip .down { color: var(--neg); }
+.pit3-chip.on { border-color: var(--steel); box-shadow: inset 0 0 0 1px rgb(var(--steel-rgb) / 0.4); }
+.pit3-chip.lng { border-left: 3px solid var(--pos); }
+.pit3-chip.sht { border-left: 3px solid var(--neg); }
+.pit3-chip.clue { animation: pit3-flicker 600ms steps(2) infinite; border-color: var(--amber); }
+@keyframes pit3-flicker { 50% { background: rgb(var(--amber-rgb) / 0.16); } }
+@media (prefers-reduced-motion: reduce) { .pit3-chip.clue { animation: none; background: rgb(var(--amber-rgb) / 0.14); } }
+.pit3-chip .tag { font-size: 8px; letter-spacing: 0.12em; color: var(--ash); }
+.pit3-eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.24em; color: var(--steel); margin: 0 0 2px; }
+.pit3-mission { font-family: var(--font-mono); font-size: 12px; color: var(--amber); margin: 4px 0 8px; }

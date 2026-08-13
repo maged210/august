@@ -1,22 +1,53 @@
 "use client";
 
-// THE PIT (GAME-2) — the arcade. One run = one synthetic trading day (~75s)
-// on a canvas: perspective grid, glowing price line, all-in BUY / flat SELL,
-// beat +15% before the bell, margin call under 40%. The tape is seeded by
-// the ET date — one tape a day, everyone plays the same market. SIMULATED,
-// permanently labeled. No network mid-run: GET once on entry, POST per run.
+// THE PIT (GAME-3) — CAREER LOOP. Round brief → live trading → bell → round
+// complete → next, up a five-round ladder. SIMULATED ONLY, permanently
+// labeled; tapes are synthetic with per-category personality; catalysts are
+// archetype headlines with a SIM chip — never factual claims about real
+// companies. One canvas, rAF, pause on blur; network = one GET on entry and
+// one POST per completed round.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LeaderRow, PitPlayer, RunStats } from "@/lib/pit";
+import type { LeaderRow, PitPlayer } from "@/lib/pit";
 
 const START_CASH = 10_000;
-const TARGET_PCT = 15; // beat the bell at +15%
-const MARGIN_PCT = 40; // margin call under 40% of start
-const DURATION_S = 75;
-const TPS = 12; // ticks per second
-const N = DURATION_S * TPS;
+const MARGIN_FRAC = 0.4;
+const TPS = 12;
 
-// ── the daily tape (pure, seeded) ─────────────────────────────────────────────
+// ── universe (GP2): real tickers, category personalities, SIM tapes ──────────
+type Cat = { vol: number; drift: number; tickers: string[] };
+const CATS: Record<string, Cat> = {
+  mega: { vol: 0.004, drift: 0.0004, tickers: ["AAPL", "MSFT", "AMZN", "GOOGL"] },
+  tech: { vol: 0.007, drift: 0.0007, tickers: ["NVDA", "META", "PLTR", "CRM"] },
+  semi: { vol: 0.009, drift: 0.0006, tickers: ["AMD", "AVGO", "MU", "SMCI"] },
+  banks: { vol: 0.004, drift: 0.0002, tickers: ["JPM", "GS", "BAC", "WFC"] },
+  energy: { vol: 0.005, drift: 0.0002, tickers: ["XOM", "CVX", "OXY", "SLB"] },
+  consumer: { vol: 0.004, drift: 0.0003, tickers: ["WMT", "MCD", "NKE", "SBUX"] },
+  health: { vol: 0.005, drift: 0.0003, tickers: ["LLY", "UNH", "PFE", "MRK"] },
+  crypto: { vol: 0.013, drift: 0.0008, tickers: ["COIN", "MSTR", "HOOD", "RIOT"] },
+  highvol: { vol: 0.016, drift: 0.001, tickers: ["TSLA", "GME", "AFRM", "UPST"] },
+};
+
+type RoundDef = {
+  n: number; name: string; mission: string; missionKey: "beat" | "momentum" | "short" | "lowrisk" | "survivor";
+  secs: number; stocks: number; cats: string[]; shorts: boolean; positions: number;
+  catalysts: number; volMult: number; regime: number; // regime drift bias
+};
+const LADDER: RoundDef[] = [
+  { n: 1, name: "OPENING BELL", mission: "BEAT THE MARKET — finish above the SPY line", missionKey: "beat", secs: 90, stocks: 4, cats: ["mega", "consumer", "banks", "tech"], shorts: false, positions: 1, catalysts: 0, volMult: 0.8, regime: 0.0003 },
+  { n: 2, name: "MOMENTUM", mission: "MOMENTUM HUNTER — take profit on the day's fastest riser", missionKey: "momentum", secs: 80, stocks: 4, cats: ["tech", "semi", "highvol", "mega"], shorts: true, positions: 1, catalysts: 1, volMult: 1.15, regime: 0.0002 },
+  { n: 3, name: "EARNINGS", mission: "SHORT SELLER — book a profitable short", missionKey: "short", secs: 75, stocks: 4, cats: ["tech", "semi", "health", "consumer"], shorts: true, positions: 2, catalysts: 2, volMult: 1.1, regime: 0 },
+  { n: 4, name: "THE CRASH", mission: "SURVIVOR — never breach 20% drawdown", missionKey: "survivor", secs: 45, stocks: 4, cats: ["banks", "energy", "mega", "highvol"], shorts: true, positions: 2, catalysts: 2, volMult: 1.5, regime: -0.0016 },
+  { n: 5, name: "BOSS — TRIPLE WITCHING", mission: "LOW RISK — finish green with max drawdown under 5%", missionKey: "lowrisk", secs: 120, stocks: 5, cats: ["highvol", "crypto", "semi", "tech", "mega"], shorts: true, positions: 2, catalysts: 3, volMult: 1.6, regime: -0.0002 },
+];
+
+const CATALYST_COPY: Array<{ label: string; dir: 1 | -1 }> = [
+  { label: "EARNINGS BEAT", dir: 1 },
+  { label: "ANALYST DOWNGRADE", dir: -1 },
+  { label: "SQUEEZE — ×2 WINDOW", dir: 1 },
+  { label: "GUIDANCE CUT", dir: -1 },
+  { label: "SECTOR UPGRADE", dir: 1 },
+];
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -28,91 +59,105 @@ function mulberry32(seed: number) {
   };
 }
 
-type PitEvent = { at: number; len: number; kind: "crash" | "squeeze"; label: string };
+type Catalyst = { stock: number; at: number; clueAt: number; label: string; dir: 1 | -1; hit: boolean };
+type Stock = { ticker: string; prices: number[] };
 
-function makeTape(dateSeed: string): { prices: number[]; events: PitEvent[]; name: string } {
-  let h = 0;
-  for (const c of dateSeed) h = (h * 31 + c.charCodeAt(0)) | 0;
-  const rng = mulberry32(h);
-  const NAMES = ["MTRX", "NEO", "ORCL-9", "ZION", "GRID", "PHOS", "DOJO", "RAIL"];
-  const name = NAMES[Math.floor(rng() * NAMES.length)];
-
-  // segment plan: drifts + spikes + dumps + fakeouts + ONE clean dip-and-rip
-  const prices: number[] = [];
-  let p = 100;
-  const seg = (len: number, drift: number, vol: number) => {
-    for (let i = 0; i < len; i++) {
-      p = Math.max(20, p * (1 + drift + (rng() - 0.5) * vol));
-      prices.push(p);
-    }
-  };
-  const dipRipAt = 0.35 + rng() * 0.25; // the guaranteed arc, mid-tape
-  const events: PitEvent[] = [];
-  const crashAt = rng() < 0.5 ? 0.15 + rng() * 0.1 : 0.7 + rng() * 0.12;
-  events.push({ at: Math.floor(crashAt * N), len: Math.floor(N * 0.04), kind: "crash", label: "FLASH CRASH" });
-  events.push({ at: Math.floor((0.55 + rng() * 0.2) * N), len: Math.floor(N * 0.1), kind: "squeeze", label: "SQUEEZE — ×2 WINDOW" });
-
-  while (prices.length < N) {
-    const t = prices.length / N;
-    const ev = events.find((e) => prices.length >= e.at && prices.length < e.at + e.len);
-    if (ev?.kind === "crash") seg(Math.min(ev.at + ev.len - prices.length, 10), -0.006, 0.01);
-    else if (t >= dipRipAt && t < dipRipAt + 0.06) seg(6, -0.004, 0.006); // the dip…
-    else if (t >= dipRipAt + 0.06 && t < dipRipAt + 0.16) seg(6, 0.005, 0.006); // …and rip
-    else if (rng() < 0.08) seg(4 + Math.floor(rng() * 6), (rng() - 0.45) * 0.008, 0.012); // spike/fakeout
-    else seg(8, (rng() - 0.48) * 0.0015, 0.005); // texture drift
+function makeRound(def: RoundDef, runSeed: number): { stocks: Stock[]; spy: number[]; catalysts: Catalyst[] } {
+  const rng = mulberry32(runSeed * 7919 + def.n * 104729);
+  const N = def.secs * TPS;
+  const picks: Array<{ t: string; c: Cat }> = [];
+  const used = new Set<string>();
+  for (let s = 0; s < def.stocks; s++) {
+    const cat = CATS[def.cats[s % def.cats.length]];
+    let t = cat.tickers[Math.floor(rng() * cat.tickers.length)];
+    while (used.has(t)) t = cat.tickers[Math.floor(rng() * cat.tickers.length)];
+    used.add(t);
+    picks.push({ t, c: cat });
   }
-  return { prices: prices.slice(0, N), events, name };
+  const catalysts: Catalyst[] = [];
+  for (let k = 0; k < def.catalysts; k++) {
+    const copy = CATALYST_COPY[Math.floor(rng() * CATALYST_COPY.length)];
+    const at = Math.floor((0.25 + rng() * 0.55) * N);
+    catalysts.push({ stock: Math.floor(rng() * def.stocks), at, clueAt: at - 5 * TPS, label: copy.label, dir: copy.dir, hit: false });
+  }
+  const gen = (c: Cat, idx: number): number[] => {
+    let p = 60 + rng() * 240;
+    const out: number[] = [];
+    for (let i = 0; i < N; i++) {
+      let drift = def.regime + (rng() - 0.5) * c.drift * 2;
+      const cat = catalysts.find((x) => x.stock === idx && i >= x.at && i < x.at + 4 * TPS);
+      if (cat) drift += cat.dir * (0.004 + rng() * 0.004); // the move the clue warned about
+      const corr = def.regime < -0.001 ? def.regime * 2 : 0; // crash correlation
+      p = Math.max(4, p * (1 + drift + corr + (rng() - 0.5) * c.vol * def.volMult));
+      out.push(p);
+    }
+    return out;
+  };
+  const stocks = picks.map((pk, i) => ({ ticker: pk.t, prices: gen(pk.c, i) }));
+  // the SPY sim line — the benchmark for BEAT THE MARKET
+  let sp = 100;
+  const spy = Array.from({ length: N }, () => (sp = sp * (1 + def.regime * 0.6 + (rng() - 0.5) * 0.002)));
+  return { stocks, spy, catalysts };
 }
 
-// ── the surface ───────────────────────────────────────────────────────────────
-
-type Phase = "lobby" | "run" | "end";
-type Boards = { today: LeaderRow[]; best: LeaderRow[] };
-type EndState = {
-  verdict: "BELL" | "MISS" | "MARGIN";
-  pct: number;
-  stats: RunStats;
+// ── component ────────────────────────────────────────────────────────────────
+type Phase = "lobby" | "brief" | "live" | "complete" | "gameover";
+type RoundResult = {
+  def: RoundDef; startEq: number; endEq: number; spyPct: number; missionHit: boolean;
+  score: number; parts: Array<[string, number]>; xp: number; trades: number; wins: number;
+  goodEntries: number; maxDD: number; margin: boolean;
 };
 
 export default function PitSurface({ active }: { active: boolean }) {
   const [phase, setPhase] = useState<Phase>("lobby");
   const [player, setPlayer] = useState<PitPlayer | null>(null);
-  const [boards, setBoards] = useState<Boards>({ today: [], best: [] });
-  const [date, setDate] = useState("");
-  const [end, setEnd] = useState<EndState | null>(null);
-  const [nameDraft, setNameDraft] = useState("");
+  const [boards, setBoards] = useState<{ today: LeaderRow[]; best: LeaderRow[] }>({ today: [], best: [] });
   const [board, setBoard] = useState<"today" | "best">("today");
+  const [nameDraft, setNameDraft] = useState("");
+  const [roundIx, setRoundIx] = useState(0);
+  const [result, setResult] = useState<RoundResult | null>(null);
+  const [careerEq, setCareerEq] = useState(START_CASH);
+  const runSeed = useRef(1);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const holdingRef = useRef(false); // mirrored for the button handlers
-  const gameRef = useRef<{ buy: () => void; sell: () => void; stop: () => void } | null>(null);
+  const [focus, setFocus] = useState(0);
+  const focusRef = useRef(0);
+  const [, force] = useState(0); // chip strip re-render tick
+  const gameRef = useRef<{
+    act: (s: number, dir: 1 | -1 | 0) => void;
+    stocks: Stock[]; positions: Array<{ dir: 1 | -1; entry: number; qty: number } | null>;
+    i: number; clue: Catalyst | null;
+  } | null>(null);
   const loaded = useRef(false);
 
   const refresh = useCallback(() => {
     fetch("/api/pit", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((j: { ok: boolean; date: string; player: PitPlayer; today: LeaderRow[]; best: LeaderRow[] }) => {
+      .then((j) => {
         if (!j.ok) return;
         setPlayer(j.player);
         setBoards({ today: j.today, best: j.best });
-        setDate(j.date);
       })
       .catch(() => {});
   }, []);
-
   useEffect(() => {
-    if (!active || loaded.current) return;
-    loaded.current = true;
-    refresh();
+    if (active && !loaded.current) {
+      loaded.current = true;
+      refresh();
+    }
   }, [active, refresh]);
 
-  // ── the run ──────────────────────────────────────────────────────────────
-  const startRun = useCallback(() => {
-    setEnd(null);
-    setPhase("run");
-  }, []);
+  const def = LADDER[Math.min(roundIx, LADDER.length - 1)];
 
+  const startCareer = () => {
+    runSeed.current = (Date.now() % 100000) + 1;
+    setCareerEq(START_CASH);
+    setRoundIx(0);
+    setPhase("brief");
+  };
+
+  // ── the live round ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (phase !== "run") return;
+    if (phase !== "live") return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
@@ -127,205 +172,186 @@ export default function PitSurface({ active }: { active: boolean }) {
     const ro = new ResizeObserver(fit);
     ro.observe(canvas);
 
-    const { prices, events, name } = makeTape(date || new Date().toISOString().slice(0, 10));
-    let i = 0; // tape index
-    let cash = START_CASH;
-    let shares = 0;
-    let entryPx = 0;
-    let combo = 0;
-    let shownCash = START_CASH;
-    const stats: RunStats = { trades: 0, wins: 0, bestTrade: 0, perfectDips: 0 };
-    const pops: Array<{ text: string; cls: number; at: number; x: number }> = [];
-    let flash = 0; // + green / − red screen feedback
+    const { stocks, spy, catalysts } = makeRound(def, runSeed.current);
+    const N = def.secs * TPS;
+    const startEq = careerEq;
+    let cash = startEq;
+    const positions: Array<{ dir: 1 | -1; entry: number; qty: number } | null> = stocks.map(() => null);
+    let i = 0;
+    let peak = startEq;
+    let maxDD = 0;
+    let trades = 0, wins = 0, goodEntries = 0, shortWin = false;
+    let bestRiserWin = false;
+    const pops: Array<{ text: string; cls: number; at: number }> = [];
     let alive = true;
-    let raf = 0;
-    let last = performance.now();
-    let acc = 0;
+    let raf = 0, last = performance.now(), acc = 0;
 
-    const px = (k: number) => prices[Math.max(0, Math.min(N - 1, k))];
-    const local = (k: number, span = 48) => {
+    const px = (s: number, k = i) => stocks[s].prices[Math.max(0, Math.min(N - 1, k))];
+    const equity = () => cash + positions.reduce((sum, p, s) => (p ? sum + p.qty * (p.dir === 1 ? px(s) : 2 * p.entry - px(s)) : sum), 0);
+    const openCount = () => positions.filter(Boolean).length;
+
+    const act = (s: number, dir: 1 | -1 | 0) => {
+      const p = positions[s];
+      const price = px(s);
+      if (dir === 0 || (p && p.dir !== dir)) {
+        if (!p) return;
+        const value = p.qty * (p.dir === 1 ? price : 2 * p.entry - price);
+        const gain = (p.dir === 1 ? price / p.entry - 1 : 1 - price / p.entry) * 100;
+        cash += value;
+        positions[s] = null;
+        trades += 1;
+        if (gain > 0) {
+          wins += 1;
+          if (p.dir === -1) shortWin = true;
+          const riser = stocks.map((st, k) => st.prices[i] / st.prices[0]).indexOf(Math.max(...stocks.map((st) => st.prices[i] / st.prices[0])));
+          if (s === riser) bestRiserWin = true;
+        }
+        pops.push({ text: `${gain >= 0 ? "+" : ""}${gain.toFixed(1)}% ${stocks[s].ticker}`, cls: gain >= 0 ? 1 : -1, at: performance.now() });
+        if (dir !== 0) act(s, dir); // flip: flatten then open the other way
+        return;
+      }
+      if (p || openCount() >= def.positions || (dir === -1 && !def.shorts)) return;
+      const stake = cash / (def.positions - openCount());
+      positions[s] = { dir, entry: price, qty: stake / price };
+      cash -= stake;
+      // timing quality: entry near the rolling low (long) / high (short)
       let lo = Infinity, hi = -Infinity;
-      for (let j = Math.max(0, k - span); j <= k; j++) {
-        lo = Math.min(lo, prices[j]);
-        hi = Math.max(hi, prices[j]);
+      for (let j = Math.max(0, i - 48); j <= i; j++) { lo = Math.min(lo, px(s, j)); hi = Math.max(hi, px(s, j)); }
+      const good = dir === 1 ? price <= lo * 1.02 : price >= hi * 0.98;
+      if (good) { goodEntries += 1; pops.push({ text: "GOOD ENTRY", cls: 1, at: performance.now() }); }
+      const cat = catalysts.find((c) => c.stock === s && i >= c.at && i < c.at + 6 * TPS);
+      if (cat && ((cat.dir === 1 && dir === 1) || (cat.dir === -1 && dir === -1))) {
+        cat.hit = true;
+        pops.push({ text: "CATALYST CAPTURED", cls: 1, at: performance.now() });
       }
-      return { lo, hi };
     };
-    const inSqueeze = (k: number) =>
-      events.some((e) => e.kind === "squeeze" && k >= e.at && k < e.at + e.len);
+    gameRef.current = { act, stocks, positions, i, clue: null };
 
-    const buy = () => {
-      if (shares > 0 || i >= N - 2) return;
-      const price = px(i);
-      shares = cash / price;
-      cash = 0;
-      entryPx = price;
-      const { lo } = local(i);
-      const perfect = price <= lo * 1.015;
-      if (perfect) {
-        combo += 1;
-        stats.perfectDips += 1;
-        pops.push({ text: `PERFECT DIP ×${combo}`, cls: 1, at: performance.now(), x: 0.5 });
-      } else {
-        pops.push({ text: "ALL IN", cls: 0, at: performance.now(), x: 0.5 });
-      }
-      stats.trades += 1;
-    };
-    const sell = () => {
-      if (shares === 0) return;
-      const price = px(i);
-      let value = shares * price;
-      let gainPct = (price / entryPx - 1) * 100;
-      const { hi } = local(i);
-      const perfectExit = price >= hi * 0.985;
-      if (perfectExit && gainPct > 0) combo += 1;
-      else if (gainPct <= 0) combo = 0;
-      if (inSqueeze(i) && gainPct > 0) {
-        value += shares * (price - entryPx); // ×2 window doubles the gain
-        gainPct *= 2;
-        pops.push({ text: "×2 SQUEEZE", cls: 1, at: performance.now(), x: 0.7 });
-      }
-      if (combo > 1 && gainPct > 0) value += shares * entryPx * (gainPct / 100) * 0.25 * (combo - 1);
-      cash = value;
-      shares = 0;
-      if (gainPct > 0) stats.wins += 1;
-      stats.bestTrade = Math.max(stats.bestTrade, Math.round(gainPct * 100) / 100);
-      pops.push({
-        text: `${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(1)}%${perfectExit && gainPct > 0 ? " · CLEAN EXIT" : ""}`,
-        cls: gainPct >= 0 ? 1 : -1,
-        at: performance.now(),
-        x: 0.5,
-      });
-      flash = gainPct >= 0 ? 1 : -1;
-    };
-    const finish = (verdict: EndState["verdict"]) => {
+    const finish = (margin: boolean) => {
       if (!alive) return;
       alive = false;
       cancelAnimationFrame(raf);
-      const equity = cash + shares * px(Math.min(i, N - 1));
-      const pct = Math.round((equity / START_CASH - 1) * 10000) / 100;
-      const endState: EndState = { verdict, pct, stats };
-      setEnd(endState);
-      setPhase("end");
-      holdingRef.current = false;
-      // the one network call: submit the run, refresh the boards
+      positions.forEach((p, s) => p && act(s, 0));
+      const endEq = equity();
+      const roundPct = (endEq / startEq - 1) * 100;
+      const spyPct = (spy[Math.min(i, N - 1)] / spy[0] - 1) * 100;
+      const missionHit = margin ? false :
+        def.missionKey === "beat" ? roundPct > spyPct :
+        def.missionKey === "momentum" ? bestRiserWin :
+        def.missionKey === "short" ? shortWin :
+        def.missionKey === "lowrisk" ? roundPct >= 0 && maxDD < 5 :
+        maxDD < 20;
+      const parts: Array<[string, number]> = [
+        ["P&L", Math.round(roundPct * 120)],
+        ["MISSION", missionHit ? 2000 : 0],
+        ["TIMING", goodEntries * 350],
+        ["ACCURACY", trades ? Math.round((wins / trades) * 1200) : 0],
+        ["DRAWDOWN", -Math.round(maxDD * 60)],
+      ];
+      const score = Math.max(0, parts.reduce((a, [, v]) => a + v, 0));
+      const xp = Math.max(50, Math.round(score / 10) + (missionHit ? 120 : 0));
+      const res: RoundResult = { def, startEq, endEq, spyPct, missionHit, score, parts, xp, trades, wins, goodEntries, maxDD, margin };
+      setResult(res);
+      setCareerEq(endEq);
+      setPhase(margin ? "gameover" : "complete");
+      const finalFlag = margin ? "margin" : def.n === 5 ? true : false;
       fetch("/api/pit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run", pct, stats }),
-      })
-        .then(() => refresh())
-        .catch(() => {});
+        body: JSON.stringify({
+          action: "round", score, xp, final: finalFlag,
+          careerPct: Math.round((endEq / START_CASH - 1) * 10000) / 100,
+          stats: { trades, wins, bestTrade: 0, perfectDips: goodEntries },
+        }),
+      }).then(() => refresh()).catch(() => {});
     };
-    gameRef.current = { buy, sell, stop: () => finish("MISS") };
 
     const draw = () => {
-      const W = canvas.clientWidth;
-      const H = canvas.clientHeight;
-      const price = px(i);
-      const equity = cash + shares * price;
-      holdingRef.current = shares > 0;
-      shownCash += (equity - shownCash) * 0.2;
-      // stage
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      const s = focusRef.current;
+      const eq = equity();
       ctx.fillStyle = "#04070a";
       ctx.fillRect(0, 0, W, H);
-      // drawdown / gain wash
-      if (flash !== 0 && !reduced) {
-        ctx.fillStyle = flash > 0 ? "rgba(78,201,122,0.08)" : "rgba(205,110,100,0.10)";
-        ctx.fillRect(0, 0, W, H);
-        flash *= 0.9;
-        if (Math.abs(flash) < 0.05) flash = 0;
-      }
-      // perspective grid floor
-      const horizon = H * 0.62;
-      ctx.strokeStyle = "rgba(64,220,110,0.16)";
-      ctx.lineWidth = 1;
-      for (let r = 0; r < 8; r++) {
-        const y = horizon + Math.pow(r / 8, 1.7) * (H - horizon);
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-      }
-      const slide = (i * 6) % 80;
-      for (let c = -10; c < 11; c++) {
-        ctx.beginPath();
-        ctx.moveTo(W / 2 + c * 26, horizon);
-        ctx.lineTo(W / 2 + c * (W / 9) + (c > 0 ? slide : -slide) * 0.2, H);
-        ctx.stroke();
-      }
-      // price window
-      const span = 240;
-      const from = Math.max(0, i - span);
+      // subtle grid
+      ctx.strokeStyle = "rgba(64,220,110,0.09)";
+      for (let y = 40; y < H; y += 44) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      // window
+      const span = 240, from = Math.max(0, i - span);
       let lo = Infinity, hi = -Infinity;
-      for (let j = from; j <= i; j++) { lo = Math.min(lo, prices[j]); hi = Math.max(hi, prices[j]); }
-      const pad = (hi - lo) * 0.15 || 1;
-      lo -= pad; hi += pad;
-      const X = (j: number) => ((j - from) / span) * (W - 90);
-      const Y = (v: number) => 46 + ((hi - v) / (hi - lo)) * (horizon - 80);
-      // entry marker
-      if (shares > 0) {
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = "rgba(106,160,200,0.8)";
-        ctx.beginPath(); ctx.moveTo(0, Y(entryPx)); ctx.lineTo(W, Y(entryPx)); ctx.stroke();
-        ctx.setLineDash([]);
+      for (let j = from; j <= i; j++) { lo = Math.min(lo, px(s, j)); hi = Math.max(hi, px(s, j)); }
+      const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
+      const X = (j: number) => ((j - from) / span) * (W - 84);
+      const Y = (v: number) => 56 + ((hi - v) / (hi - lo)) * (H - 120);
+      // SPY benchmark (dim) for the beat-the-market read
+      ctx.strokeStyle = "rgba(216,236,217,0.25)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let j = from; j <= i; j++) {
+        const v = (spy[j] / spy[0]) * px(s, from);
+        const y = Y(Math.max(lo, Math.min(hi, v)));
+        j === from ? ctx.moveTo(X(j), y) : ctx.lineTo(X(j), y);
       }
-      // the glowing line
+      ctx.stroke();
+      // focused tape
       ctx.shadowColor = "rgba(64,220,110,0.9)";
-      ctx.shadowBlur = reduced ? 0 : 12;
+      ctx.shadowBlur = reduced ? 0 : 10;
       ctx.strokeStyle = "#4ec97a";
       ctx.lineWidth = 2.2;
       ctx.beginPath();
-      for (let j = from; j <= i; j++) {
-        const x = X(j), y = Y(prices[j]);
-        j === from ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
+      for (let j = from; j <= i; j++) (j === from ? ctx.moveTo : ctx.lineTo).call(ctx, X(j), Y(px(s, j)));
       ctx.stroke();
       ctx.shadowBlur = 0;
-      // price chip at the head
-      const hx = X(i), hy = Y(price);
-      ctx.fillStyle = "#0a1a10";
-      ctx.strokeStyle = "#4ec97a";
-      ctx.strokeRect(hx + 8, hy - 11, 74, 22);
-      ctx.fillRect(hx + 8, hy - 11, 74, 22);
-      ctx.fillStyle = "#d8ecd9";
-      ctx.font = "600 12px ui-monospace, monospace";
-      ctx.fillText(price.toFixed(2), hx + 14, hy + 4);
-      // HUD: name/day + target bar + cash + clock
-      ctx.fillStyle = "rgba(216,236,217,0.6)";
-      ctx.font = "600 11px ui-monospace, monospace";
-      ctx.fillText(`$${name} · ONE DAY · SIMULATED`, 14, 24);
-      const prog = Math.min(1, Math.max(0, (equity / START_CASH - 1) / (TARGET_PCT / 100)));
-      ctx.strokeStyle = "rgba(64,220,110,0.4)";
-      ctx.strokeRect(14, 32, W - 28, 6);
-      ctx.fillStyle = prog >= 1 ? "#7fe0a5" : "#4ec97a";
-      ctx.fillRect(14, 32, (W - 28) * prog, 6);
-      ctx.fillStyle = "#d8ecd9";
-      ctx.font = "700 20px ui-monospace, monospace";
-      ctx.fillText(`$${shownCash.toFixed(0)}`, 14, 64);
-      ctx.font = "600 11px ui-monospace, monospace";
-      ctx.fillStyle = equity >= START_CASH ? "#7fe0a5" : "#e08a7a";
-      ctx.fillText(`${equity >= START_CASH ? "+" : ""}${((equity / START_CASH - 1) * 100).toFixed(1)}% · TARGET +${TARGET_PCT}%`, 14, 80);
-      const remain = Math.max(0, Math.ceil((N - i) / TPS));
-      const tense = remain <= 10;
-      ctx.fillStyle = tense ? (i % 12 < 6 && !reduced ? "#ffd27a" : "#e08a7a") : "rgba(216,236,217,0.7)";
-      ctx.font = `700 ${tense ? 18 : 13}px ui-monospace, monospace`;
-      ctx.fillText(`🔔 ${remain}s`, W - 86, 26);
-      // event banner
-      const ev = events.find((e) => i >= e.at && i < e.at + e.len);
-      if (ev) {
-        ctx.fillStyle = ev.kind === "crash" ? "rgba(205,110,100,0.9)" : "rgba(255,210,122,0.95)";
-        ctx.font = "700 14px ui-monospace, monospace";
-        const tw = ctx.measureText(ev.label).width;
-        ctx.fillText(ev.label, (W - tw) / 2, 104);
+      const price = px(s);
+      const p = positions[s];
+      if (p) {
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = p.dir === 1 ? "rgba(106,160,200,0.85)" : "rgba(205,126,109,0.85)";
+        ctx.beginPath(); ctx.moveTo(0, Y(p.entry)); ctx.lineTo(W, Y(p.entry)); ctx.stroke();
+        ctx.setLineDash([]);
       }
-      // P&L pops
+      ctx.fillStyle = "#0a1a10"; ctx.strokeStyle = "#4ec97a";
+      const hx = X(i), hy = Y(price);
+      ctx.fillRect(hx + 6, hy - 11, 72, 22); ctx.strokeRect(hx + 6, hy - 11, 72, 22);
+      ctx.fillStyle = "#d8ecd9"; ctx.font = "600 12px ui-monospace, monospace";
+      ctx.fillText(price.toFixed(2), hx + 12, hy + 4);
+      // HUD
+      ctx.fillStyle = "rgba(216,236,217,0.65)"; ctx.font = "600 11px ui-monospace, monospace";
+      ctx.fillText(`R${def.n} · ${def.name} · SIM`, 12, 20);
+      ctx.fillText(def.mission, 12, 36);
+      ctx.fillStyle = "#d8ecd9"; ctx.font = "700 19px ui-monospace, monospace";
+      ctx.fillText(`$${eq.toFixed(0)}`, 12, H - 16);
+      const rp = (eq / startEq - 1) * 100;
+      ctx.font = "600 12px ui-monospace, monospace";
+      ctx.fillStyle = rp >= 0 ? "#7fe0a5" : "#e08a7a";
+      ctx.fillText(`${rp >= 0 ? "+" : ""}${rp.toFixed(1)}%`, 120, H - 16);
+      const remain = Math.max(0, Math.ceil((N - i) / TPS));
+      ctx.fillStyle = remain <= 10 ? "#ffd27a" : "rgba(216,236,217,0.7)";
+      ctx.font = `700 ${remain <= 10 ? 17 : 13}px ui-monospace, monospace`;
+      ctx.fillText(`🔔 ${remain}s`, W - 78, 22);
+      // catalyst clue banner (the fairness rule: warned, never ambushed)
+      const clue = catalysts.find((c) => i >= c.clueAt && i < c.at);
+      gameRef.current!.clue = clue ?? null;
+      if (clue) {
+        ctx.fillStyle = "#ffd27a"; ctx.font = "700 13px ui-monospace, monospace";
+        const t = `⚠ ${stocks[clue.stock].ticker} CATALYST IN ${Math.ceil((clue.at - i) / TPS)}s`;
+        ctx.fillText(t, (W - ctx.measureText(t).width) / 2, 54);
+      }
+      const live = catalysts.find((c) => i >= c.at && i < c.at + 4 * TPS);
+      if (live) {
+        ctx.fillStyle = live.dir === 1 ? "#7fe0a5" : "#e08a7a";
+        ctx.font = "700 14px ui-monospace, monospace";
+        const t = `${stocks[live.stock].ticker} — ${live.label} · SIM`;
+        ctx.fillText(t, (W - ctx.measureText(t).width) / 2, 74);
+      }
+      // pops
       const nowMs = performance.now();
       for (const pop of pops.slice(-4)) {
         const age = (nowMs - pop.at) / 900;
         if (age > 1) continue;
         ctx.globalAlpha = 1 - age;
-        ctx.fillStyle = pop.cls > 0 ? "#7fe0a5" : pop.cls < 0 ? "#e08a7a" : "#d8ecd9";
-        ctx.font = "700 22px ui-monospace, monospace";
-        const tw = ctx.measureText(pop.text).width;
-        ctx.fillText(pop.text, (W - tw) * pop.x, H * 0.42 - (reduced ? 0 : age * 30));
+        ctx.fillStyle = pop.cls > 0 ? "#7fe0a5" : "#e08a7a";
+        ctx.font = "700 20px ui-monospace, monospace";
+        ctx.fillText(pop.text, (W - ctx.measureText(pop.text).width) / 2, H * 0.4 - (reduced ? 0 : age * 26));
         ctx.globalAlpha = 1;
       }
     };
@@ -333,138 +359,146 @@ export default function PitSurface({ active }: { active: boolean }) {
     const loop = (now: number) => {
       if (!alive) return;
       raf = requestAnimationFrame(loop);
-      if (document.hidden) { last = now; return; } // battery-sane pause
-      acc += Math.min(200, now - last);
-      last = now;
+      if (document.hidden) { last = now; return; }
+      acc += Math.min(200, now - last); last = now;
       const step = 1000 / TPS;
       while (acc >= step) {
         acc -= step;
         i += 1;
-        const equity = cash + shares * px(Math.min(i, N - 1));
-        if (equity < START_CASH * (MARGIN_PCT / 100)) return finish("MARGIN");
-        if (i >= N - 1) {
-          if (shares > 0) sell(); // the bell flattens you
-          return finish(cash >= START_CASH * (1 + TARGET_PCT / 100) ? "BELL" : "MISS");
-        }
+        gameRef.current!.i = i;
+        const eq = equity();
+        peak = Math.max(peak, eq);
+        maxDD = Math.max(maxDD, (1 - eq / peak) * 100);
+        if (eq < startEq * MARGIN_FRAC) return finish(true);
+        if (i >= N - 1) return finish(false);
       }
       draw();
+      if (i % 6 === 0) force((v) => v + 1); // chip strip refresh
     };
     raf = requestAnimationFrame(loop);
+    return () => { alive = false; cancelAnimationFrame(raf); ro.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "b" || e.key === "B" || e.key === " ") { e.preventDefault(); shares > 0 ? sell() : buy(); }
-      if (e.key === "s" || e.key === "S") sell();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      alive = false;
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [phase, date, refresh]);
+  useEffect(() => { focusRef.current = focus; }, [focus]);
 
   // ── shells ───────────────────────────────────────────────────────────────
-  const winnings = end ? Math.round(START_CASH * (end.pct / 100)) : 0;
-  const notReal =
-    end === null ? "" :
-    end.verdict === "MARGIN" ? "The margin desk sends its regards. It kept your imaginary furniture." :
-    winnings >= 1500 ? `That's ${winnings.toLocaleString()} completely fictional dollars. The yacht is also fictional.` :
-    winnings >= 0 ? `${winnings.toLocaleString()} pretend dollars. Real traders would call that a Tuesday.` :
-    `${Math.abs(winnings).toLocaleString()} imaginary dollars vaporized. Fortunately: imaginary.`;
-
+  const g = gameRef.current;
+  const rows = board === "today" ? boards.today : boards.best;
   return (
     <div className="pit2">
       <p className="pit-sim">SIMULATED — entertainment, not investment advice. No real orders.</p>
 
-      {phase === "run" ? (
+      {phase === "live" && g ? (
         <>
+          <div className="pit3-strip">
+            {g.stocks.map((st, s) => {
+              const pos = g.positions[s];
+              const chg = (st.prices[Math.min(g.i, st.prices.length - 1)] / st.prices[0] - 1) * 100;
+              const clue = g.clue?.stock === s;
+              return (
+                <button key={st.ticker} type="button"
+                  className={`pit3-chip${focus === s ? " on" : ""}${clue ? " clue" : ""}${pos ? (pos.dir === 1 ? " lng" : " sht") : ""}`}
+                  onClick={() => setFocus(s)}>
+                  <span>{st.ticker}</span>
+                  <span className={chg >= 0 ? "up" : "down"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>
+                  {pos ? <span className="tag">{pos.dir === 1 ? "LONG" : "SHORT"}</span> : null}
+                </button>
+              );
+            })}
+          </div>
           <canvas ref={canvasRef} className="pit2-canvas" />
           <div className="pit2-ctl">
-            <button type="button" className="pit2-btn buy" onClick={() => gameRef.current?.buy()}>
-              BUY · ALL IN
-            </button>
-            <button type="button" className="pit2-btn sellb" onClick={() => gameRef.current?.sell()}>
-              SELL · FLAT
-            </button>
+            <button type="button" className="pit2-btn buy" onClick={() => g.act(focus, 1)}>LONG</button>
+            {def.shorts ? (
+              <button type="button" className="pit2-btn sellb" onClick={() => g.act(focus, -1)}>SHORT</button>
+            ) : null}
+            <button type="button" className="pit2-btn" onClick={() => g.act(focus, 0)}>FLATTEN</button>
           </div>
         </>
       ) : (
         <div className="pit2-shell">
-          {phase === "end" && end ? (
-            <div className={`pit2-verdict v-${end.verdict.toLowerCase()}`}>
-              <h2>
-                {end.verdict === "BELL" ? "🔔 BEAT THE BELL" : end.verdict === "MARGIN" ? "💀 MARGIN CALLED" : "MISSED THE TARGET"}
-              </h2>
-              <p className={`pit2-endpct ${end.pct >= 0 ? "up" : "down"}`}>
-                {end.pct >= 0 ? "+" : ""}
-                {end.pct.toFixed(1)}%
+          {phase === "brief" ? (
+            <div className="pit2-hero">
+              <p className="pit3-eyebrow">ROUND {def.n} OF {LADDER.length}</p>
+              <h2>{def.name}</h2>
+              <p className="pit3-mission">MISSION: {def.mission}</p>
+              <p>
+                ${careerEq.toFixed(0)} · {def.stocks} stocks · {def.secs}s · {def.shorts ? "LONG + SHORT" : "LONG ONLY"} ·
+                {" "}{def.positions} position{def.positions > 1 ? "s" : ""} · margin call at {MARGIN_FRAC * 100}%
               </p>
-              <p className="pit2-stats">
-                {end.stats.trades} trades · {end.stats.trades ? Math.round((end.stats.wins / end.stats.trades) * 100) : 0}% wins ·
-                best {end.stats.bestTrade >= 0 ? "+" : ""}{end.stats.bestTrade.toFixed(1)}% · {end.stats.perfectDips} perfect dips
+              <button type="button" className="pit2-btn pit2-run" onClick={() => { setFocus(0); setPhase("live"); }}>
+                OPEN THE MARKET
+              </button>
+            </div>
+          ) : phase === "complete" && result ? (
+            <div className="pit2-verdict">
+              <p className="pit3-eyebrow">ROUND {result.def.n} COMPLETE{result.missionHit ? " · MISSION ✓" : ""}</p>
+              <p className="pit2-endpct">
+                ${result.startEq.toFixed(0)} → ${result.endEq.toFixed(0)}
               </p>
-              <p className="pit2-notreal">{notReal}</p>
+              <p className={`pit2-endpct ${result.endEq >= result.startEq ? "up" : "down"}`}>
+                {((result.endEq / result.startEq - 1) * 100).toFixed(1)}% · SPY {result.spyPct >= 0 ? "+" : ""}{result.spyPct.toFixed(1)}%
+                {" "}· {((result.endEq / result.startEq - 1) * 100) > result.spyPct ? "OUTPERFORMED MARKET" : "UNDERPERFORMED"}
+              </p>
+              <p className="pit2-stats">SCORE {result.score.toLocaleString()} — {result.parts.map(([k, v]) => `${k} ${v >= 0 ? "+" : ""}${v}`).join(" · ")}</p>
+              <p className="pit2-stats">+{result.xp} XP · LEVEL {player?.level ?? 1}{player ? ` · ${player.xp} XP total` : ""}</p>
+              {result.def.n < LADDER.length ? (
+                <button type="button" className="pit2-btn pit2-run" onClick={() => { setRoundIx(result.def.n); setPhase("brief"); }}>
+                  NEXT ROUND →
+                </button>
+              ) : (
+                <>
+                  <p className="pit2-notreal">Career complete: {((result.endEq / START_CASH - 1) * 100).toFixed(1)}% — every dollar fictional, every lesson free.</p>
+                  <button type="button" className="pit2-btn pit2-run" onClick={startCareer}>RUN IT BACK</button>
+                </>
+              )}
+            </div>
+          ) : phase === "gameover" && result ? (
+            <div className="pit2-verdict">
+              <h2>💀 MARGIN CALLED</h2>
+              <p className="pit2-endpct down">R{result.def.n} · ${result.endEq.toFixed(0)}</p>
+              <p className="pit2-notreal">The margin desk kept your imaginary furniture. Run ends here.</p>
+              <button type="button" className="pit2-btn pit2-run" onClick={startCareer}>RUN IT BACK</button>
             </div>
           ) : (
             <div className="pit2-hero">
-              <h2>THE PIT</h2>
-              <p>One day. All-in taps. Beat +{TARGET_PCT}% before the bell — everyone plays today's tape.</p>
+              <h2>THE PIT — CAREER</h2>
+              <p>Five rounds. Missions, catalysts, margin calls. Beat the ladder — everyone climbs the same seed today.</p>
+              {player ? <p className="pit2-stats">LEVEL {player.level} · {player.xp} XP · best round {player.bestRound?.toLocaleString() ?? "—"} · run streak {player.runStreak ?? 0}</p> : null}
+              <button type="button" className="pit2-btn pit2-run" onClick={startCareer}>START CAREER</button>
             </div>
           )}
 
-          <button type="button" className="pit2-btn pit2-run" onClick={startRun}>
-            {phase === "end" ? "RUN IT BACK" : "OPEN THE MARKET"}
-          </button>
-
-          <form
-            className="pit2-name"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!nameDraft.trim()) return;
-              await fetch("/api/pit", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "name", name: nameDraft }),
-              });
-              refresh();
-            }}
-          >
-            <input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              maxLength={16}
-              placeholder={player?.name === "PLAYER" || !player ? "pick a name for the boards" : player.name}
-              aria-label="Display name"
-            />
-            <button type="submit">SET</button>
-          </form>
-
-          <div className="pit2-boards">
-            <div className="pit2-boardtabs">
-              <button type="button" className={board === "today" ? "on" : ""} onClick={() => setBoard("today")}>
-                TODAY'S TAPE
-              </button>
-              <button type="button" className={board === "best" ? "on" : ""} onClick={() => setBoard("best")}>
-                ALL-TIME BEST RUN
-              </button>
-            </div>
-            <ol>
-              {(board === "today" ? boards.today : boards.best).map((r, idx) => (
-                <li key={r.pid} className={player && r.pid === player.pid ? "me" : ""}>
-                  <span>{idx + 1}</span>
-                  <span className="nm">{r.name}</span>
-                  <span className={`sc ${r.pct >= 0 ? "up" : "down"}`}>
-                    {r.pct >= 0 ? "+" : ""}
-                    {r.pct.toFixed(1)}%
-                  </span>
-                </li>
-              ))}
-              {(board === "today" ? boards.today : boards.best).length === 0 ? (
-                <li className="empty">nobody on this board yet — be first</li>
-              ) : null}
-            </ol>
-          </div>
+          {phase === "lobby" ? (
+            <>
+              <form className="pit2-name" onSubmit={async (e) => {
+                e.preventDefault();
+                if (!nameDraft.trim()) return;
+                await fetch("/api/pit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "name", name: nameDraft }) });
+                refresh();
+              }}>
+                <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} maxLength={16}
+                  placeholder={player?.name === "PLAYER" || !player ? "pick a name for the boards" : player.name} aria-label="Display name" />
+                <button type="submit">SET</button>
+              </form>
+              <div className="pit2-boards">
+                <div className="pit2-boardtabs">
+                  <button type="button" className={board === "today" ? "on" : ""} onClick={() => setBoard("today")}>TODAY'S TAPE</button>
+                  <button type="button" className={board === "best" ? "on" : ""} onClick={() => setBoard("best")}>ALL-TIME BEST RUN</button>
+                </div>
+                <ol>
+                  {rows.map((r, idx) => (
+                    <li key={r.pid} className={player && r.pid === player.pid ? "me" : ""}>
+                      <span>{idx + 1}</span><span className="nm">{r.name}</span>
+                      <span className={`sc ${r.pct >= 0 ? "up" : "down"}`}>{r.pct >= 0 ? "+" : ""}{r.pct.toFixed(1)}%</span>
+                    </li>
+                  ))}
+                  {rows.length === 0 ? <li className="empty">nobody on this board yet — be first</li> : null}
+                </ol>
+              </div>
+            </>
+          ) : null}
         </div>
       )}
     </div>
