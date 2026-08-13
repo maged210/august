@@ -284,20 +284,20 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 > NORTH STAR: moment-to-moment fun. One session = one trading day (60–90s). Instantly replayable.
 
 ## GA-A — CARRY-OVER (from feature/game-1, unchanged semantics)
-- [ ] lib/pit identity + leaderboard (pids `v:{vid}`/`u:{email}` for AUTH-1 claims), nickname + validatePitName filter, /api/admin/pit purge route, "pit" rate-limit key, PIT tab/view (bottom tab mobile + desktop toggle, ?view=pit, resolveView "pit"), permanent styled SIMULATED label.
-- [ ] Boards: TODAY'S TAPE (best run on today's seed) + ALL-TIME BEST RUN. Player record gains { bestRun, bestRunDate, todayRun, todayDate }.
+- [x] lib/pit identity + leaderboard (pids `v:{vid}`/`u:{email}` for AUTH-1 claims), nickname + validatePitName filter, /api/admin/pit purge route, "pit" rate-limit key, PIT tab/view (bottom tab mobile + desktop toggle, ?view=pit, resolveView "pit"), permanent styled SIMULATED label.
+- [x] Boards: TODAY'S TAPE (best run on today's seed) + ALL-TIME BEST RUN. Player record gains { bestRun, bestRunDate, todayRun, todayDate }.
 
 ## GA-B — CORE LOOP (v1 scope, this and nothing more)
-- [ ] Full-screen canvas, Matrix green: perspective grid floor, glowing price line, price chip at the head, entry-line marker while holding, target bar filling across the top, cash counter animating every tick.
-- [ ] THE TAPE: 60–90s generated day, seeded DAILY by ET date (mulberry32(seed) — one tape a day, identical for everyone). Quotes pipeline is DAILY closes (no intraday) → SHIP SYNTHETIC per the spec ("fun beats purity"): drift segments + spikes + dumps + fakeouts + one clean dip-and-rip arc, fictional ticker name from the seed.
-- [ ] CONTROLS: BUY (all-in) / SELL (flatten). One position, no sizing. Huge bottom thumb buttons + keyboard space/B/S on desktop.
-- [ ] RULES: start 10,000 fictional cash; TARGET +15% equity by the bell; MARGIN CALL ends the run if equity < 40% of start.
-- [ ] JUICE (non-negotiable): PERFECT DIP combo multiplier (entry within 1.5% of the rolling local low / exit near local high — combo multiplies the fill's P&L pop), green screen-glow on up-ticks while holding, red pulse on drawdown (reduced-motion: static tint, no pulse/shake), last-10s closing-bell tension (clock pulses, grid speeds), P&L pop on every fill.
-- [ ] EVENTS: 2–3 per day from the daily seed, clearly fictional, banner-based, silent ("FLASH CRASH", "SQUEEZE — ×2 WINDOW" doubling gains inside the window).
-- [ ] END SCREEN: BEAT THE BELL / MISSED THE TARGET / MARGIN CALLED, run stats (trades, win rate, best trade, perfect dips), a NOT-REAL-WINNINGS line with personality, nickname save to boards, RUN IT BACK as the biggest element.
+- [x] Full-screen canvas, Matrix green: perspective grid floor, glowing price line, price chip at the head, entry-line marker while holding, target bar filling across the top, cash counter animating every tick.
+- [x] THE TAPE: 60–90s generated day, seeded DAILY by ET date (mulberry32(seed) — one tape a day, identical for everyone). Quotes pipeline is DAILY closes (no intraday) → SHIP SYNTHETIC per the spec ("fun beats purity"): drift segments + spikes + dumps + fakeouts + one clean dip-and-rip arc, fictional ticker name from the seed.
+- [x] CONTROLS: BUY (all-in) / SELL (flatten). One position, no sizing. Huge bottom thumb buttons + keyboard space/B/S on desktop.
+- [x] RULES: start 10,000 fictional cash; TARGET +15% equity by the bell; MARGIN CALL ends the run if equity < 40% of start.
+- [x] JUICE (non-negotiable): PERFECT DIP combo multiplier (entry within 1.5% of the rolling local low / exit near local high — combo multiplies the fill's P&L pop), green screen-glow on up-ticks while holding, red pulse on drawdown (reduced-motion: static tint, no pulse/shake), last-10s closing-bell tension (clock pulses, grid speeds), P&L pop on every fill.
+- [x] EVENTS: 2–3 per day from the daily seed, clearly fictional, banner-based, silent ("FLASH CRASH", "SQUEEZE — ×2 WINDOW" doubling gains inside the window).
+- [x] END SCREEN: BEAT THE BELL / MISSED THE TARGET / MARGIN CALLED, run stats (trades, win rate, best trade, perfect dips), a NOT-REAL-WINNINGS line with personality, nickname save to boards, RUN IT BACK as the biggest element.
 
 ## GA-C — TECH RAILS
-- [ ] One canvas, rAF, 60fps on a mid-range phone, battery-sane (pause on tab blur/visibilitychange), no network mid-run except the end-of-run score submit (POST /api/pit {action:"run", score, stats} — server clamps/validates).
+- [x] One canvas, rAF, 60fps on a mid-range phone, battery-sane (pause on tab blur/visibilitychange), no network mid-run except the end-of-run score submit (POST /api/pit {action:"run", score, stats} — server clamps/validates).
 
 ## V2 — DO NOT BUILD: districts/seasons/meta, sound beyond one off-default toggle, multiple tickers, desk-call integration, share cards.
 

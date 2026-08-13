@@ -59,9 +59,10 @@ export function resolveTarget(id: string): NavTarget {
 // and stale "?screen=" bookmarks keep landing somewhere sensible: the market
 // words go to the Terminal view, everything else goes to Chat. null = unknown
 // name; callers should no-op.
-export type ViewId = "chat" | "terminal";
+export type ViewId = "chat" | "terminal" | "pit";
 
 export function resolveView(id: string): ViewId | null {
+  if (id.trim().toLowerCase() === "pit") return "pit";
   const index = screenIndex(id);
   if (index < 0) return null;
   return SCREENS[index] === "markets" ? "terminal" : "chat";
