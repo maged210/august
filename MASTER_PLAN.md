@@ -274,7 +274,7 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 - [x] 100dvh main + dvh sheet/chart heights; no horizontal scroll (entry chips wrap, reasoning clamps, heatmap reflows); ≥44px touch targets (tabs, segments, cards, menu rows, ×); reduced-motion on sheet/segment animation. iPhone-Safari specifics: safe-area insets everywhere fixed elements touch edges, -webkit-backdrop-filter, touch-action pan on the chart.
 
 ### GATE MB-G1 — preview + iPhone-width shots of ALL: home, sidebar sheet, rail sheet (compact + expanded), terminal cards, heatmap segment, idea detail sheet w/ chart + entry/target lines. HOLD, then merge.
-- [ ] MB-G1 approved.
+- [x] MB-G1 approved 2026-08-13 (verification pass ran first: held state, commits, preview URL, and the three per-view behaviors confirmed from the built code — then "MERGE IT"). Merged feature/mobile-1 → main; production deploy follows. AUTH-1 is next.
 
 ---
 
