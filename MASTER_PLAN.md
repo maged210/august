@@ -278,6 +278,39 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# GAME-1 — "THE PIT"
+
+> Branch: `feature/game-1` off main (post mobile-1, 7d386db). One gate. Started 2026-08-13.
+> CONCEPT: visitors play against the desk. SIMULATED ONLY — existing stores + existing price pipeline, zero new data sources.
+
+## G1 — THE TAB
+- [ ] IDEAS tab → PIT (bottom tab mobile, top toggle desktop); the rail sheet it opened retires on mobile (rail + terminal already cover ideas; the rail stays as the desktop sidebar).
+
+## G2 — MODE 1: BEAT THE DESK
+- [x] Every LIVE idea = a playable card: ticker · side · entry chip · one-line thesis · RIDE / FADE / SKIP.
+- [x] Picks lock at trigger; score = the desk's own since-call % (tracked pipeline) applied to the player's direction (fade inverts). Invalidated/closed untriggered = push. Resolution is lazy on read — no new cron, no new data.
+- [x] Player sheet: running score, W/L, streak, per-pick history.
+
+## G3 — MODE 2: DAILY CLOSE CALL
+- [x] Each market day (after-close + weekend picks target the NEXT session so the card is playable outside the pre-open window): OVER/UNDER on 3 pulse symbols vs previous close (derived from the existing quote pipeline). Locks at the 09:30 ET open, resolves at close. Streak flame that grows.
+
+## G4 — IDENTITY + LEADERBOARD
+- [x] Rides the anonymous per-visitor principal from the privacy fix; pid keys are `v:{vid}` / `u:{email}` so AUTH-1 accounts can claim/merge an anonymous record later.
+- [x] Display name (validatePitName server + maxlength client; /api/admin/pit purge) (client+server filter; /admin can purge any name). Top-20 leaderboard by score with streaks.
+
+## G5 — MAKE IT FUN
+- [x] Pick animations (pop + glow), streak flame scaling, rank highlight, reduced-motion honored; sounds omitted, streak fire, rank movement, satisfying resolve moments; reduced-motion honored; sounds omitted (optional per spec, OFF default).
+- [x] Share hook (navigator.share → clipboard fallback): one-tap copy/share card ("🔥 6-streak against the desk").
+
+## G6 — HONESTY RAILS
+- [x] Persistent label: SIMULATED — entertainment, not investment advice, no real orders.
+- [x] pitVisibleIdeas() visibility hook, hardcoded all-open until AUTH-1 tiers.
+
+### GATE GM-G1 — playable preview. Screenshots: PIT mobile + desktop, a resolved RIDE pick, leaderboard, Daily Close Call. Milek plays before approving. HOLD.
+- [ ] GM-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

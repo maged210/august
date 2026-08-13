@@ -12,6 +12,7 @@ import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRa
 import type { MorningBriefData } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
+import PitSurface from "@/components/surfaces/PitSurface";
 import { resolveView, type ViewId } from "@/lib/screens";
 import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
@@ -934,7 +935,8 @@ export default function Home() {
     const apply = () => {
       try {
         const u = new URL(window.location.href);
-        setView(u.searchParams.get("view") === "terminal" ? "terminal" : "chat");
+        const v = u.searchParams.get("view");
+        setView(v === "terminal" ? "terminal" : v === "pit" ? "pit" : "chat");
       } catch {
         /* no-op */
       }
@@ -951,8 +953,8 @@ export default function Home() {
     (v: ViewId, opts?: { replace?: boolean }) => {
       try {
         const u = new URL(window.location.href);
-        if (v === "terminal") u.searchParams.set("view", "terminal");
-        else u.searchParams.delete("view");
+        if (v === "chat") u.searchParams.delete("view");
+        else u.searchParams.set("view", v);
         const url = u.toString();
         if (opts?.replace) window.history.replaceState({}, "", url);
         else if (url !== window.location.href) window.history.pushState({}, "", url);
@@ -1508,6 +1510,8 @@ export default function Home() {
     state === "speaking" ||
     (panelOpen && (replyText !== "" || interim !== ""));
   const intelPanelIdle = view === "terminal" && !conversationLive;
+  // GAME-1 — the PIT owns its surface; the dock composer stands down there too
+  const pitIdle = view === "pit" && !conversationLive;
 
   return (
     <main
@@ -1544,6 +1548,14 @@ export default function Home() {
         >
           TERMINAL
         </button>
+        <button
+          type="button"
+          className={`view-tab${view === "pit" ? " on" : ""}`}
+          aria-pressed={view === "pit"}
+          onClick={() => switchView("pit")}
+        >
+          PIT
+        </button>
         {/* F9 — IDEAS is NOT a view: it is the rail's MOBILE drawer trigger
             only (hidden ≥1100px, where the rail header » and the edge tab
             own open/collapse — the tab there was a duplicate control). */}
@@ -1577,13 +1589,14 @@ export default function Home() {
         >
           TERMINAL
         </button>
+        {/* G1 — IDEAS → PIT: the game replaced the rail-sheet slot */}
         <button
           type="button"
-          className="tab-item"
-          aria-expanded={railOpen}
-          onClick={() => setRailOpen((v) => !v)}
+          className={`tab-item${view === "pit" ? " on" : ""}`}
+          aria-pressed={view === "pit"}
+          onClick={() => switchView("pit")}
         >
-          IDEAS
+          PIT
         </button>
       </nav>
 
@@ -1665,6 +1678,13 @@ export default function Home() {
           active={view === "terminal"}
           onExitToChat={() => switchView("chat")}
         />
+      </section>
+      {/* GAME-1 — THE PIT */}
+      <section
+        className={`view-panel${view === "pit" ? "" : " view-hidden"}`}
+        aria-hidden={view !== "pit"}
+      >
+        <PitSurface active={view === "pit"} />
       </section>
 
       {/* reply dock + composer — fixed. The composer serves every surface;
@@ -1780,7 +1800,7 @@ export default function Home() {
             ASK AUGUST bar — the dock composer stands down on both (one input
             per screen); it returns the moment a conversation is live or the
             deck slides to World/Comms. */}
-        {!landingIdle && !intelPanelIdle ? (
+        {!landingIdle && !intelPanelIdle && !pitIdle ? (
         <div className="composer-row">
           <Composer
             onSend={handleSend}
