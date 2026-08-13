@@ -219,26 +219,25 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 > DRIVING METRIC: transcript paste → reviewed → approved → clean public board in under 2 minutes on desktop, fully doable from a phone.
 
 ## AD-A — LAYOUT + LOOK
-- [ ] Admin adopts the terminal design language: same panels, mono headers, chips, spacing — the desk's backstage, not a form stack.
-- [ ] Desktop: two columns — LEFT intake + create (transcript, new idea, tape quick-add); RIGHT queues + live book. Mobile: stacked, action buttons thumb-reachable.
-- [ ] Header becomes a status strip: LIVE n · TRACKED n · DRAFTS n · TAPE n · last ingest age.
+- [x] Admin adopts the terminal design language: hairline panels, tiny mono headers, chips, tabular rows — the desk's backstage. *(adm-panel/adm-panel-h module shells over the app tokens)*
+- [x] Desktop: two columns — LEFT intake + create; RIGHT draft queue · live book manager · tape queues. Mobile: stacked, 44px buttons, sticky status strip. *(5fr/7fr grid ≥1100px)*
+- [x] Header becomes a status strip: LIVE n · TRACKED n · DRAFTS n · TAPE n · last ingest age. *(tracked count off the public feed; counts hidden while locked)*
 
 ## AD-B — LIVE BOOK MANAGER (the core of this round)
-- [ ] Full table of every idea across statuses: inline edit side · entry · target · stop · risk. Status actions: close · invalidate · re-arm. DEMOTE TO TAPE. Delete with confirm.
-- [ ] STALE surfacing: ideas past a configurable age with no trigger get a STALE chip, float to the top with refresh/close prompts.
-
+- [x] Full table of every idea across statuses: inline edit side · entry · target · stop · risk (Enter/SET applies). Status actions: close · invalidate · re-arm. DEMOTE TO TAPE. Delete with confirm. *(model grew stop + "invalidated" + hard DELETE /api/admin/ideas/[id]; status-tinted left rails)*
+- [x] STALE surfacing: live ideas past a configurable age (STALE AFTER n D control, persisted, default 5) get an amber STALE chip and float to the top with REFRESH (age reset) / CLOSE. 
 ## AD-C — DRAFT REVIEW v2
-- [ ] Draft cards editable inline before approval (side/entry/target/risk/thesis). APPROVE / REJECT per card + APPROVE ALL / REJECT ALL.
-- [ ] DEDUPE/ATTACH: a draft matching a LIVE ticker renders "UPDATE to <ticker>" — approving REFRESHES the existing idea (levels updated, thesis appended to history, age reset). Unmatched tickers create new ideas.
-- [ ] Side auto-suggested from entry language (F6 rule), pre-filled and editable.
+- [x] Draft cards editable inline before approval (side/entry/target/stop/risk/thesis) — the edits ride the approving PATCH. APPROVE / REJECT per card + APPROVE ALL / REJECT ALL (batch runs the unedited per-card logic).
+- [x] DEDUPE/ATTACH: a draft matching a LIVE ticker renders the amber "UPDATE to <ticker>" chip — approving PATCHes the existing idea (levels updated, thesis archived into new thesisHistory, age reset) and consumes the draft. Unmatched tickers create new ideas.
+- [x] Side auto-suggested from entry language (suggestSide — the F6 rule, pure + tested): rendered as a dashed "LONG?" chip, editable; the suggestion applies on approve unless overridden.
 
 ## AD-D — INTAKE POLISH
-- [ ] Transcript box: drag-drop .txt, character count, auto-title from source label or first line.
-- [ ] Ingest log rows expand to show exactly what each transcript produced (ideas + tape) with links to those records.
+- [x] Transcript box: drag-drop .txt (name → source label), live character count, auto-title from source label or the first transcript line.
+- [x] Ingest log rows expand to exactly what each transcript produced — idea/tape chips with live status labels that scroll to the record (honest "deleted/removed" when gone).
 
 ## AD-E — TAPE MANAGEMENT
-- [ ] REMOVE on live tape gets an undo window (public-facing deletion).
-- [ ] Quick-add infers sentiment from note text (buy/call → bull, sell/put → bear) as an editable default.
+- [x] REMOVE on live tape gets a 6s undo window (the delete only fires after the grace; UNDO cancels). Draft rejects stay immediate — they were never public.
+- [x] Quick-add infers sentiment from the note text (buy/call/long → bull, sell/put/short → bear, both/neither → leave) as an editable default that stops auto-updating once the select is touched.
 
 ### GATE AD-G1 — preview + screenshots: desktop two-column, phone view, a draft showing "UPDATE to <ticker>", book manager with a STALE row. Approve → merge → AUTH-1 begins.
 - [ ] AD-G1 approved.
