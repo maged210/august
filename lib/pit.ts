@@ -26,9 +26,41 @@ export type PitPlayer = {
   todayDate: string | null;
   runs: number;
   lastStats?: RunStats;
+  // GAME-3 — career progression (persists on the pid; AUTH-1 claimable)
+  xp: number;
+  level: number;
+  /** best single-round PIT SCORE */
+  bestRound: number | null;
+  /** consecutive completed runs (reset by margin call) */
+  runStreak: number;
   createdAt: number;
   updatedAt: number;
 };
+
+// GAME-3 — level ladder (thresholds are cumulative XP)
+export const LEVELS = [
+  { level: 1, name: "ROOKIE", xp: 0 },
+  { level: 2, name: "SCOUT", xp: 800 },
+  { level: 3, name: "MOMENTUM", xp: 2200 },
+  { level: 4, name: "VOLATILITY", xp: 4500 },
+  { level: 5, name: "OPERATOR", xp: 8000 }, // L5+ reserved: options
+] as const;
+
+/** PURE. Level for a cumulative XP total. */
+export function levelFor(xp: number): number {
+  let lv = 1;
+  for (const l of LEVELS) if (xp >= l.xp) lv = l.level;
+  return lv;
+}
+
+/** PURE. Fold a completed ROUND into the player (score/xp clamped). */
+export function applyRound(p: PitPlayer, score: number, xp: number): void {
+  const s = Math.max(0, Math.min(50_000, Math.floor(score)));
+  const x = Math.max(0, Math.min(2_000, Math.floor(xp)));
+  p.xp = (p.xp ?? 0) + x;
+  p.level = levelFor(p.xp);
+  if (p.bestRound === null || p.bestRound === undefined || s > p.bestRound) p.bestRound = s;
+}
 
 export const MAX_NAME_CHARS = 16;
 export const LEADERBOARD_SIZE = 20;
@@ -103,7 +135,9 @@ export function newPlayer(pid: string): PitPlayer {
   const now = Date.now();
   return {
     pid, name: "PLAYER", bestRun: null, bestRunDate: null,
-    todayRun: null, todayDate: null, runs: 0, createdAt: now, updatedAt: now,
+    todayRun: null, todayDate: null, runs: 0,
+    xp: 0, level: 1, bestRound: null, runStreak: 0,
+    createdAt: now, updatedAt: now,
   };
 }
 

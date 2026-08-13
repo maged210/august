@@ -5,9 +5,11 @@ import { type NextRequest } from "next/server";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { resolveChatPrincipal } from "@/lib/user-scope";
 import {
+  applyRound,
   bestBoard,
   etDate,
   getPlayer,
+  levelFor,
   newPlayer,
   pidFor,
   pitConfigured,
@@ -88,6 +90,35 @@ export async function POST(req: NextRequest): Promise<Response> {
       perfectDips: clampInt(s.perfectDips, 500),
     };
     if (!(await recordRun(player, pct, stats, etDate()))) {
+      return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
+    }
+  } else if (body.action === "round") {
+    // GAME-3 — one POST per completed round: score + xp fold into the career.
+    // `final` marks the run's end (bell on R5 or margin call) and also lands
+    // the run on the boards with the career %.
+    applyRound(player, Number(body.score) || 0, Number(body.xp) || 0);
+    player.level = levelFor(player.xp);
+    const final = body.final === true || body.final === "margin";
+    if (final) {
+      const pct = validateRunPct(body.careerPct);
+      if (body.final === "margin") player.runStreak = 0;
+      else player.runStreak = (player.runStreak ?? 0) + 1;
+      const s = (body.stats ?? {}) as Record<string, unknown>;
+      const clampInt = (v: unknown, max: number) =>
+        Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+      const stats: RunStats = {
+        trades: clampInt(s.trades, 999),
+        wins: clampInt(s.wins, 999),
+        bestTrade: validateRunPct(s.bestTrade) ?? 0,
+        perfectDips: clampInt(s.perfectDips, 999),
+      };
+      if (pct !== null && !(await recordRun(player, pct, stats, etDate()))) {
+        return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
+      }
+      if (pct === null && !(await savePlayer(player))) {
+        return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
+      }
+    } else if (!(await savePlayer(player))) {
       return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
     }
   } else {
