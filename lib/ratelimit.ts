@@ -29,7 +29,7 @@ type RouteKey =
   | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
   | "threads" | "watchlist" | "feeds" | "ideas" | "admin" | "transcripts"
-  | "bars" | "tape" | "wire" | "headlines";
+  | "bars" | "tape" | "wire" | "headlines" | "pit";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -62,6 +62,7 @@ const LIMITS: Record<RouteKey, number> = {
   tape: 30,   // public desk-tape read — cheap Redis, dock polls ~60s
   wire: 30,   // public desk-wire ingest log — redacted counts, cheap Redis
   headlines: 30, // home-brief RSS headlines — 15min in-process cache upstream
+  pit: 30, // THE PIT arcade — state read + one score submit per run
 };
 
 /** Positive integer from env, else the fallback. 0/garbage → fallback. */

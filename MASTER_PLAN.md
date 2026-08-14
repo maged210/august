@@ -278,6 +278,115 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ---
 
+# GAME-2 — THE PIT, ARCADE REWRITE
+
+> Branch: `feature/game-2` off main (7d386db). GAME-1 was NEVER merged — carry its identity/leaderboard/simulated pieces over from `feature/game-1` by hand; the ride/fade + daily pick modes are DEAD, do not port them. One gate: a playable build — the bar is the reviewer playing three runs back-to-back unprompted. Started 2026-08-13.
+> NORTH STAR: moment-to-moment fun. One session = one trading day (60–90s). Instantly replayable.
+
+## GA-A — CARRY-OVER (from feature/game-1, unchanged semantics)
+- [x] lib/pit identity + leaderboard (pids `v:{vid}`/`u:{email}` for AUTH-1 claims), nickname + validatePitName filter, /api/admin/pit purge route, "pit" rate-limit key, PIT tab/view (bottom tab mobile + desktop toggle, ?view=pit, resolveView "pit"), permanent styled SIMULATED label.
+- [x] Boards: TODAY'S TAPE (best run on today's seed) + ALL-TIME BEST RUN. Player record gains { bestRun, bestRunDate, todayRun, todayDate }.
+
+## GA-B — CORE LOOP (v1 scope, this and nothing more)
+- [x] Full-screen canvas, Matrix green: perspective grid floor, glowing price line, price chip at the head, entry-line marker while holding, target bar filling across the top, cash counter animating every tick.
+- [x] THE TAPE: 60–90s generated day, seeded DAILY by ET date (mulberry32(seed) — one tape a day, identical for everyone). Quotes pipeline is DAILY closes (no intraday) → SHIP SYNTHETIC per the spec ("fun beats purity"): drift segments + spikes + dumps + fakeouts + one clean dip-and-rip arc, fictional ticker name from the seed.
+- [x] CONTROLS: BUY (all-in) / SELL (flatten). One position, no sizing. Huge bottom thumb buttons + keyboard space/B/S on desktop.
+- [x] RULES: start 10,000 fictional cash; TARGET +15% equity by the bell; MARGIN CALL ends the run if equity < 40% of start.
+- [x] JUICE (non-negotiable): PERFECT DIP combo multiplier (entry within 1.5% of the rolling local low / exit near local high — combo multiplies the fill's P&L pop), green screen-glow on up-ticks while holding, red pulse on drawdown (reduced-motion: static tint, no pulse/shake), last-10s closing-bell tension (clock pulses, grid speeds), P&L pop on every fill.
+- [x] EVENTS: 2–3 per day from the daily seed, clearly fictional, banner-based, silent ("FLASH CRASH", "SQUEEZE — ×2 WINDOW" doubling gains inside the window).
+- [x] END SCREEN: BEAT THE BELL / MISSED THE TARGET / MARGIN CALLED, run stats (trades, win rate, best trade, perfect dips), a NOT-REAL-WINNINGS line with personality, nickname save to boards, RUN IT BACK as the biggest element.
+
+## GA-C — TECH RAILS
+- [x] One canvas, rAF, 60fps on a mid-range phone, battery-sane (pause on tab blur/visibilitychange), no network mid-run except the end-of-run score submit (POST /api/pit {action:"run", score, stats} — server clamps/validates).
+
+## V2 — DO NOT BUILD: districts/seasons/meta, sound beyond one off-default toggle, multiple tickers, desk-call integration, share cards.
+
+### GATE GA-G1 — playable preview; three unprompted back-to-back runs is the bar. HOLD.
+- [ ] GA-G1 approved.
+
+---
+
+# GAME-3 — THE PIT: CAREER LOOP
+
+> Evolving `feature/game-2` IN PLACE (unmerged, per spec). One gate: playable — the bar is finishing R1 and starting R2 unprompted, then finishing the run. Started 2026-08-13.
+> NORTH STAR: finish Round 1 and immediately want Round 2. Terminal × strategy × arcade progression × financial education. NOT a casino.
+> V1 SCOPE: ROUND → STOCK SELECTION → MOVEMENT → CATALYST → LONG/SHORT → P&L → SCORE → XP → NEXT ROUND. Nothing else ships.
+
+## GP1 — ROUND ENGINE
+- [x] State machine: ROUND BRIEF → LIVE TRADING → BELL → ROUND COMPLETE → NEXT. Run = one career attempt; margin call at 40% of round start ends the run.
+- [x] Ladder: R1 OPENING BELL ($10K, 4 stocks, LONG only, 90s, gentle) · R2 MOMENTUM (faster tape, SHORT unlocks, first catalysts) · R3 EARNINGS (one binary catalyst/stock, before/after decision, 2 positions unlock) · R4 THE CRASH (selloff regime, correlated, 45s) · R5 BOSS (simultaneous catalysts, 120s, brutal).
+- [x] Controls: per-stock LONG / SHORT / FLATTEN (+WAIT = do nothing). Position model supports N, level/round-gated (1 in R1–R2, 2 from R3).
+
+## GP2 — STOCK UNIVERSE
+- [x] Categorized pools w/ per-category vol/drift personality (Mega Cap, Tech/AI, Semis, Banks, Energy, Consumer, Healthcare, Crypto-adj, High-Vol). Round draws 4–6 from theme-appropriate mixes, seeded per round+runSeed so lineups rotate.
+- [x] Real tickers, simulated tapes with the category's texture. SIM chip everywhere.
+
+## GP3 — MISSIONS
+- [x] One per round: BEAT THE MARKET (vs SPY sim line) · MOMENTUM HUNTER (profit on the day's fastest riser) · SHORT SELLER (profit on a short) · LOW RISK (finish ≥ start w/ max DD < 5%) · SURVIVOR (never breach 20% DD). Shown in the brief, tracked live, scored at the bell.
+
+## GP4 — EVENTS/CATALYSTS
+- [x] 2–3/round max; ALWAYS a clue first (ticker flicker + volume swell + countdown banner). Archetype headlines only w/ SIM chip ("EARNINGS BEAT", "ANALYST DOWNGRADE", "SQUEEZE — ×2 WINDOW") — never a factual claim about the real company; no real names in event copy.
+
+## GP5 — SCORE + XP + LEVELS
+- [x] PIT SCORE (deterministic, breakdown shown): pnlPts + missionBonus + timingPts (entry/exit vs local extremes) + drawdownPenalty + accuracyPts.
+- [x] XP → levels: L1 ROOKIE → L2 SCOUT (bigger universe) → L3 MOMENTUM (high-vol pool) → L4 VOLATILITY (2 positions anywhere) → L5+ reserved (options). Level/XP persist on the visitor pid (AUTH-1 claimable).
+
+## GP6 — FEEDBACK + TRANSITIONS
+- [x] Live: P&L pops, GOOD ENTRY / CATALYST CAPTURED / POSITION STOPPED moments.
+- [x] ROUND COMPLETE is the reward: $10,000 → $12,480 · +24.8% · SPY +1.2% · OUTPERFORMED MARKET · SCORE breakdown · +XP bar filling · NEXT ROUND → dominant.
+
+## VISUAL LAW: near-black, deep green, terminal type, thin borders, density, subtle grid, glow accents, amber/red warnings. Motion + tension + hierarchy. Never casino.
+
+## ARCHITECTED NOW, BUILT LATER (types/stubs only in lib/pit-stubs.ts): options card iface, Terminal-idea→PIT challenge schema, game-modes registry (CAREER ships), boards + BEST ROUND + streak fields.
+
+## CARRY-OVER unchanged: anonymous identity/nickname/purge · SIMULATED label · reduced-motion · one canvas 60fps · pause on blur · no network mid-round (state GET on entry, POST per round complete).
+
+# GAME-3 TUNING ROUND — MOVEMENT, PACING, CALENDAR (2026-08-14)
+
+> Same gate, still blocked. Movement and pacing are wrong; progression gets reskinned. Branch: feature/game-2 in place.
+
+## T1 — TAPE ENGINE v2 (the core fix)
+- [x] Regime-based generator (drift + noise + mean-reversion + impulse segments) replacing the monotonic random walk.
+- [x] HARD constraints: max consecutive same-direction ticks; every impulse followed by a 30–60% partial retrace.
+- [x] Minimum direction changes per day; every stock gets ≥1 meaningful drawdown AND ≥1 meaningful rally regardless of bias.
+- [x] Per-stock drift caps — no guaranteed hold-to-win.
+- [x] CRASH DAY: downward regime punctuated by violent bear-market rallies — the bounces are the trap.
+- [x] Fakeouts first-class: breaks that reverse, dips that keep dipping.
+- [x] Daily seeding stays deterministic.
+
+## T2 — PACING PASS
+- [x] Speed is per-day config (Opening Bell calm → Boss fast); dips/spikes humanly reactable (~300–500ms windows minimum).
+
+## T3 — OWNER TUNING OVERLAY
+- [x] ?tune=1 (dev/localhost or admin-token tab only): live sliders — tick rate, volatility, drift strength, retrace frequency, event intensity — applied to the running tape in real time; current values copyable. Found values ship as day configs.
+
+## T4 — PROGRESSION RESKIN: LEVELS → CALENDAR
+- [x] Rounds → DAYS ("DAY 1 — OPENING BELL" … day 5 = "FRIDAY — OPEX"); five days clear the WEEK.
+- [x] Tiers → WEEKS with real unlocks + old trader titles as subtitles; all copy: briefs, "DAY n COMPLETE", WEEK bar with XP under it.
+
+## T5 — TAPE FAIRNESS AUTO-CHECK
+- [x] In the test suite: blind buy-and-hold and blind short-and-hold across 100 seeded days must fail every day's mission; a blind win fails the build. Bell settlement no longer counts as trading (no mission flags / trades / wins from forced liquidation).
+
+## T6 — QUIRKS (juice only)
+- [x] AUGUST ON THE FLOOR: dry one-liners on play events + day-complete roast/praise, per-event cooldowns.
+- [x] STAMPS: PAPER HANDS / DIAMOND HANDS full-screen moments, reduced-motion safe.
+- [x] DAY REPLAY: compact full-day tape strip on DAY COMPLETE with entries/exits marked.
+- [x] MARKET WEATHER: one truthful telegraph line per day brief wired to the actual regime.
+- [x] RISK DESK: sub-55% red edge pulse intensifying toward the 40% margin call + "RISK DESK CALLING…"; reduced-motion static tint.
+
+## T7 — V2 SHELF (recorded, not built)
+Rival ghost (August trades the same tape beside you — future flagship) · achievements/titles · share cards from the day replay.
+
+### GATE GC-G1 (unchanged bar + one addition) — reviewer finishes a full week unprompted; report the quit day. Owner plays with ?tune=1; his slider values ship as final configs. HOLD.
+
+---
+
+### GATE GC-G1 — playable preview; bar: finish R1 → start R2 unprompted → finish the run. Report the quit round. HOLD.
+- [x] GC-G1 fix round 1 (2026-08-13) — **OPEN THE MARKET mounted nothing.** Confirmed root cause: NOT the /api/auth/session 501 (HomeLanding catches it; the PIT never touches auth). The live scene was gated on `gameRef.current`, which was only assigned inside the live effect, which bailed silently when the canvas (inside that same gate) wasn't mounted — a render/effect deadlock, first click dead forever. Fixes: (1) pure round engine extracted to lib/pit-engine.ts; the RoundRun is created SYNCHRONOUSLY in the OPEN THE MARKET click before the phase flips — the scene can never render against a missing game; (2) the live effect now THROWS on a missing canvas instead of returning, and PitBoundary (error boundary) renders a styled PIT ERROR — RELOAD state; silent dead buttons structurally impossible; (3) /api/auth/session unconfigured → 200 null (valid no-session), other auth endpoints 404 — no 5xx on production paths; (4) lib/sound.ts never creates an AudioContext before the first user gesture (navigator.userActivation guard) — kills the autoplay warning; (5) tests/pit-engine.test.ts: programmatic R1 end-to-end (brief → live → position → bell → scored complete → next brief) + margin/determinism/guard tests, suite 243 green; (6) console-clean R1 click-through verified headless at 1440×900 and 390×844 before redeploy.
+- [ ] GC-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

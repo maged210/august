@@ -7351,3 +7351,154 @@ html.sheet-open .view-panel {
     box-shadow: var(--shadow-3, 0 20px 60px rgba(0, 0, 0, 0.55));
   }
 }
+
+/* ============================================================================
+   GAME-2 · THE PIT arcade — one canvas, huge thumb buttons, boards shell.
+   ========================================================================== */
+.pit2 { position: absolute; inset: 0; display: flex; flex-direction: column; background: #04070a; overflow: hidden; }
+.pit2 .pit-sim {
+  margin: 0; padding: calc(env(safe-area-inset-top, 0px) + 48px) 12px 6px; text-align: center;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--amber);
+}
+@media (max-width: 700px) { .pit2 .pit-sim { padding-top: calc(env(safe-area-inset-top, 0px) + 10px); } }
+.pit2-canvas { flex: 1; min-height: 0; width: 100%; touch-action: manipulation; }
+.pit2-ctl {
+  display: flex; gap: 10px; padding: 10px 14px calc(var(--tabbar-h, env(safe-area-inset-bottom, 0px)) + 12px);
+}
+.pit2-btn {
+  appearance: none; cursor: pointer; flex: 1; min-height: 64px;
+  border-radius: 12px; border: 1px solid var(--line-strong);
+  font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: 0.1em;
+  background: var(--glass); color: var(--bone);
+  transition: transform 90ms ease;
+}
+.pit2-btn:active { transform: scale(0.96); }
+.pit2-btn.buy { color: #0a1a10; background: #4ec97a; border-color: #4ec97a; }
+.pit2-btn.sellb { color: var(--neg); border-color: rgb(var(--neg-rgb) / 0.6); }
+.pit2-btn:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .pit2-btn { transition: none; } }
+.pit2-shell {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 12px 16px calc(var(--tabbar-h, 0px) + 24px);
+}
+.pit2-hero, .pit2-verdict { text-align: center; max-width: 420px; }
+.pit2-hero h2, .pit2-verdict h2 {
+  margin: 6px 0; font-family: var(--font-mono); font-size: 26px; font-weight: 700; letter-spacing: 0.14em; color: var(--bone);
+}
+.pit2-hero p { color: var(--ash); font-size: 14px; margin: 4px 0 0; }
+.pit2-endpct { font-family: var(--font-mono); font-size: 40px; font-weight: 700; margin: 2px 0; }
+.pit2-endpct.up, .pit2 .up { color: var(--pos); }
+.pit2-endpct.down, .pit2 .down { color: var(--neg); }
+.pit2-stats { font-family: var(--font-mono); font-size: 11px; color: var(--ash); margin: 2px 0; }
+.pit2-notreal { font-size: 12.5px; font-style: italic; color: var(--ink-mute); margin: 6px 0 0; }
+.pit2-run {
+  flex: none; width: min(420px, 100%); min-height: 72px; font-size: 18px;
+  color: #0a1a10; background: #4ec97a; border: none; border-radius: 14px;
+  box-shadow: 0 0 34px -8px rgba(78, 201, 122, 0.8);
+}
+.pit2-name { display: flex; gap: 8px; width: min(420px, 100%); }
+.pit2-name input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 6px 12px;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--bone); font-family: var(--font-mono); font-size: 13px;
+}
+.pit2-name button {
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: none; color: var(--bone); font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+}
+.pit2-boards { width: min(420px, 100%); }
+.pit2-boardtabs { display: flex; gap: 8px; margin-bottom: 8px; }
+.pit2-boardtabs button {
+  flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: none;
+  color: var(--ash); font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; cursor: pointer;
+}
+.pit2-boardtabs button.on { color: var(--bone); border-color: var(--steel); }
+.pit2-boards ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.pit2-boards li {
+  display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 6px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--bone);
+}
+.pit2-boards li.me { background: rgb(var(--steel-rgb) / 0.12); box-shadow: inset 0 0 0 1px rgb(var(--steel-rgb) / 0.4); }
+.pit2-boards li span:first-child { width: 22px; color: var(--ink-mute); }
+.pit2-boards .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pit2-boards .sc { font-variant-numeric: tabular-nums; }
+.pit2-boards .empty { color: var(--ink-mute); font-style: italic; }
+
+/* GAME-3 — career loop additions */
+.pit3-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 6px 12px 0; }
+.pit3-chip {
+  appearance: none; cursor: pointer; flex: none; min-height: 44px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--bone);
+}
+.pit3-chip .up { color: var(--pos); } .pit3-chip .down { color: var(--neg); }
+.pit3-chip.on { border-color: var(--steel); box-shadow: inset 0 0 0 1px rgb(var(--steel-rgb) / 0.4); }
+.pit3-chip.lng { border-left: 3px solid var(--pos); }
+.pit3-chip.sht { border-left: 3px solid var(--neg); }
+.pit3-chip.clue { animation: pit3-flicker 600ms steps(2) infinite; border-color: var(--amber); }
+@keyframes pit3-flicker { 50% { background: rgb(var(--amber-rgb) / 0.16); } }
+@media (prefers-reduced-motion: reduce) { .pit3-chip.clue { animation: none; background: rgb(var(--amber-rgb) / 0.14); } }
+.pit3-chip .tag { font-size: 8px; letter-spacing: 0.12em; color: var(--ash); }
+.pit3-eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.24em; color: var(--steel); margin: 0 0 2px; }
+.pit3-mission { font-family: var(--font-mono); font-size: 12px; color: var(--amber); margin: 4px 0 8px; }
+
+/* GAME-3 tuning round — calendar, quirks, owner overlay */
+.pit3-weather { font-family: var(--font-mono); font-size: 11px; color: var(--ash); font-style: italic; margin: 0 0 10px; }
+
+.pit3-floor { font-family: var(--font-mono); font-size: 11px; color: var(--steel); min-height: 16px; margin: 2px 0; text-align: center; opacity: 0; transition: opacity 200ms; }
+.pit3-floor.on { opacity: 1; }
+
+.pit3-stamp {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none;
+  font-family: var(--font-mono); font-size: clamp(34px, 9vw, 88px); font-weight: 800; letter-spacing: 0.08em;
+  color: var(--amber); text-shadow: 0 0 24px rgb(var(--amber-rgb) / 0.5);
+  animation: pit3-stamp-in 1.4s ease-out forwards;
+}
+@keyframes pit3-stamp-in {
+  0% { opacity: 0; transform: scale(1.6) rotate(-7deg); }
+  12% { opacity: 1; transform: scale(1) rotate(-7deg); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pit3-stamp { animation: pit3-stamp-static 1.4s linear forwards; }
+  @keyframes pit3-stamp-static { 0%, 85% { opacity: 0.95; } 100% { opacity: 0; } }
+}
+
+.pit3-risk {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none; opacity: 0;
+  box-shadow: inset 0 0 90px 24px rgb(224 90 74 / 0.5);
+  animation: pit3-risk-pulse 1.1s ease-in-out infinite;
+}
+.pit3-risk > span {
+  position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.2em;
+  color: #e08a7a; opacity: 0; transition: opacity 200ms;
+}
+.pit3-risk[data-calling="1"] > span { opacity: 1; }
+@keyframes pit3-risk-pulse { 50% { box-shadow: inset 0 0 60px 12px rgb(224 90 74 / 0.32); } }
+@media (prefers-reduced-motion: reduce) { .pit3-risk { animation: none; } }
+
+.pit3-week { margin: 10px 0 4px; }
+.pit3-weekbar { height: 6px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.03); margin: 6px 0; }
+.pit3-weekbar > span { display: block; height: 100%; background: linear-gradient(90deg, rgb(var(--green-rgb) / 0.5), var(--green)); transition: width 400ms; }
+
+.pit3-replay { width: 100%; max-width: 560px; height: 92px; border: 1px solid var(--line); margin: 10px auto; display: block; }
+
+.pit2-stats.aug { color: var(--steel); font-style: italic; }
+
+.pit3-tune {
+  /* left edge: the trade-ideas rail owns the right and out-stacks the pit
+     panel's context — nothing overlaps here */
+  position: fixed; left: 12px; top: 110px; z-index: 70; width: 240px; padding: 12px;
+  background: #07090b; border: 1px solid var(--amber); font-family: var(--font-mono);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.pit3-tune label { display: grid; grid-template-columns: 1fr 44px; gap: 2px 8px; align-items: center; font-size: 10px; letter-spacing: 0.12em; color: var(--ash); }
+.pit3-tune label input { grid-column: 1 / -1; accent-color: var(--amber); }
+.pit3-tune label b { text-align: right; color: var(--fg); }
+.pit3-tune button { font-family: inherit; font-size: 10px; letter-spacing: 0.16em; padding: 6px; background: none; border: 1px solid var(--amber); color: var(--amber); cursor: pointer; }
+.pit3-tune code { font-size: 9px; color: var(--steel); word-break: break-all; }
+@media (max-width: 700px) { .pit3-tune { top: auto; bottom: calc(var(--tabbar-h, 54px) + 60px); left: 8px; width: 200px; } }

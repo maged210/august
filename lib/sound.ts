@@ -15,6 +15,11 @@ function ensure(): AudioContext | null {
     window.AudioContext ||
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AC) return null;
+  // Autoplay policy: never CREATE a context before the first user gesture —
+  // the browser would warn and park it suspended anyway (e.g. the boot tone).
+  // After the first gesture the context is created lazily on the next tone.
+  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+  if (!ctx && ua && !ua.hasBeenActive) return null;
   if (!ctx || ctx.state === "closed") {
     ctx = new AC();
     master = ctx.createGain();
