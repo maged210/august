@@ -341,6 +341,46 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 
 ## CARRY-OVER unchanged: anonymous identity/nickname/purge · SIMULATED label · reduced-motion · one canvas 60fps · pause on blur · no network mid-round (state GET on entry, POST per round complete).
 
+# GAME-3 TUNING ROUND — MOVEMENT, PACING, CALENDAR (2026-08-14)
+
+> Same gate, still blocked. Movement and pacing are wrong; progression gets reskinned. Branch: feature/game-2 in place.
+
+## T1 — TAPE ENGINE v2 (the core fix)
+- [ ] Regime-based generator (drift + noise + mean-reversion + impulse segments) replacing the monotonic random walk.
+- [ ] HARD constraints: max consecutive same-direction ticks; every impulse followed by a 30–60% partial retrace.
+- [ ] Minimum direction changes per day; every stock gets ≥1 meaningful drawdown AND ≥1 meaningful rally regardless of bias.
+- [ ] Per-stock drift caps — no guaranteed hold-to-win.
+- [ ] CRASH DAY: downward regime punctuated by violent bear-market rallies — the bounces are the trap.
+- [ ] Fakeouts first-class: breaks that reverse, dips that keep dipping.
+- [ ] Daily seeding stays deterministic.
+
+## T2 — PACING PASS
+- [ ] Speed is per-day config (Opening Bell calm → Boss fast); dips/spikes humanly reactable (~300–500ms windows minimum).
+
+## T3 — OWNER TUNING OVERLAY
+- [ ] ?tune=1 (dev/localhost or admin-token tab only): live sliders — tick rate, volatility, drift strength, retrace frequency, event intensity — applied to the running tape in real time; current values copyable. Found values ship as day configs.
+
+## T4 — PROGRESSION RESKIN: LEVELS → CALENDAR
+- [ ] Rounds → DAYS ("DAY 1 — OPENING BELL" … day 5 = "FRIDAY — OPEX"); five days clear the WEEK.
+- [ ] Tiers → WEEKS with real unlocks + old trader titles as subtitles; all copy: briefs, "DAY n COMPLETE", WEEK bar with XP under it.
+
+## T5 — TAPE FAIRNESS AUTO-CHECK
+- [ ] In the test suite: blind buy-and-hold and blind short-and-hold across 100 seeded days must fail every day's mission; a blind win fails the build. Bell settlement no longer counts as trading (no mission flags / trades / wins from forced liquidation).
+
+## T6 — QUIRKS (juice only)
+- [ ] AUGUST ON THE FLOOR: dry one-liners on play events + day-complete roast/praise, per-event cooldowns.
+- [ ] STAMPS: PAPER HANDS / DIAMOND HANDS full-screen moments, reduced-motion safe.
+- [ ] DAY REPLAY: compact full-day tape strip on DAY COMPLETE with entries/exits marked.
+- [ ] MARKET WEATHER: one truthful telegraph line per day brief wired to the actual regime.
+- [ ] RISK DESK: sub-55% red edge pulse intensifying toward the 40% margin call + "RISK DESK CALLING…"; reduced-motion static tint.
+
+## T7 — V2 SHELF (recorded, not built)
+Rival ghost (August trades the same tape beside you — future flagship) · achievements/titles · share cards from the day replay.
+
+### GATE GC-G1 (unchanged bar + one addition) — reviewer finishes a full week unprompted; report the quit day. Owner plays with ?tune=1; his slider values ship as final configs. HOLD.
+
+---
+
 ### GATE GC-G1 — playable preview; bar: finish R1 → start R2 unprompted → finish the run. Report the quit round. HOLD.
 - [x] GC-G1 fix round 1 (2026-08-13) — **OPEN THE MARKET mounted nothing.** Confirmed root cause: NOT the /api/auth/session 501 (HomeLanding catches it; the PIT never touches auth). The live scene was gated on `gameRef.current`, which was only assigned inside the live effect, which bailed silently when the canvas (inside that same gate) wasn't mounted — a render/effect deadlock, first click dead forever. Fixes: (1) pure round engine extracted to lib/pit-engine.ts; the RoundRun is created SYNCHRONOUSLY in the OPEN THE MARKET click before the phase flips — the scene can never render against a missing game; (2) the live effect now THROWS on a missing canvas instead of returning, and PitBoundary (error boundary) renders a styled PIT ERROR — RELOAD state; silent dead buttons structurally impossible; (3) /api/auth/session unconfigured → 200 null (valid no-session), other auth endpoints 404 — no 5xx on production paths; (4) lib/sound.ts never creates an AudioContext before the first user gesture (navigator.userActivation guard) — kills the autoplay warning; (5) tests/pit-engine.test.ts: programmatic R1 end-to-end (brief → live → position → bell → scored complete → next brief) + margin/determinism/guard tests, suite 243 green; (6) console-clean R1 click-through verified headless at 1440×900 and 390×844 before redeploy.
 - [ ] GC-G1 approved.
