@@ -7502,3 +7502,78 @@ html.sheet-open .view-panel {
 .pit3-tune button { font-family: inherit; font-size: 10px; letter-spacing: 0.16em; padding: 6px; background: none; border: 1px solid var(--amber); color: var(--amber); cursor: pointer; }
 .pit3-tune code { font-size: 9px; color: var(--steel); word-break: break-all; }
 @media (max-width: 700px) { .pit3-tune { top: auto; bottom: calc(var(--tabbar-h, 54px) + 60px); left: 8px; width: 200px; } }
+
+/* GAME-4 — event cards, reactions, sizing, risk, scorecard */
+.pit2 { position: relative; }
+
+.pit4-events {
+  position: absolute; top: 118px; left: 50%; transform: translateX(-50%);
+  z-index: 30; display: flex; flex-direction: column; gap: 8px; width: min(340px, 86%);
+  pointer-events: none;
+}
+.pit4-event {
+  pointer-events: auto;
+  background: rgb(4 7 10 / 0.92); border: 1px solid var(--amber); padding: 8px 12px;
+  font-family: var(--font-mono); animation: pit4-card-in 240ms ease-out;
+}
+.pit4-event.opp { border-color: var(--green); }
+@keyframes pit4-card-in { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .pit4-event { animation: none; } }
+.pit4-eyebrow { font-size: 9px; letter-spacing: 0.24em; color: var(--amber); margin: 0 0 3px; }
+.pit4-event.opp .pit4-eyebrow { color: var(--green); }
+.pit4-head { font-size: 12px; color: var(--fg); margin: 0 0 2px; }
+.pit4-head b { letter-spacing: 0.06em; }
+.simchip { font-size: 8px; letter-spacing: 0.16em; border: 1px solid var(--steel); color: var(--steel); padding: 1px 4px; vertical-align: 1px; }
+.pit4-print { font-size: 12px; font-weight: 700; margin: 0; }
+.pit4-print.up { color: #7fe0a5; }
+.pit4-print.down { color: #e08a7a; }
+.pit4-react { display: flex; gap: 6px; margin-top: 6px; }
+.pit4-act {
+  font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.16em;
+  padding: 6px 12px; background: none; border: 1px solid var(--line); color: var(--fg); cursor: pointer;
+}
+.pit4-act.exit { border-color: #cd7e6d; color: #e08a7a; }
+.pit4-act.add { border-color: #6aa0c8; color: #9cc4e4; }
+.pit4-act.trade { border-color: var(--green); color: var(--green); margin-top: 6px; }
+
+.pit4-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-family: var(--font-mono); font-size: 11px; padding: 2px 2px 0; flex-wrap: wrap;
+}
+.pit4-pos { color: var(--fg); }
+.pit4-pos.dim { color: var(--steel); }
+.pit4-pos .up { color: #7fe0a5; }
+.pit4-pos .down { color: #e08a7a; }
+.pit4-risk { letter-spacing: 0.06em; font-size: 10px; }
+.pit4-risk.r-low { color: var(--steel); }
+.pit4-risk.r-med { color: var(--fg); }
+.pit4-risk.r-high { color: var(--amber); }
+.pit4-risk.r-extreme { color: #e08a7a; }
+
+.pit4-size { display: flex; border: 1px solid var(--line); }
+.pit4-size button {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 10px 12px;
+  background: none; border: 0; color: var(--steel); cursor: pointer;
+}
+.pit4-size button.on { color: var(--green); background: rgb(var(--green-rgb) / 0.12); }
+
+.pit4-board { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; color: var(--fg); margin: 2px 0 8px; }
+.pit4-brief {
+  display: flex; gap: 18px; justify-content: center; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; color: var(--steel);
+  margin: 0 0 10px;
+}
+.pit4-brief b { display: block; font-size: 12px; letter-spacing: 0.06em; color: var(--fg); margin-top: 2px; }
+
+.pit4-card {
+  display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; color: var(--steel);
+  margin: 8px 0;
+}
+.pit4-card b { display: block; font-size: 14px; letter-spacing: 0.04em; color: var(--fg); margin-top: 2px; }
+.pit2-stats.bonus { color: var(--amber); }
+.pit4-unlock {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  color: var(--green); border: 1px solid var(--green); padding: 6px 10px; display: inline-block; margin: 6px 0;
+}
+@media (max-width: 700px) { .pit4-events { top: 128px; } .pit4-meta { font-size: 10px; } }

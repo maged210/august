@@ -1,23 +1,22 @@
 "use client";
 
-// THE PIT (GAME-3) — CAREER LOOP on the calendar. DAY brief → live tape →
-// bell → DAY COMPLETE → next day; five days clear the WEEK. SIMULATED ONLY,
-// permanently labeled. The day itself (tapes, catalysts, positions, score)
-// is the pure engine in lib/pit-engine — this component draws it, talks to
-// the boards, and carries the juice: AUGUST's floor commentary, stamps, the
-// day replay, market weather, and the RISK DESK.
+// THE PIT (GAME-4) — event-driven trading on the calendar. DAY brief →
+// position → market moves → EVENT → reaction → risk → exit → scorecard →
+// next day; five days clear the WEEK. SIMULATED ONLY, permanently labeled.
+// The game itself is lib/pit-engine (data-driven systems); this component
+// draws it and carries the juice: event cards, reaction windows, the risk
+// meter, AUGUST's floor commentary, stamps, the day replay.
 //
 // MOUNT LAW (GC-G1): the RoundRun is created SYNCHRONOUSLY in the OPEN THE
-// MARKET click, before the phase flips — the live scene can never render
-// against a missing game. If a scene still fails to mount, the effect throws
-// and PitBoundary shows a styled PIT ERROR instead of a silent dead button.
+// MARKET click, before the phase flips. If a scene still fails to mount, the
+// effect throws and PitBoundary renders a styled PIT ERROR.
 
-import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LEVELS, type LeaderRow, type PitPlayer } from "@/lib/pit";
 import {
-  DEFAULT_TUNE, LADDER, MARGIN_FRAC, START_CASH,
-  createRoundRunTuned, retuneRun,
-  type PitEvent, type PitTune, type RoundDef, type RoundRun, type RoundSummary,
+  DEFAULT_TUNE, LADDER, MARGIN_FRAC, MISSIONS, START_CASH, WEEK_PERKS,
+  createRoundRun, makeRound, retuneRun, weekAdjust,
+  type PitEvent, type PitTune, type RoundRun, type RoundSummary,
 } from "@/lib/pit-engine";
 
 // ── error boundary: a scene crash renders loud, never a dead button ──────────
@@ -48,25 +47,7 @@ class PitBoundary extends Component<{ children: ReactNode }, { err: Error | null
   }
 }
 
-// ── the calendar (T4): weeks are the tiers; titles survive as subtitles ──────
-const WEEK_PERKS: Record<number, string> = {
-  2: "crypto desk joins the day 2–3 rotation",
-  3: "high-vol names across days 1–3",
-  4: "second book — 2 positions from day 1",
-  5: "operator desk — options architecture on deck",
-};
-
-function weekAdjust(def: RoundDef, week: number): RoundDef {
-  const swapIn = (cats: string[], cat: string, ix: number) =>
-    cats.includes(cat) ? cats : cats.map((c, k) => (k === ix ? cat : c));
-  let d = def;
-  if (week >= 2 && (def.n === 2 || def.n === 3)) d = { ...d, cats: swapIn(d.cats, "crypto", d.cats.length - 1) };
-  if (week >= 3 && def.n <= 3) d = { ...d, cats: swapIn(d.cats, "highvol", 2) };
-  if (week >= 4 && d.positions < 2) d = { ...d, positions: 2 };
-  return d;
-}
-
-// ── AUGUST ON THE FLOOR (T6): dry desk voice, one line per moment ───────────
+// ── AUGUST ON THE FLOOR: dry desk voice, one line per moment ────────────────
 const FLOOR_LINES: Partial<Record<PitEvent["type"], string[]>> = {
   goodEntry: ["clean fill. the desk noticed.", "bought it like you meant it."],
   catalyst: ["read the tape before it printed."],
@@ -76,6 +57,8 @@ const FLOOR_LINES: Partial<Record<PitEvent["type"], string[]>> = {
   paperHands: ["it ripped right after. we don't talk about it."],
 };
 const FLOOR_COOLDOWN_MS = 12_000;
+
+const VOL_LABEL = (v: number) => (v < 0.004 ? "LOW" : v < 0.0055 ? "MED" : v < 0.0065 ? "HIGH" : "EXTREME");
 
 // ── component ────────────────────────────────────────────────────────────────
 type Phase = "lobby" | "brief" | "live" | "complete" | "gameover";
@@ -88,6 +71,7 @@ const TUNE_SLIDERS: Array<{ key: TuneKey; label: string; min: number; max: numbe
   { key: "retrace", label: "RETRACE FREQ", min: 0.2, max: 2.5 },
   { key: "events", label: "EVENT INTENSITY", min: 0.3, max: 2.5 },
 ];
+const SIZES = [25, 50, 75, 100] as const;
 
 function PitInner({ active }: { active: boolean }) {
   const [phase, setPhase] = useState<Phase>("lobby");
@@ -98,12 +82,15 @@ function PitInner({ active }: { active: boolean }) {
   const [roundIx, setRoundIx] = useState(0);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [careerEq, setCareerEq] = useState(START_CASH);
+  const [careerStreak, setCareerStreak] = useState(0);
   const [bootErr, setBootErr] = useState<Error | null>(null);
   const [stamp, setStamp] = useState<string | null>(null);
+  const [sizePct, setSizePct] = useState<(typeof SIZES)[number]>(100);
   const [tuneOn, setTuneOn] = useState(false);
   const [tune, setTune] = useState<PitTune>({ ...DEFAULT_TUNE });
   const tuneRef = useRef<PitTune>(tune);
   const runSeed = useRef(1);
+  const weekStartRef = useRef(1);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const replayRef = useRef<HTMLCanvasElement | null>(null);
   const riskRef = useRef<HTMLDivElement | null>(null);
@@ -114,10 +101,9 @@ function PitInner({ active }: { active: boolean }) {
   const stampTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [focus, setFocus] = useState(0);
   const focusRef = useRef(0);
-  const [, force] = useState(0); // chip strip / floor line re-render tick
+  const [, force] = useState(0); // live HUD re-render tick
   const loaded = useRef(false);
 
-  // an event-handler crash can't reach the boundary directly — rethrow in render
   if (bootErr) throw bootErr;
 
   const refresh = useCallback(() => {
@@ -137,7 +123,7 @@ function PitInner({ active }: { active: boolean }) {
     }
   }, [active, refresh]);
 
-  // T3 — the owner tuning overlay: ?tune=1, never on public paths
+  // owner tuning overlay: ?tune=1, never on public paths
   useEffect(() => {
     try {
       const wanted = new URLSearchParams(window.location.search).get("tune") === "1";
@@ -152,10 +138,31 @@ function PitInner({ active }: { active: boolean }) {
 
   const week = player?.level ?? 1;
   const def = weekAdjust(LADDER[Math.min(roundIx, LADDER.length - 1)], week);
+  const mission = MISSIONS[def.missionKey].label;
+
+  // the briefing board — same seed as the run, so the tickers are the truth
+  const briefTickers = useMemo(() => {
+    if (phase !== "brief") return [];
+    try { return makeRound(def, runSeed.current, tuneRef.current).stocks.map((s) => s.ticker); }
+    catch { return []; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, roundIx, week]);
 
   const onEvent = useCallback((ev: PitEvent) => {
     if (ev.type === "pop") {
       popsRef.current.push({ text: ev.text, cls: ev.cls, at: performance.now() });
+      return;
+    }
+    if (ev.type === "news") return; // the card renders from run.activeEvents()
+    if (ev.type === "streak") {
+      popsRef.current.push({ text: `${ev.count}-TRADE STREAK +${ev.xp} XP`, cls: 1, at: performance.now() });
+      return;
+    }
+    if (ev.type === "reaction") {
+      floorRef.current = {
+        text: ev.correct ? "read it right." : "the tape disagreed.",
+        until: performance.now() + 3500,
+      };
       return;
     }
     if (ev.type === "diamondHands" || ev.type === "paperHands") {
@@ -173,7 +180,9 @@ function PitInner({ active }: { active: boolean }) {
 
   const startCareer = () => {
     runSeed.current = (Date.now() % 100000) + 1;
+    weekStartRef.current = week;
     setCareerEq(START_CASH);
+    setCareerStreak(0);
     setRoundIx(0);
     setPhase("brief");
   };
@@ -183,19 +192,22 @@ function PitInner({ active }: { active: boolean }) {
     try {
       popsRef.current = [];
       floorRef.current = null;
-      runRef.current = createRoundRunTuned(def, runSeed.current, careerEq, tuneRef.current, onEvent);
+      runRef.current = createRoundRun(def, runSeed.current, careerEq, onEvent, {
+        tune: tuneRef.current, initialStreak: careerStreak,
+      });
       setFocus(0);
+      setSizePct(100);
       setPhase("live");
     } catch (e) {
       setBootErr(e instanceof Error ? e : new Error(String(e)));
     }
   };
 
-  // T3 — non-clock sliders re-cut the RUNNING tape (debounced)
+  // owner sliders re-cut the RUNNING tape (debounced); tick rate is clock-side
   const retuneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyTune = (key: TuneKey, value: number) => {
     setTune((t) => ({ ...t, [key]: value }));
-    if (key === "tps") return; // the clock reads tuneRef live — no re-cut needed
+    if (key === "tps") return;
     if (retuneTimer.current) clearTimeout(retuneTimer.current);
     retuneTimer.current = setTimeout(() => {
       const cur = runRef.current;
@@ -212,7 +224,6 @@ function PitInner({ active }: { active: boolean }) {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!boot || !canvas || !ctx) {
-      // loud by design: the boundary turns this into the PIT ERROR screen
       throw new Error(`PIT: live scene failed to mount (run=${!!boot} canvas=${!!canvas} ctx=${!!ctx})`);
     }
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -228,6 +239,7 @@ function PitInner({ active }: { active: boolean }) {
 
     let alive = true;
     let raf = 0, last = performance.now(), acc = 0;
+    let lastEq = boot.equity(), eqFlash = 0; // -1 red / +1 green, decays
 
     const finish = (margin: boolean) => {
       if (!alive) return;
@@ -238,6 +250,7 @@ function PitInner({ active }: { active: boolean }) {
       const res: RoundResult = { ...sum, n: run.def.n };
       setResult(res);
       setCareerEq(sum.endEq);
+      setCareerStreak(sum.streak);
       setPhase(margin ? "gameover" : "complete");
       const finalFlag = margin ? "margin" : run.def.n === 5 ? true : false;
       fetch("/api/pit", {
@@ -258,20 +271,19 @@ function PitInner({ active }: { active: boolean }) {
       const s = Math.min(focusRef.current, run.stocks.length - 1);
       const i = run.i;
       const eq = run.equity();
+      if (Math.abs(eq - lastEq) > 0.5) { eqFlash = eq > lastEq ? 1 : -1; lastEq = eq; }
+      eqFlash *= 0.94;
       const px = run.px;
       ctx.fillStyle = "#04070a";
       ctx.fillRect(0, 0, W, H);
-      // subtle grid
       ctx.strokeStyle = "rgba(64,220,110,0.09)";
       for (let y = 40; y < H; y += 44) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-      // window
       const span = Math.max(120, Math.floor(rdef.tps * 30)), from = Math.max(0, i - span);
       let lo = Infinity, hi = -Infinity;
       for (let j = from; j <= i; j++) { lo = Math.min(lo, px(s, j)); hi = Math.max(hi, px(s, j)); }
       const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
       const X = (j: number) => ((j - from) / span) * (W - 84);
       const Y = (v: number) => 56 + ((hi - v) / (hi - lo)) * (H - 120);
-      // SPY benchmark (dim) for the beat-the-market read
       ctx.strokeStyle = "rgba(216,236,217,0.25)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -281,7 +293,6 @@ function PitInner({ active }: { active: boolean }) {
         j === from ? ctx.moveTo(X(j), y) : ctx.lineTo(X(j), y);
       }
       ctx.stroke();
-      // focused tape
       ctx.shadowColor = "rgba(64,220,110,0.9)";
       ctx.shadowBlur = reduced ? 0 : 10;
       ctx.strokeStyle = "#4ec97a";
@@ -306,32 +317,25 @@ function PitInner({ active }: { active: boolean }) {
       // HUD
       ctx.fillStyle = "rgba(216,236,217,0.65)"; ctx.font = "600 11px ui-monospace, monospace";
       ctx.fillText(`DAY ${rdef.n} · ${rdef.name} · SIM`, 12, 20);
-      ctx.fillText(rdef.mission, 12, 36);
-      ctx.fillStyle = "#d8ecd9"; ctx.font = "700 19px ui-monospace, monospace";
+      ctx.fillText(MISSIONS[rdef.missionKey].label, 12, 36);
+      // living P&L — flashes with the tape
+      ctx.fillStyle = eqFlash > 0.08 ? "#7fe0a5" : eqFlash < -0.08 ? "#e08a7a" : "#d8ecd9";
+      ctx.font = "700 21px ui-monospace, monospace";
       ctx.fillText(`$${eq.toFixed(0)}`, 12, H - 16);
       const rp = (eq / run.startEq - 1) * 100;
       ctx.font = "600 12px ui-monospace, monospace";
       ctx.fillStyle = rp >= 0 ? "#7fe0a5" : "#e08a7a";
-      ctx.fillText(`${rp >= 0 ? "+" : ""}${rp.toFixed(1)}%`, 120, H - 16);
+      ctx.fillText(`${rp >= 0 ? "+" : ""}${rp.toFixed(1)}%`, 128, H - 16);
       const remain = Math.max(0, Math.ceil((run.N - i) / rdef.tps));
       ctx.fillStyle = remain <= 10 ? "#ffd27a" : "rgba(216,236,217,0.7)";
       ctx.font = `700 ${remain <= 10 ? 17 : 13}px ui-monospace, monospace`;
       ctx.fillText(`🔔 ${remain}s`, W - 78, 22);
-      // catalyst clue banner (the fairness rule: warned, never ambushed)
       const clue = run.clue;
       if (clue) {
         ctx.fillStyle = "#ffd27a"; ctx.font = "700 13px ui-monospace, monospace";
-        const t = `⚠ ${run.stocks[clue.stock].ticker} CATALYST IN ${Math.ceil((clue.at - i) / rdef.tps)}s`;
+        const t = `⚠ ${run.stocks[clue.stocks[0]].ticker} CATALYST IN ${Math.ceil((clue.at - i) / rdef.tps)}s`;
         ctx.fillText(t, (W - ctx.measureText(t).width) / 2, 54);
       }
-      const liveCat = run.catalysts.find((c) => i >= c.at && i < c.at + 4 * rdef.tps);
-      if (liveCat) {
-        ctx.fillStyle = liveCat.dir === 1 ? "#7fe0a5" : "#e08a7a";
-        ctx.font = "700 14px ui-monospace, monospace";
-        const t = `${run.stocks[liveCat.stock].ticker} — ${liveCat.label} · SIM`;
-        ctx.fillText(t, (W - ctx.measureText(t).width) / 2, 74);
-      }
-      // pops
       const nowMs = performance.now();
       for (const pop of popsRef.current.slice(-4)) {
         const age = (nowMs - pop.at) / 900;
@@ -342,7 +346,7 @@ function PitInner({ active }: { active: boolean }) {
         ctx.fillText(pop.text, (W - ctx.measureText(pop.text).width) / 2, H * 0.4 - (reduced ? 0 : age * 26));
         ctx.globalAlpha = 1;
       }
-      // RISK DESK (T6): red edges from 55% down toward the 40% margin call
+      // RISK DESK: red edges from 55% down toward the 40% margin call
       const risk = riskRef.current;
       if (risk) {
         const frac = eq / run.startEq;
@@ -365,7 +369,7 @@ function PitInner({ active }: { active: boolean }) {
         if (end) return finish(end === "margin");
       }
       draw();
-      if (run.i % 6 === 0) force((v) => v + 1); // chip strip + floor refresh
+      if (run.i % 4 === 0) force((v) => v + 1); // strip/cards/meter refresh
     };
     raf = requestAnimationFrame(loop);
     return () => { alive = false; cancelAnimationFrame(raf); ro.disconnect(); };
@@ -374,7 +378,7 @@ function PitInner({ active }: { active: boolean }) {
 
   useEffect(() => { focusRef.current = focus; }, [focus]);
 
-  // DAY REPLAY (T6): the whole day's tape with the player's marks, static
+  // DAY REPLAY: the whole day's tape + the player's marks + event ticks
   useEffect(() => {
     if (phase !== "complete" && phase !== "gameover") return;
     const run = runRef.current;
@@ -388,6 +392,12 @@ function PitInner({ active }: { active: boolean }) {
     ctx.fillStyle = "#04070a"; ctx.fillRect(0, 0, W, H);
     const N = run.N;
     const X = (t: number) => 4 + (t / (N - 1)) * (W - 8);
+    // event moments — amber ticks across the strip
+    for (const ev of run.events) {
+      ctx.strokeStyle = ev.misleading ? "rgba(224,138,122,0.55)" : "rgba(255,210,122,0.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X(ev.at), 2); ctx.lineTo(X(ev.at), H - 2); ctx.stroke();
+    }
     for (let s = 0; s < run.stocks.length; s++) {
       const p = run.stocks[s].prices;
       let lo = Infinity, hi = -Infinity;
@@ -431,6 +441,11 @@ function PitInner({ active }: { active: boolean }) {
   const weekFrac = nextLevel && nextLevel.xp > levelDef.xp
     ? Math.max(0, Math.min(1, (xp - levelDef.xp) / (nextLevel.xp - levelDef.xp)))
     : 1;
+  const pending = phase === "live" && run ? run.pendingReaction() : null;
+  const activeCards = phase === "live" && run ? run.activeEvents().slice(-2) : [];
+  const riskNow = phase === "live" && run ? run.risk() : null;
+  const focusPos = phase === "live" && run ? run.positions[Math.min(focus, run.positions.length - 1)] : null;
+  const unlocked = result && week > weekStartRef.current ? WEEK_PERKS[week] : null;
 
   return (
     <div className="pit2">
@@ -444,25 +459,86 @@ function PitInner({ active }: { active: boolean }) {
             {run.stocks.map((st, s) => {
               const pos = run.positions[s];
               const chg = (st.prices[Math.min(run.i, st.prices.length - 1)] / st.prices[0] - 1) * 100;
-              const clue = run.clue?.stock === s;
+              const clue = run.clue?.stocks.includes(s) ?? false;
               return (
                 <button key={st.ticker} type="button"
                   className={`pit3-chip${focus === s ? " on" : ""}${clue ? " clue" : ""}${pos ? (pos.dir === 1 ? " lng" : " sht") : ""}`}
                   onClick={() => setFocus(s)}>
                   <span>{st.ticker}</span>
-                  <span className={chg >= 0 ? "up" : "down"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>
+                  <span className={chg >= 0.15 ? "up" : chg <= -0.15 ? "down" : ""}>
+                    {chg >= 0 ? "+" : ""}{chg.toFixed(1)}% {chg >= 0.15 ? "↑" : chg <= -0.15 ? "↓" : "→"}
+                  </span>
                   {pos ? <span className="tag">{pos.dir === 1 ? "LONG" : "SHORT"}</span> : null}
                 </button>
               );
             })}
           </div>
+
+          <div className="pit4-events">
+          {activeCards.map((ev) => {
+            const s0 = ev.stocks[0];
+            const move = (run.px(s0) / run.px(s0, ev.at) - 1) * 100;
+            const oppLeft = ev.kind === "opportunity" ? Math.max(0, Math.ceil((ev.at + ev.windowTicks - run.i) / run.def.tps)) : 0;
+            const isMine = pending?.eventId === ev.id;
+            return (
+              <div key={ev.id} className={`pit4-event${ev.kind === "opportunity" ? " opp" : ""}`} role="status">
+                <p className="pit4-eyebrow">{ev.eyebrow}{ev.kind === "opportunity" ? ` · WINDOW ${oppLeft}s` : ""}</p>
+                <p className="pit4-head">
+                  <b>{ev.stocks.map((s) => run.stocks[s].ticker).join(" · ")}</b>
+                  {" "}{ev.label} · <span className="simchip">SIM</span>
+                </p>
+                <p className={`pit4-print ${move >= 0 ? "up" : "down"}`}>
+                  {run.stocks[s0].ticker} {move >= 0 ? "+" : ""}{move.toFixed(1)}%
+                </p>
+                {ev.kind === "opportunity" ? (
+                  <button type="button" className="pit4-act trade" onClick={() => setFocus(s0)}>VIEW →</button>
+                ) : isMine ? (
+                  <div className="pit4-react">
+                    <button type="button" className="pit4-act" onClick={() => run.react("hold")}>HOLD</button>
+                    <button type="button" className="pit4-act exit" onClick={() => run.react("exit")}>EXIT</button>
+                    {def.sizing ? <button type="button" className="pit4-act add" onClick={() => run.react("add")}>ADD</button> : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          </div>
+
           <canvas ref={canvasRef} className="pit2-canvas" />
           <div ref={riskRef} className="pit3-risk" aria-hidden="true"><span>RISK DESK CALLING…</span></div>
-          <p className={`pit3-floor${floor ? " on" : ""}`} aria-live="polite">{floor ? `AUG ▸ ${floor}` : " "}</p>
+
+          <div className="pit4-meta">
+            {focusPos ? (
+              <span className="pit4-pos">
+                {focusPos.dir === 1 ? "LONG" : "SHORT"} {run.stocks[focus]?.ticker}
+                {" "}· {Math.round(focusPos.sizeFrac * 100)}%
+                {" "}· in {focusPos.entry.toFixed(2)}
+                {" "}· now {run.px(focus).toFixed(2)}
+                {" "}· <b className={run.px(focus) * focusPos.dir >= focusPos.entry * focusPos.dir ? "up" : "down"}>
+                  {(() => { const d = focusPos.qty * (focusPos.dir === 1 ? run.px(focus) - focusPos.entry : focusPos.entry - run.px(focus)); return `${d >= 0 ? "+" : "−"}$${Math.abs(d).toFixed(0)}`; })()}
+                </b>
+              </span>
+            ) : <span className="pit4-pos dim">no position — pick a lane</span>}
+            {riskNow ? (
+              <span className={`pit4-risk r-${riskNow.level.toLowerCase()}`}>
+                RISK {"█".repeat(Math.max(1, Math.round(riskNow.frac * 10)))}{"░".repeat(10 - Math.max(1, Math.round(riskNow.frac * 10)))} {riskNow.level}
+              </span>
+            ) : null}
+          </div>
+
+          <p className={`pit3-floor${floor ? " on" : ""}`} aria-live="polite">{floor ? `AUG ▸ ${floor}` : " "}</p>
+
           <div className="pit2-ctl">
-            <button type="button" className="pit2-btn buy" onClick={() => run.act(focus, 1)}>LONG</button>
+            {def.sizing ? (
+              <div className="pit4-size" role="group" aria-label="Position size">
+                {SIZES.map((z) => (
+                  <button key={z} type="button" className={sizePct === z ? "on" : ""} onClick={() => setSizePct(z)}>{z}</button>
+                ))}
+              </div>
+            ) : null}
+            <button type="button" className="pit2-btn buy" onClick={() => run.act(focus, 1, sizePct / 100)}>LONG</button>
             {run.def.shorts ? (
-              <button type="button" className="pit2-btn sellb" onClick={() => run.act(focus, -1)}>SHORT</button>
+              <button type="button" className="pit2-btn sellb" onClick={() => run.act(focus, -1, sizePct / 100)}>SHORT</button>
             ) : null}
             <button type="button" className="pit2-btn" onClick={() => run.act(focus, 0)}>FLATTEN</button>
           </div>
@@ -473,11 +549,18 @@ function PitInner({ active }: { active: boolean }) {
             <div className="pit2-hero">
               <p className="pit3-eyebrow">DAY {def.n} OF {LADDER.length} · WEEK {week}</p>
               <h2>{def.name}</h2>
-              <p className="pit3-mission">MISSION: {def.mission}</p>
+              <p className="pit4-board">{briefTickers.join(" · ")}</p>
+              <div className="pit4-brief">
+                <span>VOLATILITY<b>{VOL_LABEL(def.vol)}</b></span>
+                <span>BIAS<b>{def.bias}</b></span>
+                <span>CATALYSTS<b>{def.news}{def.opps ? ` +${def.opps} WINDOW` : ""}</b></span>
+                <span>TIME<b>{def.secs}s</b></span>
+              </div>
+              <p className="pit3-mission">MISSION: {mission}</p>
               <p className="pit3-weather">{def.weather}</p>
               <p>
-                ${careerEq.toFixed(0)} · {def.stocks} stocks · {def.secs}s · {def.shorts ? "LONG + SHORT" : "LONG ONLY"} ·
-                {" "}{def.positions} position{def.positions > 1 ? "s" : ""} · margin call at {MARGIN_FRAC * 100}%
+                ${careerEq.toFixed(0)} · {def.stocks} stocks · {def.shorts ? "LONG + SHORT" : "LONG ONLY"} ·
+                {" "}{def.positions} position{def.positions > 1 ? "s" : ""}{def.sizing ? " · sized orders" : ""} · margin call at {MARGIN_FRAC * 100}%
               </p>
               <button type="button" className="pit2-btn pit2-run" onClick={openMarket}>
                 OPEN THE MARKET
@@ -493,9 +576,20 @@ function PitInner({ active }: { active: boolean }) {
                 {result.roundPct.toFixed(1)}% · SPY {result.spyPct >= 0 ? "+" : ""}{result.spyPct.toFixed(1)}%
                 {" "}· {result.roundPct > result.spyPct ? "OUTPERFORMED MARKET" : "UNDERPERFORMED"}
               </p>
-              <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay with your entries and exits" />
+              <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay: tape, your trades, event moments" />
+              <div className="pit4-card">
+                <span>TRADES<b>{result.trades}</b></span>
+                <span>WIN RATE<b>{result.trades ? `${result.winRate}%` : "—"}</b></span>
+                <span>MAX DD<b>-{result.maxDD.toFixed(1)}%</b></span>
+                <span>RISK<b>{result.riskGrade}</b></span>
+                <span>REACTION<b>{result.reactionGrade}</b></span>
+              </div>
               <p className="pit2-stats">SCORE {result.score.toLocaleString()} — {result.parts.map(([k, v]) => `${k} ${v >= 0 ? "+" : ""}${v}`).join(" · ")}</p>
+              {result.bonus.length ? (
+                <p className="pit2-stats bonus">{result.bonus.map(([k, v]) => `${k} +${v} XP`).join(" · ")}</p>
+              ) : null}
               <p className="pit2-stats">+{result.xp} XP · WEEK {week} — {levelDef.name}</p>
+              {unlocked ? <p className="pit4-unlock">UNLOCKED · WEEK {week}: {unlocked}</p> : null}
               <p className="pit2-stats aug">AUG ▸ {result.missionHit ? "the floor tips its hat." : result.roundPct >= 0 ? "green, but the mission board doesn't care." : "the market thanks you for the liquidity."}</p>
               {result.n < LADDER.length ? (
                 <button type="button" className="pit2-btn pit2-run" onClick={() => { setRoundIx(result.n); setPhase("brief"); }}>
@@ -516,14 +610,14 @@ function PitInner({ active }: { active: boolean }) {
             <div className="pit2-verdict">
               <h2>💀 MARGIN CALLED</h2>
               <p className="pit2-endpct down">DAY {result.n} · ${result.endEq.toFixed(0)}</p>
-              <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay with your entries and exits" />
+              <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay: tape, your trades, event moments" />
               <p className="pit2-notreal">The margin desk kept your imaginary furniture. The week ends here.</p>
               <button type="button" className="pit2-btn pit2-run" onClick={startCareer}>RUN IT BACK</button>
             </div>
           ) : (
             <div className="pit2-hero">
               <h2>THE PIT — CAREER</h2>
-              <p>Five days clear the week. Missions, catalysts, margin calls — everyone trades the same seed today.</p>
+              <p>Five days clear the week. Headlines move the tape — some of them lie. Everyone trades the same seed today.</p>
               <div className="pit3-week">
                 <p className="pit3-eyebrow">WEEK {week} — {levelDef.name}{WEEK_PERKS[week] ? ` · ${WEEK_PERKS[week]}` : ""}</p>
                 <div className="pit3-weekbar"><span style={{ width: `${Math.round(weekFrac * 100)}%` }} /></div>
