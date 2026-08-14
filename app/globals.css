@@ -7490,7 +7490,9 @@ html.sheet-open .view-panel {
 .pit2-stats.aug { color: var(--steel); font-style: italic; }
 
 .pit3-tune {
-  position: fixed; right: 12px; top: 64px; z-index: 70; width: 240px; padding: 12px;
+  /* left edge: the trade-ideas rail owns the right and out-stacks the pit
+     panel's context — nothing overlaps here */
+  position: fixed; left: 12px; top: 110px; z-index: 70; width: 240px; padding: 12px;
   background: #07090b; border: 1px solid var(--amber); font-family: var(--font-mono);
   display: flex; flex-direction: column; gap: 8px;
 }
@@ -7499,4 +7501,4 @@ html.sheet-open .view-panel {
 .pit3-tune label b { text-align: right; color: var(--fg); }
 .pit3-tune button { font-family: inherit; font-size: 10px; letter-spacing: 0.16em; padding: 6px; background: none; border: 1px solid var(--amber); color: var(--amber); cursor: pointer; }
 .pit3-tune code { font-size: 9px; color: var(--steel); word-break: break-all; }
-@media (max-width: 700px) { .pit3-tune { top: auto; bottom: calc(var(--tabbar-h, 54px) + 60px); right: 8px; width: 200px; } }
+@media (max-width: 700px) { .pit3-tune { top: auto; bottom: calc(var(--tabbar-h, 54px) + 60px); left: 8px; width: 200px; } }
