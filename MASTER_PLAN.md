@@ -346,33 +346,33 @@ No market-wide breadth, screener tables, insider tables, or economic calendar (l
 > Same gate, still blocked. Movement and pacing are wrong; progression gets reskinned. Branch: feature/game-2 in place.
 
 ## T1 — TAPE ENGINE v2 (the core fix)
-- [ ] Regime-based generator (drift + noise + mean-reversion + impulse segments) replacing the monotonic random walk.
-- [ ] HARD constraints: max consecutive same-direction ticks; every impulse followed by a 30–60% partial retrace.
-- [ ] Minimum direction changes per day; every stock gets ≥1 meaningful drawdown AND ≥1 meaningful rally regardless of bias.
-- [ ] Per-stock drift caps — no guaranteed hold-to-win.
-- [ ] CRASH DAY: downward regime punctuated by violent bear-market rallies — the bounces are the trap.
-- [ ] Fakeouts first-class: breaks that reverse, dips that keep dipping.
-- [ ] Daily seeding stays deterministic.
+- [x] Regime-based generator (drift + noise + mean-reversion + impulse segments) replacing the monotonic random walk.
+- [x] HARD constraints: max consecutive same-direction ticks; every impulse followed by a 30–60% partial retrace.
+- [x] Minimum direction changes per day; every stock gets ≥1 meaningful drawdown AND ≥1 meaningful rally regardless of bias.
+- [x] Per-stock drift caps — no guaranteed hold-to-win.
+- [x] CRASH DAY: downward regime punctuated by violent bear-market rallies — the bounces are the trap.
+- [x] Fakeouts first-class: breaks that reverse, dips that keep dipping.
+- [x] Daily seeding stays deterministic.
 
 ## T2 — PACING PASS
-- [ ] Speed is per-day config (Opening Bell calm → Boss fast); dips/spikes humanly reactable (~300–500ms windows minimum).
+- [x] Speed is per-day config (Opening Bell calm → Boss fast); dips/spikes humanly reactable (~300–500ms windows minimum).
 
 ## T3 — OWNER TUNING OVERLAY
-- [ ] ?tune=1 (dev/localhost or admin-token tab only): live sliders — tick rate, volatility, drift strength, retrace frequency, event intensity — applied to the running tape in real time; current values copyable. Found values ship as day configs.
+- [x] ?tune=1 (dev/localhost or admin-token tab only): live sliders — tick rate, volatility, drift strength, retrace frequency, event intensity — applied to the running tape in real time; current values copyable. Found values ship as day configs.
 
 ## T4 — PROGRESSION RESKIN: LEVELS → CALENDAR
-- [ ] Rounds → DAYS ("DAY 1 — OPENING BELL" … day 5 = "FRIDAY — OPEX"); five days clear the WEEK.
-- [ ] Tiers → WEEKS with real unlocks + old trader titles as subtitles; all copy: briefs, "DAY n COMPLETE", WEEK bar with XP under it.
+- [x] Rounds → DAYS ("DAY 1 — OPENING BELL" … day 5 = "FRIDAY — OPEX"); five days clear the WEEK.
+- [x] Tiers → WEEKS with real unlocks + old trader titles as subtitles; all copy: briefs, "DAY n COMPLETE", WEEK bar with XP under it.
 
 ## T5 — TAPE FAIRNESS AUTO-CHECK
-- [ ] In the test suite: blind buy-and-hold and blind short-and-hold across 100 seeded days must fail every day's mission; a blind win fails the build. Bell settlement no longer counts as trading (no mission flags / trades / wins from forced liquidation).
+- [x] In the test suite: blind buy-and-hold and blind short-and-hold across 100 seeded days must fail every day's mission; a blind win fails the build. Bell settlement no longer counts as trading (no mission flags / trades / wins from forced liquidation).
 
 ## T6 — QUIRKS (juice only)
-- [ ] AUGUST ON THE FLOOR: dry one-liners on play events + day-complete roast/praise, per-event cooldowns.
-- [ ] STAMPS: PAPER HANDS / DIAMOND HANDS full-screen moments, reduced-motion safe.
-- [ ] DAY REPLAY: compact full-day tape strip on DAY COMPLETE with entries/exits marked.
-- [ ] MARKET WEATHER: one truthful telegraph line per day brief wired to the actual regime.
-- [ ] RISK DESK: sub-55% red edge pulse intensifying toward the 40% margin call + "RISK DESK CALLING…"; reduced-motion static tint.
+- [x] AUGUST ON THE FLOOR: dry one-liners on play events + day-complete roast/praise, per-event cooldowns.
+- [x] STAMPS: PAPER HANDS / DIAMOND HANDS full-screen moments, reduced-motion safe.
+- [x] DAY REPLAY: compact full-day tape strip on DAY COMPLETE with entries/exits marked.
+- [x] MARKET WEATHER: one truthful telegraph line per day brief wired to the actual regime.
+- [x] RISK DESK: sub-55% red edge pulse intensifying toward the 40% margin call + "RISK DESK CALLING…"; reduced-motion static tint.
 
 ## T7 — V2 SHELF (recorded, not built)
 Rival ghost (August trades the same tape beside you — future flagship) · achievements/titles · share cards from the day replay.
