@@ -392,27 +392,27 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 > "Make the PIT actually fun": trading simulator + strategy game + reaction game. Same terminal aesthetic — never arcade. Branch: feature/game-4 off main. BUILD ORDER: engine primitives first, everything else is content/config on top. Loop: BRIEFING → POSITION → MARKET MOVES → EVENT → REACTION → RISK → EXIT → RESULT → REWARD → NEXT DAY.
 
 ## G4-E — ENGINE PRIMITIVES (#17 first; data-driven, reusable)
-- [ ] EVENT system replacing bare catalysts: news / opportunity kinds; stock / sector / market scope; clued or breaking; headline direction vs ACTUAL impulse — ~1/4 misleading (#10 — news ≠ guaranteed direction); impulses baked into the deterministic tape (tape v2 physics + retraces stay the baseline; events perturb, never replace).
-- [ ] ORDER/POSITION v2: position sizing 25/50/75/100% of available cash (week-gated), ADD tranches with blended entry, per-position P&L.
-- [ ] REACTION system: events touching a held stock open a HOLD / EXIT / ADD decision window; correctness judged post-hoc against the next ~8s — feeds the REACTION grade.
-- [ ] RISK meter: exposure × category vol × day regime → LOW/MED/HIGH/EXTREME; feeds the RISK grade.
-- [ ] MISSION registry (data-driven evaluators): outperform, momentum, shortAttack, survivor, lowrisk, breakout (take the opportunity window), contrarian (profit against a headline), newsTrader (3 correct reactions), volatility, allOrNothing (bank +15% realized before equity −5%). W2+ rotates alternates into the calendar.
-- [ ] STREAK + bonus XP: 3-trade / 5-trade streaks, PERFECT DAY, MARKET BEATEN — folded into posted XP (clamps unchanged).
-- [ ] SCORECARD data: trades, win rate, max DD, RISK grade, REACTION grade, bonus lines, week-unlock detection.
+- [x] EVENT system replacing bare catalysts: news / opportunity kinds; stock / sector / market scope; clued or breaking; headline direction vs ACTUAL impulse — ~1/4 misleading (#10 — news ≠ guaranteed direction); impulses baked into the deterministic tape (tape v2 physics + retraces stay the baseline; events perturb, never replace).
+- [x] ORDER/POSITION v2: position sizing 25/50/75/100% of available cash (week-gated), ADD tranches with blended entry, per-position P&L.
+- [x] REACTION system: events touching a held stock open a HOLD / EXIT / ADD decision window; correctness judged post-hoc against the next ~8s — feeds the REACTION grade.
+- [x] RISK meter: exposure × category vol × day regime → LOW/MED/HIGH/EXTREME; feeds the RISK grade.
+- [x] MISSION registry (data-driven evaluators): outperform, momentum, shortAttack, survivor, lowrisk, breakout (take the opportunity window), contrarian (profit against a headline), newsTrader (3 correct reactions), volatility, allOrNothing (bank +15% realized before equity −5%). W2+ rotates alternates into the calendar.
+- [x] STREAK + bonus XP: 3-trade / 5-trade streaks, PERFECT DAY, MARKET BEATEN — folded into posted XP (clamps unchanged).
+- [x] SCORECARD data: trades, win rate, max DD, RISK grade, REACTION grade, bonus lines, week-unlock detection.
 
 ## G4-C — CONTENT + SURFACE (ships on the engine)
-- [ ] Round briefing v2: ticker board, VOLATILITY/BIAS/CATALYST/TIME block, mission — fast, no tutorials (#1).
-- [ ] Event cards: BREAKING / ALERT / OPPORTUNITY with SIM chip, price print, auto-dismiss; reaction buttons inline when a held stock is touched (#2/#3).
-- [ ] Opportunity windows with countdown + TRADE jump (#9).
-- [ ] Size selector + position readout (side/size/entry/current/P&L) (#4), living P&L with delta flashes (#5), risk meter blocks (#6).
-- [ ] Market board arrows ↑↓→ on the strip; 5–6 stocks on the heavy days (#8).
-- [ ] Scorecard v2 + UNLOCKED moment; DAY REPLAY marks event ticks (#12, carry-over).
-- [ ] Progression: unlocks stay WEEKS on the calendar — W2 POSITION SIZING, W3 SECOND BOOK + universe, W4 HEAVY NEWS TAPE, W5 OPERATOR (options next build). No "LEVEL" copy (#13 reconciled).
-- [ ] Visual law unchanged; every element must force a decision — no fake complexity (#15/#16).
+- [x] Round briefing v2: ticker board, VOLATILITY/BIAS/CATALYST/TIME block, mission — fast, no tutorials (#1).
+- [x] Event cards: BREAKING / ALERT / OPPORTUNITY with SIM chip, price print, auto-dismiss; reaction buttons inline when a held stock is touched (#2/#3).
+- [x] Opportunity windows with countdown + TRADE jump (#9).
+- [x] Size selector + position readout (side/size/entry/current/P&L) (#4), living P&L with delta flashes (#5), risk meter blocks (#6).
+- [x] Market board arrows ↑↓→ on the strip; 5–6 stocks on the heavy days (#8).
+- [x] Scorecard v2 + UNLOCKED moment; DAY REPLAY marks event ticks (#12, carry-over).
+- [x] Progression: unlocks stay WEEKS on the calendar — W2 POSITION SIZING, W3 SECOND BOOK + universe, W4 HEAVY NEWS TAPE, W5 OPERATOR (options next build). No "LEVEL" copy (#13 reconciled).
+- [x] Visual law unchanged; every element must force a decision — no fake complexity (#15/#16).
 
 ## G4-V — VERIFICATION (extends the suite)
-- [ ] Programmatic full-day: brief → position → event fires → HOLD/EXIT/ADD exercised → bell → scorecard fields → next day.
-- [ ] Fairness ×3 across 100 seeded days: blind long-hold, blind short-hold, AND blind event-direction-chaser each fail materially (misleading events + post-impulse retraces are the guarantee).
+- [x] Programmatic full-day: brief → position → event fires → HOLD/EXIT/ADD exercised → bell → scorecard fields → next day.
+- [x] Fairness ×3 across 100 seeded days: blind long-hold, blind short-hold, AND blind event-direction-chaser each fail materially (misleading events + post-impulse retraces are the guarantee).
 - [ ] Console-clean click-through, desktop + phone, before the gate.
 
 ## SHELVED (recorded, not built): options desk (W5 unlock, next build) · hedging mechanics · rival ghost · achievements · share cards.
