@@ -391,10 +391,10 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 > The ADMIN-1 MORNING CONTROL ROOM spec re-arrived 2026-08-15; verified against source: A (layout+strip), B (book manager incl. STALE/demote/re-arm/delete), C (draft review v2 incl. UPDATE-to, APPROVE/REJECT ALL, side suggestion, entry-less→tape), D (drag-drop .txt, char count, auto-title, expandable ingest log), E (tape undo + sentiment quick-add) — ALL already live on main since 0208fa5 (gate AD-G1 approved). The one missing item is B-MERGE. Branch: feature/admin-1 recreated off main. NOTE: the spec's "after feature/game-5 merges" precondition is NOT executed — GAME-5 lives on feature/game-4, holding at G5-G1 for the behavioral report; merging a held gate needs the explicit word.
 
-- [ ] B-MERGE model: pure merge semantics (same-ticker guard, keeper's levels/status kept, both theses folded into history oldest-first, capped) + store op (absorbed idea deleted blob+index) + tests.
-- [ ] B-MERGE API: POST /api/admin/ideas/merge {keepId, absorbId} behind the dual admin gate.
-- [ ] B-MERGE UI: book-manager flow — MERGE on the keeper → same-ticker twins offer ABSORB → confirm; kills existing twins.
-- [ ] Evidence for the gate: desktop two-column, phone view, an "UPDATE to <ticker>" draft, a STALE row, a completed MERGE.
+- [x] B-MERGE model: pure merge semantics (same-ticker guard, keeper's levels/status kept, both theses folded into history oldest-first, capped) + store op (absorbed idea deleted blob+index) + tests.
+- [x] B-MERGE API: POST /api/admin/ideas/merge {keepId, absorbId} behind the dual admin gate.
+- [x] B-MERGE UI: book-manager flow — MERGE on the keeper → same-ticker twins offer ABSORB → confirm; kills existing twins.
+- [x] Evidence for the gate: desktop two-column, phone view, an "UPDATE to <ticker>" draft, a STALE row, a completed MERGE.
 
 ### GATE AD2-G1 — preview + the five screenshots. Approve → merge → AUTH-1 next. HOLD.
 - [ ] AD2-G1 approved.
