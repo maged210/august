@@ -20,6 +20,8 @@ import {
   ideasConfigured,
   listIdeas,
   listLiveIdeas,
+  mergeIdeaRecords,
+  mergeIdeas,
   relativeTime,
   suggestSide,
   toPublicIdea,
@@ -279,6 +281,53 @@ test("patch: invalid member values reject rather than drop", () => {
   assert.equal(validateIdeaPatch({ instrument: "" }).ok, false);
 });
 
+// --- ADMIN-1 delta: MERGE semantics (pure) ----------------------------------
+
+function mkIdea(over: Partial<Idea>): Idea {
+  return {
+    id: "idea_keep01", instrument: "NVDA", thesis: "keeper thesis",
+    entry: "180", target: "200", riskLevel: "medium", status: "live",
+    source: "manual", createdAt: 1000, updatedAt: 2000, ...over,
+  };
+}
+
+test("merge: keeper keeps its levels/status; twin's thesis folds into history", () => {
+  const keep = mkIdea({ thesisHistory: ["oldest keeper thesis"] });
+  const absorb = mkIdea({
+    id: "idea_twin01", entry: "178", target: "210", thesis: "twin thesis",
+    thesisHistory: ["twin history"], status: "draft",
+  });
+  const merged = mergeIdeaRecords(keep, absorb, 5000);
+  assert.notEqual(merged, "mismatch");
+  const m = merged as Idea;
+  assert.equal(m.id, "idea_keep01");
+  assert.equal(m.entry, "180"); // the keeper's levels stand
+  assert.equal(m.target, "200");
+  assert.equal(m.status, "live");
+  assert.equal(m.thesis, "keeper thesis");
+  assert.deepEqual(m.thesisHistory, ["oldest keeper thesis", "twin history", "twin thesis"]);
+  assert.equal(m.updatedAt, 5000);
+});
+
+test("merge: different tickers refuse; self-merge refuses; case-insensitive match", () => {
+  const keep = mkIdea({});
+  assert.equal(mergeIdeaRecords(keep, mkIdea({ id: "idea_x", instrument: "TSLA" })), "mismatch");
+  assert.equal(mergeIdeaRecords(keep, keep), "mismatch");
+  const ok = mergeIdeaRecords(keep, mkIdea({ id: "idea_y", instrument: " nvda " }));
+  assert.notEqual(ok, "mismatch");
+});
+
+test("merge: history is capped and never duplicates the keeper's live thesis", () => {
+  const keep = mkIdea({ thesisHistory: Array.from({ length: 9 }, (_, i) => `k${i}`) });
+  const absorb = mkIdea({
+    id: "idea_twin02", thesis: "keeper thesis", // twin somehow carries the same text
+    thesisHistory: ["t0", "t1"],
+  });
+  const m = mergeIdeaRecords(keep, absorb, 1) as Idea;
+  assert.ok(m.thesisHistory!.length <= 10);
+  assert.ok(!m.thesisHistory!.includes("keeper thesis")); // live thesis never in history
+});
+
 // --- unconfigured store: everything no-ops, nothing throws ------------------
 
 test("store: unconfigured Redis serves empty/null and refuses writes", async () => {
@@ -299,4 +348,5 @@ test("store: unconfigured Redis serves empty/null and refuses writes", async () 
     null,
   );
   assert.equal(await updateIdea("idea_abc123", { status: "live" }), null);
+  assert.equal(await mergeIdeas("idea_a", "idea_b"), null);
 });

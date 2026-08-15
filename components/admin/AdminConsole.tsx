@@ -130,6 +130,8 @@ export default function AdminConsole() {
   const [trackedCount, setTrackedCount] = useState<number | null>(null);
   // AD-B — STALE threshold (days), persisted locally
   const [staleDays, setStaleDays] = useState(STALE_DAYS_DEFAULT);
+  // ADMIN-1 delta — the idea currently held as the MERGE keeper
+  const [mergeKeep, setMergeKeep] = useState<Idea | null>(null);
 
   useEffect(() => {
     try {
@@ -429,6 +431,29 @@ export default function AdminConsole() {
       await load();
     } catch (e) {
       setActionError(`Delete failed: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // ADMIN-1 delta — MERGE: pick a keeper, absorb a same-ticker twin into it.
+  const doMerge = async (keep: Idea, absorb: Idea) => {
+    setBusyId(absorb.id);
+    setActionError("");
+    try {
+      const res = await fetch("/api/admin/ideas/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ keepId: keep.id, absorbId: absorb.id }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? String(res.status));
+      }
+      setMergeKeep(null);
+      await load();
+    } catch (e) {
+      setActionError(`Merge failed: ${(e as Error).message}`);
     } finally {
       setBusyId(null);
     }
@@ -1078,6 +1103,13 @@ export default function AdminConsole() {
                   <span>D</span>
                 </span>
               </div>
+              {mergeKeep ? (
+                <p className="adm-merge-banner" role="status">
+                  MERGE — keeping <b>{mergeKeep.instrument}</b> ({mergeKeep.entry} → {mergeKeep.target}).
+                  {" "}Hit ABSORB on the twin; its thesis folds into history.
+                  <button type="button" className="adm-btn" onClick={() => setMergeKeep(null)}>CANCEL</button>
+                </p>
+              ) : null}
               {bookSorted.length ? (
                 <div className="adm-book">
                   {bookSorted.map((i) => (
@@ -1086,9 +1118,17 @@ export default function AdminConsole() {
                       idea={i}
                       stale={isStale(i)}
                       busy={busyId === i.id}
+                      mergeState={
+                        !mergeKeep ? "idle"
+                        : mergeKeep.id === i.id ? "keeper"
+                        : mergeKeep.instrument.trim().toUpperCase() === i.instrument.trim().toUpperCase() ? "twin"
+                        : "other"
+                      }
                       onPatch={(patch) => mutate(i.id, patch)}
                       onDemote={() => demoteToTape(i)}
                       onDelete={() => removeIdea(i)}
+                      onMergeStart={() => setMergeKeep(i)}
+                      onMergeAbsorb={() => mergeKeep && doMerge(mergeKeep, i)}
                     />
                   ))}
                 </div>
@@ -1308,16 +1348,23 @@ function BookRow({
   idea,
   stale,
   busy,
+  mergeState,
   onPatch,
   onDemote,
   onDelete,
+  onMergeStart,
+  onMergeAbsorb,
 }: {
   idea: Idea;
   stale: boolean;
   busy: boolean;
+  /** ADMIN-1 delta — MERGE flow role: idle | keeper | twin (absorbable) | other */
+  mergeState: "idle" | "keeper" | "twin" | "other";
   onPatch: (patch: Record<string, unknown>) => void;
   onDemote: () => void;
   onDelete: () => void;
+  onMergeStart: () => void;
+  onMergeAbsorb: () => void;
 }) {
   return (
     <div
@@ -1393,6 +1440,21 @@ function BookRow({
         <button type="button" className="adm-btn" disabled={busy} title="thesis → tape note, idea leaves the book" onClick={onDemote}>
           DEMOTE → TAPE
         </button>
+        {mergeState === "idle" ? (
+          <button type="button" className="adm-btn" disabled={busy}
+            title="keep THIS idea's levels; pick a same-ticker twin to fold into it"
+            onClick={onMergeStart}>
+            MERGE…
+          </button>
+        ) : mergeState === "twin" ? (
+          <button type="button" className="adm-btn adm-btn-acc" disabled={busy}
+            title="fold this twin into the keeper — its thesis joins the history, the twin is deleted"
+            onClick={onMergeAbsorb}>
+            ABSORB → KEEPER
+          </button>
+        ) : mergeState === "keeper" ? (
+          <span className="adm-merge-keep">KEEPER</span>
+        ) : null}
         <button type="button" className="adm-btn adm-btn-danger" disabled={busy} onClick={onDelete}>
           DELETE
         </button>

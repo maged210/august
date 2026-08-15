@@ -7111,6 +7111,31 @@ button.pulse-line:focus-visible {
   border: 1px solid rgb(var(--amber-rgb) / 0.55);
   background: rgb(var(--amber-rgb) / 0.12);
 }
+/* ADMIN-1 delta — MERGE flow */
+.adm-merge-banner {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  border: 1px dashed rgb(var(--amber-rgb) / 0.55);
+  padding: 6px 10px;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.adm-merge-banner b { letter-spacing: 0.1em; }
+.adm-merge-keep {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  padding: 2px 7px;
+  color: var(--green);
+  border: 1px solid rgb(var(--green-rgb) / 0.55);
+  align-self: center;
+}
 .adm-stale-ctl {
   display: flex;
   align-items: center;
