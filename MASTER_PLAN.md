@@ -463,7 +463,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] Evidence for the gate: desktop two-column, phone view, an "UPDATE to <ticker>" draft, a STALE row, a completed MERGE.
 
 ### GATE AD2-G1 — preview + the five screenshots. Approve → merge → AUTH-1 next. HOLD.
-- [ ] AD2-G1 approved.
+- [x] AD2-G1 approved 2026-08-15 — no other changes to A-E; merged.
 
 ---
 
