@@ -410,6 +410,43 @@ export async function deleteIdea(id: string): Promise<boolean> {
   }
 }
 
+// ADMIN-1 delta — MERGE: two ideas on the same ticker fold into one.
+
+/** PURE. Merge semantics: the KEEPER keeps its levels/side/status/thesis; the
+ *  absorbed idea's thesis (and history) folds into the keeper's history,
+ *  oldest first, capped. Different tickers refuse ("mismatch"); merging an
+ *  idea into itself refuses too. */
+export function mergeIdeaRecords(keep: Idea, absorb: Idea, now: number = Date.now()): Idea | "mismatch" {
+  if (keep.id === absorb.id) return "mismatch";
+  if (keep.instrument.trim().toUpperCase() !== absorb.instrument.trim().toUpperCase()) return "mismatch";
+  const history = [
+    ...(keep.thesisHistory ?? []),
+    ...(absorb.thesisHistory ?? []),
+    absorb.thesis,
+  ].filter((t) => t && t !== keep.thesis).slice(-MAX_THESIS_HISTORY);
+  return { ...keep, thesisHistory: history, updatedAt: now };
+}
+
+/** MERGE store op: keeper updated, absorbed idea deleted (blob + index).
+ *  Returns the merged keeper, "mismatch" on a ticker clash, null on a store
+ *  failure or a missing id. */
+export async function mergeIdeas(keepId: string, absorbId: string): Promise<Idea | "mismatch" | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  const [keep, absorb] = await Promise.all([getIdea(keepId), getIdea(absorbId)]);
+  if (!keep || !absorb) return null;
+  const merged = mergeIdeaRecords(keep, absorb);
+  if (merged === "mismatch") return "mismatch";
+  try {
+    await redis.set(K.idea(merged.id), JSON.stringify(merged));
+    await redis.del(K.idea(absorb.id));
+    await redis.zrem(K.index, absorb.id);
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
 // ADMIN-1 — the F6 entry-language rule as a SUGGESTION (pure, editable in the
 // UI): upward entry language → long, downward → short, nothing certain → null.
 const LONG_ENTRY_RE =
