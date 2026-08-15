@@ -418,7 +418,38 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 ## SHELVED (recorded, not built): options desk (W5 unlock, next build) · hedging mechanics · rival ghost · achievements · share cards.
 
 ### GATE G4-G1 — playable preview. Acceptance = the closing narrative for real: enter long, get news-whipped, hold through the reversal, take profit, scorecard, and want the next day unprompted. Report the day the reviewer stopped at. HOLD.
-- [ ] G4-G1 approved.
+- [ ] G4-G1 approved. *(superseded into G5-G1 — GAME-5 evolves feature/game-4 in place per the GAME-5 order)*
+
+---
+
+# GAME-5 — STRUCTURE: ENDINGS, THE MAP, THE DAILY (2026-08-15)
+
+> Composition ONLY — zero new trading mechanics; this round frames the GAME-4 engine. Branch: feature/game-4 evolved in place (unmerged). One gate.
+
+## S1 — THE RUN (mortality + finish lines)
+- [ ] Capital carries day to day — one continuous career from $10,000 across an 8-week season (40 days); week position drives unlocks/missions (the calendar IS the run).
+- [ ] Three first-class endings: BUSTED (daily-relative 40% margin call — no run is ever safe) · SEASON CLEARED (Week 8 Day 5) · THE FUND (touch $100,000 at any moment — instant victory, the desk hands you a book).
+- [ ] Ending screen ×3: PIT RATING letter grade with deterministic breakdown (run P&L, win rate, max drawdown, missions), full-run replay strip (equity curve + entries/exits/events), August send-off (roast/salute), RUN IT BACK dominant.
+
+## S2 — THE MAP
+- [ ] Season strip on the mode screen and between days: Weeks 1–8 with named waypoints, current position lit, next waypoint distance copy, all-time FURTHEST REACHED ghost mark; beating the ghost = "FURTHEST YET" moment.
+
+## S3 — DAILY PIT
+- [ ] One shared seeded day per ET calendar date — identical tape for every player, standalone $10K, GAME-4 mechanics; 3 attempts/day, best posts; countdown to the reset; its own TODAY board separate from career records.
+
+## S4 — RECORDS
+- [ ] Panel: BEST RUN $ · FURTHEST REACHED · BEST PIT RATING · BEST DAILY RANK · daily streak — persisted on the anonymous pid, claim-ready (unchanged pattern).
+
+## S5 — MODE SELECT
+- [ ] PIT tab lands on a fast chooser: CAREER (continue run — persisted across reloads — or start new; map + ghost) · DAILY PIT (attempts left, countdown, board) · RECORDS. One tap to playing.
+
+## VERIFICATION
+- [ ] Programmatic paths: BUSTED, WEEK-8 CLEAR, $100K FUND — endings + deterministic rating breakdowns (pure fns tested; screens click-through-verified).
+- [ ] Daily determinism (same date ⇒ identical tape), attempt cap 3 enforced, board takes best-of-three only.
+- [ ] Console-clean at desktop + phone widths.
+
+### GATE G5-G1 — playable preview. Bar: the reviewer's run ENDS one of the three ways and the ending screen produces an unprompted RUN IT BACK; separately, the Daily's countdown is judged for pull. Report both. HOLD.
+- [ ] G5-G1 approved.
 
 ---
 
