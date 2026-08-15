@@ -467,6 +467,32 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 ---
 
+# GAME-5 DELTA — S6 THE SHARE · S7 THE DESK TEASER · S8 RANDOMNESS POLICY (2026-08-15)
+
+> Composition-only additions to the shipped GAME-5. Branch: feature/game-5-delta off main. One gate, re-verifying the round with these included.
+
+## S8 — TAPE RANDOMNESS POLICY (foundation, first)
+- [ ] CAREER: fresh tapes every run — daySeed = mix(runId, week, day), runId entropy widened; nothing memorizable across runs or players.
+- [ ] DAILY + CHALLENGES: deterministic by design (one seed per date / per challenge link); identical across a player's 3 attempts on purpose.
+- [ ] Events inherit their tape's policy automatically (they derive from the same seed).
+- [ ] Smoke both directions: two career runs ⇒ DIFFERENT Day-1 tapes; two profiles on today's daily ⇒ IDENTICAL tapes.
+
+## S6 — THE SHARE (Wordle mechanics)
+- [ ] Pure share builder (lib/pit-share): "THE PIT #n / WxDy · result% · n trades · earned stamp · link" + win/loss glyph strip from the deliberate-trade log (ending glyph appended); content asserted in the suite.
+- [ ] COPY card on BUSTED / SEASON CLEARED / THE FUND / DAILY result (+ send-this-tape on career day results); native share sheet on mobile, clipboard on desktop; no images in v1.
+- [ ] CHALLENGE LINK: ?challenge=seed.week.day.pct deep link — recipient gets the SAME tape, sender's score rendered as THE BAR all run; works for dailies and any career day; anonymous, no accounts.
+- [ ] Challenge determinism verified: same link ⇒ identical tape; the bar renders.
+
+## S7 — THE DESK TEASER (losing is the ad)
+- [ ] One live desk-call card on every ending screen: ticker · entry chip · risk badge · age · SEE THE DESK →, pulled from the real live book (newest first).
+- [ ] Lock-ready: a visibility() check returning "open" today; AUTH-1 flips to the locked/blurred CTA with zero rework.
+- [ ] Placement: below the share card, above RUN IT BACK; never a modal.
+
+### GATE G5D-G1 — unchanged bar + one: COPY the card after a real ending and paste it somewhere real — if it doesn't read like something you'd drop in a trading Discord, that's the revision note. HOLD.
+- [ ] G5D-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
