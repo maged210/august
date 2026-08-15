@@ -383,7 +383,73 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 ### GATE GC-G1 — playable preview; bar: finish R1 → start R2 unprompted → finish the run. Report the quit round. HOLD.
 - [x] GC-G1 fix round 1 (2026-08-13) — **OPEN THE MARKET mounted nothing.** Confirmed root cause: NOT the /api/auth/session 501 (HomeLanding catches it; the PIT never touches auth). The live scene was gated on `gameRef.current`, which was only assigned inside the live effect, which bailed silently when the canvas (inside that same gate) wasn't mounted — a render/effect deadlock, first click dead forever. Fixes: (1) pure round engine extracted to lib/pit-engine.ts; the RoundRun is created SYNCHRONOUSLY in the OPEN THE MARKET click before the phase flips — the scene can never render against a missing game; (2) the live effect now THROWS on a missing canvas instead of returning, and PitBoundary (error boundary) renders a styled PIT ERROR — RELOAD state; silent dead buttons structurally impossible; (3) /api/auth/session unconfigured → 200 null (valid no-session), other auth endpoints 404 — no 5xx on production paths; (4) lib/sound.ts never creates an AudioContext before the first user gesture (navigator.userActivation guard) — kills the autoplay warning; (5) tests/pit-engine.test.ts: programmatic R1 end-to-end (brief → live → position → bell → scored complete → next brief) + margin/determinism/guard tests, suite 243 green; (6) console-clean R1 click-through verified headless at 1440×900 and 390×844 before redeploy.
-- [ ] GC-G1 approved.
+- [x] GC-G1 closed 2026-08-14 — owner reviewed the tuning round ("substantially better") and instructed GAME-4 branched off main with the tuning branch merged (GAME-4 addendum). Baseline day configs stay at the shipped 1× values; ?tune=1 overlay carries into GAME-4 for the owner's config pass.
+
+---
+
+# GAME-4 — THE PIT: EVENT-DRIVEN TRADING (2026-08-14)
+
+> "Make the PIT actually fun": trading simulator + strategy game + reaction game. Same terminal aesthetic — never arcade. Branch: feature/game-4 off main. BUILD ORDER: engine primitives first, everything else is content/config on top. Loop: BRIEFING → POSITION → MARKET MOVES → EVENT → REACTION → RISK → EXIT → RESULT → REWARD → NEXT DAY.
+
+## G4-E — ENGINE PRIMITIVES (#17 first; data-driven, reusable)
+- [x] EVENT system replacing bare catalysts: news / opportunity kinds; stock / sector / market scope; clued or breaking; headline direction vs ACTUAL impulse — ~1/4 misleading (#10 — news ≠ guaranteed direction); impulses baked into the deterministic tape (tape v2 physics + retraces stay the baseline; events perturb, never replace).
+- [x] ORDER/POSITION v2: position sizing 25/50/75/100% of available cash (week-gated), ADD tranches with blended entry, per-position P&L.
+- [x] REACTION system: events touching a held stock open a HOLD / EXIT / ADD decision window; correctness judged post-hoc against the next ~8s — feeds the REACTION grade.
+- [x] RISK meter: exposure × category vol × day regime → LOW/MED/HIGH/EXTREME; feeds the RISK grade.
+- [x] MISSION registry (data-driven evaluators): outperform, momentum, shortAttack, survivor, lowrisk, breakout (take the opportunity window), contrarian (profit against a headline), newsTrader (3 correct reactions), volatility, allOrNothing (bank +15% realized before equity −5%). W2+ rotates alternates into the calendar.
+- [x] STREAK + bonus XP: 3-trade / 5-trade streaks, PERFECT DAY, MARKET BEATEN — folded into posted XP (clamps unchanged).
+- [x] SCORECARD data: trades, win rate, max DD, RISK grade, REACTION grade, bonus lines, week-unlock detection.
+
+## G4-C — CONTENT + SURFACE (ships on the engine)
+- [x] Round briefing v2: ticker board, VOLATILITY/BIAS/CATALYST/TIME block, mission — fast, no tutorials (#1).
+- [x] Event cards: BREAKING / ALERT / OPPORTUNITY with SIM chip, price print, auto-dismiss; reaction buttons inline when a held stock is touched (#2/#3).
+- [x] Opportunity windows with countdown + TRADE jump (#9).
+- [x] Size selector + position readout (side/size/entry/current/P&L) (#4), living P&L with delta flashes (#5), risk meter blocks (#6).
+- [x] Market board arrows ↑↓→ on the strip; 5–6 stocks on the heavy days (#8).
+- [x] Scorecard v2 + UNLOCKED moment; DAY REPLAY marks event ticks (#12, carry-over).
+- [x] Progression: unlocks stay WEEKS on the calendar — W2 POSITION SIZING, W3 SECOND BOOK + universe, W4 HEAVY NEWS TAPE, W5 OPERATOR (options next build). No "LEVEL" copy (#13 reconciled).
+- [x] Visual law unchanged; every element must force a decision — no fake complexity (#15/#16).
+
+## G4-V — VERIFICATION (extends the suite)
+- [x] Programmatic full-day: brief → position → event fires → HOLD/EXIT/ADD exercised → bell → scorecard fields → next day.
+- [x] Fairness ×3 across 100 seeded days: blind long-hold, blind short-hold, AND blind event-direction-chaser each fail materially (misleading events + post-impulse retraces are the guarantee).
+- [ ] Console-clean click-through, desktop + phone, before the gate.
+
+## SHELVED (recorded, not built): options desk (W5 unlock, next build) · hedging mechanics · rival ghost · achievements · share cards.
+
+### GATE G4-G1 — playable preview. Acceptance = the closing narrative for real: enter long, get news-whipped, hold through the reversal, take profit, scorecard, and want the next day unprompted. Report the day the reviewer stopped at. HOLD.
+- [ ] G4-G1 approved. *(superseded into G5-G1 — GAME-5 evolves feature/game-4 in place per the GAME-5 order)*
+
+---
+
+# GAME-5 — STRUCTURE: ENDINGS, THE MAP, THE DAILY (2026-08-15)
+
+> Composition ONLY — zero new trading mechanics; this round frames the GAME-4 engine. Branch: feature/game-4 evolved in place (unmerged). One gate.
+
+## S1 — THE RUN (mortality + finish lines)
+- [x] Capital carries day to day — one continuous career from $10,000 across an 8-week season (40 days); week position drives unlocks/missions (the calendar IS the run).
+- [x] Three first-class endings: BUSTED (daily-relative 40% margin call — no run is ever safe) · SEASON CLEARED (Week 8 Day 5) · THE FUND (touch $100,000 at any moment — instant victory, the desk hands you a book).
+- [x] Ending screen ×3: PIT RATING letter grade with deterministic breakdown (run P&L, win rate, max drawdown, missions), full-run replay strip (equity curve + entries/exits/events), August send-off (roast/salute), RUN IT BACK dominant.
+
+## S2 — THE MAP
+- [x] Season strip on the mode screen and between days: Weeks 1–8 with named waypoints, current position lit, next waypoint distance copy, all-time FURTHEST REACHED ghost mark; beating the ghost = "FURTHEST YET" moment.
+
+## S3 — DAILY PIT
+- [x] One shared seeded day per ET calendar date — identical tape for every player, standalone $10K, GAME-4 mechanics; 3 attempts/day, best posts; countdown to the reset; its own TODAY board separate from career records.
+
+## S4 — RECORDS
+- [x] Panel: BEST RUN $ · FURTHEST REACHED · BEST PIT RATING · BEST DAILY RANK · daily streak — persisted on the anonymous pid, claim-ready (unchanged pattern).
+
+## S5 — MODE SELECT
+- [x] PIT tab lands on a fast chooser: CAREER (continue run — persisted across reloads — or start new; map + ghost) · DAILY PIT (attempts left, countdown, board) · RECORDS. One tap to playing.
+
+## VERIFICATION
+- [x] Programmatic paths: BUSTED, WEEK-8 CLEAR, $100K FUND — endings + deterministic rating breakdowns (pure fns tested; screens click-through-verified).
+- [x] Daily determinism (same date ⇒ identical tape), attempt cap 3 enforced, board takes best-of-three only.
+- [ ] Console-clean at desktop + phone widths.
+
+### GATE G5-G1 — playable preview. Bar: the reviewer's run ENDS one of the three ways and the ending screen produces an unprompted RUN IT BACK; separately, the Daily's countdown is judged for pull. Report both. HOLD.
+- [ ] G5-G1 approved.
 
 ---
 
