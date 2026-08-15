@@ -503,6 +503,8 @@ export type RoundSummary = {
   riskGrade: Grade; reactionGrade: Grade;
   reactionsCorrect: number; reactionsTotal: number;
   realizedPct: number; streak: number;
+  /** earned stamp keys this day ("diamond" | "paper") — the share card picks */
+  stamps: string[];
 };
 
 type PendingReaction = {
@@ -849,6 +851,7 @@ export function createRoundRun(
       reactionsCorrect, reactionsTotal,
       realizedPct: Math.round((realized / startEq) * 10000) / 100,
       streak,
+      stamps: [...stamps],
     };
   };
 
@@ -881,6 +884,18 @@ export const WEEK_WAYPOINTS: string[] = [
 ];
 
 export type RunPos = { week: number; day: number };
+
+/** PURE (S8). The career day seed — a avalanche mix of (runId, week, day).
+ *  Every run gets fresh tapes for every day; nothing repeats across runs or
+ *  players. Dailies/challenges deliberately DON'T use this: their seeds are
+ *  shared by construction. */
+export function careerDaySeed(runId: number, week: number, day: number): number {
+  let h = (runId >>> 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (week * 0x85ebca6b), 0xc2b2ae35);
+  h = Math.imul(h ^ (day * 0x27d4eb2f), 0x165667b1);
+  h ^= h >>> 15;
+  return (h >>> 0) % 900_000_007;
+}
 
 /** PURE. The next day on the season calendar; "cleared" past Week 8 Day 5. */
 export function advanceRun(pos: RunPos): RunPos | "cleared" {
