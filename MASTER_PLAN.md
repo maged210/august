@@ -387,6 +387,20 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 ---
 
+# ADMIN-1 DELTA — MERGE + CONTROL-ROOM RE-VERIFY (2026-08-15)
+
+> The ADMIN-1 MORNING CONTROL ROOM spec re-arrived 2026-08-15; verified against source: A (layout+strip), B (book manager incl. STALE/demote/re-arm/delete), C (draft review v2 incl. UPDATE-to, APPROVE/REJECT ALL, side suggestion, entry-less→tape), D (drag-drop .txt, char count, auto-title, expandable ingest log), E (tape undo + sentiment quick-add) — ALL already live on main since 0208fa5 (gate AD-G1 approved). The one missing item is B-MERGE. Branch: feature/admin-1 recreated off main. NOTE: the spec's "after feature/game-5 merges" precondition is NOT executed — GAME-5 lives on feature/game-4, holding at G5-G1 for the behavioral report; merging a held gate needs the explicit word.
+
+- [ ] B-MERGE model: pure merge semantics (same-ticker guard, keeper's levels/status kept, both theses folded into history oldest-first, capped) + store op (absorbed idea deleted blob+index) + tests.
+- [ ] B-MERGE API: POST /api/admin/ideas/merge {keepId, absorbId} behind the dual admin gate.
+- [ ] B-MERGE UI: book-manager flow — MERGE on the keeper → same-ticker twins offer ABSORB → confirm; kills existing twins.
+- [ ] Evidence for the gate: desktop two-column, phone view, an "UPDATE to <ticker>" draft, a STALE row, a completed MERGE.
+
+### GATE AD2-G1 — preview + the five screenshots. Approve → merge → AUTH-1 next. HOLD.
+- [ ] AD2-G1 approved.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
