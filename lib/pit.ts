@@ -33,6 +33,19 @@ export type PitPlayer = {
   bestRound: number | null;
   /** consecutive completed runs (reset by margin call) */
   runStreak: number;
+  // GAME-5 — the season frame (records panel; claim-ready like everything else)
+  /** furthest season position ever reached — the map's ghost mark */
+  furthestWeek: number;
+  furthestDay: number;
+  /** best PIT RATING letter across ended runs */
+  bestRating: string | null;
+  /** best rank ever taken on a DAILY PIT board (1 = top) */
+  bestDailyRank: number | null;
+  /** consecutive ET dates with at least one daily attempt */
+  dailyStreak: number;
+  lastDailyDate: string | null;
+  /** today's DAILY PIT state — resets when the date turns */
+  daily?: { date: string; attempts: number; bestPct: number | null };
   createdAt: number;
   updatedAt: number;
 };
@@ -104,6 +117,64 @@ export function etDate(now: Date = new Date()): string {
   return parts; // YYYY-MM-DD
 }
 
+// --- GAME-5: the DAILY PIT + season records (pure layer) -----------------------
+
+export const DAILY_ATTEMPTS = 3;
+
+/** PURE. The shared daily seed — every player, same date, same tape. */
+export function dailySeed(date: string): number {
+  let h = 7;
+  for (const ch of date) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (h % 99_989) + 11;
+}
+
+/** PURE. Yesterday's ET date string for streak math. */
+export function prevDate(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** PURE. Attempts left on today's tape. */
+export function dailyAttemptsLeft(p: PitPlayer, date: string): number {
+  const used = p.daily?.date === date ? p.daily.attempts : 0;
+  return Math.max(0, DAILY_ATTEMPTS - used);
+}
+
+/** PURE. Record a daily attempt: cap 3, keep best-of, roll the streak on the
+ *  first attempt of each date. Returns null when out of attempts, else
+ *  whether this attempt improved the posted best. */
+export function applyDaily(p: PitPlayer, pct: number, date: string): { improved: boolean } | null {
+  if (dailyAttemptsLeft(p, date) <= 0) return null;
+  if (p.daily?.date !== date) {
+    p.dailyStreak = p.lastDailyDate === prevDate(date) ? (p.dailyStreak ?? 0) + 1 : 1;
+    p.lastDailyDate = date;
+    p.daily = { date, attempts: 0, bestPct: null };
+  }
+  p.daily.attempts += 1;
+  const improved = p.daily.bestPct === null || pct > p.daily.bestPct;
+  if (improved) p.daily.bestPct = pct;
+  return { improved };
+}
+
+/** PURE. Advance the furthest-reached ghost. True = FURTHEST YET moment. */
+export function applyProgress(p: PitPlayer, week: number, day: number): boolean {
+  const pos = week * 10 + day;
+  const prev = (p.furthestWeek ?? 0) * 10 + (p.furthestDay ?? 0);
+  if (pos <= prev) return false;
+  p.furthestWeek = week;
+  p.furthestDay = day;
+  return true;
+}
+
+const RATING_ORDER = ["F", "D", "C", "B", "A", "A+"];
+/** PURE. Keep the best rating letter across ended runs. */
+export function betterRating(cur: string | null, next: string): string {
+  if (!RATING_ORDER.includes(next)) return cur ?? next;
+  if (cur === null || RATING_ORDER.indexOf(next) > RATING_ORDER.indexOf(cur)) return next;
+  return cur;
+}
+
 // --- store ---------------------------------------------------------------------
 
 const NS = "august:pit:v1";
@@ -137,6 +208,8 @@ export function newPlayer(pid: string): PitPlayer {
     pid, name: "PLAYER", bestRun: null, bestRunDate: null,
     todayRun: null, todayDate: null, runs: 0,
     xp: 0, level: 1, bestRound: null, runStreak: 0,
+    furthestWeek: 0, furthestDay: 0, bestRating: null, bestDailyRank: null,
+    dailyStreak: 0, lastDailyDate: null,
     createdAt: now, updatedAt: now,
   };
 }
@@ -148,7 +221,9 @@ export async function getPlayer(pid: string): Promise<PitPlayer | null> {
     const raw = await redis.get<unknown>(K.player(pid));
     if (!raw) return null;
     const p = (typeof raw === "string" ? JSON.parse(raw) : raw) as PitPlayer;
-    return typeof p?.pid === "string" ? p : null;
+    if (typeof p?.pid !== "string") return null;
+    // players written before GAME-5 lack the season fields — fill defaults
+    return { ...newPlayer(p.pid), ...p };
   } catch {
     return null;
   }
@@ -166,8 +241,8 @@ export async function savePlayer(p: PitPlayer): Promise<boolean> {
   }
 }
 
-/** Record a finished run: bumps the player's today/all-time bests and both
- *  boards (day board expires after a few days — it's a rotating sheet). */
+/** Record a finished CAREER run: bumps the player's all-time best and the
+ *  all-time board. (The rotating day board belongs to the DAILY PIT now.) */
 export async function recordRun(
   p: PitPlayer,
   pct: number,
@@ -189,12 +264,25 @@ export async function recordRun(
   try {
     await savePlayer(p);
     await redis.zadd(K.best, { score: p.bestRun ?? pct, member: p.pid });
-    const dayKey = K.day(date);
-    await redis.zadd(dayKey, { score: p.todayRun ?? pct, member: p.pid });
-    await redis.expire(dayKey, DAY_BOARD_TTL_S);
     return true;
   } catch {
     return false;
+  }
+}
+
+/** DAILY PIT: post the player's best-of-day to the date's rotating board and
+ *  return their current rank (1 = top), or null on store failure. */
+export async function recordDailyScore(pid: string, bestPct: number, date: string): Promise<number | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const dayKey = K.day(date);
+    await redis.zadd(dayKey, { score: bestPct, member: pid });
+    await redis.expire(dayKey, DAY_BOARD_TTL_S);
+    const rank = await redis.zrevrank(dayKey, pid);
+    return typeof rank === "number" ? rank + 1 : null;
+  } catch {
+    return null;
   }
 }
 

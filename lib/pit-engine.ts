@@ -490,7 +490,7 @@ export type PitEvent =
   | { type: "news"; event: GameEvent }
   | { type: "reaction"; correct: boolean; action: ReactionAction }
   | { type: "streak"; count: number; xp: number };
-export type TickEnd = "margin" | "bell" | null;
+export type TickEnd = "margin" | "bell" | "fund" | null;
 
 export type RiskLevel = "LOW" | "MED" | "HIGH" | "EXTREME";
 export type Grade = "A" | "B" | "C" | "D" | "—";
@@ -559,7 +559,12 @@ export function createRoundRun(
   runSeed: number,
   startEq: number,
   onEvent: (ev: PitEvent) => void = () => {},
-  opts?: { tune?: PitTune; initialStreak?: number; carry?: CarryState & { opens: number[]; secsLeft: number } },
+  opts?: {
+    tune?: PitTune; initialStreak?: number;
+    /** GAME-5: touching this equity ends the day instantly — THE FUND */
+    fundAt?: number;
+    carry?: CarryState & { opens: number[]; secsLeft: number };
+  },
 ): RoundRun {
   const tune = opts?.tune ?? DEFAULT_TUNE;
   const carry = opts?.carry;
@@ -800,6 +805,7 @@ export function createRoundRun(
     riskAccum += risk().frac;
     riskSamples += 1;
     if (openCount() > 0) exposureTicks += 1;
+    if (opts?.fundAt && eq >= opts.fundAt) return "fund";
     if (eq < startEq * MARGIN_FRAC) return "margin";
     if (run.i >= N - 1) return "bell";
     return null;
@@ -861,6 +867,60 @@ export function createRoundRun(
     }),
   };
   return run;
+}
+
+// ── GAME-5: the season frame — endings, the map, the rating ──────────────────
+
+export const SEASON_WEEKS = 8;
+export const FUND_TARGET = 100_000;
+
+/** the map's named waypoints, week 1 → 8 */
+export const WEEK_WAYPOINTS: string[] = [
+  "OPENING WEEK", "SIZING DESK", "SECOND BOOK", "NEWS STORM",
+  "EARNINGS SEASON", "THE GRIND", "VOL REGIME", "FINAL PRINT",
+];
+
+export type RunPos = { week: number; day: number };
+
+/** PURE. The next day on the season calendar; "cleared" past Week 8 Day 5. */
+export function advanceRun(pos: RunPos): RunPos | "cleared" {
+  if (pos.day < LADDER.length) return { week: pos.week, day: pos.day + 1 };
+  if (pos.week < SEASON_WEEKS) return { week: pos.week + 1, day: 1 };
+  return "cleared";
+}
+
+/** PURE. Late-season heat — config on the existing tune surface, not a new
+ *  mechanic: weeks past the first run gently hotter tapes and headlines. */
+export function seasonTune(week: number, base: PitTune = DEFAULT_TUNE): PitTune {
+  const h = Math.min(0.35, Math.max(0, (week - 1) * 0.05));
+  return { ...base, vol: base.vol * (1 + h), events: base.events * (1 + h) };
+}
+
+export type RunAgg = {
+  finalEq: number; trades: number; wins: number;
+  worstDayDD: number; missionsHit: number; daysPlayed: number;
+};
+export type RatingLine = [label: string, read: string, points: number];
+
+/** PURE. The PIT RATING — a deterministic composite with a visible breakdown.
+ *  10 points across P&L, win rate, missions, drawdown → A+ … F. */
+export function pitRating(a: RunAgg): { grade: string; points: number; lines: RatingLine[] } {
+  const mult = a.finalEq / START_CASH;
+  const pnlPts = mult >= 10 ? 4 : mult >= 3 ? 3 : mult >= 1.5 ? 2 : mult >= 1 ? 1 : 0;
+  const wr = a.trades > 0 ? a.wins / a.trades : 0;
+  const wrPts = wr >= 0.6 ? 2 : wr >= 0.45 ? 1 : 0;
+  const mf = a.daysPlayed > 0 ? a.missionsHit / a.daysPlayed : 0;
+  const mPts = mf >= 0.6 ? 2 : mf >= 0.3 ? 1 : 0;
+  const ddPts = a.worstDayDD < 10 ? 2 : a.worstDayDD < 20 ? 1 : 0;
+  const points = pnlPts + wrPts + mPts + ddPts;
+  const grade = points >= 9 ? "A+" : points >= 8 ? "A" : points >= 6 ? "B" : points >= 4 ? "C" : points >= 2 ? "D" : "F";
+  const lines: RatingLine[] = [
+    ["RUN P&L", `${mult >= 1 ? "+" : ""}${((mult - 1) * 100).toFixed(0)}%`, pnlPts],
+    ["WIN RATE", a.trades ? `${Math.round(wr * 100)}% of ${a.trades}` : "no trades", wrPts],
+    ["MISSIONS", `${a.missionsHit}/${a.daysPlayed}`, mPts],
+    ["WORST DAY DD", `-${a.worstDayDD.toFixed(1)}%`, ddPts],
+  ];
+  return { grade, points, lines };
 }
 
 /** T3 carry — retune a RUNNING day: fresh tape for the remaining clock at the

@@ -9,14 +9,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  FUND_TARGET,
   LADDER,
   MISSIONS,
   MARGIN_FRAC,
+  SEASON_WEEKS,
   START_CASH,
+  WEEK_WAYPOINTS,
+  advanceRun,
   createRoundRun,
   makeRound,
   missionFor,
+  pitRating,
   retuneRun,
+  seasonTune,
   weekAdjust,
   type MissionCtx,
   type PitEvent,
@@ -267,6 +273,67 @@ test("determinism + event structure: same seed, same market, same headlines", ()
   }
   // rotation is deterministic and total
   for (const week of [1, 2, 3, 4, 5]) for (let d = 1; d <= 5; d++) assert.ok(MISSIONS[missionFor(d, week)]);
+});
+
+// ── GAME-5: the three endings + the map + the rating ─────────────────────────
+
+test("ending 1 — BUSTED: a margin day ends the run daily-relative", () => {
+  const def = LADDER[0];
+  const run = createRoundRun(def, SEED, 90_000); // a rich run can still die today
+  run.act(0, 1);
+  const sum = run.finish(true);
+  assert.equal(sum.margin, true);
+  const rating = pitRating({ finalEq: sum.endEq, trades: 10, wins: 3, worstDayDD: 61, missionsHit: 2, daysPlayed: 9 });
+  assert.ok(["C", "D", "F"].includes(rating.grade));
+  assert.equal(rating.lines.length, 4);
+});
+
+test("ending 2 — SEASON CLEARED: week 8 day 5 is the last square on the map", () => {
+  let pos: { week: number; day: number } | "cleared" = { week: 1, day: 1 };
+  let steps = 0;
+  while (pos !== "cleared" && steps++ < 100) pos = advanceRun(pos);
+  assert.equal(pos, "cleared");
+  assert.equal(steps, SEASON_WEEKS * LADDER.length); // 40 days exactly
+  assert.equal(WEEK_WAYPOINTS.length, SEASON_WEEKS);
+  assert.deepEqual(advanceRun({ week: 8, day: 5 }), "cleared");
+  assert.deepEqual(advanceRun({ week: 8, day: 4 }), { week: 8, day: 5 });
+  assert.deepEqual(advanceRun({ week: 3, day: 5 }), { week: 4, day: 1 });
+});
+
+test("ending 3 — THE FUND: touching the target ends the day instantly", () => {
+  const def = LADDER[0];
+  // start just under the line: the first tick with equity >= target triggers
+  const run = createRoundRun(def, SEED, 99_990, undefined, { fundAt: FUND_TARGET });
+  run.act(0, 1);
+  let end: ReturnType<typeof run.tick> = null;
+  let guard = 0;
+  while (!(end = run.tick()) && guard++ <= run.N) { /* tick */ }
+  // a $99,990 all-in book crosses $100k on the first up-wiggle
+  assert.equal(end, "fund");
+  const sum = run.finish(false);
+  assert.ok(sum.endEq >= FUND_TARGET * 0.99);
+});
+
+test("pit rating is deterministic and monotone at the extremes", () => {
+  const god = pitRating({ finalEq: 120_000, trades: 40, wins: 30, worstDayDD: 6, missionsHit: 30, daysPlayed: 40 });
+  assert.equal(god.grade, "A+");
+  assert.equal(god.points, 10);
+  const bust = pitRating({ finalEq: 3_000, trades: 8, wins: 2, worstDayDD: 62, missionsHit: 0, daysPlayed: 3 });
+  assert.equal(bust.grade, "F");
+  assert.deepEqual(god.lines.map(([k]) => k), ["RUN P&L", "WIN RATE", "MISSIONS", "WORST DAY DD"]);
+  // deterministic: same aggregate, same grade
+  assert.deepEqual(pitRating({ finalEq: 25_000, trades: 20, wins: 11, worstDayDD: 14, missionsHit: 15, daysPlayed: 30 }),
+    pitRating({ finalEq: 25_000, trades: 20, wins: 11, worstDayDD: 14, missionsHit: 15, daysPlayed: 30 }));
+});
+
+test("season tune heats late weeks without touching week 1", () => {
+  const w1 = seasonTune(1);
+  assert.equal(w1.vol, 1);
+  const w8 = seasonTune(8);
+  assert.ok(w8.vol > 1.3 && w8.vol <= 1.36);
+  // still a valid tape: constraints hold under late-season heat
+  const { stocks } = makeRound(LADDER[0], 5, seasonTune(8));
+  assert.equal(stocks[0].prices.length, LADDER[0].secs * LADDER[0].tps);
 });
 
 test("engine guards: cap, flatten, flip, sizing floor; retune carries the book", () => {
