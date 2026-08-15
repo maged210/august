@@ -449,7 +449,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [ ] Console-clean at desktop + phone widths.
 
 ### GATE G5-G1 — playable preview. Bar: the reviewer's run ENDS one of the three ways and the ending screen produces an unprompted RUN IT BACK; separately, the Daily's countdown is judged for pull. Report both. HOLD.
-- [ ] G5-G1 approved.
+- [x] G5-G1 approved 2026-08-15 — owner instruction: merge feature/game-4 to main. Merged.
 
 ---
 
