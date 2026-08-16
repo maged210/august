@@ -518,20 +518,21 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 ### GATE R3 — full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds. HOLD.
 - [x] R3 approved 2026-08-16.
 
-## R4 — HOME-2: THE FRONT PAGE (queued 2026-08-16; begins ONLY after R3 merges; branch feature/front-page off that main; one gate)
+## R4 — HOME-2: THE FRONT PAGE (ACTIVE 2026-08-16 — R3 merged; branch feature/front-page)
+- [x] F2 VETTING GATE: feed verified against FOMC Minutes (Aug 19 14:00 ET, 3wk convention) + weekly claims (Thu Aug 20 08:30 ET, fc 210K/prev 209K). Timers ship. LIMITATION RECORDED: no `actual` field in the free feed — RELEASED cards show the honest reaction line, never a fabricated beat/miss.
 CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi card energy in the Matrix skin, DESIGN_LAWS governing. Reading order REGIME → WHAT'S COMING → WHAT'S MOVING → WHAT'S BEING SAID. Chat demoted to ambient analyst (never removed).
-- F1 LAYOUT: regime apex stays top · slim persistent ASK BAR under it (expands to full chat on engage; threads sidebar unchanged) · orb shrinks to a small live-status mark in the header · modules below per DESIGN_LAWS, integrity labels on every number.
-- F2 COUNTDOWN ROW: timer cards for CPI · FOMC · JOBS · GDP from the already-fetched free calendar JSON (event, countdown, ET time, EXPECTED/PRIOR when carried, impact chip). VETTING GATE inside the task: verify feed dates/times against two known upcoming releases BEFORE any timer renders — an untrustworthy feed ships as CALENDAR UNAVAILABLE with the why in the report.
-  - F2-A THREE STATES: DISTANT >48h = slim muted single-line strip, never a hero (nothing inside 48h ⇒ strip collapses to one quiet line, page leads with regime+heatmap+feed+desk) · IMMINENT <48h = full countdown card, expected/prior, impact, "ask August what this could move" · RELEASED = flips live: ACTUAL vs EXPECTED, beat/miss chip, market-reaction line from actual pulse data ONLY if granularity honestly supports it (omitted, never estimated).
-  - F2-B BRIDGE RULE: no event element without a path into the desk — every card carries ask-August; when the live book holds a related ticker/level, a "desk is positioned: [chip]" link into the Terminal. Commodity data may hook; only our read may hold.
-  - F2-C QUIET-DAY HERO: page liveliness never depends on the macro calendar; regime/heatmap/headlines/desk carry non-event days — intentional, not empty.
-- F3 MARKET HEATMAP: sector-level treemap from the already-fetched sector ETF data (color = day %, integrity-labeled); tap a sector → its ETF context (quote, spark, day range). No 500-ticker fan-out.
-- F4 THE FEED: headlines become cards — source · age · extracted ticker chips · one-line AI gist where the brief pipeline already produces one · "ask August" opens chat pre-loaded with the story. Existing RSS set only.
-- F5 EARNINGS STRIP: verify whether the keyed Finnhub tier serves the earnings calendar; yes → this week's notable names w/ date + before/after-bell chips; no → EARNINGS DATA UNAVAILABLE + report entry. Never approximated.
-- F6 SHORT REPORTS: desk line + latest ingest + daily digest condense into one DESK REPORT card linking into the Terminal — teaser depth only, no duplication.
+- [x] F1 LAYOUT: regime apex top · slim ASK BAR under it (HomeBrief askBar slot; expands to full chat on engage, threads sidebar unchanged) · orb shrinks to hl-orb-mini header mark · modules per DESIGN_LAWS, DataTag on every number.
+- [x] F2 COUNTDOWN ROW: lib/calendar-feed.ts + /api/calendar (High-impact or big-four USD; rate-limited; s-maxage=300) → CountdownRow. Tests 4.
+  - [x] F2-A THREE STATES: distant = slim muted quiet-line strip (this real week renders it: FOMC minutes ~66h out) · imminent <48h = full card w/ forecast/prior/impact/ask-August · released ≤12h = reaction15m line ONLY when NQ=F bars honestly cover both ends; no `actual` in feed ⇒ "actuals aren't carried by the free feed", never a fabricated beat/miss.
+  - [x] F2-B BRIDGE RULE: every card carries ASK AUGUST; deskChip ("desk is positioned") when the live book holds an index ticker → Terminal link.
+  - [x] F2-C QUIET-DAY HERO: strip collapses to one line; regime/heatmap/feed/desk lead the page (evidence shot shows exactly this state).
+- [x] F3 HEATMAP: SectorHeatmap from already-fetched SPDR sectors (color=day%, DELAYED tag); tap → single-symbol quote+spark context + ask-August. No fan-out.
+- [x] F4 THE FEED: headline cards w/ publisher chip · age · TICKER_WHITELIST extracted chips · ASK AUGUST prefill. AI gist OMITTED — the brief pipeline produces no per-headline gist (gist was conditional on "where the pipeline already produces one"; it doesn't — recorded, not faked).
+- [x] F5 EARNINGS STRIP: Finnhub verified on production — earnings NULL on the keyed tier → ships EARNINGS DATA UNAVAILABLE per spec. Report entry under data still required.
+- [x] F6 DESK REPORT card: desk line + latest ingest + earnings state in one card, OPEN THE TERMINAL link, teaser depth only.
 - RULES: no new data sources without explicit owner sign-off (event-odds APIs pre-authorized for DISCUSSION only, not build); everything is reuse of fetched-but-unwired data per the audit. Mobile: same modules stacked, tab bar unchanged, one primary CTA per screen (L4).
 ### GATE R4 — preview + screenshots (desktop, phone, one deliberately failed feed showing its honest state, the ask-bar expanding into chat). HOLD, then merge.
-- [ ] R4 approved.
+- [x] R4 approved ("r4 approved", 2026-08-16). Merged to main.
 
 ## STANDING LAW (wins over everything above)
 The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.

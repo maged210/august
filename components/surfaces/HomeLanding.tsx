@@ -486,8 +486,9 @@ export default function HomeLanding({
           (comfortable top padding on short viewports — flex 1 0 auto grows
           past the fold and the landing scrolls instead of clipping). */}
       <div className="hl-main">
-      {/* the orb — design halo/ring/glow layers around the living WebGL sphere */}
-      <div className="hl-orb">
+      {/* the orb — R4 F1: on the front page it is a small live-status mark,
+          not the centerpiece; a live conversation gets the full presence */}
+      <div className={`hl-orb${!conversationActive ? " hl-orb-mini" : ""}`}>
         <div className="hl-orb-halo" aria-hidden />
         <div className="hl-orb-ring" aria-hidden />
         <div className="hl-orb-core" aria-hidden />
@@ -508,52 +509,54 @@ export default function HomeLanding({
           (the fixed composer dock below it is the input, pinned bottom). */}
       {conversationActive ? transcript : null}
 
-      {/* the ask bar — THE real input; hidden while a conversation is live
-          (the existing reply panel + composer own that state) */}
+      {/* R4 F1 — the FRONT PAGE: the brief owns the layout; the ask bar rides
+          INSIDE it, directly under the regime apex (slot below). A live
+          conversation replaces all of it with the transcript column. */}
       {!conversationActive ? (
-        <form className="hl-bar" onSubmit={submit}>
-          <input
-            ref={inputRef}
-            className="hl-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ask about markets, the tape, or the world…"
-            aria-label="Ask AUGUST"
-            spellCheck={false}
-            autoComplete="off"
-          />
-          {micSupported && (
-            <button
-              type="button"
-              className={`hl-mic${listening ? " on" : ""}`}
-              onClick={onToggleMic}
-              aria-label={listening ? "Stop listening" : "Speak"}
-              aria-pressed={listening}
-            >
-              <MicGlyph active={listening} />
-            </button>
-          )}
-          {micSupported && (
-            <button
-              type="button"
-              className={`hl-mic${voiceMode ? " on" : ""}`}
-              onClick={onToggleVoiceMode}
-              aria-label="Enter hands-free voice mode"
-              aria-pressed={voiceMode}
-              title="Hands-free voice mode"
-            >
-              <WaveGlyph />
-            </button>
-          )}
-          <span className="hl-kbd" aria-hidden>
-            ⌘K
-          </span>
-        </form>
+        <HomeBrief
+          onAsk={(t) => onSend(t)}
+          askBar={
+            <form className="hl-bar" onSubmit={submit}>
+              <input
+                ref={inputRef}
+                className="hl-input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Ask about markets, the tape, or the world…"
+                aria-label="Ask AUGUST"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              {micSupported && (
+                <button
+                  type="button"
+                  className={`hl-mic${listening ? " on" : ""}`}
+                  onClick={onToggleMic}
+                  aria-label={listening ? "Stop listening" : "Speak"}
+                  aria-pressed={listening}
+                >
+                  <MicGlyph active={listening} />
+                </button>
+              )}
+              {micSupported && (
+                <button
+                  type="button"
+                  className={`hl-mic${voiceMode ? " on" : ""}`}
+                  onClick={onToggleVoiceMode}
+                  aria-label="Enter hands-free voice mode"
+                  aria-pressed={voiceMode}
+                  title="Hands-free voice mode"
+                >
+                  <WaveGlyph />
+                </button>
+              )}
+              <span className="hl-kbd" aria-hidden>
+                ⌘K
+              </span>
+            </form>
+          }
+        />
       ) : null}
-
-      {/* UX2-T2 — the daily brief IS the home state (no thread open):
-          date/session · pulse · desk line · latest ingest · headlines */}
-      {!conversationActive ? <HomeBrief /> : null}
       </div>
 
       {/* R5 — WATCHING as a thin full-width bottom ticker strip: static chips
