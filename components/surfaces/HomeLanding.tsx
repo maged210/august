@@ -584,7 +584,7 @@ function fmtPrice(n: number): string {
 }
 
 function fmtChg(n: number): string {
-  return `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(1)}%`;
+  return `${n >= 0 ? "+" : "-"}${Math.abs(n).toFixed(1)}%`; // R3 polish: one minus glyph app-wide
 }
 
 // ---------------------------------------------------------------------------

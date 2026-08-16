@@ -278,13 +278,18 @@ function LiveRow({
             </span>
           )}
         </span>
-        {/* R6 — TARGET renders only when stated; an unstated one is just empty */}
+        {/* R3 polish — absent TARGET matches absent ENTRY's treatment (audit:
+            two different absences in adjacent cells) */}
         <span className="if-bc">
           {idea.target ? (
             <span className="if-bval if-lev-target" title={idea.target}>
               {idea.target}
             </span>
-          ) : null}
+          ) : (
+            <span className="if-abs-g" title="no target stated">
+              ·
+            </span>
+          )}
         </span>
         {/* R7 — one-line reasoning preview; the row click opens the full thesis */}
         <span className="if-bc">
@@ -985,7 +990,7 @@ function MobileCard({
             {side.side}
           </span>
         ) : null}
-        <span className={statusChip.cls.includes("live-chip") ? statusChip.cls : statusChip.cls}>
+        <span className={statusChip.cls}>
           <span className="if-life-dot" aria-hidden="true" />
           {statusChip.label}
         </span>
