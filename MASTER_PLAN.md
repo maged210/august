@@ -512,9 +512,9 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] R2 approved 2026-08-16.
 
 ## R3 — ANALYST + PIT FEEDBACK + POLISH
-- [ ] ANALYST: existing chat grounded — market answers cite the app's actual current data (regime/pulse/levels/book/headlines); unavailable stated unavailable; live numbers never fabricated.
-- [ ] PIT post-trade explanations: dry floor voice from observable round data only, on each deliberate close + the scorecard.
-- [ ] UX polish per DESIGN_LAWS; FULL QA (every tab, game start-to-finish incl. reset/replay, desktop/tablet/phone, console clean, zero functionality removed).
+- [x] ANALYST: existing chat grounded — market answers cite the app's actual current data (regime/pulse/levels/book/headlines); unavailable stated unavailable; live numbers never fabricated.
+- [x] PIT post-trade explanations: dry floor voice from observable round data only, on each deliberate close + the scorecard.
+- [x] UX polish per DESIGN_LAWS; FULL QA (every tab, game start-to-finish incl. reset/replay, desktop/tablet/phone, console clean, zero functionality removed).
 ### GATE R3 — full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds. HOLD.
 - [ ] R3 approved.
 
