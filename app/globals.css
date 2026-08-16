@@ -6015,6 +6015,28 @@ button.pulse-line:focus-visible {
   letter-spacing: 0.01em;
   color: var(--body2);
 }
+/* AUTH-1a — magic-link form, owner badge, PIT sign-in nudge */
+.lp-mail { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }
+.lp-mail input {
+  font-family: var(--font-mono); font-size: 13px; padding: 11px 12px;
+  background: rgb(255 255 255 / 0.03); border: 1px solid var(--line); color: var(--fg);
+}
+.lp-mail input:focus-visible { outline: 1px solid var(--green); outline-offset: 1px; }
+.lp-err { color: var(--amber); }
+.hl-owner-badge {
+  font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
+  padding: 2px 6px; margin-left: 6px; color: var(--amber);
+  border: 1px solid rgb(var(--amber-rgb) / 0.55); border-radius: var(--r-full);
+}
+.pit7-nudge {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--steel);
+  margin: 8px auto; padding: 6px 10px; max-width: 480px; width: fit-content;
+  border: 1px dashed var(--line);
+}
+.pit7-nudge a { color: var(--green); font-weight: 700; letter-spacing: 0.14em; text-decoration: none; }
+.pit7-nudge button { background: none; border: 0; color: var(--steel); cursor: pointer; font-size: 13px; padding: 0 2px; }
+
 .lp-google {
   min-height: 44px;
   padding: 12px 28px;

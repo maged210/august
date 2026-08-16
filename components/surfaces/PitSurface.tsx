@@ -66,6 +66,32 @@ const SEND_OFF: Record<"busted" | "cleared" | "fund", string> = {
 
 const VOL_LABEL = (v: number) => (v < 0.004 ? "LOW" : v < 0.0055 ? "MED" : v < 0.0065 ? "HIGH" : "EXTREME");
 
+// AUTH-1a — a PROMPT, never a wall (L5): inline, quiet, dismissible forever.
+const NUDGE_KEY = "aug-signin-nudge-off";
+function SignInNudge({ line }: { line: string }) {
+  const [hidden, setHidden] = useState(() => {
+    try { return window.localStorage.getItem(NUDGE_KEY) === "1"; } catch { return true; }
+  });
+  if (hidden) return null;
+  return (
+    <p className="pit7-nudge" role="note">
+      <span>{line}</span>
+      <a href="/login">SIGN IN</a>
+      <button
+        type="button"
+        aria-label="Never show sign-in prompts again"
+        title="Never show again"
+        onClick={() => {
+          try { window.localStorage.setItem(NUDGE_KEY, "1"); } catch { /* per-session only */ }
+          setHidden(true);
+        }}
+      >
+        ×
+      </button>
+    </p>
+  );
+}
+
 // the daily's fixed frame: rotates the day archetype by date, week-3 rules
 function dailyDefFor(date: string) {
   const idx = (parseInt(date.slice(8, 10), 10) || 1) % LADDER.length;
@@ -894,6 +920,9 @@ function PitInner({ active }: { active: boolean }) {
               </div>
               <canvas ref={replayRef} className="pit3-replay tall" aria-label="Full-run replay: equity curve, trades, events" />
               <p className="pit2-stats aug">AUG ▸ {SEND_OFF[ending.kind]}</p>
+              {player?.pid.startsWith("v:") ? (
+                <SignInNudge line="save this career — records follow you to every device." />
+              ) : null}
               <button type="button" className="pit2-btn pit2-run" onClick={startNewRun}>RUN IT BACK</button>
               <button type="button" className="pit5-back" onClick={() => { setEnding(null); setPhase("modes"); }}>← THE FLOOR</button>
             </div>
@@ -930,6 +959,9 @@ function PitInner({ active }: { active: boolean }) {
             <div className="pit5-modes">
               <h2>THE PIT</h2>
               <p className="pit5-sub">Headlines move the tape — some of them lie. WEEK {player?.level ?? 1} desk tier: {levelDef.name}.</p>
+              {player?.pid.startsWith("v:") ? (
+                <SignInNudge line="new device? sign in and your career picks up here." />
+              ) : null}
 
               <button type="button" className="pit5-mode" onClick={saved ? continueRun : startNewRun}>
                 <span className="pit5-mode-name">CAREER</span>
@@ -982,6 +1014,9 @@ function PitInner({ active }: { active: boolean }) {
                       placeholder={player?.name === "PLAYER" || !player ? "pick a name for the boards" : player.name} aria-label="Display name" />
                     <button type="submit">SET</button>
                   </form>
+                  {player?.pid.startsWith("v:") ? (
+                    <SignInNudge line="claim this name on every device." />
+                  ) : null}
                   <div className="pit2-boards">
                     <div className="pit2-boardtabs">
                       <button type="button" className={board === "today" ? "on" : ""} onClick={() => setBoard("today")}>DAILY — TODAY</button>
