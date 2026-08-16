@@ -561,7 +561,13 @@ CONCEPT: Topstep-style guided course; the PIT tape engine IS the classroom. Live
 - [x] R2 ORDER PANEL: persistent ticket — contract-size selector + BUY MARKET / SELL MARKET / FLATTEN on the PIT's position/order systems. L1 keeps the padlock; from L2 the panel is LIVE IN EVERY LESSON (free trading anytime). Fills mark the tape: entry line + live position tag (+1 · −$14.00), green/red tick flashes while holding, realized P&L pop on close. Port the PIT's juice wholesale.
 - [x] R3 INTERACTIVE MECHANICS: L3 stop/target lines placed by tapping the chart, auto-flatten on touch, 2:1 validated from the learner's ACTUAL placed levels. All validation reads real fills/P&L. Coach reacts to the learner's own fills ("you sold the low" earns its keep).
 - [x] R4 TAPE FEEL: continuous sessions w/ PAUSE/RESUME + RESET CHART; free practice between beats; the tape never stops because a task completed.
-- [ ] T-G1 approved (re-verify: padlock unlock FELT, real trade placed, UP&L breathes, closing a winner feels like something happened).
+- ROUND 2 VERDICT (2026-08-16): still held — "the cockpit landed; the course's SPINE is missing: locks don't respond and progression is invisible."
+- [ ] P1 RESPONSIVE LOCKS: locked controls ALWAYS react (padlock pulse + coach line + when it unlocks); promise inline ("BUY MARKET · 🔒 L2"); the unlock is STAGED (padlocks break open entering L2, coach beat "ticket's yours").
+- [ ] P2 SESSION CLOCK: BELL IN M:SS while running / BELL RUNG after; bell-gated tasks say so next to the clock.
+- [ ] P3 TAP TASKS TALK BACK: visible tap mode (crosshair + prompt overlay), every tap drops a marker instantly (✓ or retry nudge w/ a located hint), generous tolerance.
+- [ ] P4 COMPLETION + ADVANCE: LESSON COMPLETE panel (badge · one learned line · account carry-over · NEXT LESSON dominant); auto-unlock; index shows ✓/▸/🔒; persistent "LESSON n OF 8" header + progress bar.
+- [ ] P5 TAP HANDLER VERIFIED: pointer events (mouse + touch), plus a programmatic L1 end-to-end smoke in the suite (taps register, completion fires, L2 unlocks).
+- [ ] T-G1 approved (bar + spine: L1 taps → LESSON COMPLETE → L2 → padlocks break open → real trade → breathing UP&L, no step leaves the owner guessing).
 
 ## T3 — FINISH + POLISH
 - [ ] L4 POSITION SIZING — survive a drawdown day at ≤50% size, no margin call.

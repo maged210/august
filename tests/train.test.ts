@@ -7,7 +7,7 @@ import {
   LESSONS, lessonById, lessonUnlocked, nearExtreme, profitableClose,
   planRatioOk, exitAtPlan, trainedBadge,
 } from "../lib/train";
-import { makeRound, CATS, type TradeMark } from "../lib/pit-engine";
+import { makeRound, createRoundRun, START_CASH, CATS, type TradeMark } from "../lib/pit-engine";
 import { mergePitPlayers, newPlayer } from "../lib/pit";
 
 test("curriculum: 8 lessons, unlock chain, L1-L3 built for T-G1", () => {
@@ -90,4 +90,33 @@ test("claim merge: training progress is a union", () => {
   const c = newPlayer("v:three");
   assert.deepEqual(mergePitPlayers(c, b).training?.done, ["L2", "L3"]);
   assert.equal(mergePitPlayers(newPlayer("v:x"), newPlayer("v:y")).training, undefined);
+});
+
+test("P5 smoke: L1 end to end — tape to the bell, taps register, L2 unlocks", () => {
+  const l1 = lessonById("L1")!;
+  const run = createRoundRun(l1.day, l1.seed, START_CASH);
+  // ride the whole session to the bell, controls locked (no act calls)
+  let end: string | null = null;
+  for (let k = 0; k < l1.day.secs * l1.day.tps + 10 && !end; k++) end = run.tick();
+  assert.equal(end, "bell", "the L1 tape must end at the bell, not a margin call");
+  const prices = run.stocks[0].prices;
+  // the learner taps the true extremes — both must validate; a mid-range tap must not
+  const hiTick = prices.indexOf(Math.max(...prices));
+  const loTick = prices.indexOf(Math.min(...prices));
+  assert.equal(nearExtreme(prices, hiTick, "hi"), true, "high tap registers");
+  assert.equal(nearExtreme(prices, loTick, "lo"), true, "low tap registers");
+  const midPrice = (Math.max(...prices) + Math.min(...prices)) / 2;
+  const midTick = prices.findIndex((p) => Math.abs(p - midPrice) < (Math.max(...prices) - Math.min(...prices)) * 0.05);
+  if (midTick >= 0) assert.equal(nearExtreme(prices, midTick, "hi"), false, "mid-range tap rejected");
+  // completion fires the unlock: L2 opens, L3 stays shut
+  const done = ["L1"];
+  assert.equal(lessonUnlocked(2, done), true, "L2 unlocks after L1");
+  assert.equal(lessonUnlocked(3, done), false, "L3 still needs L2");
+});
+
+test("P4: every built lesson carries a learned line for the completion panel", () => {
+  for (const l of LESSONS.filter((x) => x.built)) {
+    assert.equal(typeof l.learned, "string", l.id);
+    assert.ok((l.learned ?? "").length > 10, l.id);
+  }
 });

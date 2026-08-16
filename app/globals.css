@@ -7987,3 +7987,32 @@ html.sheet-open .view-panel {
   .trn-acct { gap: 10px; font-size: 9px; }
   .trn-acct b { font-size: 11.5px; }
 }
+
+/* TRAIN-1 round 3 — the spine */
+.trn-course { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono), monospace; font-size: 9.5px; letter-spacing: 0.18em; color: var(--dim); margin-bottom: 6px; }
+.trn-course .trn-progress { flex: 1; }
+.trn-progress.slim { height: 2px; }
+.trn-clock { font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.1em; color: var(--label); border: 1px solid var(--hair); padding: 2px 8px; }
+.trn-clock.rung { color: var(--up, #57d98a); border-color: currentColor; }
+.trn-tapprompt { position: absolute; top: 10px; left: 12px; font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: 0.12em; color: var(--label); background: color-mix(in srgb, var(--hair) 40%, transparent); padding: 5px 10px; pointer-events: none; animation: trnprompt 1.6s ease-in-out infinite; }
+@keyframes trnprompt { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+.trn-buy.locked, .trn-sell.locked, .trn-flat.locked { opacity: 0.5; filter: saturate(0.4); cursor: pointer; }
+.trn-chain.pulse { animation: trnlockpulse 0.5s ease-out; }
+@keyframes trnlockpulse { 0% { transform: scale(1); color: var(--down, #e08a7a); } 40% { transform: scale(1.12); color: var(--down, #e08a7a); } 100% { transform: scale(1); } }
+.trn-ticket.ceremony { animation: trnceremony 2.8s ease-out; }
+.trn-ticket.ceremony .trn-buy, .trn-ticket.ceremony .trn-sell, .trn-ticket.ceremony .trn-flat { animation: trnbreak 2.2s ease-out; }
+@keyframes trnceremony { 0% { border-color: var(--hair); } 25% { border-color: var(--up, #57d98a); box-shadow: 0 0 22px -6px var(--up, #57d98a); } 100% { border-color: var(--hair); box-shadow: none; } }
+@keyframes trnbreak { 0% { opacity: 0.35; filter: saturate(0.4); } 30% { opacity: 1; filter: none; transform: scale(1.03); } 45% { transform: scale(1); } 100% { opacity: 1; } }
+.trn-broken { font-style: normal; margin-left: 8px; color: var(--up, #57d98a); letter-spacing: 0.14em; animation: trnprompt 0.8s ease-in-out 3; }
+.trn-complete { border: 1px solid color-mix(in srgb, var(--up, #57d98a) 60%, transparent); padding: 14px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.trn-complete-h { margin: 0; font-family: var(--font-mono), monospace; font-size: 13px; letter-spacing: 0.1em; color: var(--up, #57d98a); display: flex; align-items: center; gap: 10px; }
+.trn-chip.done { color: var(--up, #57d98a); border-color: currentColor; }
+.trn-learned { margin: 0; font-size: 13px; }
+.trn-carry { margin: 0; font-family: var(--font-mono), monospace; font-size: 11px; color: var(--dim); }
+.trn-carry b { color: var(--label); }
+.trn-complete-btns { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.trn-next { font-size: 13px; }
+.trn-keep { background: none; border: none; color: var(--dim); font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.08em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; padding: 2px 0; }
+.trn-keep:hover { color: var(--label); }
+.trn-row.current { border-color: color-mix(in srgb, var(--label) 60%, transparent); }
+.trn-row.current .trn-state { color: var(--label); }

@@ -54,14 +54,23 @@ export default function TrainingFloor({
   onExit: () => void;
 }) {
   const [open, setOpen] = useState<LessonDef | null>(null);
+  // P4 — the spine advances immediately: completions apply locally the moment
+  // they happen; the server refresh confirms behind them.
+  const [localDone, setLocalDone] = useState<string[]>([]);
+  const allDone = [...new Set([...done, ...localDone])];
+  const next = open ? LESSONS.find((l) => l.n === open.n + 1) ?? null : null;
   return (
     <div className="trn">
       <p className="pit-sim">SIMULATED — training floor. Education, not investment advice.</p>
       {open ? (
-        <Cockpit key={open.id} lesson={open} done={done}
-          onDone={() => onLessonDone(open.id)} onBack={() => setOpen(null)} />
+        <Cockpit key={open.id} lesson={open} done={allDone}
+          onDone={() => { setLocalDone((d) => [...d, open.id]); onLessonDone(open.id); }}
+          onBack={() => setOpen(null)}
+          onNext={next && next.built ? () => setOpen(next) : null}
+          nextTitle={next ? `${next.n}. ${next.title}${next.built ? "" : " (arrives next round)"}` : null}
+        />
       ) : (
-        <LessonIndex done={done} onOpen={setOpen} onExit={onExit} />
+        <LessonIndex done={allDone} onOpen={setOpen} onExit={onExit} />
       )}
     </div>
   );
@@ -89,16 +98,18 @@ function LessonIndex({
           const isDone = done.includes(l.id);
           const unlocked = lessonUnlocked(l.n, done);
           const openable = unlocked && l.built;
+          // P4 — the spine is visible: ✓ done · ▸ current · 🔒 locked
+          const isCurrent = !isDone && openable;
           return (
             <li key={l.id}>
               <button type="button"
-                className={`trn-row${isDone ? " done" : ""}${openable ? "" : " locked"}`}
+                className={`trn-row${isDone ? " done" : ""}${isCurrent ? " current" : ""}${openable ? "" : " locked"}`}
                 onClick={() => { if (openable) onOpen(l); }} aria-disabled={!openable}>
                 <span className="trn-chip">{l.topic}</span>
                 <span className="trn-title">{l.n}. {l.title}</span>
                 <span className="trn-mins">{l.minutes}</span>
                 <span className="trn-state">
-                  {isDone ? "✓ DONE" : !unlocked ? "🔒 finish the one before" : !l.built ? "🔒 arrives next round" : "OPEN →"}
+                  {isDone ? "✓ DONE" : isCurrent ? "▸ CURRENT — OPEN" : !unlocked ? "🔒 finish the one before" : "🔒 arrives next round"}
                 </span>
               </button>
             </li>
@@ -115,11 +126,21 @@ function LessonIndex({
 type TapeState = "idle" | "running" | "paused" | "over";
 
 function Cockpit({
-  lesson, done, onDone, onBack,
+  lesson, done, onDone, onBack, onNext, nextTitle,
 }: {
   lesson: LessonDef; done: string[]; onDone: () => void; onBack: () => void;
+  onNext: (() => void) | null; nextTitle: string | null;
 }) {
   const [tape, setTape] = useState<TapeState>("idle");
+  // P4 — the completion panel (dismissable; the tape rolls on beneath it)
+  const [showComplete, setShowComplete] = useState(false);
+  // P1 — locked controls always react: a pulse key + rotating coach nudges
+  const [lockPulse, setLockPulse] = useState(0);
+  const lockNudges = useRef(0);
+  // P1 — the unlock ceremony: first entry into the lesson that frees the ticket
+  const [ceremony, setCeremony] = useState(false);
+  // P3 — the last missed tap (drawn as a fading ✗) + tap markers with state
+  const [miss, setMiss] = useState<{ tick: number; key: number } | null>(null);
   const [, setTick] = useState(0);
   const runRef = useRef<RoundRun | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -145,8 +166,21 @@ function Cockpit({
     if (taskDoneRef.current) return;
     taskDoneRef.current = true; setTaskDone(true);
     say(line);
+    setShowComplete(true);
     onDone();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [say]);
+
+  // P1 — a locked control was poked: pulse the padlock, explain, promise
+  const lockNudge = useCallback((what: string, when: string) => {
+    setLockPulse((k) => k + 1);
+    const lines = [
+      `not yet — eyes today, ${what.toLowerCase()} in ${when}.`,
+      `the ${what.toLowerCase()} button unlocks in ${when}. this lesson is about seeing, not doing.`,
+      `patience is a position too. ${when} puts that button in your hands.`,
+    ];
+    say(lines[lockNudges.current % lines.length]);
+    lockNudges.current += 1;
   }, [say]);
 
   // R2 — order ticket state
@@ -210,6 +244,13 @@ function Cockpit({
     runRef.current = run;
     baseRef.current = run.equity();
     setTape("running");
+    // P1 — the unlock ceremony: the first tape of the lesson that frees the
+    // ticket breaks the padlocks open on screen, with the beat to match
+    if (lesson.id === "L2" && !taskDoneRef.current) {
+      setCeremony(true);
+      window.setTimeout(() => say("ticket's yours. don't embarrass the desk."), 900);
+      window.setTimeout(() => setCeremony(false), 3200);
+    }
     timerRef.current = window.setInterval(() => {
       if (runRef.current) tickRef.current(runRef.current);
     }, 1000 / lesson.day.tps);
@@ -307,8 +348,11 @@ function Cockpit({
     setTick((t) => t + 1);
   };
 
-  // canvas interactions: L1 taps · L3 line placement
-  const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // P3/P5 — canvas interactions on POINTER events (mouse + touch + pen):
+  // L1 taps drop a marker instantly, misses get a located hint, plan lines
+  // place where the finger says.
+  const tapMode = tape === "over" && lesson.id === "L1" && !taskDone;
+  const onCanvasTap = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     const scale = scaleRef.current;
     if (!r || !canvas || !scale) return;
@@ -320,10 +364,18 @@ function Cockpit({
       const prices = r.stocks[0].prices;
       if (nearExtreme(prices, tick, tapStep)) {
         setTaps((t) => [...t, { tick }]);
-        if (tapStep === "hi") { say("that's the high. now the low."); setTapStep("lo"); }
-        else complete("high and low, marked. you read the day. L2 takes the padlocks off.");
+        setMiss(null);
+        if (tapStep === "hi") { say("✓ that's the high. now the low."); setTapStep("lo"); }
+        else complete("✓ high and low, marked. you read the day. L2 takes the padlocks off.");
       } else {
-        say(tapStep === "hi" ? "not the high. the price nothing traded above." : "not the low. the price nothing traded under.");
+        // a located hint, not a rejection: point at where the answer lives
+        setMiss({ tick, key: Date.now() });
+        const targetTick = tapStep === "hi"
+          ? prices.indexOf(Math.max(...prices))
+          : prices.indexOf(Math.min(...prices));
+        const zone = targetTick < prices.length / 3 ? "near the open"
+          : targetTick < (2 * prices.length) / 3 ? "midday" : "late in the session";
+        say(tapStep === "hi" ? `higher — look at the spike ${zone}.` : `lower — look at the flush ${zone}.`);
       }
       return;
     }
@@ -388,20 +440,43 @@ function Cockpit({
       ctx.beginPath(); ctx.arc(X(m.tick), Y(m.price), 3, 0, Math.PI * 2); ctx.fill();
     }
     for (const t of taps) {
+      // a confirmed tap: the marker line + a ✓ at the marked price
       ctx.strokeStyle = "#cfe8d8";
       ctx.beginPath(); ctx.moveTo(X(t.tick), 0); ctx.lineTo(X(t.tick), h); ctx.stroke();
+      ctx.fillStyle = "#57d98a"; ctx.font = "bold 12px monospace";
+      ctx.fillText("✓", X(t.tick) + 4, Y(r.stocks[0].prices[t.tick]) - 4);
+    }
+    if (miss) {
+      ctx.fillStyle = "#e08a7a"; ctx.font = "bold 12px monospace";
+      ctx.fillText("✗", X(miss.tick) - 4, h / 2);
     }
   });
 
   const exitLesson = () => { bank(); stopTimer(); onBack(); };
 
+  // P2 — the session clock: no learner ever wonders waiting-or-stuck
+  const secsLeft = r && tape !== "idle" ? Math.max(0, Math.ceil((r.N - r.i) / lesson.day.tps)) : lesson.day.secs;
+  const clock = tape === "over" ? "BELL RUNG"
+    : `BELL IN ${Math.floor(secsLeft / 60)}:${String(secsLeft % 60).padStart(2, "0")}`;
+  const bellGated = lesson.id === "L1" && !taskDone;
+
   return (
     <div className="trn-room">
       <div className="trn-tape">
+        {/* P4 — the persistent course header */}
+        <div className="trn-course">
+          <span>LESSON {lesson.n} OF 8</span>
+          <div className="trn-progress slim"><span style={{ width: `${(LESSONS.filter((l) => done.includes(l.id)).length / 8) * 100}%` }} /></div>
+        </div>
         <div className="trn-head">
           <span className="trn-chip">{lesson.topic}</span>
           <b>{lesson.n}. {lesson.title}</b>
           {taskDone ? <span className="trn-donechip">✓ TASK DONE</span> : null}
+          {tape !== "idle" ? (
+            <span className={`trn-clock${tape === "over" ? " rung" : ""}`}>
+              {clock}{bellGated && tape !== "over" ? " · task starts at the bell" : ""}
+            </span>
+          ) : null}
           <span className="trn-eq">{tape !== "idle" && r ? `${r.stocks[0].ticker} · ${px.toFixed(2)}` : lesson.minutes}</span>
         </div>
 
@@ -414,8 +489,14 @@ function Cockpit({
           <>
             <div className={`trn-canvaswrap${flash === 1 ? " up" : flash === -1 ? " down" : ""}`}>
               <canvas ref={canvasRef}
-                className={`trn-canvas${(tape === "over" && lesson.id === "L1" && !taskDone) || arm ? " aim" : ""}`}
-                onClick={onCanvasClick} aria-label="Training tape" />
+                className={`trn-canvas${tapMode || arm ? " aim" : ""}`}
+                onPointerUp={onCanvasTap} aria-label="Training tape" />
+              {/* P3 — visible tap mode: the prompt rides the tape itself */}
+              {tapMode ? (
+                <span className="trn-tapprompt">✚ {tapStep === "hi" ? "TAP THE DAY'S HIGH" : "✓ NOW TAP THE LOW"}</span>
+              ) : arm ? (
+                <span className="trn-tapprompt">✚ TAP THE CHART TO PLACE THE {arm.toUpperCase()}</span>
+              ) : null}
               {pop ? <span key={pop.key} className={`trn-pop ${pop.cls === 1 ? "up" : "down"}`}>{pop.text}</span> : null}
             </div>
             {/* R1 — the account strip, tick by tick */}
@@ -425,11 +506,32 @@ function Cockpit({
               <span>REALIZED<b className={realized > 0 ? "up" : realized < 0 ? "down" : ""}>{usd(Math.round(realized), true)}</b></span>
               <span>UNREALIZED<b className={uPnl > 0 ? "up" : uPnl < 0 ? "down" : ""}>{usd(Math.round(uPnl), true)}</b></span>
             </div>
+            {/* P4 — LESSON COMPLETE: the inverted pyramid, NEXT dominant */}
+            {showComplete ? (
+              <div className="trn-complete" role="status">
+                <p className="trn-complete-h"><span className="trn-chip done">✓ {lesson.topic}</span> LESSON {lesson.n} COMPLETE — {lesson.title}</p>
+                {lesson.learned ? <p className="trn-learned">{lesson.learned}</p> : null}
+                <p className="trn-carry">account carries forward: <b>{usd(Math.round(dispEq))}</b></p>
+                <div className="trn-complete-btns">
+                  {onNext ? (
+                    <button type="button" className="pit2-btn pit2-run trn-next" onClick={() => { bank(); stopTimer(); onNext(); }}>
+                      NEXT LESSON — {nextTitle} →
+                    </button>
+                  ) : nextTitle ? (
+                    <p className="trn-chain">next: {nextTitle}</p>
+                  ) : null}
+                  <button type="button" className="trn-keep" onClick={() => setShowComplete(false)}>
+                    keep practicing — the tape is still yours
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="trn-task" role="status">
               {tape === "over" && lesson.id === "L1" && !taskDone
                 ? (tapStep === "hi" ? "TAP THE DAY'S HIGH" : "NOW THE LOW")
                 : `TASK — ${lesson.task}${taskDone ? " ✓" : ""}`}
             </div>
+            )}
             {/* R4 — the tape is a session, not a slide */}
             <div className="trn-session">
               <button type="button" onClick={pause} disabled={tape === "over"}>
@@ -449,21 +551,36 @@ function Cockpit({
       <aside className="trn-rail">
         <button type="button" className="pit5-back" onClick={exitLesson}>← LESSONS</button>
 
-        {/* R2 — the order ticket: present always, padlocked only in L1 */}
-        <div className={`trn-ticket${!lesson.controls.trade ? " chained" : ""}`}>
-          <p className="trn-ticket-h">ORDER TICKET</p>
+        {/* R2/P1 — the order ticket: always present; progression locks are
+            never silent (pulse + coach line + the inline promise) */}
+        <div className={`trn-ticket${!lesson.controls.trade ? " chained" : ""}${ceremony ? " ceremony" : ""}`}>
+          <p className="trn-ticket-h">ORDER TICKET{ceremony ? <i className="trn-broken">🔓 UNLOCKED</i> : null}</p>
           <div className="trn-sizes" role="radiogroup" aria-label="Contracts">
             {SIZES.map((n, ix) => (
               <button key={n} type="button" className={sizeIx === ix ? "on" : ""}
-                disabled={!ticketLive}
-                onClick={() => { setSizeIx(ix); }}>{n}</button>
+                onClick={() => {
+                  if (!ticketLive) { lockNudge("orders", "Lesson 2"); return; }
+                  setSizeIx(ix);
+                }}>{n}</button>
             ))}
           </div>
-          <button type="button" className="trn-buy" disabled={!ticketLive || tape !== "running"} onClick={() => order(1)}>BUY MARKET</button>
-          <button type="button" className="trn-sell" disabled={!ticketLive || !lesson.controls.short || tape !== "running"} onClick={() => order(-1)}>SELL MARKET</button>
-          <button type="button" className="trn-flat" disabled={!ticketLive || !pos || tape !== "running"} onClick={flatten}>FLATTEN</button>
+          <button type="button" className={`trn-buy${!lesson.controls.trade ? " locked" : ""}`}
+            disabled={ticketLive && (tape !== "running")}
+            onClick={() => { if (!lesson.controls.trade) { lockNudge("hands", "Lesson 2"); return; } if (tape === "idle") { say("start the tape first."); return; } order(1); }}>
+            BUY MARKET{!lesson.controls.trade ? " · 🔒 L2" : ""}
+          </button>
+          <button type="button" className={`trn-sell${!lesson.controls.short ? " locked" : ""}`}
+            disabled={ticketLive && lesson.controls.short && tape !== "running"}
+            onClick={() => { if (!lesson.controls.short) { lockNudge("hands", "Lesson 2"); return; } if (tape === "idle") { say("start the tape first."); return; } order(-1); }}>
+            SELL MARKET{!lesson.controls.short ? " · 🔒 L2" : ""}
+          </button>
+          <button type="button" className={`trn-flat${!lesson.controls.trade ? " locked" : ""}`}
+            disabled={ticketLive && (tape !== "running" || !pos)}
+            onClick={() => { if (!lesson.controls.trade) { lockNudge("hands", "Lesson 2"); return; } flatten(); }}>
+            FLATTEN{!lesson.controls.trade ? " · 🔒 L2" : ""}
+          </button>
           {!lesson.controls.trade ? (
-            <p className="trn-chain">🔒 the ticket unlocks in L2 — this lesson is eyes only</p>
+            <p key={lockPulse} className={`trn-chain${lockPulse > 0 ? " pulse" : ""}`}>🔒 eyes today, hands in Lesson 2</p>
           ) : pos ? (
             <p className="trn-pos">{pos.dir === 1 ? "+" : "−"}{holdCts.current} @ {pos.entry.toFixed(2)} · <b className={uPnl >= 0 ? "up" : "down"}>{usd(Math.round(uPnl), true)}</b></p>
           ) : (

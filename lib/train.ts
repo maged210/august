@@ -39,6 +39,8 @@ export type LessonDef = {
   ghostPlan?: boolean;
   beats: CoachBeat[];
   task: string;
+  /** one line of what was learned — the completion panel's summary (P4) */
+  learned?: string;
   /** which button the lesson newly unlocks — the padlock moment's caption */
   unlocks?: string;
   /** optional media slot — reserved, always null in v1 (no videos) */
@@ -140,6 +142,7 @@ export const LESSONS: LessonDef[] = [
       { atSec: 55, text: "bell soon. after it rings you show me the day's high and its low." },
     ],
     task: "AFTER THE BELL — tap the day's HIGH, then its LOW, on the tape.",
+    learned: "you can read a session now — impulse, retrace, and where the edges were.",
     media: null,
   },
   {
@@ -164,6 +167,7 @@ export const LESSONS: LessonDef[] = [
       { atSec: 58, text: "book one winner, either direction. that's the whole task." },
     ],
     task: "Close ONE profitable trade — long or short.",
+    learned: "you put on risk and took it off green. that's the whole loop.",
     media: null,
   },
   {
@@ -189,6 +193,7 @@ export const LESSONS: LessonDef[] = [
       { atSec: 62, text: "exit at the plan — target or stop, either one is a win of discipline." },
     ],
     task: "Set a 2:1 plan (stop + target), take the trade, exit AT the plan.",
+    learned: "you let the plan exit the trade. that's the skill most never learn.",
     media: null,
   },
   // ── T3 content — slotted, honest locks until the next round ────────────────
