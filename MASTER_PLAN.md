@@ -503,7 +503,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] A5 (no build): getHistory() intraday approved as REUSE for R2 + future PIT replay; FRED + calendar JSON stay unwired until their round.
 
 ### GATE R1 — report + regime on preview + labels visible + one deliberately failed fetch showing its honest state. HOLD.
-- [ ] R1 approved.
+- [x] R1 approved 2026-08-16.
 
 ## R2 — NQ LEVELS + VIX IN CONTEXT
 - [ ] NQ LEVELS module (terminal + brief chip): price, prev H/L/C; VWAP + overnight H/L ONLY if intraday granularity honestly supports them (omit over approximate); S/R from live-book stated levels; BULLISH/NEUTRAL/BEARISH = calculated condition, never advice.
