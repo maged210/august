@@ -1,55 +1,71 @@
 "use client";
 
-// TRAIN-1 — THE TRAINING FLOOR (surface). Split template per DESIGN_LAWS:
-// lesson rail right, live scripted tape left. The engine is lib/train.ts +
-// lib/pit-engine.ts; this component only draws and forwards interactions.
-// SIMULATED banner persists; every lesson footer: education, not advice.
+// TRAIN-1 — THE TRAINING FLOOR, round 2: a TRADING COCKPIT with lessons
+// attached (T-G1 feedback), not pages with a chart. The PIT engine's own
+// position/order/commentary systems run every lesson:
+//   R1 — persistent training account: $50,000 sim · MLL $48,000 · REALIZED ·
+//        UNREALIZED, tick-by-tick; survives across lessons; RESET always
+//        available; an MLL breach is a teachable moment, never a dead end.
+//   R2 — persistent order ticket (size · BUY MKT · SELL MKT · FLATTEN);
+//        L1 keeps the padlock; from L2 the panel is live in EVERY lesson.
+//        Fills mark the tape; UP&L breathes while holding; closes pop.
+//   R3 — L3 stop/target lines placed on the chart, auto-flatten on touch,
+//        2:1 validated from the learner's actual placed levels. Coach reacts
+//        to the learner's own fills via the engine's floor commentary.
+//   R4 — continuous sessions: PAUSE/RESUME · RESET CHART; tasks completing
+//        never stop the tape — free practice is the point.
+// SIMULATED ONLY. Education, not investment advice.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRoundRun, START_CASH,
-  type PitEvent, type RoundRun, type RoundSummary,
+  type PitEvent, type RoundRun,
 } from "@/lib/pit-engine";
 import {
-  LESSONS, lessonUnlocked, nearExtreme, profitableClose, planRatioOk, exitAtPlan,
+  LESSONS, lessonUnlocked, nearExtreme, planRatioOk,
   trainedBadge, type LessonDef, type TradePlan,
 } from "@/lib/train";
 
-type LessonPhase = "brief" | "live" | "task" | "passed" | "retry";
+// the training account: engine days run on $10k — the strip displays the
+// $50k desk account by scaling engine equity deltas
+const ACCT_START = 50_000;
+const MLL = 48_000;
+const SCALE = ACCT_START / START_CASH;
+const SIZES = [1, 2, 3, 4]; // contracts → fraction of available cash
 
-const fmt$ = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+const usd = (v: number, sign = false) =>
+  `${v < 0 ? "−" : sign && v > 0 ? "+" : ""}$${Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+
+function loadBal(): number {
+  try {
+    const v = Number(window.localStorage.getItem("aug-train-bal"));
+    return Number.isFinite(v) && v > 0 ? v : ACCT_START;
+  } catch { return ACCT_START; }
+}
+function saveBal(v: number) {
+  try { window.localStorage.setItem("aug-train-bal", String(v)); } catch { /* session-only */ }
+}
 
 export default function TrainingFloor({
-  done,
-  onLessonDone,
-  onExit,
+  done, onLessonDone, onExit,
 }: {
-  /** completed lesson ids from the player record */
   done: string[];
-  /** persist a completion (POST /api/pit action:train) */
   onLessonDone: (id: string) => void;
   onExit: () => void;
 }) {
   const [open, setOpen] = useState<LessonDef | null>(null);
-
   return (
     <div className="trn">
       <p className="pit-sim">SIMULATED — training floor. Education, not investment advice.</p>
       {open ? (
-        <LessonRoom
-          key={open.id}
-          lesson={open}
-          onDone={() => onLessonDone(open.id)}
-          onBack={() => setOpen(null)}
-        />
+        <Cockpit key={open.id} lesson={open} done={done}
+          onDone={() => onLessonDone(open.id)} onBack={() => setOpen(null)} />
       ) : (
         <LessonIndex done={done} onOpen={setOpen} onExit={onExit} />
       )}
     </div>
   );
 }
-
-// ── the index — topic chips, locked states, progress ─────────────────────────
 
 function LessonIndex({
   done, onOpen, onExit,
@@ -61,8 +77,8 @@ function LessonIndex({
     <div className="trn-index">
       <h2>THE TRAINING FLOOR</h2>
       <p className="trn-sub">
-        eight lessons, the real tape engine, sim tickers only. the game never waits on this —
-        CAREER and DAILY are open regardless.
+        a $50,000 sim desk, the real tape engine, lessons attached. the game never waits on
+        this — CAREER and DAILY are open regardless.
       </p>
       <div className="trn-progress" role="img" aria-label={`${doneCount} of 8 lessons complete`}>
         <span style={{ width: `${(doneCount / 8) * 100}%` }} />
@@ -75,12 +91,9 @@ function LessonIndex({
           const openable = unlocked && l.built;
           return (
             <li key={l.id}>
-              <button
-                type="button"
+              <button type="button"
                 className={`trn-row${isDone ? " done" : ""}${openable ? "" : " locked"}`}
-                onClick={() => { if (openable) onOpen(l); }}
-                aria-disabled={!openable}
-              >
+                onClick={() => { if (openable) onOpen(l); }} aria-disabled={!openable}>
                 <span className="trn-chip">{l.topic}</span>
                 <span className="trn-title">{l.n}. {l.title}</span>
                 <span className="trn-mins">{l.minutes}</span>
@@ -97,142 +110,235 @@ function LessonIndex({
   );
 }
 
-// ── one lesson — scripted tape left, rail right ──────────────────────────────
+// ── the cockpit ──────────────────────────────────────────────────────────────
 
-function LessonRoom({
-  lesson, onDone, onBack,
+type TapeState = "idle" | "running" | "paused" | "over";
+
+function Cockpit({
+  lesson, done, onDone, onBack,
 }: {
-  lesson: LessonDef; onDone: () => void; onBack: () => void;
+  lesson: LessonDef; done: string[]; onDone: () => void; onBack: () => void;
 }) {
-  const [phase, setPhase] = useState<LessonPhase>("brief");
+  const [tape, setTape] = useState<TapeState>("idle");
   const [, setTick] = useState(0);
   const runRef = useRef<RoundRun | null>(null);
   const timerRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // y→price inverse mapping for plan taps, updated every draw
   const scaleRef = useRef<{ lo: number; hi: number; n: number } | null>(null);
+
+  // R1 — the persistent account. baseline = engine equity the strip zeroes on
+  const [bal, setBal] = useState(ACCT_START);
+  const balRef = useRef(ACCT_START);
+  const baseRef = useRef(START_CASH);
+  useEffect(() => { const b = loadBal(); setBal(b); balRef.current = b; }, []);
+  const setBalance = useCallback((v: number) => {
+    balRef.current = v; setBal(v); saveBal(v);
+  }, []);
+
   const [coach, setCoach] = useState<string[]>([]);
   const beatIx = useRef(0);
-  const [summary, setSummary] = useState<RoundSummary | null>(null);
-  const [failText, setFailText] = useState("");
-  // L1 — tap the high, then the low
-  const [tapStep, setTapStep] = useState<"hi" | "lo">("hi");
-  const [taps, setTaps] = useState<Array<{ tick: number; which: "hi" | "lo" }>>([]);
-  // L3 — the ghost plan. The interval's bell callback validates against the
-  // REF — the state snapshot it closed over is stale by then.
+  const say = useCallback((text: string) => setCoach((c) => [...c.slice(-3), text]), []);
+
+  const [taskDone, setTaskDone] = useState(done.includes(lesson.id));
+  const taskDoneRef = useRef(taskDone);
+  const complete = useCallback((line: string) => {
+    if (taskDoneRef.current) return;
+    taskDoneRef.current = true; setTaskDone(true);
+    say(line);
+    onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [say]);
+
+  // R2 — order ticket state
+  const [sizeIx, setSizeIx] = useState(0);
+  const sizeRef = useRef(0);
+  useEffect(() => { sizeRef.current = sizeIx; }, [sizeIx]);
+  const [pop, setPop] = useState<{ text: string; cls: 1 | -1; key: number } | null>(null);
+  const [flash, setFlash] = useState<0 | 1 | -1>(0);
+  const holdCts = useRef(0);
+
+  // R3 — placed stop/target lines (L3+). Refs govern in the tick loop.
   const [plan, setPlan] = useState<Partial<TradePlan>>({});
   const planRef = useRef<Partial<TradePlan>>({});
   useEffect(() => { planRef.current = plan; }, [plan]);
   const [arm, setArm] = useState<"stop" | "target" | null>(null);
 
-  const say = useCallback((text: string) => {
-    setCoach((c) => [...c.slice(-3), text]);
-  }, []);
+  // L1 — tap-the-edges task
+  const [tapStep, setTapStep] = useState<"hi" | "lo">("hi");
+  const [taps, setTaps] = useState<Array<{ tick: number }>>([]);
 
-  const stop = useCallback(() => {
+  const stopTimer = useCallback(() => {
     if (timerRef.current !== null) { window.clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
-  useEffect(() => stop, [stop]);
+  useEffect(() => stopTimer, [stopTimer]);
 
-  const start = useCallback(() => {
-    setCoach([]); beatIx.current = 0; setSummary(null); setTaps([]); setTapStep("hi"); setPlan({}); setArm(null);
-    const run = createRoundRun(lesson.day, lesson.seed, START_CASH, (ev: PitEvent) => {
-      if (ev.type === "pop") say(ev.text.toLowerCase());
-    });
-    runRef.current = run;
-    setPhase("live");
-    timerRef.current = window.setInterval(() => {
-      const r = runRef.current;
-      if (!r) return;
-      const end = r.tick();
-      const sec = r.i / lesson.day.tps;
-      const beats = lesson.beats;
-      while (beatIx.current < beats.length && sec >= beats[beatIx.current].atSec) {
-        say(beats[beatIx.current].text);
-        beatIx.current += 1;
-      }
-      setTick((t) => t + 1);
-      if (end) {
-        stop();
-        const s = r.finish(end === "margin");
-        setSummary(s);
-        settle(s, end === "margin");
-      }
-    }, 1000 / lesson.day.tps);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson, say, stop]);
-
-  // bell → validate the lesson's task
-  const settle = (s: RoundSummary, margin: boolean) => {
+  // bank the open engine delta into the account (lesson exit / bell / reset)
+  const bank = useCallback(() => {
     const r = runRef.current;
     if (!r) return;
-    if (lesson.id === "L1") {
-      say("bell. now show me the edges — tap the day's high first.");
-      setPhase("task");
-      return;
-    }
-    if (margin) {
-      setFailText("margin call. the lesson stands: risk first. run it again.");
-      setPhase("retry");
-      return;
-    }
-    if (lesson.id === "L2") {
-      if (profitableClose(r.log)) pass("one clean round trip, booked. that's the job.");
-      else { setFailText("no profitable close on the log. same tape, run it again — wait for the pause."); setPhase("retry"); }
-      return;
-    }
-    if (lesson.id === "L3") {
-      const p = planRef.current;
-      if (p.entry != null && p.stop != null && p.target != null && exitAtPlan(p as TradePlan, r.log)) {
-        pass("exited at the plan. either side of it counts — discipline is the trade.");
-      } else {
-        setFailText("the exit didn't land on the plan. same tape — set it, then obey it.");
-        setPhase("retry");
+    const delta = (r.equity() - baseRef.current) * SCALE;
+    if (Math.abs(delta) > 0.5) setBalance(Math.max(0, Math.round(balRef.current + delta)));
+    baseRef.current = r.equity();
+  }, [setBalance]);
+
+  const onEngine = useCallback((ev: PitEvent) => {
+    // the PIT's floor commentary, wholesale — reacting to the learner's fills
+    if (ev.type === "pop") say(ev.text.toLowerCase());
+    else if (ev.type === "goodEntry") say("good entry — you didn't chase.");
+    else if (ev.type === "panicSell") say("you sold the low. the tape smelled it.");
+    else if (ev.type === "stopOut") say("stopped out hard. size was the problem, not the idea.");
+    else if (ev.type === "diamondHands") say("held through the drawdown and got paid. noted.");
+    else if (ev.type === "paperHands") say("paper hands — that runner kept going without you.");
+    else if (ev.type === "closedInfo") {
+      const r = runRef.current;
+      if (!r) return;
+      // realized pop in desk dollars
+      const dollars = (ev.gain / 100) * START_CASH * SCALE * (holdCts.current / SIZES.length || 0.25);
+      setPop({ text: usd(Math.round(dollars), true), cls: ev.gain >= 0 ? 1 : -1, key: Date.now() });
+      if (lesson.id === "L2" && ev.gain > 0) {
+        complete("that's the round trip. lesson done — the tape keeps rolling, trade it.");
       }
-      return;
     }
-    pass("done.");
+  }, [say, lesson.id, complete]);
+
+  const start = useCallback((freshCoach = true) => {
+    stopTimer();
+    if (freshCoach) { setCoach([]); }
+    beatIx.current = 0;
+    setTaps([]); setTapStep("hi"); setPlan({}); setArm(null); setPop(null);
+    const run = createRoundRun(lesson.day, lesson.seed, START_CASH, onEngine);
+    runRef.current = run;
+    baseRef.current = run.equity();
+    setTape("running");
+    timerRef.current = window.setInterval(() => {
+      if (runRef.current) tickRef.current(runRef.current);
+    }, 1000 / lesson.day.tps);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson, onEngine, stopTimer]);
+
+  const pause = () => {
+    if (tape === "running") { stopTimer(); setTape("paused"); }
+    else if (tape === "paused" && runRef.current) {
+      // resume: re-arm the interval without resetting the run (R4)
+      setTape("running");
+      timerRef.current = window.setInterval(() => {
+        if (runRef.current) tickRef.current(runRef.current);
+      }, 1000 / lesson.day.tps);
+    }
+  };
+  // ONE tick body (interval closures go through the ref so nothing stales)
+  const tickOnce = (r: RoundRun) => {
+    const prevPx = r.px(0);
+    const end = r.tick();
+    const px = r.px(0);
+    const pos = r.positions[0];
+    setFlash(pos ? (px > prevPx ? 1 : px < prevPx ? -1 : 0) : 0);
+    const sec = r.i / lesson.day.tps;
+    while (beatIx.current < lesson.beats.length && sec >= lesson.beats[beatIx.current].atSec) {
+      say(lesson.beats[beatIx.current].text);
+      beatIx.current += 1;
+    }
+    const p = planRef.current;
+    if (pos && (p.stop != null || p.target != null)) {
+      const hitStop = p.stop != null && (pos.dir === 1 ? px <= p.stop : px >= p.stop);
+      const hitTarget = p.target != null && (pos.dir === 1 ? px >= p.target : px <= p.target);
+      if (hitStop || hitTarget) {
+        const entry = pos.entry;
+        r.act(0, 0);
+        say(hitTarget ? "target touched — flat. that's the plan paying." : "stopped. that's the plan working, not failing.");
+        if (lesson.id === "L3" && p.stop != null && p.target != null
+          && planRatioOk({ entry, stop: p.stop, target: p.target })) {
+          complete("planned, entered, exited at the line. 2:1 obeyed — lesson done. keep practicing.");
+        }
+      }
+    }
+    const eq = balRef.current + (r.equity() - baseRef.current) * SCALE;
+    if (eq <= MLL) {
+      for (let s = 0; s < r.positions.length; s++) if (r.positions[s]) r.act(s, 0);
+      say("that's the max loss line. a real desk takes the seat away. training desk resets — remember this feeling.");
+      baseRef.current = r.equity();
+      setBalance(ACCT_START);
+    }
+    setTick((t) => t + 1);
+    if (end) {
+      stopTimer();
+      setTape("over");
+      bank();
+      if (lesson.id === "L1" && !taskDoneRef.current) say("bell. now show me the edges — tap the day's high first.");
+      else if (!taskDoneRef.current) say("bell. the task's still open — reset the chart and run it again.");
+      else say("bell. banked.");
+    }
+  };
+  const tickRef = useRef(tickOnce);
+  useEffect(() => { tickRef.current = tickOnce; });
+
+  const resetChart = () => { bank(); start(false); say("fresh chart, same tape. the account remembers."); };
+  const resetAccount = () => { setBalance(ACCT_START); baseRef.current = runRef.current?.equity() ?? START_CASH; say("account reset — $50,000 even."); };
+
+  // R2 — the ticket
+  const r = runRef.current;
+  const pos = r?.positions[0] ?? null;
+  const px = r ? r.px(0) : 0;
+  const uPnlEngine = pos && r ? pos.qty * (px - pos.entry) * pos.dir : 0;
+  const uPnl = uPnlEngine * SCALE;
+  const dispEq = balRef.current + (r ? (r.equity() - baseRef.current) * SCALE : 0);
+  const realized = dispEq - ACCT_START - uPnl;
+  const ticketLive = lesson.controls.trade && tape !== "idle";
+
+  const order = (dir: 1 | -1) => {
+    if (!r || tape !== "running" || !ticketLive) return;
+    const frac = SIZES[sizeRef.current] / SIZES.length;
+    const before = r.positions[0];
+    r.act(0, dir, frac);
+    const after = r.positions[0];
+    if (after && (!before || before !== after)) {
+      holdCts.current = Math.max(1, Math.round(after.sizeFrac * SIZES.length));
+      say(`filled — ${dir === 1 ? "long" : "short"} ${SIZES[sizeRef.current]} @ ${px.toFixed(2)}`);
+      if (lesson.ghostPlan && (planRef.current.stop == null || planRef.current.target == null)) {
+        say("no lines on the chart. where are you wrong? where are you paid?");
+      }
+      setPlan((pl) => ({ ...pl, entry: px }));
+    }
+    setTick((t) => t + 1);
+  };
+  const flatten = () => {
+    if (!r || tape !== "running" || !pos) return;
+    r.act(0, 0);
+    setTick((t) => t + 1);
   };
 
-  const pass = (line: string) => {
-    say(line);
-    setPhase("passed");
-    onDone();
-  };
-
-  // L1 tap validation / L3 plan taps
+  // canvas interactions: L1 taps · L3 line placement
   const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = runRef.current;
     const canvas = canvasRef.current;
     const scale = scaleRef.current;
     if (!r || !canvas || !scale) return;
     const rect = canvas.getBoundingClientRect();
     const fx = (e.clientX - rect.left) / rect.width;
     const fy = (e.clientY - rect.top) / rect.height;
-    if (phase === "task" && lesson.id === "L1") {
+    if (tape === "over" && lesson.id === "L1" && !taskDoneRef.current) {
       const tick = Math.max(0, Math.min(scale.n - 1, Math.round(fx * (scale.n - 1))));
       const prices = r.stocks[0].prices;
       if (nearExtreme(prices, tick, tapStep)) {
-        setTaps((t) => [...t, { tick, which: tapStep }]);
+        setTaps((t) => [...t, { tick }]);
         if (tapStep === "hi") { say("that's the high. now the low."); setTapStep("lo"); }
-        else pass("high and low, marked. you read the day. next lesson's buttons come off.");
+        else complete("high and low, marked. you read the day. L2 takes the padlocks off.");
       } else {
-        say(tapStep === "hi" ? "not the high. look for the price nothing traded above." : "not the low. look for the price nothing traded under.");
+        say(tapStep === "hi" ? "not the high. the price nothing traded above." : "not the low. the price nothing traded under.");
       }
       return;
     }
-    if (phase === "live" && lesson.ghostPlan && arm) {
+    if (lesson.ghostPlan && arm && tape !== "idle") {
       const price = scale.hi - fy * (scale.hi - scale.lo);
       setPlan((p) => ({ ...p, [arm]: price }));
       setArm(null);
+      say(arm === "stop" ? "stop on the chart. it will fire — that's its job." : "target set. let it come to you.");
     }
   };
 
-  // the tape canvas — one focused stock, marks, ghost plan
+  // the tape canvas
   useEffect(() => {
     const canvas = canvasRef.current;
-    const r = runRef.current;
-    if (!canvas || !r || (phase !== "live" && phase !== "task" && phase !== "passed" && phase !== "retry")) return;
+    if (!canvas || !r || tape === "idle") return;
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
@@ -240,22 +346,20 @@ function LessonRoom({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const upto = phase === "live" ? Math.max(2, r.i) : r.stocks[0].prices.length;
+    const upto = tape === "over" ? r.stocks[0].prices.length : Math.max(2, r.i);
     const prices = r.stocks[0].prices.slice(0, upto);
     let lo = Math.min(...prices), hi = Math.max(...prices);
-    for (const v of [plan.stop, plan.target]) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-    const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
+    for (const v of [plan.stop, plan.target, pos?.entry]) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    const padY = (hi - lo) * 0.08 || 1; lo -= padY; hi += padY;
     scaleRef.current = { lo, hi, n: r.stocks[0].prices.length };
     const N = r.stocks[0].prices.length;
     const X = (t: number) => (t / (N - 1)) * w;
     const Y = (p: number) => h - ((p - lo) / (hi - lo)) * h;
-    // price path
     ctx.beginPath();
     prices.forEach((p, t) => { const x = X(t), y = Y(p); if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
     ctx.strokeStyle = prices[prices.length - 1] >= prices[0] ? "#57d98a" : "#e08a7a";
     ctx.lineWidth = 1.4;
     ctx.stroke();
-    // ghost plan (L3) — training-only furniture
     const dash = (price: number, color: string, label: string) => {
       ctx.save();
       ctx.setLineDash([5, 4]);
@@ -269,43 +373,27 @@ function LessonRoom({
     if (lesson.ghostPlan) {
       if (plan.stop != null) dash(plan.stop, "#e08a7a", "STOP");
       if (plan.target != null) dash(plan.target, "#57d98a", "TARGET");
-      if (plan.entry != null) dash(plan.entry, "#8fa89a", "ENTRY");
     }
-    // trade marks
+    // the live entry line + position tag (R2)
+    if (pos) {
+      dash(pos.entry, "#cfe8d8", "ENTRY");
+      ctx.fillStyle = uPnl >= 0 ? "#57d98a" : "#e08a7a";
+      ctx.font = "bold 11px monospace";
+      const tag = `${pos.dir === 1 ? "+" : "−"}${holdCts.current} · ${usd(Math.round(uPnl), true)}`;
+      ctx.fillText(tag, Math.min(X(upto - 1) + 8, w - 90), Y(px) - 6);
+    }
     for (const m of r.log) {
       if (m.s !== 0) continue;
       ctx.fillStyle = m.kind === "open" ? "#cfe8d8" : (m.gain ?? 0) >= 0 ? "#57d98a" : "#e08a7a";
-      ctx.beginPath();
-      ctx.arc(X(m.tick), Y(m.price), 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(X(m.tick), Y(m.price), 3, 0, Math.PI * 2); ctx.fill();
     }
-    // L1 task taps
     for (const t of taps) {
       ctx.strokeStyle = "#cfe8d8";
       ctx.beginPath(); ctx.moveTo(X(t.tick), 0); ctx.lineTo(X(t.tick), h); ctx.stroke();
     }
   });
 
-  const r = runRef.current;
-  const pos = r?.positions[0] ?? null;
-  const price = r ? r.px(0) : 0;
-  // the plan is judged against the would-be entry (current price) until the
-  // fill records the real one — otherwise the entry button can never unlock
-  const planEntry = plan.entry ?? price;
-  const planReady = plan.stop != null && plan.target != null && price > 0
-    && planRatioOk({ entry: planEntry, stop: plan.stop, target: plan.target });
-  const canEnter = lesson.controls.trade && (!lesson.ghostPlan || planReady);
-  const rr = plan.stop != null && plan.target != null && planEntry > 0
-    ? Math.abs((plan.target - planEntry) / (planEntry - plan.stop || 1)).toFixed(1)
-    : null;
-
-  const act = (dir: 1 | -1 | 0) => {
-    if (!r || phase !== "live") return;
-    if (dir !== 0 && lesson.ghostPlan && !planReady) { say("plan first. stop, then target, 2:1 or better."); return; }
-    r.act(0, dir, 1);
-    if (dir !== 0 && lesson.ghostPlan) setPlan((p) => ({ ...p, entry: r.px(0) }));
-    setTick((t) => t + 1);
-  };
+  const exitLesson = () => { bank(); stopTimer(); onBack(); };
 
   return (
     <div className="trn-room">
@@ -313,98 +401,101 @@ function LessonRoom({
         <div className="trn-head">
           <span className="trn-chip">{lesson.topic}</span>
           <b>{lesson.n}. {lesson.title}</b>
-          <span className="trn-eq">{r && phase !== "brief" ? `${fmt$(r.equity())} · ${price >= 1 ? price.toFixed(2) : "—"}` : lesson.minutes}</span>
+          {taskDone ? <span className="trn-donechip">✓ TASK DONE</span> : null}
+          <span className="trn-eq">{tape !== "idle" && r ? `${r.stocks[0].ticker} · ${px.toFixed(2)}` : lesson.minutes}</span>
         </div>
-        {phase === "brief" ? (
+
+        {tape === "idle" ? (
           <div className="trn-brief">
             <p className="trn-weather">{lesson.day.weather}</p>
-            <button type="button" className="pit2-btn pit2-run" onClick={start}>START THE TAPE</button>
+            <button type="button" className="pit2-btn pit2-run" onClick={() => start()}>START THE TAPE</button>
           </div>
         ) : (
           <>
-            <canvas
-              ref={canvasRef}
-              className={`trn-canvas${phase === "task" || arm ? " aim" : ""}`}
-              onClick={onCanvasClick}
-              aria-label="Training tape"
-            />
+            <div className={`trn-canvaswrap${flash === 1 ? " up" : flash === -1 ? " down" : ""}`}>
+              <canvas ref={canvasRef}
+                className={`trn-canvas${(tape === "over" && lesson.id === "L1" && !taskDone) || arm ? " aim" : ""}`}
+                onClick={onCanvasClick} aria-label="Training tape" />
+              {pop ? <span key={pop.key} className={`trn-pop ${pop.cls === 1 ? "up" : "down"}`}>{pop.text}</span> : null}
+            </div>
+            {/* R1 — the account strip, tick by tick */}
+            <div className="trn-acct" role="status">
+              <span>BAL<b>{usd(Math.round(dispEq))}</b></span>
+              <span>MAX LOSS LIMIT<b className={dispEq - MLL < 500 ? "down" : ""}>{usd(MLL)}</b></span>
+              <span>REALIZED<b className={realized > 0 ? "up" : realized < 0 ? "down" : ""}>{usd(Math.round(realized), true)}</b></span>
+              <span>UNREALIZED<b className={uPnl > 0 ? "up" : uPnl < 0 ? "down" : ""}>{usd(Math.round(uPnl), true)}</b></span>
+            </div>
             <div className="trn-task" role="status">
-              {phase === "task" ? (tapStep === "hi" ? "TAP THE DAY'S HIGH" : "NOW THE LOW") : `TASK — ${lesson.task}`}
+              {tape === "over" && lesson.id === "L1" && !taskDone
+                ? (tapStep === "hi" ? "TAP THE DAY'S HIGH" : "NOW THE LOW")
+                : `TASK — ${lesson.task}${taskDone ? " ✓" : ""}`}
             </div>
-            {/* progressive controls — locked buttons are furniture, not absence */}
-            <div className="trn-controls">
-              <LockableBtn label="LONG" locked={!canEnter} lockLine={lesson.controls.trade ? "plan first" : "unlocks in L2"}
-                onClick={() => act(1)} disabled={phase !== "live" || !!pos} />
-              <LockableBtn label="SHORT" locked={!lesson.controls.short || (!!lesson.ghostPlan && !planReady)} lockLine={lesson.controls.short ? "plan first" : "unlocks in L2"}
-                onClick={() => act(-1)} disabled={phase !== "live" || !!pos} />
-              <LockableBtn label="CLOSE" locked={!lesson.controls.trade} lockLine="unlocks in L2"
-                onClick={() => act(0)} disabled={phase !== "live" || !pos} />
-              <LockableBtn label="SIZE" locked={!lesson.controls.sizing} lockLine="unlocks in L4"
-                onClick={() => {}} disabled />
+            {/* R4 — the tape is a session, not a slide */}
+            <div className="trn-session">
+              <button type="button" onClick={pause} disabled={tape === "over"}>
+                {tape === "paused" ? "RESUME" : "PAUSE"}
+              </button>
+              <button type="button" onClick={resetChart}>RESET CHART</button>
+              <button type="button" onClick={resetAccount}>RESET ACCOUNT</button>
             </div>
-            {lesson.ghostPlan && phase === "live" ? (
-              <div className="trn-plan">
-                <button type="button" className={arm === "stop" ? "on" : ""} onClick={() => setArm("stop")}>
-                  {plan.stop != null ? `STOP ${plan.stop.toFixed(2)}` : "SET STOP — tap the tape"}
-                </button>
-                <button type="button" className={arm === "target" ? "on" : ""} onClick={() => setArm("target")}>
-                  {plan.target != null ? `TARGET ${plan.target.toFixed(2)}` : "SET TARGET — tap the tape"}
-                </button>
-                <span className={`trn-rr${planReady ? " ok" : ""}`}>
-                  {rr ? `R:R ${rr}:1${planReady ? " — enter when ready" : " — 2:1 minimum"}` : "2:1 minimum"}
-                </span>
-              </div>
-            ) : null}
-            {pos ? (
-              <p className="trn-pos">
-                {pos.dir === 1 ? "LONG" : "SHORT"} @ {pos.entry.toFixed(2)} ·{" "}
-                {(((price / pos.entry - 1) * 100) * pos.dir).toFixed(1)}%
-              </p>
-            ) : null}
           </>
         )}
+
         <div className="trn-coach" aria-live="polite">
           {coach.map((c, i) => <p key={i}><b>AUG ▸</b> {c}</p>)}
         </div>
-        {phase === "passed" ? (
-          <div className="trn-result up">
-            <p>LESSON COMPLETE — {lesson.title}</p>
-            {summary ? <p className="dim">day {summary.roundPct >= 0 ? "+" : ""}{summary.roundPct.toFixed(1)}% · {summary.trades} trade{summary.trades === 1 ? "" : "s"}</p> : null}
-            <button type="button" className="pit2-btn pit2-run" onClick={onBack}>BACK TO THE INDEX</button>
-          </div>
-        ) : phase === "retry" ? (
-          <div className="trn-result down">
-            <p>{failText}</p>
-            <button type="button" className="pit2-btn pit2-run" onClick={start}>RUN IT AGAIN — SAME TAPE</button>
-          </div>
-        ) : null}
       </div>
+
       <aside className="trn-rail">
-        <button type="button" className="pit5-back" onClick={() => { stop(); onBack(); }}>← LESSONS</button>
-        {lesson.prose.map((p, i) => <p key={i}>{p}</p>)}
-        <p className="trn-taskline">TASK · {lesson.task}</p>
+        <button type="button" className="pit5-back" onClick={exitLesson}>← LESSONS</button>
+
+        {/* R2 — the order ticket: present always, padlocked only in L1 */}
+        <div className={`trn-ticket${!lesson.controls.trade ? " chained" : ""}`}>
+          <p className="trn-ticket-h">ORDER TICKET</p>
+          <div className="trn-sizes" role="radiogroup" aria-label="Contracts">
+            {SIZES.map((n, ix) => (
+              <button key={n} type="button" className={sizeIx === ix ? "on" : ""}
+                disabled={!ticketLive}
+                onClick={() => { setSizeIx(ix); }}>{n}</button>
+            ))}
+          </div>
+          <button type="button" className="trn-buy" disabled={!ticketLive || tape !== "running"} onClick={() => order(1)}>BUY MARKET</button>
+          <button type="button" className="trn-sell" disabled={!ticketLive || !lesson.controls.short || tape !== "running"} onClick={() => order(-1)}>SELL MARKET</button>
+          <button type="button" className="trn-flat" disabled={!ticketLive || !pos || tape !== "running"} onClick={flatten}>FLATTEN</button>
+          {!lesson.controls.trade ? (
+            <p className="trn-chain">🔒 the ticket unlocks in L2 — this lesson is eyes only</p>
+          ) : pos ? (
+            <p className="trn-pos">{pos.dir === 1 ? "+" : "−"}{holdCts.current} @ {pos.entry.toFixed(2)} · <b className={uPnl >= 0 ? "up" : "down"}>{usd(Math.round(uPnl), true)}</b></p>
+          ) : (
+            <p className="trn-chain dim">flat — the tape is live, trade it any time</p>
+          )}
+          {lesson.ghostPlan ? (
+            <div className="trn-plan">
+              <button type="button" className={arm === "stop" ? "on" : ""} disabled={tape !== "running"} onClick={() => setArm("stop")}>
+                {plan.stop != null ? `STOP ${plan.stop.toFixed(2)}` : "PLACE STOP — tap the chart"}
+              </button>
+              <button type="button" className={arm === "target" ? "on" : ""} disabled={tape !== "running"} onClick={() => setArm("target")}>
+                {plan.target != null ? `TARGET ${plan.target.toFixed(2)}` : "PLACE TARGET — tap the chart"}
+              </button>
+              {plan.stop != null && plan.target != null ? (
+                <span className={`trn-rr${planRatioOk({ entry: plan.entry ?? px, stop: plan.stop, target: plan.target }) ? " ok" : ""}`}>
+                  R:R {Math.abs((plan.target - (plan.entry ?? px)) / (((plan.entry ?? px) - plan.stop) || 1)).toFixed(1)}:1
+                  {planRatioOk({ entry: plan.entry ?? px, stop: plan.stop, target: plan.target }) ? "" : " — 2:1 minimum"}
+                </span>
+              ) : <span className="trn-rr">lines auto-flatten when touched</span>}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="trn-lesson">
+          {lesson.prose.map((p, i) => <p key={i}>{p}</p>)}
+          <p className="trn-taskline">TASK · {lesson.task}</p>
+        </div>
+        {taskDone ? (
+          <button type="button" className="pit2-btn pit2-run" onClick={exitLesson}>BACK TO THE INDEX</button>
+        ) : null}
         <p className="trn-footer">education, not investment advice. every tape simulated.</p>
       </aside>
     </div>
-  );
-}
-
-function LockableBtn({
-  label, locked, lockLine, onClick, disabled,
-}: {
-  label: string; locked: boolean; lockLine: string; onClick: () => void; disabled?: boolean;
-}) {
-  if (locked) {
-    return (
-      <span className="trn-lockbtn" title={lockLine}>
-        <button type="button" className="pit4-act" disabled aria-disabled="true">{label}</button>
-        <i>🔒 {lockLine}</i>
-      </span>
-    );
-  }
-  return (
-    <button type="button" className={`pit4-act${label === "SHORT" ? " sht" : ""}`} onClick={onClick} disabled={disabled}>
-      {label}
-    </button>
   );
 }

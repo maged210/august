@@ -7944,3 +7944,46 @@ html.sheet-open .view-panel {
   .trn-row { grid-template-columns: 64px 1fr; grid-auto-rows: auto; }
   .trn-mins { display: none; }
 }
+
+/* TRAIN-1 round 2 — the cockpit */
+.trn-canvaswrap { position: relative; transition: box-shadow 0.12s; }
+.trn-canvaswrap.up { box-shadow: 0 0 0 1px color-mix(in srgb, var(--up, #57d98a) 55%, transparent), 0 0 18px -6px var(--up, #57d98a); }
+.trn-canvaswrap.down { box-shadow: 0 0 0 1px color-mix(in srgb, var(--down, #e08a7a) 55%, transparent), 0 0 18px -6px var(--down, #e08a7a); }
+.trn-pop { position: absolute; top: 12px; right: 14px; font-family: var(--font-mono), monospace; font-size: 20px; font-weight: 700; animation: trnpop 1.6s ease-out forwards; pointer-events: none; }
+.trn-pop.up { color: var(--up, #57d98a); }
+.trn-pop.down { color: var(--down, #e08a7a); }
+@keyframes trnpop { 0% { opacity: 0; transform: translateY(8px) scale(0.9); } 15% { opacity: 1; transform: translateY(0) scale(1.06); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
+.trn-acct { display: flex; gap: 18px; flex-wrap: wrap; border: 1px solid var(--hair); padding: 8px 12px; margin-top: 8px; font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.1em; color: var(--dim); }
+.trn-acct span { display: flex; flex-direction: column; gap: 2px; }
+.trn-acct b { font-size: 13px; letter-spacing: 0.04em; color: var(--label); font-variant-numeric: tabular-nums; }
+.trn-acct b.up { color: var(--up, #57d98a); }
+.trn-acct b.down { color: var(--down, #e08a7a); }
+.trn-session { display: flex; gap: 8px; margin-top: 8px; }
+.trn-session button { font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.1em; background: none; border: 1px solid var(--hair); color: var(--dim); padding: 5px 10px; cursor: pointer; }
+.trn-session button:hover:not(:disabled) { color: var(--label); border-color: var(--label); }
+.trn-session button:disabled { opacity: 0.4; cursor: default; }
+.trn-donechip { font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: 0.12em; color: var(--up, #57d98a); border: 1px solid currentColor; padding: 2px 6px; }
+.trn-ticket { border: 1px solid var(--hair); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.trn-ticket.chained { opacity: 0.75; }
+.trn-ticket-h { margin: 0; font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
+.trn-sizes { display: flex; gap: 6px; }
+.trn-sizes button { flex: 1; font-family: var(--font-mono), monospace; font-size: 12px; background: none; border: 1px solid var(--hair); color: var(--dim); padding: 6px 0; cursor: pointer; }
+.trn-sizes button.on { color: var(--label); border-color: var(--label); }
+.trn-sizes button:disabled { opacity: 0.4; cursor: default; }
+.trn-buy, .trn-sell, .trn-flat { font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: 0.12em; padding: 10px 0; cursor: pointer; background: none; }
+.trn-buy { border: 1px solid color-mix(in srgb, var(--up, #57d98a) 65%, transparent); color: var(--up, #57d98a); }
+.trn-sell { border: 1px solid color-mix(in srgb, var(--down, #e08a7a) 65%, transparent); color: var(--down, #e08a7a); }
+.trn-flat { border: 1px solid var(--hair); color: var(--label); }
+.trn-buy:hover:not(:disabled) { background: color-mix(in srgb, var(--up, #57d98a) 12%, transparent); }
+.trn-sell:hover:not(:disabled) { background: color-mix(in srgb, var(--down, #e08a7a) 12%, transparent); }
+.trn-buy:disabled, .trn-sell:disabled, .trn-flat:disabled { opacity: 0.35; cursor: default; filter: saturate(0.5); }
+.trn-chain { margin: 0; font-family: var(--font-mono), monospace; font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
+.trn-chain.dim { opacity: 0.8; }
+.trn-lesson { display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.6; }
+.trn-lesson p { margin: 0; }
+.trn-pos b.up { color: var(--up, #57d98a); }
+.trn-pos b.down { color: var(--down, #e08a7a); }
+@media (max-width: 700px) {
+  .trn-acct { gap: 10px; font-size: 9px; }
+  .trn-acct b { font-size: 11.5px; }
+}
