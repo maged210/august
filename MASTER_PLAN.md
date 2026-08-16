@@ -557,10 +557,10 @@ CONCEPT: Topstep-style guided course; the PIT tape engine IS the classroom. Live
 - [x] L3 STOPS & TARGETS — the 2:1 rule; training-only ghost stop/target markers; task: plan the trade, exit at plan.
 ### GATE T-G1 — engine + L1–L3 playable on preview; the padlock moment and first unlock must FEEL earned. HOLD.
 - ROUND 1 VERDICT (2026-08-16): NOT approved — "lessons landed as pages with a chart; the reference model is a TRADING COCKPIT with lessons attached." Rebuild ordered:
-- [ ] R1 TRAINING ACCOUNT: persistent chrome on every lesson — BAL · MAX LOSS LIMIT · REALIZED · UNREALIZED, tick-by-tick. $50,000 sim, MLL $48,000, persists across the course, RESET always available. MLL breach = teachable moment (coach line, account resets, lesson continues) — never a dead end.
-- [ ] R2 ORDER PANEL: persistent ticket — contract-size selector + BUY MARKET / SELL MARKET / FLATTEN on the PIT's position/order systems. L1 keeps the padlock; from L2 the panel is LIVE IN EVERY LESSON (free trading anytime). Fills mark the tape: entry line + live position tag (+1 · −$14.00), green/red tick flashes while holding, realized P&L pop on close. Port the PIT's juice wholesale.
-- [ ] R3 INTERACTIVE MECHANICS: L3 stop/target lines placed by tapping the chart, auto-flatten on touch, 2:1 validated from the learner's ACTUAL placed levels. All validation reads real fills/P&L. Coach reacts to the learner's own fills ("you sold the low" earns its keep).
-- [ ] R4 TAPE FEEL: continuous sessions w/ PAUSE/RESUME + RESET CHART; free practice between beats; the tape never stops because a task completed.
+- [x] R1 TRAINING ACCOUNT: persistent chrome on every lesson — BAL · MAX LOSS LIMIT · REALIZED · UNREALIZED, tick-by-tick. $50,000 sim, MLL $48,000, persists across the course, RESET always available. MLL breach = teachable moment (coach line, account resets, lesson continues) — never a dead end.
+- [x] R2 ORDER PANEL: persistent ticket — contract-size selector + BUY MARKET / SELL MARKET / FLATTEN on the PIT's position/order systems. L1 keeps the padlock; from L2 the panel is LIVE IN EVERY LESSON (free trading anytime). Fills mark the tape: entry line + live position tag (+1 · −$14.00), green/red tick flashes while holding, realized P&L pop on close. Port the PIT's juice wholesale.
+- [x] R3 INTERACTIVE MECHANICS: L3 stop/target lines placed by tapping the chart, auto-flatten on touch, 2:1 validated from the learner's ACTUAL placed levels. All validation reads real fills/P&L. Coach reacts to the learner's own fills ("you sold the low" earns its keep).
+- [x] R4 TAPE FEEL: continuous sessions w/ PAUSE/RESUME + RESET CHART; free practice between beats; the tape never stops because a task completed.
 - [ ] T-G1 approved (re-verify: padlock unlock FELT, real trade placed, UP&L breathes, closing a winner feels like something happened).
 
 ## T3 — FINISH + POLISH
