@@ -516,7 +516,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] PIT post-trade explanations: dry floor voice from observable round data only, on each deliberate close + the scorecard.
 - [x] UX polish per DESIGN_LAWS; FULL QA (every tab, game start-to-finish incl. reset/replay, desktop/tablet/phone, console clean, zero functionality removed).
 ### GATE R3 — full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds. HOLD.
-- [ ] R3 approved.
+- [x] R3 approved 2026-08-16.
 
 ## R4 — HOME-2: THE FRONT PAGE (queued 2026-08-16; begins ONLY after R3 merges; branch feature/front-page off that main; one gate)
 CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi card energy in the Matrix skin, DESIGN_LAWS governing. Reading order REGIME → WHAT'S COMING → WHAT'S MOVING → WHAT'S BEING SAID. Chat demoted to ambient analyst (never removed).
