@@ -55,6 +55,7 @@ test("isDeskHeadline: personal-finance chum drops, market headlines survive", ()
     "I'm a retired CPA with $1.2 million in my 401(k) — what now?",
     "My bonus was $42,000. Should I pay off my mortgage?",
     "Medicaid rules could cost you the family home",
+    "Moneywise staff confesses worst money mistakes — from ignoring subscriptions on",
     "How much do I need in my nest egg to retire at 55?",
   ];
   const desk = [

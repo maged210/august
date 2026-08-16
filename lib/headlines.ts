@@ -86,6 +86,7 @@ const CHUM = [
   /\bmy (?:husband|wife|mother|father|mom|dad|family|kids?|son|daughter|bonus|paycheck)\b/i,
   /\b(?:I'?m|I am|we'?re) \d{2}\b/i,
   /\bshould (?:I|you|we)\b|\bhow much (?:do|should|can) (?:I|you|we)\b/i,
+  /\bmoneywise\b|\bmoney (?:mistakes?|moves?|habits?|tips?|lessons?)\b/i,
 ];
 
 /** PURE. True when a headline belongs on a trading front page. */
