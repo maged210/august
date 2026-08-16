@@ -488,6 +488,33 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 ### GATE A2 — full review on preview → merge → deploy. HOLD.
 - [x] A2 approved 2026-08-15.
 
+# COMMAND CENTER — MASTER BUILD (opened 2026-08-15 after AUTH-1a merged; branch feature/command-center)
+
+## R1 — AUDIT + REGIME APEX
+- [ ] Full change-nothing audit: every route/tab/component/store/API call; mock vs live; dead buttons; loading/empty/error states; mobile; console; performance. Written report (broken/placeholder/fake/duplicated/confusing, per surface) delivered BEFORE any build. Named-but-absent features recorded "not present", never created.
+- [ ] Home-brief hierarchy: MARKET REGIME apex → indexes (existing pulse) → desk line → latest ingest → headlines → watching; progressive disclosure, nothing added for its own sake.
+- [ ] MARKET REGIME (CALCULATED): held inputs only — index trend from pulse series, VIX level+trend, desk book bias, NQ vs live-book stated levels → RISK ON / NEUTRAL / RISK OFF + "because" list w/ live values; confidence % only from a real formula; never advice.
+- [ ] DATA INTEGRITY LABELS wherever a market number renders: LIVE / DELAYED / SIMULATED / PROXY / UNAVAILABLE; absence says DATA UNAVAILABLE, never a bare dash.
+### GATE R1 — report + regime on preview + labels visible. HOLD.
+- [ ] R1 approved.
+
+## R2 — NQ LEVELS + VIX IN CONTEXT
+- [ ] NQ LEVELS module (terminal + brief chip): price, prev H/L/C; VWAP + overnight H/L ONLY if intraday granularity honestly supports them (omit over approximate); S/R from live-book stated levels; BULLISH/NEUTRAL/BEARISH = calculated condition, never advice.
+- [ ] VIX IN CONTEXT: level, day change, fixed-threshold bucket (LOW/NORMAL/ELEVATED/HIGH), trend vs SPY/QQQ, one context sentence generated from actual numbers.
+### GATE R2 — both on preview, labels correct. HOLD.
+- [ ] R2 approved.
+
+## R3 — ANALYST + PIT FEEDBACK + POLISH
+- [ ] ANALYST: existing chat grounded — market answers cite the app's actual current data (regime/pulse/levels/book/headlines); unavailable stated unavailable; live numbers never fabricated.
+- [ ] PIT post-trade explanations: dry floor voice from observable round data only, on each deliberate close + the scorecard.
+- [ ] UX polish per DESIGN_LAWS; FULL QA (every tab, game start-to-finish incl. reset/replay, desktop/tablet/phone, console clean, zero functionality removed).
+### GATE R3 — full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds. HOLD.
+- [ ] R3 approved.
+
+## STANDING LAW (wins over everything above)
+The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.
+
+<!-- superseded queue note (order absorbed above): -->
 ## QUEUED — COMMAND CENTER MASTER BUILD (authoritative order 2026-08-15, supersedes + absorbs the earlier addendum; runs ONLY after AUTH-1a passes A1/A2 and merges — one build in flight at a time)
 Branch feature/command-center off post-auth main; full checkbox plan appends at build start. VISION: trader's command center — DATA → CONTEXT → SIGNAL → DECISION; opening August answers what's happening / why / regime / what matters / levels / what deserves attention. STANDING LAW (wins over everything): the audit reports reality (named-but-absent = "not present", never created) · DATA LAW zero new paid/scraped sources (market-wide feeds → intentional DATA UNAVAILABLE or omitted; listed under "data still required"; unlock with revenue) · DESIGN_LAWS.md governs visuals · PIT stays the arcade career · DATA INTEGRITY LABELS everywhere a market number renders: LIVE/DELAYED/SIMULATED/PROXY/UNAVAILABLE — simulated never dresses as live, absence says DATA UNAVAILABLE never a bare dash.
 - R1: full change-nothing audit (every route/tab/component/store/API call, mock-vs-live, dead buttons, states, mobile, console, perf; written report AT the gate BEFORE any build) → home-brief hierarchy (MARKET REGIME apex → pulse → desk line → ingest → headlines → watching, progressive disclosure) → MARKET REGIME from held inputs only (index trend from pulse, VIX level+trend, book bias, NQ vs live-book stated levels) = RISK ON/NEUTRAL/RISK OFF + "because" list w/ live values; confidence % only from a real formula; labeled CALCULATED. GATE R1: report + regime on preview + labels visible. HOLD.
