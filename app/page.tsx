@@ -1750,7 +1750,7 @@ export default function Home() {
                   setHistoryOpen((v) => !v);
                 }}
               >
-                {historyOpen ? "▾ reply" : "▸ transcript"}
+                {historyOpen ? "▾ reply" : "▸ conversation"}
               </button>
               <button
                 type="button"

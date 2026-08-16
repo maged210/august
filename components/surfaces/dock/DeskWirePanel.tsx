@@ -120,8 +120,9 @@ export default function DeskWirePanel({
     <section className="ifm if-wire" aria-label="Desk wire">
       <div className="ifm-h">
         <span className="ifm-title">DESK WIRE</span>
-        <span className="ifm-tag" title="pipeline activity from the desk's own stores — counts, titles, statuses only">
-          PIPELINE ACTIVITY
+        {/* P3 — public copy speaks desk, not internals */}
+        <span className="ifm-tag" title="activity from the desk's own stores — counts, titles, statuses only">
+          DESK ACTIVITY
         </span>
       </div>
       {rows === null ? (
@@ -136,7 +137,7 @@ export default function DeskWirePanel({
             <span className="if-abs-g" aria-hidden="true">
               ·
             </span>{" "}
-            no pipeline activity yet
+            quiet desk — nothing on the wire yet
           </span>
         </div>
       ) : (

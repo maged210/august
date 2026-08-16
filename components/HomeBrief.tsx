@@ -15,8 +15,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicIngest } from "@/lib/transcripts";
+import type { PublicTapeEntry } from "@/lib/tape";
 import type { Headline } from "@/lib/headlines";
 import { relativeTime } from "@/lib/ideas";
+import { useOwner } from "@/lib/use-owner";
 import DataTag from "@/components/DataTag";
 import CountdownRow from "@/components/CountdownRow";
 import SectorHeatmap from "@/components/SectorHeatmap";
@@ -116,7 +118,12 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
   const [ingest, setIngest] = useState<PublicIngest | null | undefined>(undefined); // undefined = pending
   const [news, setNews] = useState<Headline[] | null>(null);
   const [newsErr, setNewsErr] = useState(false);
+  // P2 — the env-flagged desk-only feed (tape instead of third-party headlines)
+  const [deskFeed, setDeskFeed] = useState(false);
+  const [tapeNotes, setTapeNotes] = useState<PublicTapeEntry[] | null>(null);
   const [, setTick] = useState(0);
+  // P3 — visitors get desk language; the owner keeps the full detail
+  const isOwner = useOwner();
 
   // the session line follows the ET clock
   useEffect(() => {
@@ -185,14 +192,26 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
     };
   }, []);
 
-  // headlines — server caches ~15 min; a gentle 5 min client poll is plenty
+  // headlines — server caches ~15 min; a gentle 5 min client poll is plenty.
+  // P2: mode "desk" (env-flagged, OFF by default) swaps this module for the
+  // desk's own tape — zero third-party brands on the front page.
   useEffect(() => {
     let cancelled = false;
     const pull = () => {
       fetch("/api/headlines", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { headlines?: Headline[] }) => {
+        .then((j: { headlines?: Headline[]; mode?: string }) => {
           if (cancelled) return;
+          if (j.mode === "desk") {
+            setDeskFeed(true);
+            fetch("/api/tape", { cache: "no-store" })
+              .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+              .then((t: { entries?: PublicTapeEntry[] }) => {
+                if (!cancelled) setTapeNotes(Array.isArray(t.entries) ? t.entries : []);
+              })
+              .catch(() => { if (!cancelled) setTapeNotes((prev) => prev ?? []); });
+            return;
+          }
           setNews(Array.isArray(j.headlines) ? j.headlines : []);
           setNewsErr(false);
         })
@@ -442,7 +461,9 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
       {/* R4 F6 — DESK REPORT: ingest + earnings condensed, teaser depth only,
           one path into the Terminal */}
       <div className="hb-deskreport">
-        {ingest !== undefined ? (
+        {/* P3 — visitors hear desk language ("updated · new calls today");
+            the owner session keeps the full LATEST INGEST detail */}
+        {isOwner && ingest !== undefined ? (
           <div className="hb-row">
             <span className="hb-label">LATEST INGEST</span>
             {ingest === null ? (
@@ -456,6 +477,28 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
               </span>
             )}
           </div>
+        ) : !isOwner ? (
+          <div className="hb-row">
+            <span className="hb-label">DESK</span>
+            {(() => {
+              const newest = Math.max(
+                ingest ? ingest.ts : 0,
+                ...(live ?? []).map((i) => i.updatedAt),
+              );
+              const etDay = (ms: number) =>
+                new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+              const today = etDay(Date.now());
+              const fresh = (live ?? []).filter((i) => etDay(i.createdAt) === today).length;
+              return newest > 0 ? (
+                <span className="hb-ingest">
+                  updated {relativeTime(newest)}
+                  <span className="hb-dim"> · {fresh} new call{fresh === 1 ? "" : "s"} today</span>
+                </span>
+              ) : (
+                <span className="hb-absent">quiet — nothing on the desk yet</span>
+              );
+            })()}
+          </div>
         ) : null}
         <div className="hb-row">
           <span className="hb-label">EARNINGS</span>
@@ -466,6 +509,38 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
 
       {/* R4 F4 — WHAT'S BEING SAID: headlines as cards (source · age ·
           ticker chips · ask-August); existing RSS set only */}
+      {deskFeed ? (
+        /* P2 ALTERNATIVE (env-flagged, OFF by default) — the desk's own tape
+           instead of third-party headlines: zero outside brands render */
+        <div className="hb-news">
+          <div className="hb-row">
+            <span className="hb-label">FROM THE DESK</span>
+          </div>
+          {tapeNotes === null ? (
+            <span className="hb-absent">loading…</span>
+          ) : tapeNotes.length === 0 ? (
+            <span className="hb-absent">quiet — nothing on the tape yet</span>
+          ) : (
+            <ul className="hb-news-list hb-news-cards">
+              {tapeNotes.slice(0, 5).map((t) => (
+                <li key={t.id} className="hb-news-card">
+                  <span className="hb-news-title">{t.note}</span>
+                  <span className="hb-news-meta">
+                    <b className="hb-news-tkr">{t.symbol}</b>
+                    {t.ts > 0 ? ` · ${relativeTime(t.ts)}` : ""}
+                    {onAsk ? (
+                      <button type="button" className="hb-news-ask"
+                        onClick={() => onAsk(`The desk tape says: "${t.note}" (${t.symbol}). What should I watch?`)}>
+                        ASK AUGUST →
+                      </button>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
       <div className="hb-news">
         <div className="hb-row">
           <span className="hb-label">WHAT&apos;S BEING SAID</span>
@@ -483,12 +558,14 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
               const tickers = [...new Set(h.title.match(TICKER_WHITELIST) ?? [])].slice(0, 3);
               return (
                 <li key={h.link} className="hb-news-card">
+                  {/* P2 — attribution stays (third-party headline), but in the
+                      label voice: smallest muted mono, card corner */}
+                  <i className="hb-news-src">{h.publisher}</i>
                   <a href={h.link} target="_blank" rel="noopener noreferrer" className="hb-news-title">
                     {h.title}
                   </a>
                   <span className="hb-news-meta">
-                    <i className="hb-news-src">{h.publisher}</i>
-                    {h.publishedAt > 0 ? ` · ${relativeTime(h.publishedAt)}` : ""}
+                    {h.publishedAt > 0 ? relativeTime(h.publishedAt) : ""}
                     {tickers.map((t) => (
                       <b key={t} className="hb-news-tkr">{t}</b>
                     ))}
@@ -508,6 +585,7 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
           </ul>
         )}
       </div>
+      )}
     </div>
   );
 }
