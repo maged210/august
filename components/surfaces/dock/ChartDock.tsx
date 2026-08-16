@@ -15,6 +15,8 @@ import IdeaChartModule, { type ChartSelection } from "./IdeaChartModule";
 import BookHeatmapModule from "./BookHeatmapModule";
 import MarketPulseModule from "./MarketPulseModule";
 import TapeModule from "./TapeModule";
+import NqLevelsModule from "./NqLevelsModule";
+import VixContextModule from "./VixContextModule";
 
 export type { ChartSelection };
 
@@ -45,6 +47,8 @@ export default function ChartDock({
         selection={selection}
         onSelect={onSelect}
       />
+      <NqLevelsModule liveIdeas={liveIdeas} />
+      <VixContextModule />
       <MarketPulseModule />
       <TapeModule entries={tape} failed={tapeFailed} onRetry={onTapeRetry} />
     </div>

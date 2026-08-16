@@ -85,7 +85,7 @@ export type Mover = { sym: string; price: number; chgPct: number };
 export type FlowItem = { sym: string; price: number; chgPct: number; volMult: number };
 export type Sector = { name: string; etf: string; chgPct: number };
 export type Macro = { t10y2y: number | null; stress: number | null; fredAvailable: boolean };
-export type Candle = { time: number; open: number; high: number; low: number; close: number };
+export type Candle = { time: number; open: number; high: number; low: number; close: number; volume?: number };
 export type Markets = {
   asOf: string;
   watchlist: Quote[];
@@ -514,6 +514,9 @@ export async function getHistory(sym: string, kind: string, tf: string): Promise
         high: num(q.high[i]),
         low: num(q.low[i]),
         close: num(q.close[i]),
+        // R2 — same Yahoo payload, previously discarded: volume feeds an
+        // honest VWAP (A5-approved reuse; no new source)
+        ...(q.volume?.[i] != null ? { volume: num(q.volume[i]) } : {}),
       });
     }
     return out;

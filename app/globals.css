@@ -5799,6 +5799,37 @@ button.pulse-line:focus-visible {
 .hb-pulsehead { align-items: center; gap: 8px; margin-bottom: 2px; }
 .hb-pending { font-family: var(--font-mono); font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
 
+/* COMMAND CENTER R2 — NQ LEVELS + VIX IN CONTEXT */
+.nql { display: flex; flex-direction: column; gap: 8px; }
+.nql-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nql-px { font-family: var(--font-mono); font-size: 20px; font-weight: 800; letter-spacing: 0.04em; }
+.nql-bias { font-family: var(--font-mono); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; padding: 2px 8px; border: 1px solid var(--hair); }
+.nql-bias.b-bullish { color: #7fe0a5; border-color: rgb(127 224 165 / 0.5); }
+.nql-bias.b-bearish { color: #e08a7a; border-color: rgb(224 138 122 / 0.5); }
+.nql-bias.b-neutral { color: var(--dim); }
+.nql-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.nql-cell { display: flex; flex-direction: column; gap: 1px; font-family: var(--font-mono); border: 1px solid var(--hair); padding: 5px 8px; }
+.nql-cell i { font-style: normal; font-size: 8px; letter-spacing: 0.16em; color: var(--dim); }
+.nql-cell b { font-size: 12.5px; letter-spacing: 0.03em; }
+.nql-off { opacity: 0.55; }
+.nql-off b { color: var(--dim); font-weight: 600; }
+.nql-book { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--font-mono); }
+.nql-book i { font-style: normal; font-size: 8px; letter-spacing: 0.16em; color: var(--dim); }
+.nql-bl { font-size: 10.5px; padding: 2px 7px; border: 1px dashed var(--hair); }
+.nql-bl-target { color: #7fe0a5; }
+.nql-bl-stop { color: #e08a7a; }
+.nql-empty { font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); letter-spacing: 0.06em; padding: 8px 0; }
+.vixc { display: flex; flex-direction: column; gap: 6px; }
+.vixc-head { display: flex; align-items: baseline; gap: 10px; }
+.vixc-lvl { font-family: var(--font-mono); font-size: 20px; font-weight: 800; }
+.vixc-chg { font-family: var(--font-mono); font-size: 12px; }
+.vixc-bucket { font-family: var(--font-mono); font-size: 9px; font-weight: 800; letter-spacing: 0.18em; padding: 2px 8px; border: 1px solid var(--hair); }
+.vixc-bucket.vb-low { color: #7fe0a5; }
+.vixc-bucket.vb-elevated { color: var(--amber, #ffd27a); }
+.vixc-bucket.vb-high { color: #e08a7a; }
+.vixc-line { font-family: var(--font-mono); font-size: 11px; color: var(--body2, var(--dim)); font-style: italic; margin: 0; }
+.hb-nql .nql-bias { font-size: 9px; padding: 1px 6px; }
+
 /* AUTH-1a B2/B3 — chat error state, close, thread deletes */
 .hl-errline {
   display: flex; align-items: center; gap: 10px; justify-content: center;

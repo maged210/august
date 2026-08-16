@@ -37,6 +37,8 @@ import { publishRainSymbols } from "@/lib/rain-symbols";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
+import NqLevelsModule from "@/components/surfaces/dock/NqLevelsModule";
+import VixContextModule from "@/components/surfaces/dock/VixContextModule";
 import BookHeatmapModule from "@/components/surfaces/dock/BookHeatmapModule";
 import DeskWirePanel, { buildWire } from "@/components/surfaces/dock/DeskWirePanel";
 import IdeaChartModule from "@/components/surfaces/dock/IdeaChartModule";
@@ -465,7 +467,7 @@ export default function IdeasFeed() {
   // M2 — the PHONE redesign: at ≤700px the blotter does not render; the desk
   // becomes a segmented module strip + stacked cards + a full-screen sheet.
   const [phone, setPhone] = useState(false);
-  const [seg, setSeg] = useState<"chart" | "book" | "pulse" | "tape" | "wire">("chart");
+  const [seg, setSeg] = useState<"chart" | "book" | "levels" | "pulse" | "tape" | "wire">("chart");
   const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
@@ -671,6 +673,7 @@ export default function IdeasFeed() {
               [
                 ["chart", "CHART"],
                 ["book", "BOOK"],
+                ["levels", "LEVELS"],
                 ["pulse", "PULSE"],
                 ["tape", "TAPE"],
                 ["wire", "WIRE"],
@@ -698,6 +701,7 @@ export default function IdeasFeed() {
                 onSelect={applySelect}
               />
             ) : null}
+            {seg === "levels" ? (<><NqLevelsModule liveIdeas={liveIdeas} /><VixContextModule /></>) : null}
             {seg === "pulse" ? <MarketPulseModule /> : null}
             {seg === "tape" ? (
               <TapeModule entries={tapeRows} failed={tapeErr} onRetry={load} />

@@ -19,6 +19,7 @@ import type { Headline } from "@/lib/headlines";
 import { relativeTime } from "@/lib/ideas";
 import DataTag from "@/components/DataTag";
 import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
+import type { BiasRead, SessionLevels } from "@/lib/levels";
 
 const PULSE: Array<{ sym: string; label: string }> = [
   { sym: "SPY", label: "SPY" },
@@ -107,6 +108,7 @@ export default function HomeBrief() {
   const [cards, setCards] = useState<FeedCard[] | null>(null);
   const [cardsErr, setCardsErr] = useState(false);
   const [why, setWhy] = useState(false);
+  const [nql, setNql] = useState<{ levels: SessionLevels; bias: BiasRead } | null>(null);
   const [ingest, setIngest] = useState<PublicIngest | null | undefined>(undefined); // undefined = pending
   const [news, setNews] = useState<Headline[] | null>(null);
   const [newsErr, setNewsErr] = useState(false);
@@ -154,6 +156,12 @@ export default function HomeBrief() {
         .catch(() => {
           if (!cancelled) setCardsErr(true);
         });
+      fetch("/api/intel/levels", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+        .then((j: { ok?: boolean; levels?: SessionLevels; bias?: BiasRead }) => {
+          if (!cancelled && j.ok && j.levels && j.bias) setNql({ levels: j.levels, bias: j.bias });
+        })
+        .catch(() => {}); // the chip simply doesn't render — the module carries the honest states
       fetch("/api/wire", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { ingests?: PublicIngest[] }) => {
@@ -340,6 +348,26 @@ export default function HomeBrief() {
           </div>
         ) : null}
       </div>
+
+      {/* NQ LEVELS chip (R2) — the terminal module's teaser; the full read
+          lives in the dock. Renders only when the feed answers. */}
+      {nql && nql.levels.price !== null ? (
+        <div className="hb-row hb-nql">
+          <span className="hb-label">NQ LEVELS</span>
+          <span className="hb-chips">
+            {chip("NQ", <>{Math.round(nql.levels.price).toLocaleString("en-US")}</>)}
+            {nql.bias.label !== "UNAVAILABLE" ? (
+              <span className={`hb-chip nql-bias b-${nql.bias.label.toLowerCase()}`}
+                title={`calculated condition — ${nql.bias.votes.map((v) => `${v.input} ${v.value}`).join(" · ")}`}>
+                {nql.bias.label}
+              </span>
+            ) : null}
+            {nql.levels.pivot !== null ? chip("PIVOT", <>{Math.round(nql.levels.pivot).toLocaleString("en-US")}</>) : null}
+            {nql.levels.vwap !== null ? chip("VWAP", <>{Math.round(nql.levels.vwap).toLocaleString("en-US")}</>) : null}
+            <DataTag kind="delayed" detail="60s" title="NQ=F · Yahoo daily + 5m bars" />
+          </span>
+        </div>
+      ) : null}
 
       {/* desk line — null-aware: a failed source says so instead of printing
           a fabricated zero (R1 audit fix) */}
