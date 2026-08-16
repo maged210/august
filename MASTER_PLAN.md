@@ -518,7 +518,8 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 ### GATE R3 — full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds. HOLD.
 - [x] R3 approved 2026-08-16.
 
-## R4 — HOME-2: THE FRONT PAGE (queued 2026-08-16; begins ONLY after R3 merges; branch feature/front-page off that main; one gate)
+## R4 — HOME-2: THE FRONT PAGE (ACTIVE 2026-08-16 — R3 merged; branch feature/front-page)
+- [x] F2 VETTING GATE: feed verified against FOMC Minutes (Aug 19 14:00 ET, 3wk convention) + weekly claims (Thu Aug 20 08:30 ET, fc 210K/prev 209K). Timers ship. LIMITATION RECORDED: no `actual` field in the free feed — RELEASED cards show the honest reaction line, never a fabricated beat/miss.
 CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi card energy in the Matrix skin, DESIGN_LAWS governing. Reading order REGIME → WHAT'S COMING → WHAT'S MOVING → WHAT'S BEING SAID. Chat demoted to ambient analyst (never removed).
 - F1 LAYOUT: regime apex stays top · slim persistent ASK BAR under it (expands to full chat on engage; threads sidebar unchanged) · orb shrinks to a small live-status mark in the header · modules below per DESIGN_LAWS, integrity labels on every number.
 - F2 COUNTDOWN ROW: timer cards for CPI · FOMC · JOBS · GDP from the already-fetched free calendar JSON (event, countdown, ET time, EXPECTED/PRIOR when carried, impact chip). VETTING GATE inside the task: verify feed dates/times against two known upcoming releases BEFORE any timer renders — an untrustworthy feed ships as CALENDAR UNAVAILABLE with the why in the report.
