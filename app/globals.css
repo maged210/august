@@ -5762,6 +5762,39 @@ button.pulse-line:focus-visible {
   padding: 10px 0 0;
   flex: none;
 }
+/* AUTH-1a B2/B3 — chat error state, close, thread deletes */
+.hl-errline {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--amber);
+  padding: 6px 10px; margin: 4px auto; max-width: 90%;
+  border: 1px dashed rgb(var(--amber-rgb) / 0.45);
+}
+.hl-errline button {
+  font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  background: none; border: 1px solid var(--amber); color: var(--amber);
+  padding: 3px 10px; cursor: pointer;
+}
+.hl-convo-close {
+  font-family: var(--font-mono); font-size: 16px; line-height: 1;
+  background: none; border: 0; color: var(--steel); cursor: pointer;
+  padding: 4px 8px; margin-left: auto;
+}
+.hl-convo-close:hover { color: var(--fg); }
+.ts-row { display: flex; align-items: stretch; }
+.ts-row .ts-thread { flex: 1; min-width: 0; }
+.ts-del {
+  font-family: var(--font-mono); background: none; border: 0; color: var(--steel);
+  cursor: pointer; padding: 0 8px; opacity: 0; transition: opacity 120ms;
+}
+.ts-row:hover .ts-del, .ts-del:focus-visible { opacity: 1; }
+@media (max-width: 1100px) { .ts-del { opacity: 0.6; } } /* touch: always reachable */
+.ts-pending { display: flex; align-items: center; justify-content: space-between; opacity: 0.7; }
+.ts-pending .ts-title { color: var(--steel); font-style: italic; }
+.ts-undo {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  background: none; border: 1px solid var(--line); color: var(--fg);
+  padding: 3px 10px; cursor: pointer;
+}
 .hl-newchat {
   display: inline-flex;
   align-items: center;
@@ -5982,6 +6015,31 @@ button.pulse-line:focus-visible {
   letter-spacing: 0.01em;
   color: var(--body2);
 }
+/* AUTH-1a — magic-link form, owner badge, PIT sign-in nudge */
+.lp-mail { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }
+.lp-mail input {
+  font-family: var(--font-mono); font-size: 13px; padding: 11px 12px;
+  background: rgb(255 255 255 / 0.03); border: 1px solid var(--line); color: var(--fg);
+}
+.lp-mail input:focus-visible { outline: 1px solid var(--green); outline-offset: 1px; }
+.lp-err { color: var(--amber); }
+.hl-owner-badge {
+  font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
+  padding: 2px 6px; margin-left: 6px; color: var(--amber);
+  border: 1px solid rgb(var(--amber-rgb) / 0.55); border-radius: var(--r-full);
+}
+.pit7-nudge {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--steel);
+  margin: 8px auto; padding: 6px 10px; max-width: 480px; width: fit-content;
+  border: 1px dashed var(--line);
+}
+.pit7-nudge a { color: var(--green); font-weight: 700; letter-spacing: 0.14em; text-decoration: none; }
+.pit7-nudge button { background: none; border: 0; color: var(--steel); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.pit7-orphan { border-color: rgb(var(--amber-rgb) / 0.5); color: var(--fg); }
+.pit7-orphan button { border: 1px solid var(--line); font-size: 9px; font-weight: 700; letter-spacing: 0.14em; padding: 3px 8px; }
+.pit7-orphan .pit7-adopt { border-color: var(--green); color: var(--green); }
+
 .lp-google {
   min-height: 44px;
   padding: 12px 28px;

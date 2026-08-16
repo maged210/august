@@ -7,10 +7,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts tests/ideas.test.ts tests/transcripts.test.ts tests/tape.test.ts tests/headlines.test.ts tests/pit-engine.test.ts tests/pit-daily.test.ts"
+    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts tests/ideas.test.ts tests/transcripts.test.ts tests/tape.test.ts tests/headlines.test.ts tests/pit-engine.test.ts tests/pit-daily.test.ts tests/route-gates.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
+    "@auth/upstash-redis-adapter": "2.11.3",
     "@types/three": "^0.184.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",

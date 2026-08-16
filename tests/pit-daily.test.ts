@@ -10,6 +10,7 @@ import {
   betterRating,
   dailyAttemptsLeft,
   dailySeed,
+  mergePitPlayers,
   newPlayer,
   prevDate,
 } from "../lib/pit";
@@ -75,4 +76,42 @@ test("best rating keeps the higher letter", () => {
   assert.equal(betterRating("A", "B"), "A");
   assert.equal(betterRating("A", "A+"), "A+");
   assert.equal(betterRating("A+", "F"), "A+");
+});
+
+// ── AUTH-1a: the claim's best-of merge ───────────────────────────────────────
+
+test("claim merge: records best-of, XP max (never summed), account name wins", () => {
+  const acct = { ...newPlayer("u:a@b.c"), name: "DESK", xp: 900, level: 2, bestRun: 12, bestRound: 4000, furthestWeek: 2, furthestDay: 3, bestRating: "B", dailyStreak: 1 };
+  const dev = { ...newPlayer("v:dev1"), name: "PLAYER", xp: 2500, bestRun: 40, bestRunDate: "2026-08-14", bestRound: 9000, furthestWeek: 1, furthestDay: 4, bestRating: "A", bestDailyRank: 2, dailyStreak: 3, runs: 5, runStreak: 2 };
+  const m = mergePitPlayers(acct, dev);
+  assert.equal(m.name, "DESK"); // account's chosen board name wins
+  assert.equal(m.xp, 2500); // max, not 3400
+  assert.equal(m.level, 3); // recomputed from merged XP
+  assert.equal(m.bestRun, 40);
+  assert.equal(m.bestRunDate, "2026-08-14");
+  assert.equal(m.bestRound, 9000);
+  assert.equal(m.furthestWeek, 2); // W2D3 beats W1D4 by position
+  assert.equal(m.furthestDay, 3);
+  assert.equal(m.bestRating, "A");
+  assert.equal(m.bestDailyRank, 2);
+  assert.equal(m.dailyStreak, 3);
+  assert.equal(m.runStreak, 2);
+  assert.equal(m.runs, 5);
+});
+
+test("claim merge: empty absorb changes nothing; nulls stay null", () => {
+  const acct = { ...newPlayer("u:a@b.c"), xp: 100 };
+  const m = mergePitPlayers(acct, newPlayer("v:fresh"));
+  assert.equal(m.xp, 100);
+  assert.equal(m.bestRun, null);
+  assert.equal(m.bestRound, null);
+  assert.equal(m.bestRating, null);
+  assert.equal(m.bestDailyRank, null);
+});
+
+test("claim merge: same-date dailies keep max attempts + best pct (cap holds)", () => {
+  const a = { ...newPlayer("u:x"), daily: { date: "2026-08-15", attempts: 2, bestPct: 3.2 } };
+  const b = { ...newPlayer("v:y"), daily: { date: "2026-08-15", attempts: 3, bestPct: 1.1 } };
+  const m = mergePitPlayers(a, b);
+  assert.deepEqual(m.daily, { date: "2026-08-15", attempts: 3, bestPct: 3.2 });
 });

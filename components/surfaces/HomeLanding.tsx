@@ -117,6 +117,7 @@ export default function HomeLanding({
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  const [isOwner, setIsOwner] = useState(false);
   // R1-REDO — the rain dial's little menu (matrix only); closes on outside tap
   const [rainMenuOpen, setRainMenuOpen] = useState(false);
   const rainWrapRef = useRef<HTMLDivElement | null>(null);
@@ -185,6 +186,25 @@ export default function HomeLanding({
         const email = j?.user?.email;
         setAccount(email ? { email } : null);
         if (!email) return;
+        // AUTH-1a — THE CLAIM: fold this device's anonymous identity into the
+        // account, once per email per device (idempotent server-side too)
+        try {
+          if (window.localStorage.getItem("aug-claimed") !== email) {
+            fetch("/api/account/claim", { method: "POST" })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((c: { ok?: boolean } | null) => {
+                if (c?.ok) window.localStorage.setItem("aug-claimed", email);
+              })
+              .catch(() => {});
+          }
+        } catch { /* private mode — server idempotency still holds */ }
+        // owner badge (derived server-side; the session carries only the email)
+        fetch("/api/intel/role", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+          .then((ro: { owner?: boolean }) => {
+            if (!cancelled && ro.owner) setIsOwner(true);
+          })
+          .catch(() => {});
         fetch("/api/watchlist", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : Promise.reject(r)))
           .then((w: { symbols?: unknown }) => {
@@ -309,6 +329,7 @@ export default function HomeLanding({
               <span className="hl-account-email" title={account.email}>
                 {account.email}
               </span>
+              {isOwner ? <span className="hl-owner-badge" title="Owner session — /admin is open">OWNER</span> : null}
               <button
                 type="button"
                 className="hl-signout"

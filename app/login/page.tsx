@@ -1,38 +1,35 @@
-// /login — one decision on the page. Server component: the session is read
-// server-side (already signed in → straight back to the deck) and the
-// "Continue with Google" button submits a server action that starts the
-// NextAuth v5 Google flow (identity-only scopes — see auth.ts).
+// /login — one decision on the page (AUTH-1a: EMAIL MAGIC LINK, no OAuth).
+// Server component: the session is read server-side (already signed in →
+// straight back), and the email form submits a server action that starts the
+// NextAuth v5 Resend flow. Sign-in is ADDITIVE (DESIGN_LAWS L10): the page
+// says what an account adds and offers the way back without one.
 //
-// Design language: the home landing's face (Geist, the gold dot wordmark,
-// the day/night palettes) — styles live in globals.css under .login-page.
-// When auth isn't configured, the page says so honestly instead of showing
-// a button that can't work.
+// Design language: the home landing's face — styles live in globals.css
+// under .login-page. When auth isn't configured, the page says so honestly.
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth, signIn, authConfigured, authMissing } from "@/auth";
-import { getOnboarded } from "@/lib/user-scope";
 
 export const metadata: Metadata = { title: "AUGUST — sign in" };
 
 // Always render per-request: the configured/unconfigured state and the
 // already-signed-in redirect must reflect the RUNTIME env, never a value
-// baked in at build time (a build without AUTH_SECRET would otherwise
-// prerender the "not configured" note permanently).
+// baked in at build time.
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
   if (authConfigured) {
     const session = await auth();
-    const email = session?.user?.email;
-    if (email) {
-      // Already signed in: first-timers land on the one-screen /welcome setup;
-      // everyone else goes straight back to the deck. (The landing carries the
-      // same check as a one-time nudge for the post-OAuth arrival.)
-      redirect((await getOnboarded(email)) ? "/" : "/welcome");
-    }
-    if (session?.user) redirect("/");
+    if (session?.user?.email) redirect("/");
   }
+  const sent = params.sent === "1";
+  const error = typeof params.error === "string" ? params.error : null;
 
   return (
     <main className="login-page">
@@ -41,22 +38,62 @@ export default async function LoginPage() {
           <span className="lp-dot" aria-hidden />
           <span className="lp-wordmark">AUGUST</span>
         </div>
-        <p className="lp-copy">Your private intelligence companion.</p>
-        {authConfigured ? (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/" });
-            }}
-          >
-            <button type="submit" className="lp-google">
-              Continue with Google
-            </button>
-          </form>
+        {sent ? (
+          <>
+            <p className="lp-copy">Check your inbox.</p>
+            <p className="lp-note">
+              A one-tap sign-in link is on its way. It expires in 24 hours; the
+              tab can be closed.{" "}
+              <a className="lp-back" href="/">
+                back to AUGUST
+              </a>
+            </p>
+          </>
+        ) : authConfigured ? (
+          <>
+            <p className="lp-copy">
+              One email, no password. Your threads, PIT career, and records
+              follow you to every device.
+            </p>
+            {error ? (
+              <p className="lp-note lp-err">
+                That link didn&apos;t work (expired or already used) — request a
+                fresh one below.
+              </p>
+            ) : null}
+            <form
+              className="lp-mail"
+              action={async (formData: FormData) => {
+                "use server";
+                const email = String(formData.get("email") ?? "").trim();
+                if (!email) return;
+                await signIn("resend", { email, redirectTo: "/" });
+              }}
+            >
+              <input
+                type="email"
+                name="email"
+                required
+                autoComplete="email"
+                placeholder="you@example.com"
+                aria-label="Email address"
+              />
+              <button type="submit" className="lp-google">
+                EMAIL ME A SIGN-IN LINK
+              </button>
+            </form>
+            <p className="lp-note">
+              No account needed to use AUGUST —{" "}
+              <a className="lp-back" href="/">
+                continue without signing in
+              </a>
+              .
+            </p>
+          </>
         ) : (
           <p className="lp-note">
             Sign-in isn&apos;t configured on this instance — missing{" "}
-            {authMissing.join(", ")}. Running in single-user mode;{" "}
+            {authMissing.join(", ")}. Running in anonymous mode;{" "}
             <a className="lp-back" href="/">
               continue to AUGUST
             </a>

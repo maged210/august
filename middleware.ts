@@ -3,21 +3,14 @@
 // signed-out page UX is stage 3 (no page is hard-gated here — the deck stays
 // browsable signed out).
 //
-// GATED (signed out → 401 {"error":"auth_required"}):
-//   /api/chat            Anthropic spend + the user's context
-//   /api/memory          the user's memory store
-//   /api/threads(/[id])  conversation persistence
-//   /api/day             Google Calendar today-view
-//   /api/comms/*         Gmail draft + send
-//   /api/inbox           Gmail inbox digest
-//   /api/brief           GET returns the personal cached brief body (calendar
-//                        + inbox digest), so BOTH methods are gated — not
-//                        just the on-demand compile POST
-//   /api/speak           ElevenLabs quota
-//   /api/deepgram-token  Deepgram STT grant mint
-//   /api/watchlist       the user's watchlist store (stage 2)
-//   /api/feeds           the user's feed prefs + onboarded flag (stage 3)
-//   /api/push/subscribe  device push subscriptions are per-user (stage 2)
+// GATED (signed out → 401): lib/route-gates GATED — personal integrations
+// and paid-quota surfaces only (/api/day, /api/comms, /api/inbox, /api/brief,
+// /api/speak, /api/deepgram-token, /api/push/subscribe).
+//
+// NEVER GATED (AUTH-1a B1, the chat-privacy-hotfix surface): /api/chat,
+// /api/threads, /api/memory, /api/pit — these serve anonymous visitors via
+// per-visitor principals; a missing vid is MINTED, never refused. A session
+// upgrades the principal; its absence changes nothing.
 //
 // NOT gated (public data or separately protected):
 //   /api/cron/*  (CRON_SECRET)  ·  /api/markets  ·  /api/quakes
@@ -33,6 +26,7 @@ import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextRequest } from "next/server";
 import type { NextAuthRequest } from "next-auth";
 import { auth, authConfigured } from "@/auth";
+import { isGated } from "@/lib/route-gates";
 
 let warnedUnconfigured = false;
 
@@ -41,7 +35,10 @@ let warnedUnconfigured = false;
 // built-in redirect behavior interferes with these JSON 401s. The explicit
 // param types pin auth()'s middleware overload (not the route-handler one).
 const guard = auth((req: NextAuthRequest, _event: NextFetchEvent) => {
-  if (!req.auth?.user) {
+  // AUTH-1a B1: the gate list is data (lib/route-gates) and unit-tested —
+  // the anonymous principal surface (chat/threads/memory/pit) never 401s.
+  // Auth is ADDITIVE: a session upgrades the principal; absence changes nothing.
+  if (isGated(req.nextUrl.pathname) && !req.auth?.user) {
     return NextResponse.json({ error: "auth_required" }, { status: 401 });
   }
   return NextResponse.next();
@@ -64,19 +61,18 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 // Tight matcher: ONLY the personal API routes above — the middleware never
 // runs on pages, assets, or the public data feeds. `:path*` matches zero or
 // more segments, so `/api/chat` itself is covered.
+// (kept in sync with lib/route-gates GATED — the matcher must be static; the
+// runtime isGated() check is the authority, this only trims execution. The
+// former chat/threads/memory/watchlist/feeds entries are GONE: those routes
+// serve anonymous visitors via per-visitor principals — B1.)
 export const config = {
   matcher: [
-    "/api/chat/:path*",
-    "/api/memory/:path*",
-    "/api/threads/:path*",
     "/api/day/:path*",
     "/api/comms/:path*",
     "/api/inbox/:path*",
     "/api/brief/:path*",
     "/api/speak/:path*",
     "/api/deepgram-token/:path*",
-    "/api/watchlist/:path*",
-    "/api/feeds/:path*",
     "/api/push/subscribe/:path*",
   ],
 };

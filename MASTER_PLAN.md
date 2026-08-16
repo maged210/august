@@ -467,6 +467,42 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 ---
 
+# AUTH-1a — IDENTITY ONLY (2026-08-15)
+
+> Accounts + cross-device identity. Stripe/tiers/pricing/content-gating EXPLICITLY OUT (see PARKED). Nothing in this build may lock content. Branch: feature/auth-1a off main. DESIGN_LAWS.md committed first; this build complies. Two gates.
+
+## P1 — ACCOUNTS + THE CLAIM
+- [x] Auth.js (NextAuth v5) email magic link via Resend free tier — no passwords, no OAuth. /api/auth/session implemented properly; the unconfigured stub dies permanently.
+- [x] User record: id, email, createdAt, isOwner (owner = magedmilek@gmail.com). ADMIN_TOKEN survives as break-glass only; /admin accepts the owner session as the daily path.
+- [x] ACCOUNT CLAIM: first sign-in migrates the device's anonymous identity — chat threads, PIT career run, records, XP/week progress, daily streak, board names. One-way, idempotent (claimed visitors marked; re-runs no-op).
+- [x] Second device with its own anon history: records merge best-of; the account's active career run wins; the device's unclaimed run offered once (adopt or discard).
+- [x] Sign-in PROMPTS, never walls (L5): after a run ends ("save this career"), on board name save, on a new device. Dismissible forever.
+
+### GATE A1 — Milek signs in on desktop AND real phone; threads, career, records follow both directions. HOLD.
+- [x] A1 approved 2026-08-15 — owner verified: both devices claimed, anonymous smoke green.
+
+## P2 — POLISH
+- [x] Account menu (email, owner badge, sign out) in top bar + mobile drawer, per DESIGN_LAWS L1/L8.
+- [x] Session-aware chat caps: anonymous caps unchanged; signed-in gets the standard cap. No tiering.
+
+### GATE A2 — full review on preview → merge → deploy. HOLD.
+- [x] A2 approved 2026-08-15.
+
+## QUEUED — COMMAND CENTER MASTER BUILD (authoritative order 2026-08-15, supersedes + absorbs the earlier addendum; runs ONLY after AUTH-1a passes A1/A2 and merges — one build in flight at a time)
+Branch feature/command-center off post-auth main; full checkbox plan appends at build start. VISION: trader's command center — DATA → CONTEXT → SIGNAL → DECISION; opening August answers what's happening / why / regime / what matters / levels / what deserves attention. STANDING LAW (wins over everything): the audit reports reality (named-but-absent = "not present", never created) · DATA LAW zero new paid/scraped sources (market-wide feeds → intentional DATA UNAVAILABLE or omitted; listed under "data still required"; unlock with revenue) · DESIGN_LAWS.md governs visuals · PIT stays the arcade career · DATA INTEGRITY LABELS everywhere a market number renders: LIVE/DELAYED/SIMULATED/PROXY/UNAVAILABLE — simulated never dresses as live, absence says DATA UNAVAILABLE never a bare dash.
+- R1: full change-nothing audit (every route/tab/component/store/API call, mock-vs-live, dead buttons, states, mobile, console, perf; written report AT the gate BEFORE any build) → home-brief hierarchy (MARKET REGIME apex → pulse → desk line → ingest → headlines → watching, progressive disclosure) → MARKET REGIME from held inputs only (index trend from pulse, VIX level+trend, book bias, NQ vs live-book stated levels) = RISK ON/NEUTRAL/RISK OFF + "because" list w/ live values; confidence % only from a real formula; labeled CALCULATED. GATE R1: report + regime on preview + labels visible. HOLD.
+- R2: NQ LEVELS first-class (terminal module + brief chip: price, prev H/L/C; VWAP + overnight H/L ONLY if intraday granularity honestly supports them — omit over approximate; S/R from live-book stated levels; BULLISH/NEUTRAL/BEARISH = calculated condition, never advice) + VIX IN CONTEXT (level, change, fixed-threshold bucket LOW/NORMAL/ELEVATED/HIGH, trend vs SPY/QQQ, one context sentence generated from actual numbers, never hardcoded). GATE R2: both on preview, labels correct. HOLD.
+- R3: ANALYST = existing chat grounded in the app's actual current data (regime/pulse/levels/book/headlines; unavailable stated unavailable; live numbers never fabricated) + PIT post-trade explanations (dry floor voice, strictly observable round data, on close + scorecard) + UX polish per DESIGN_LAWS + FULL QA (every tab, game start-to-finish incl. reset/replay, desktop/tablet/phone, console clean, zero functionality removed). GATE R3: full review → merge. FINAL DELIVERABLE: what was wrong · what changed · what remains incomplete · data still required · assumptions · recommended next builds.
+
+## PARKED — AUTH-1b: THE WALL
+Build triggers — any TWO of three, then the wall ships in one round on the existing plumbing (L6 lock furniture + S7 visibility hooks + this identity layer):
+  T1: 30+ consecutive days of clean public track record (no stale rows, no duplicates, all sides set).
+  T2: 10+ outside visitors returning within a week, unprompted (game or terminal).
+  T3: one unprompted "how do I get more / can I pay" from a real person.
+Until then: no Stripe account, no pricing page, no locks.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 

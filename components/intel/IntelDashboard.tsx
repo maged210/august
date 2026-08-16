@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { signIn } from "next-auth/react";
+// (sign-in routes through /login — AUTH-1a magic link)
 import type {
   BriefIdea,
   Chapter,
@@ -601,7 +601,7 @@ function PageHeader({
             <button
               type="button"
               className="rd-btn rd-btn-acc"
-              onClick={() => void signIn("google", { redirectTo: "/?view=terminal" })}
+              onClick={() => { window.location.href = "/login"; }}
             >
               SIGN IN
             </button>

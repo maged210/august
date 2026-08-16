@@ -21,6 +21,35 @@ import { scopePrincipalKey, type StorePrincipal } from "./user-scope";
 
 const PROFILE_KEY = "august:profile";
 const SUMMARIES_KEY = "august:summaries";
+
+/** AUTH-1a CLAIM — move a visitor's memory into an account's namespace.
+ *  The account's existing profile wins; the visitor's summaries append as
+ *  older context. Source keys are deleted (one-way). */
+export async function migrateMemory(
+  from: StorePrincipal,
+  to: StorePrincipal,
+): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    const fromProfile = scopePrincipalKey(from, PROFILE_KEY);
+    const toProfile = scopePrincipalKey(to, PROFILE_KEY);
+    const fromSums = scopePrincipalKey(from, SUMMARIES_KEY);
+    const toSums = scopePrincipalKey(to, SUMMARIES_KEY);
+    const [profile, existing] = await Promise.all([
+      redis.get<string>(fromProfile),
+      redis.get<string>(toProfile),
+    ]);
+    if (profile && !existing) await redis.set(toProfile, profile);
+    const sums = (await redis.lrange<string>(fromSums, 0, 39)) ?? [];
+    if (sums.length) await redis.rpush(toSums, ...sums);
+    await redis.del(fromProfile);
+    await redis.del(fromSums);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const SUMMARIES_CAP = 50; // how many session summaries we retain
 const SUMMARIES_LOAD = 6; // how many we read for the system prompt
 const SUMMARIES_PROMPT = 4; // how many actually reach the prompt

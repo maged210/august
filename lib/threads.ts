@@ -175,6 +175,48 @@ export async function listThreads(email: StorePrincipal, limit = 3): Promise<Thr
   }
 }
 
+/** AUTH-1a CLAIM — move every thread from one principal's namespace to
+ *  another's (visitor → account). Existing target threads with the same id
+ *  are kept (the account wins); source keys are deleted afterwards so the
+ *  move is one-way. Returns how many threads landed. */
+export async function migrateThreads(from: StorePrincipal, to: StorePrincipal): Promise<number> {
+  const redis = getRedis();
+  if (!redis) return 0;
+  try {
+    const ids = (await redis.zrange<string[]>(K(from).index, 0, 49, { rev: true })) ?? [];
+    let moved = 0;
+    for (const id of ids) {
+      const t = await getThread(from, id);
+      if (!t) continue;
+      const existing = await getThread(to, id);
+      if (!existing) {
+        await redis.set(K(to).thread(id), JSON.stringify(t));
+        await redis.zadd(K(to).index, { score: t.updatedAt, member: id });
+        moved += 1;
+      }
+      await redis.del(K(from).thread(id));
+    }
+    await redis.del(K(from).index);
+    return moved;
+  } catch {
+    return 0;
+  }
+}
+
+/** B3 — delete a thread. The K(email) scoping means a caller can only ever
+ *  delete from THEIR OWN namespace; there is no cross-principal path. */
+export async function deleteThread(email: StorePrincipal, id: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis || !id) return false;
+  try {
+    await redis.del(K(email).thread(id));
+    await redis.zrem(K(email).index, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Create or update a thread from the FULL message array (messages are replaced
  * wholesale — the client always sends the whole capped conversation). Absent or
