@@ -113,6 +113,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       null;
     if (fin) {
       const pct = validateRunPct(body.careerPct);
+      // the run is over — the cross-device active-run blob dies with it
+      delete player.activeRun;
+      delete player.activeRunAt;
       if (fin === "busted") player.runStreak = 0;
       else player.runStreak = (player.runStreak ?? 0) + 1;
       if (typeof body.rating === "string" && /^[A-F]\+?$/.test(body.rating)) {
@@ -134,6 +137,25 @@ export async function POST(req: NextRequest): Promise<Response> {
         return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
       }
     } else if (!(await savePlayer(player))) {
+      return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
+    }
+  } else if (body.action === "runState") {
+    // AUTH-1a — sync the in-progress career for cross-device continuity.
+    // null clears; anything else must be a bounded JSON blob. Anonymous
+    // visitors may sync too (their pid is still their own namespace).
+    if (body.run === null || body.run === undefined) {
+      delete player.activeRun;
+      delete player.activeRunAt;
+    } else {
+      let size = 0;
+      try { size = JSON.stringify(body.run).length; } catch { size = Infinity; }
+      if (size > 64_000) {
+        return Response.json({ ok: false, error: "run_too_large" }, { status: 400 });
+      }
+      player.activeRun = body.run;
+      player.activeRunAt = Date.now();
+    }
+    if (!(await savePlayer(player))) {
       return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
     }
   } else if (body.action === "daily") {

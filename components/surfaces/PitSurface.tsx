@@ -122,15 +122,25 @@ type SavedRun = {
 const RUN_KEY = "aug-pit-run-v2";
 const ZERO_AGG: RunAggState = { trades: 0, wins: 0, worstDayDD: 0, missionsHit: 0, daysPlayed: 0 };
 
+function asSavedRun(raw: unknown): SavedRun | null {
+  const r = raw as SavedRun;
+  return r && r.v === 2 && r.week >= 1 && r.day >= 1 && Number.isFinite(r.eq) ? r : null;
+}
 function loadRun(): SavedRun | null {
   try {
     const raw = window.localStorage.getItem(RUN_KEY);
-    if (!raw) return null;
-    const r = JSON.parse(raw) as SavedRun;
-    return r && r.v === 2 && r.week >= 1 && r.day >= 1 && Number.isFinite(r.eq) ? r : null;
+    return raw ? asSavedRun(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
+}
+/** AUTH-1a — fire-and-forget active-run sync (career continuity across devices) */
+function pushRunState(run: SavedRun | null): void {
+  void fetch("/api/pit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "runState", run }),
+  }).catch(() => {});
 }
 function saveRun(r: SavedRun | null): void {
   try {
@@ -172,6 +182,8 @@ function PitInner({ active }: { active: boolean }) {
   const [careerStreak, setCareerStreak] = useState(0);
   const [furthestYet, setFurthestYet] = useState(false);
   const [saved, setSaved] = useState<SavedRun | null>(null);
+  /** a device-local run displaced by the account's — offered once (L10) */
+  const [orphanRun, setOrphanRun] = useState<SavedRun | null>(null);
   const [countdown, setCountdown] = useState("");
   const [bootErr, setBootErr] = useState<Error | null>(null);
   const [stamp, setStamp] = useState<string | null>(null);
@@ -209,6 +221,29 @@ function PitInner({ active }: { active: boolean }) {
         setBoards({ today: j.today, best: j.best });
         if (typeof j.attemptsLeft === "number") setAttemptsLeft(j.attemptsLeft);
         if (typeof j.date === "string") setEtToday(j.date);
+        // AUTH-1a — reconcile the cross-device career: the ACCOUNT'S run wins;
+        // a displaced device-local run is offered exactly once (adopt/discard)
+        const pid: string = j.player?.pid ?? "";
+        if (pid.startsWith("u:")) {
+          const server = asSavedRun(j.player?.activeRun);
+          const local = loadRun();
+          if (server && (!local || local.seed === server.seed)) {
+            saveRun(server);
+            setSaved(server);
+          } else if (server && local) {
+            saveRun(server);
+            setSaved(server);
+            try {
+              const k = `aug-orphan-${local.seed}`;
+              if (!window.localStorage.getItem(k)) {
+                window.localStorage.setItem(k, "1");
+                setOrphanRun(local);
+              }
+            } catch { /* the offer is a nicety */ }
+          } else if (!server && local) {
+            pushRunState(local); // first sign-in with a run in hand — it becomes the account's
+          }
+        }
       })
       .catch(() => {});
   }, []);
@@ -459,6 +494,7 @@ function PitInner({ active }: { active: boolean }) {
           agg: { ...agg }, curve: [...curveRef.current], marks: [...marksRef.current], bounds: [...boundsRef.current],
         };
         saveRun(savedRun); setSaved(savedRun);
+        if (player?.pid.startsWith("u:")) pushRunState(savedRun); // signed in: the career follows the account
         setPhase("result");
         post(null, null);
       }
@@ -961,6 +997,18 @@ function PitInner({ active }: { active: boolean }) {
               <p className="pit5-sub">Headlines move the tape — some of them lie. WEEK {player?.level ?? 1} desk tier: {levelDef.name}.</p>
               {player?.pid.startsWith("v:") ? (
                 <SignInNudge line="new device? sign in and your career picks up here." />
+              ) : null}
+              {orphanRun ? (
+                <div className="pit7-nudge pit7-orphan" role="note">
+                  <span>
+                    this device holds an unclaimed run — W{orphanRun.week}·D{orphanRun.day} ${orphanRun.eq.toFixed(0)}.
+                    {" "}your account&apos;s run is loaded; adopt replaces it.
+                  </span>
+                  <button type="button" className="pit7-adopt" onClick={() => {
+                    saveRun(orphanRun); setSaved(orphanRun); pushRunState(orphanRun); setOrphanRun(null);
+                  }}>ADOPT</button>
+                  <button type="button" onClick={() => setOrphanRun(null)}>DISCARD</button>
+                </div>
               ) : null}
 
               <button type="button" className="pit5-mode" onClick={saved ? continueRun : startNewRun}>

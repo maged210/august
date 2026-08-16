@@ -6036,6 +6036,9 @@ button.pulse-line:focus-visible {
 }
 .pit7-nudge a { color: var(--green); font-weight: 700; letter-spacing: 0.14em; text-decoration: none; }
 .pit7-nudge button { background: none; border: 0; color: var(--steel); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.pit7-orphan { border-color: rgb(var(--amber-rgb) / 0.5); color: var(--fg); }
+.pit7-orphan button { border: 1px solid var(--line); font-size: 9px; font-weight: 700; letter-spacing: 0.14em; padding: 3px 8px; }
+.pit7-orphan .pit7-adopt { border-color: var(--green); color: var(--green); }
 
 .lp-google {
   min-height: 44px;

@@ -46,6 +46,11 @@ export type PitPlayer = {
   lastDailyDate: string | null;
   /** today's DAILY PIT state — resets when the date turns */
   daily?: { date: string; attempts: number; bestPct: number | null };
+  /** AUTH-1a — the account's in-progress career run (client SavedRun blob),
+   *  synced when signed in so a career follows the player across devices.
+   *  The account's run wins; a device's unclaimed run is offered once. */
+  activeRun?: unknown;
+  activeRunAt?: number;
   createdAt: number;
   updatedAt: number;
 };
