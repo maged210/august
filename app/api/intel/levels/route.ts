@@ -4,7 +4,7 @@
 // (A5-approved getHistory reuse; volume now captured instead of discarded).
 // Symbol is LOCKED to NQ=F — this is a module's data feed, not a fan-out.
 import { getDailyBars, getHistory } from "@/lib/markets";
-import { computeLevels, levelsBias } from "@/lib/levels";
+import { computeLevels, lastSession, levelsBias } from "@/lib/levels";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -16,10 +16,13 @@ export async function GET(req: Request): Promise<Response> {
   const rl = await checkRateLimit("bars", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
   try {
-    const [daily, intraday] = await Promise.all([
+    const [daily, today] = await Promise.all([
       getDailyBars(SYMBOL),
       getHistory(SYMBOL, "yahoo", "1D"),
     ]);
+    // closed days: Yahoo's 1d range answers empty — fall back to the LAST
+    // REAL session sliced from the 5d/30m series (never approximated)
+    const intraday = today.length >= 5 ? today : lastSession(await getHistory(SYMBOL, "yahoo", "1W"));
     const levels = computeLevels(daily, intraday);
     const bias = levelsBias(levels);
     return Response.json(

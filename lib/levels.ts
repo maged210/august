@@ -90,6 +90,20 @@ export function computeLevels(daily: DailyBar[], intraday: Candle[]): SessionLev
   };
 }
 
+/** PURE. The trailing contiguous session of an intraday series — bars walked
+ *  back from the end until a gap over `gapHours`. Lets a closed-day read
+ *  (Yahoo's 1d range answers empty on weekends) use the LAST REAL session
+ *  from a longer range instead of approximating. */
+export function lastSession(bars: Candle[], gapHours = 4): Candle[] {
+  if (bars.length === 0) return [];
+  const out: Candle[] = [bars[bars.length - 1]];
+  for (let i = bars.length - 2; i >= 0; i--) {
+    if (out[0].time - bars[i].time > gapHours * 3600) break;
+    out.unshift(bars[i]);
+  }
+  return out;
+}
+
 export type BiasVote = { input: string; value: string; vote: -1 | 0 | 1 };
 export type BiasRead = { label: "BULLISH" | "NEUTRAL" | "BEARISH" | "UNAVAILABLE"; votes: BiasVote[] };
 

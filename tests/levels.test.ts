@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeLevels, etMinutes, levelsBias, vixContext } from "../lib/levels";
+import { computeLevels, etMinutes, lastSession, levelsBias, vixContext } from "../lib/levels";
 import type { Candle, DailyBar } from "../lib/markets";
 
 // 2026-08-14 (Fri): 14:30 UTC = 10:30 ET (DST). Overnight: 08:00 UTC = 04:00 ET.
@@ -74,4 +74,17 @@ test("vix context: sentences generated from the numbers, null without them", () 
   assert.equal(vixContext(0.2, 0.05, -0.02), "volatility flat while equities drift");
   assert.equal(vixContext(null, 1, 1), null);
   assert.equal(vixContext(2, null, null), null);
+});
+
+test("lastSession: slices the trailing contiguous session across a weekend gap", () => {
+  const fri = Date.UTC(2026, 7, 14, 14, 0) / 1000;
+  const thu = Date.UTC(2026, 7, 13, 14, 0) / 1000;
+  const bars = [
+    ...Array.from({ length: 5 }, (_, i) => ({ time: thu + i * 300, open: 1, high: 2, low: 0.5, close: 1 })),
+    ...Array.from({ length: 7 }, (_, i) => ({ time: fri + i * 300, open: 1, high: 2, low: 0.5, close: 1 })),
+  ];
+  const s = lastSession(bars);
+  assert.equal(s.length, 7); // only Friday's contiguous run
+  assert.equal(s[0].time, fri);
+  assert.deepEqual(lastSession([]), []);
 });
