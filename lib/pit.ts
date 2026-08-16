@@ -51,6 +51,9 @@ export type PitPlayer = {
    *  The account's run wins; a device's unclaimed run is offered once. */
   activeRun?: unknown;
   activeRunAt?: number;
+  /** TRAIN-1 — completed training-floor lessons ("L1".."L8"); claim merges
+   *  as a union. All eight = the TRAINED badge. */
+  training?: { done: string[] };
   createdAt: number;
   updatedAt: number;
 };
@@ -359,6 +362,10 @@ export function mergePitPlayers(base: PitPlayer, absorb: PitPlayer): PitPlayer {
     lastDailyDate:
       (base.lastDailyDate ?? "") >= (absorb.lastDailyDate ?? "") ? base.lastDailyDate : absorb.lastDailyDate,
     ...(daily ? { daily: { ...daily, bestPct: daily.bestPct === -Infinity ? null : daily.bestPct } } : {}),
+    // TRAIN-1 — lessons learned anywhere stay learned: union on claim
+    ...(base.training || absorb.training
+      ? { training: { done: [...new Set([...(base.training?.done ?? []), ...(absorb.training?.done ?? [])])].sort() } }
+      : {}),
   };
   merged.level = levelFor(merged.xp);
   // ghost merges by furthest position, not per-field
