@@ -286,11 +286,14 @@ function LessonRoom({
   const r = runRef.current;
   const pos = r?.positions[0] ?? null;
   const price = r ? r.px(0) : 0;
-  const planReady = plan.stop != null && plan.target != null && plan.entry != null
-    && planRatioOk(plan as TradePlan);
+  // the plan is judged against the would-be entry (current price) until the
+  // fill records the real one — otherwise the entry button can never unlock
+  const planEntry = plan.entry ?? price;
+  const planReady = plan.stop != null && plan.target != null && price > 0
+    && planRatioOk({ entry: planEntry, stop: plan.stop, target: plan.target });
   const canEnter = lesson.controls.trade && (!lesson.ghostPlan || planReady);
-  const rr = plan.stop != null && plan.target != null && plan.entry != null
-    ? Math.abs((plan.target - plan.entry) / (plan.entry - plan.stop || 1)).toFixed(1)
+  const rr = plan.stop != null && plan.target != null && planEntry > 0
+    ? Math.abs((plan.target - planEntry) / (planEntry - plan.stop || 1)).toFixed(1)
     : null;
 
   const act = (dir: 1 | -1 | 0) => {
@@ -345,7 +348,7 @@ function LessonRoom({
                   {plan.target != null ? `TARGET ${plan.target.toFixed(2)}` : "SET TARGET — tap the tape"}
                 </button>
                 <span className={`trn-rr${planReady ? " ok" : ""}`}>
-                  {rr ? `R:R ${rr}:1` : plan.entry == null && plan.stop != null && plan.target != null ? "now enter" : "2:1 minimum"}
+                  {rr ? `R:R ${rr}:1${planReady ? " — enter when ready" : " — 2:1 minimum"}` : "2:1 minimum"}
                 </span>
               </div>
             ) : null}
