@@ -12,6 +12,7 @@
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LEVELS, dailySeed, DAILY_ATTEMPTS, type LeaderRow, type PitPlayer } from "@/lib/pit";
+import { explainTrades } from "@/lib/pit-review";
 import {
   DEFAULT_TUNE, FUND_TARGET, LADDER, MARGIN_FRAC, MISSIONS, SEASON_WEEKS, START_CASH,
   WEEK_PERKS, WEEK_WAYPOINTS,
@@ -305,6 +306,12 @@ function PitInner({ active }: { active: boolean }) {
     if (ev.type === "news") return;
     if (ev.type === "streak") {
       popsRef.current.push({ text: `${ev.count}-TRADE STREAK +${ev.xp} XP`, cls: 1, at: performance.now() });
+      return;
+    }
+    if (ev.type === "closedInfo") {
+      if (ev.worstPct <= -5) {
+        floorRef.current = { text: `sold ${ev.gain >= 0 ? "+" : ""}${ev.gain.toFixed(1)}% after holding ${ev.worstPct.toFixed(1)}% against`, until: performance.now() + 4500 };
+      }
       return;
     }
     if (ev.type === "reaction") {
@@ -780,6 +787,19 @@ function PitInner({ active }: { active: boolean }) {
   const bestRunCash = player?.bestRun !== null && player?.bestRun !== undefined
     ? Math.round((1 + player.bestRun / 100) * START_CASH) : null;
 
+  // R3 — post-trade review: dry lines from observable round data, full tape
+  const tradeReviews = result && runRef.current
+    ? explainTrades(runRef.current.stocks, runRef.current.events, runRef.current.log, runRef.current.def)
+    : [];
+  const reviewBlock = tradeReviews.length ? (
+    <div className="pit8-review">
+      <i>TRADE REVIEW</i>
+      {tradeReviews.map((t, ix) => (
+        <p key={ix} className={t.gain >= 0 ? "up" : "down"}>{t.text}</p>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <div className="pit2">
       <p className="pit-sim">SIMULATED — entertainment, not investment advice. No real orders.</p>
@@ -923,6 +943,7 @@ function PitInner({ active }: { active: boolean }) {
                 <span>RISK<b>{result.riskGrade}</b></span>
                 <span>REACTION<b>{result.reactionGrade}</b></span>
               </div>
+              {reviewBlock}
               <p className="pit2-stats">SCORE {result.score.toLocaleString()} — {result.parts.map(([k, v]) => `${k} ${v >= 0 ? "+" : ""}${v}`).join(" · ")}</p>
               {result.bonus.length ? (
                 <p className="pit2-stats bonus">{result.bonus.map(([k, v]) => `${k} +${v} XP`).join(" · ")}</p>
@@ -976,9 +997,10 @@ function PitInner({ active }: { active: boolean }) {
               </p>
               <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay" />
               <p className="pit2-stats">
-                best of today {player?.daily?.date === etToday && player.daily.bestPct !== null ? `${player.daily.bestPct >= 0 ? "+" : ""}${player.daily.bestPct.toFixed(1)}%` : "—"}
+                best of today {player?.daily?.date === etToday && player.daily.bestPct != null ? `${player.daily.bestPct >= 0 ? "+" : ""}${player.daily.bestPct.toFixed(1)}%` : "—"}
                 {" "}· {attemptsLeft ?? 0} attempt{(attemptsLeft ?? 0) === 1 ? "" : "s"} left · resets in {countdown}
               </p>
+              {reviewBlock}
               <div className="pit2-boards solo">
                 <ol>
                   {boards.today.slice(0, 5).map((r, idx) => (

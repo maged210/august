@@ -909,7 +909,7 @@ const RD_DIR: Record<TradeIdea["direction"], { label: string; glyph: string; cls
  * paths); labeled honestly via <title> + the board legend. Color follows the
  * design rule (§3.6): favored-vs-trigger → bull/amber, else direction color. */
 function RdSpark({ closes, tone }: { closes: number[]; tone: ChartTone }) {
-  if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  if (!closes || closes.length < 2) return <span className="rd-abs-dash" title="no live quote for this row yet">—</span>;
   const W = 52, H = 20, padY = 3;
   let min = Math.min(...closes), max = Math.max(...closes);
   const pad = (max - min) * 0.1 || Math.abs(closes[closes.length - 1]) * 0.01 || 1;
@@ -954,7 +954,7 @@ function deltaView(live: number, trig: number, dir: TradeIdea["direction"]): {
 /** rail pos() 4–96% + the deltaView value — pure presentation over live price
  * + stated trigger. */
 function DeltaCell({ live, trig, dir }: { live: number | null; trig: number | null; dir: TradeIdea["direction"] }) {
-  if (live == null || trig == null || trig <= 0) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  if (live == null || trig == null || trig <= 0) return <span className="rd-abs-dash" title="no live quote for this row yet">—</span>;
   let lo = Math.min(live, trig), hi = Math.max(live, trig);
   const span = (hi - lo) || live * 0.04;
   lo -= span * 0.6; hi += span * 0.6;
@@ -1064,7 +1064,7 @@ function BlotterRow({
         <span className="rd-c rd-c-live">
           {live != null
             ? <><span className="rd-live-dot-g" aria-hidden="true">◉</span>{rdPx(live)}</>
-            : <span className="rd-abs-dash" aria-hidden="true">—</span>}
+            : <span className="rd-abs-dash" title="no live quote for this row yet">—</span>}
         </span>
         <span
           className="rd-c rd-c-delta"
@@ -1823,7 +1823,7 @@ const HORIZONS: { key: HorizonKey; group: string | null }[] = [
  * end dot r1.9, + area fill at 0.13 — REAL ~1mo daily closes, same series as
  * the desktop spark */
 function RdSparkM({ closes, tone }: { closes: number[]; tone: ChartTone }) {
-  if (!closes || closes.length < 2) return <span className="rd-abs-dash" aria-hidden="true">—</span>;
+  if (!closes || closes.length < 2) return <span className="rd-abs-dash" title="no live quote for this row yet">—</span>;
   const W = 52, H = 22, padY = 3;
   let min = Math.min(...closes), max = Math.max(...closes);
   const pad = (max - min) * 0.1 || Math.abs(closes[closes.length - 1]) * 0.01 || 1;

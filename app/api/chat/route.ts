@@ -6,6 +6,7 @@ import { resolveView } from "@/lib/screens";
 import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
+import { getDeskSnapshot } from "@/lib/desk-snapshot";
 import {
   checkChatDailyCap,
   checkRateLimit,
@@ -113,17 +114,19 @@ export async function POST(req: Request): Promise<Response> {
       memMs = Date.now() - t0;
       return r;
     });
-  const [{ profile, summaries }, marketsSnapshot, commandSnapshot] = await Promise.all([
+  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = await Promise.all([
     timeBox(memTimed, 300, EMPTY_MEM),
     timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
     timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
+    // R3 — the analyst grounding: the app AS DISPLAYED, unavailability stated
+    timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
   ]);
   const prepMs = Date.now() - t0;
   // Cache the frozen prefix (persona + tool guidance) so repeat turns skip
   // re-prefilling it — that's the time-to-first-token win. Volatile context (what he
   // remembers + the live snapshots) rides in a second, uncached block after it.
   const stableSystem = SYSTEM_PROMPT + TOOL_GUIDANCE;
-  const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot;
+  const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: stableSystem, cache_control: { type: "ephemeral" } },
   ];
