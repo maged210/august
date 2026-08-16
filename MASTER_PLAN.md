@@ -509,7 +509,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] NQ LEVELS module (terminal + brief chip): price, prev H/L/C; VWAP + overnight H/L ONLY if intraday granularity honestly supports them (omit over approximate); S/R from live-book stated levels; BULLISH/NEUTRAL/BEARISH = calculated condition, never advice.
 - [x] VIX IN CONTEXT: level, day change, fixed-threshold bucket (LOW/NORMAL/ELEVATED/HIGH), trend vs SPY/QQQ, one context sentence generated from actual numbers.
 ### GATE R2 — both on preview, labels correct. HOLD.
-- [ ] R2 approved.
+- [x] R2 approved 2026-08-16.
 
 ## R3 — ANALYST + PIT FEEDBACK + POLISH
 - [ ] ANALYST: existing chat grounded — market answers cite the app's actual current data (regime/pulse/levels/book/headlines); unavailable stated unavailable; live numbers never fabricated.
