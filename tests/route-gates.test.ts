@@ -12,7 +12,7 @@ test("B1: the anonymous principal surface is NEVER session-gated", () => {
     assert.ok(!GATED.some((g) => open === g || open.startsWith(g + "/")), `${open} shadowed by GATED`);
   }
   // the personal/spend surfaces stay gated
-  for (const g of ["/api/day", "/api/comms/send", "/api/brief", "/api/speak"]) {
+  for (const g of ["/api/brief", "/api/speak", "/api/deepgram-token", "/api/push/subscribe"]) {
     assert.equal(isGated(g), true, `${g} must stay gated`);
   }
 });

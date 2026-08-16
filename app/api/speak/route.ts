@@ -70,7 +70,8 @@ export async function POST(req: Request): Promise<Response> {
   if (!elRes.ok || !elRes.body) {
     const detail = await elRes.text().catch(() => "");
     console.error(`[speak] ElevenLabs error ${elRes.status} after ${Date.now() - t0}ms: ${detail}`);
-    return new Response(`ElevenLabs error ${elRes.status}: ${detail}`, { status: 502 });
+    // R1 A1 — the vendor body stays in the logs (the deepgram-token pattern)
+    return Response.json({ ok: false, error: "speech_unavailable" }, { status: 502 });
   }
 
   // upstream-TTFB: time until ElevenLabs returned response headers (first audio is

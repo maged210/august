@@ -3,12 +3,18 @@ import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { getSettings, saveSettings } from "@/lib/intel/store";
 import { DEFAULT_SETTINGS, type IntelSettings } from "@/lib/intel/types";
 import { mergeOptionSettings } from "@/lib/intel/option-settings";
-import { gateIntelMutationOrRespond } from "@/lib/user-scope";
+import { gateIntelAttributionOrRespond, gateIntelMutationOrRespond } from "@/lib/user-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
+  // R1 A1 — settings are the owner's desk config, not public data: gated +
+  // rate-limited like every other attribution read.
+  const rl = await checkRateLimit("intelMutate", getIp(req));
+  if (!rl.ok) return rateLimitedResponse(rl.reset);
+  const denied = await gateIntelAttributionOrRespond();
+  if (denied) return denied;
   return Response.json({ settings: await getSettings() });
 }
 

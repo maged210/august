@@ -65,10 +65,9 @@ export async function POST(req: Request): Promise<Response> {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(
-      "ANTHROPIC_API_KEY is not set. Add it to .env.local and restart the dev server.",
-      { status: 500 },
-    );
+    // R1 A1 — generic body only; config detail belongs in server logs
+    console.error("[chat] ANTHROPIC_API_KEY missing — chat unconfigured");
+    return Response.json({ ok: false, error: "chat_unconfigured" }, { status: 503 });
   }
 
   let messages: ChatMessage[] = [];
@@ -297,7 +296,8 @@ export async function POST(req: Request): Promise<Response> {
         if (!aborted) {
           const msg = err instanceof Error ? err.message : "unknown error";
           console.error("[chat] stream error:", msg);
-          send(encoder.encode(`\n[AUGUST is unreachable — ${msg}]`));
+          // R1 A1 — vendor exception bodies never reach the transcript
+          send(encoder.encode(`\n[AUGUST is unreachable]`));
         }
       } finally {
         const mem =

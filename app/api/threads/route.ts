@@ -74,6 +74,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export async function GET(req: Request): Promise<Response> {
+  { const rl = await checkRateLimit("threads", getIp(req)); if (!rl.ok) return rateLimitedResponse(rl.reset); }
   const { principal, setCookie } = await resolveChatPrincipal(req);
 
   const url = new URL(req.url);

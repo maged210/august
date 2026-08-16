@@ -577,7 +577,7 @@ function buildSnapshot(
     lines.push(
       `His NQ levels — the daily pivot levels on his desk surface; when he says "my levels" he means THESE: ` +
         `resistance ${fmt(levels.resistance)}, pivot ${fmt(levels.pivot)}, support ${fmt(levels.support)}; ` +
-        `overnight high ${fmt(levels.onHigh)}, low ${fmt(levels.onLow)}. ` +
+        `prior session high ${fmt(levels.onHigh)}, low ${fmt(levels.onLow)} (PROXY: QQQ×40, daily bar). ` +
         `NQ (${levels.proxy}) is ~${fmt(levels.current)} right now — ${levels.above ? "above" : "below"} the pivot.`,
     );
   }
@@ -659,8 +659,6 @@ export async function getMarketsSnapshot(): Promise<string> {
   }
 }
 
-// Warm the cache on server start so the first markets question isn't cold. Skipped
-// during the production build so we never make network calls at build time.
-if (process.env.NEXT_PHASE !== "phase-production-build") {
-  void getMarkets().catch(() => {});
-}
+// R1 A1 — the module-load cache warmer is GONE: it fired six external
+// upstreams on every server boot before any request existed. Callers pay the
+// first-fetch cost inside their own timeboxes instead.

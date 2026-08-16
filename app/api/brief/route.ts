@@ -59,8 +59,8 @@ export async function POST(req: Request): Promise<Response> {
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "compile_failed";
-    return new Response(JSON.stringify({ ready: false, error: msg }), {
+    console.error("[brief] compile failed:", err instanceof Error ? err.message : err);
+    return new Response(JSON.stringify({ ready: false, error: "compile_failed" }), {
       status: 502,
       headers: { "Content-Type": "application/json" },
     });

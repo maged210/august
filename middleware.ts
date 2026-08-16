@@ -67,9 +67,6 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 // serve anonymous visitors via per-visitor principals — B1.)
 export const config = {
   matcher: [
-    "/api/day/:path*",
-    "/api/comms/:path*",
-    "/api/inbox/:path*",
     "/api/brief/:path*",
     "/api/speak/:path*",
     "/api/deepgram-token/:path*",
