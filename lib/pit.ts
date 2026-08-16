@@ -317,6 +317,87 @@ export async function bestBoard(limit = LEADERBOARD_SIZE): Promise<LeaderRow[]> 
   return board(K.best, limit);
 }
 
+/** PURE (AUTH-1a CLAIM). Best-of merge of two player records — records merge
+ *  best-of, streaks keep the higher, XP takes the max (never summed: the two
+ *  histories overlap in spirit, and max can't be farmed by re-claiming). */
+export function mergePitPlayers(base: PitPlayer, absorb: PitPlayer): PitPlayer {
+  const laterDaily =
+    (absorb.daily?.date ?? "") > (base.daily?.date ?? "") ? absorb.daily : base.daily;
+  const sameDay = absorb.daily?.date === base.daily?.date ? base.daily : undefined;
+  const daily = sameDay && absorb.daily
+    ? {
+        date: sameDay.date,
+        attempts: Math.min(DAILY_ATTEMPTS, Math.max(sameDay.attempts, absorb.daily.attempts)),
+        bestPct: Math.max(sameDay.bestPct ?? -Infinity, absorb.daily.bestPct ?? -Infinity),
+      }
+    : laterDaily;
+  const merged: PitPlayer = {
+    ...base,
+    name: base.name !== "PLAYER" ? base.name : absorb.name,
+    bestRun: Math.max(base.bestRun ?? -Infinity, absorb.bestRun ?? -Infinity),
+    bestRunDate:
+      (base.bestRun ?? -Infinity) >= (absorb.bestRun ?? -Infinity) ? base.bestRunDate : absorb.bestRunDate,
+    todayRun: Math.max(base.todayRun ?? -Infinity, absorb.todayRun ?? -Infinity),
+    todayDate: base.todayDate ?? absorb.todayDate,
+    runs: base.runs + absorb.runs,
+    xp: Math.max(base.xp, absorb.xp),
+    bestRound: Math.max(base.bestRound ?? -Infinity, absorb.bestRound ?? -Infinity),
+    runStreak: Math.max(base.runStreak ?? 0, absorb.runStreak ?? 0),
+    furthestWeek: 0,
+    furthestDay: 0,
+    bestRating: absorb.bestRating === null ? base.bestRating : betterRating(base.bestRating, absorb.bestRating),
+    bestDailyRank:
+      base.bestDailyRank === null ? absorb.bestDailyRank :
+      absorb.bestDailyRank === null ? base.bestDailyRank :
+      Math.min(base.bestDailyRank, absorb.bestDailyRank),
+    dailyStreak: Math.max(base.dailyStreak ?? 0, absorb.dailyStreak ?? 0),
+    lastDailyDate:
+      (base.lastDailyDate ?? "") >= (absorb.lastDailyDate ?? "") ? base.lastDailyDate : absorb.lastDailyDate,
+    ...(daily ? { daily: { ...daily, bestPct: daily.bestPct === -Infinity ? null : daily.bestPct } } : {}),
+  };
+  merged.level = levelFor(merged.xp);
+  // ghost merges by furthest position, not per-field
+  const basePos = (base.furthestWeek ?? 0) * 10 + (base.furthestDay ?? 0);
+  const absorbPos = (absorb.furthestWeek ?? 0) * 10 + (absorb.furthestDay ?? 0);
+  const win = basePos >= absorbPos ? base : absorb;
+  merged.furthestWeek = win.furthestWeek ?? 0;
+  merged.furthestDay = win.furthestDay ?? 0;
+  const cleanNum = (v: number | null) => (v === null || v === -Infinity ? null : v);
+  merged.bestRun = cleanNum(merged.bestRun);
+  merged.todayRun = cleanNum(merged.todayRun);
+  merged.bestRound = cleanNum(merged.bestRound);
+  return merged;
+}
+
+/** CLAIM store op — fold the visitor's player into the account's and delete
+ *  the visitor record; both boards repoint to the account pid (higher score
+ *  wins). Safe when either record is missing. */
+export async function claimPitPlayer(fromPid: string, toPid: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis || fromPid === toPid) return false;
+  try {
+    const [from, to] = await Promise.all([getPlayer(fromPid), getPlayer(toPid)]);
+    if (!from) return true; // nothing to migrate — still a success
+    const merged = { ...mergePitPlayers(to ?? newPlayer(toPid), from), pid: toPid };
+    await savePlayer(merged);
+    await redis.del(K.player(fromPid));
+    for (const key of [K.best, K.day(etDate())]) {
+      const [fs, ts] = await Promise.all([
+        redis.zscore(key, fromPid),
+        redis.zscore(key, toPid),
+      ]);
+      if (fs !== null && fs !== undefined) {
+        const best = Math.max(Number(fs), ts === null || ts === undefined ? -Infinity : Number(ts));
+        await redis.zadd(key, { score: best, member: toPid });
+        await redis.zrem(key, fromPid);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** /admin backstop — reset a player's name (never deletes their record). */
 export async function purgePlayerName(pid: string): Promise<boolean> {
   const p = await getPlayer(pid);
