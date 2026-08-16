@@ -45,6 +45,31 @@ export default function ThreadsSidebar({
   // re-render the age labels without refetching
   const [, setTick] = useState(0);
   const swipeX = useRef<number | null>(null);
+  // B3 — pending deletes: id → undo deadline; the DELETE fires when it lapses
+  const [pendingDel, setPendingDel] = useState<Record<string, number>>({});
+  const delTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const beginDelete = (id: string) => {
+    setPendingDel((p) => ({ ...p, [id]: Date.now() + 6000 }));
+    const timer = setTimeout(() => {
+      delTimers.current.delete(id);
+      void fetch(`/api/threads/${encodeURIComponent(id)}`, { method: "DELETE" })
+        .catch(() => {})
+        .finally(() => {
+          setPendingDel((p) => { const { [id]: _, ...rest } = p; return rest; });
+          setThreads((t) => (t ? t.filter((r) => r.id !== id) : t));
+        });
+      // deleting the ACTIVE conversation returns home (B3)
+      if (id === activeThreadId) onNewChat();
+    }, 6000);
+    delTimers.current.set(id, timer);
+  };
+  const undoDelete = (id: string) => {
+    const timer = delTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    delTimers.current.delete(id);
+    setPendingDel((p) => { const { [id]: _, ...rest } = p; return rest; });
+  };
 
   const pull = useCallback(() => {
     fetch("/api/threads?limit=30", { cache: "no-store" })
@@ -142,23 +167,42 @@ export default function ThreadsSidebar({
               <span className="ts-empty-sub">conversations land here</span>
             </div>
           ) : (
-            rows.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`ts-thread${t.id === activeThreadId ? " on" : ""}`}
-                aria-current={t.id === activeThreadId ? "true" : undefined}
-                onClick={() => {
-                  onOpenThread(t.id);
-                  onClose();
-                }}
-              >
-                <span className="ts-title">{t.title}</span>
-                <span className="ts-age">
-                  {t.label ?? (Number.isFinite(t.updatedAt) ? relativeTime(t.updatedAt) : "")}
-                </span>
-              </button>
-            ))
+            rows.map((t) =>
+              pendingDel[t.id] ? (
+                <div key={t.id} className="ts-thread ts-pending" role="status">
+                  <span className="ts-title">deleted</span>
+                  <button type="button" className="ts-undo" onClick={() => undoDelete(t.id)}>
+                    UNDO
+                  </button>
+                </div>
+              ) : (
+                <div key={t.id} className={`ts-row${t.id === activeThreadId ? " on" : ""}`}>
+                  <button
+                    type="button"
+                    className={`ts-thread${t.id === activeThreadId ? " on" : ""}`}
+                    aria-current={t.id === activeThreadId ? "true" : undefined}
+                    onClick={() => {
+                      onOpenThread(t.id);
+                      onClose();
+                    }}
+                  >
+                    <span className="ts-title">{t.title}</span>
+                    <span className="ts-age">
+                      {t.label ?? (Number.isFinite(t.updatedAt) ? relativeTime(t.updatedAt) : "")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="ts-del"
+                    aria-label={`Delete thread: ${t.title}`}
+                    title="Delete (6s undo)"
+                    onClick={() => beginDelete(t.id)}
+                  >
+                    ⋯
+                  </button>
+                </div>
+              ),
+            )
           )}
         </div>
       </aside>

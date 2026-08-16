@@ -21,6 +21,9 @@ type ChatTranscriptProps = {
   /** He's generating — shows the caret on the streaming line, or dots before it. */
   thinking: boolean;
   onNewChat: () => void;
+  /** B2 — a failed turn's styled system state (never rendered as AUGUST). */
+  error?: string | null;
+  onRetry?: () => void;
 };
 
 export default function ChatTranscript({
@@ -29,6 +32,8 @@ export default function ChatTranscript({
   interim,
   thinking,
   onNewChat,
+  error,
+  onRetry,
 }: ChatTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Stick to the newest line while the reply streams — unless the user has
@@ -54,7 +59,7 @@ export default function ChatTranscript({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming, interim, thinking]);
+  }, [messages, streaming, interim, thinking, error]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -72,6 +77,15 @@ export default function ChatTranscript({
           title="Start a fresh conversation (memory is kept)"
         >
           + NEW CHAT
+        </button>
+        <button
+          type="button"
+          className="hl-convo-close"
+          onClick={onNewChat}
+          title="Close this conversation — back to the brief"
+          aria-label="Close conversation"
+        >
+          ×
         </button>
       </div>
       <div
@@ -99,6 +113,12 @@ export default function ChatTranscript({
               <span aria-hidden />
               <span aria-hidden />
               <span aria-hidden />
+            </div>
+          ) : null}
+          {error ? (
+            <div className="hl-errline" role="status">
+              <span>⚠ {error}</span>
+              {onRetry ? <button type="button" onClick={onRetry}>RETRY</button> : null}
             </div>
           ) : null}
         </div>

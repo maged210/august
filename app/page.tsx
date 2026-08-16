@@ -142,6 +142,8 @@ export default function Home() {
   const [state, setState] = useState<AugustState>("boot");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [replyText, setReplyText] = useState("");
+  // B2 — failures are a styled system state, never an AUGUST message
+  const [chatError, setChatError] = useState<string | null>(null);
   const [interim, setInterim] = useState("");
   const [micSupported, setMicSupported] = useState(false);
   // Deepgram streaming STT availability (server key present + browser can run the
@@ -1204,6 +1206,7 @@ export default function Home() {
     setActiveThreadId(null);
     setInterim("");
     setReplyText("");
+    setChatError(null);
     setHistoryOpen(false);
     closePanel();
     setState((s) => (s === "boot" ? s : "idle"));
@@ -1289,6 +1292,7 @@ export default function Home() {
     setMessages(next);
     setInterim("");
     setReplyText("");
+    setChatError(null);
     openPanel(); // a new reply (re)opens the panel
     setState("thinking");
     uiTone("send");
@@ -1306,17 +1310,19 @@ export default function Home() {
       if (gen !== genRef.current) return; // superseded while connecting
 
       if (res.status === 429) {
-        const body = await res.json().catch(() => ({})) as { message?: string };
         if (gen !== genRef.current) return;
-        setReplyText(body.message ?? "Easy — too many requests. Give it a second.");
+        setChatError("rate cap — give it a minute, then retry");
+        setState("idle");
         concludeSpeech(); // re-arms the mic in voice mode so the loop survives
         return;
       }
 
       if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "");
-        if (gen !== genRef.current) return; // superseded while reading the error body
-        setReplyText(errText || "— AUGUST is unreachable —");
+        // B2 — the raw error body NEVER reaches the transcript: classify and
+        // render the styled system state with a retry affordance instead.
+        if (gen !== genRef.current) return;
+        setChatError(res.status >= 500 ? "desk unreachable — retry" : `desk declined (${res.status}) — retry`);
+        setState("idle");
         concludeSpeech(); // keep the voice-mode loop alive after a failed turn
         return;
       }
@@ -1459,9 +1465,21 @@ export default function Home() {
         setState("idle");
         return;
       }
-      setReplyText("— connection lost —");
+      setChatError("connection lost — retry");
+      setState("idle");
       concludeSpeech(); // re-arm the mic in voice mode so the loop recovers
     }
+  }
+
+  // B2 — retry re-sends the failed user turn through the normal pipeline
+  function retryLastTurn() {
+    const msgs = messagesRef.current;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== "user") { setChatError(null); return; }
+    messagesRef.current = msgs.slice(0, -1);
+    setMessages(msgs.slice(0, -1));
+    setChatError(null);
+    void handleSend(last.content);
   }
 
   function toggleMic() {
@@ -1536,7 +1554,7 @@ export default function Home() {
           type="button"
           className={`view-tab${view === "chat" ? " on" : ""}`}
           aria-pressed={view === "chat"}
-          onClick={() => switchView("chat")}
+          onClick={() => { if (view === "chat") startNewChat(); else switchView("chat"); }}
         >
           AUGUST
         </button>
@@ -1577,7 +1595,7 @@ export default function Home() {
           type="button"
           className={`tab-item${view === "chat" ? " on" : ""}`}
           aria-pressed={view === "chat"}
-          onClick={() => switchView("chat")}
+          onClick={() => { if (view === "chat") startNewChat(); else switchView("chat"); }}
         >
           AUGUST
         </button>
@@ -1655,6 +1673,8 @@ export default function Home() {
                 interim={interim}
                 thinking={state === "thinking"}
                 onNewChat={startNewChat}
+                error={chatError}
+                onRetry={retryLastTurn}
               />
             }
             pushState={pushState}
