@@ -225,7 +225,12 @@ export default function HomeBrief() {
   // — MARKET REGIME (R1 apex): held inputs only, computed client-side from
   //   the fetches this component already makes; pure math in lib/regime —
   const regime = useMemo(() => {
-    if (!quotes) return null;
+    if (!quotes) {
+      // hard quote failure: the apex says DATA UNAVAILABLE, it never vanishes
+      return quotesErr
+        ? computeRegime({ spyTrendPct: null, qqqTrendPct: null, vix: null, vixTrendPts: null, bookLongs: 0, bookShorts: 0, nqVsLevelPct: null })
+        : null;
+    }
     const longs = (live ?? []).filter((i) => i.side === "long").length;
     const shorts = (live ?? []).filter((i) => i.side === "short").length;
     const nq = quotes["NQ=F"];
@@ -247,7 +252,7 @@ export default function HomeBrief() {
       bookShorts: shorts,
       nqVsLevelPct,
     });
-  }, [quotes, live]);
+  }, [quotes, live, quotesErr]);
 
   const chip = (k: string, v: React.ReactNode) => (
     <span className="hb-chip">
