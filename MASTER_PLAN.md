@@ -486,7 +486,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] Session-aware chat caps: anonymous caps unchanged; signed-in gets the standard cap. No tiering.
 
 ### GATE A2 — full review on preview → merge → deploy. HOLD.
-- [ ] A2 approved.
+- [x] A2 approved 2026-08-15.
 
 ## QUEUED — COMMAND CENTER MASTER BUILD (authoritative order 2026-08-15, supersedes + absorbs the earlier addendum; runs ONLY after AUTH-1a passes A1/A2 and merges — one build in flight at a time)
 Branch feature/command-center off post-auth main; full checkbox plan appends at build start. VISION: trader's command center — DATA → CONTEXT → SIGNAL → DECISION; opening August answers what's happening / why / regime / what matters / levels / what deserves attention. STANDING LAW (wins over everything): the audit reports reality (named-but-absent = "not present", never created) · DATA LAW zero new paid/scraped sources (market-wide feeds → intentional DATA UNAVAILABLE or omitted; listed under "data still required"; unlock with revenue) · DESIGN_LAWS.md governs visuals · PIT stays the arcade career · DATA INTEGRITY LABELS everywhere a market number renders: LIVE/DELAYED/SIMULATED/PROXY/UNAVAILABLE — simulated never dresses as live, absence says DATA UNAVAILABLE never a bare dash.
