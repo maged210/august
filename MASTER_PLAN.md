@@ -467,6 +467,36 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 
 ---
 
+# AUTH-1a — IDENTITY ONLY (2026-08-15)
+
+> Accounts + cross-device identity. Stripe/tiers/pricing/content-gating EXPLICITLY OUT (see PARKED). Nothing in this build may lock content. Branch: feature/auth-1a off main. DESIGN_LAWS.md committed first; this build complies. Two gates.
+
+## P1 — ACCOUNTS + THE CLAIM
+- [ ] Auth.js (NextAuth v5) email magic link via Resend free tier — no passwords, no OAuth. /api/auth/session implemented properly; the unconfigured stub dies permanently.
+- [ ] User record: id, email, createdAt, isOwner (owner = magedmilek@gmail.com). ADMIN_TOKEN survives as break-glass only; /admin accepts the owner session as the daily path.
+- [ ] ACCOUNT CLAIM: first sign-in migrates the device's anonymous identity — chat threads, PIT career run, records, XP/week progress, daily streak, board names. One-way, idempotent (claimed visitors marked; re-runs no-op).
+- [ ] Second device with its own anon history: records merge best-of; the account's active career run wins; the device's unclaimed run offered once (adopt or discard).
+- [ ] Sign-in PROMPTS, never walls (L5): after a run ends ("save this career"), on board name save, on a new device. Dismissible forever.
+
+### GATE A1 — Milek signs in on desktop AND real phone; threads, career, records follow both directions. HOLD.
+- [ ] A1 approved.
+
+## P2 — POLISH
+- [ ] Account menu (email, owner badge, sign out) in top bar + mobile drawer, per DESIGN_LAWS L1/L8.
+- [ ] Session-aware chat caps: anonymous caps unchanged; signed-in gets the standard cap. No tiering.
+
+### GATE A2 — full review on preview → merge → deploy. HOLD.
+- [ ] A2 approved.
+
+## PARKED — AUTH-1b: THE WALL
+Build triggers — any TWO of three, then the wall ships in one round on the existing plumbing (L6 lock furniture + S7 visibility hooks + this identity layer):
+  T1: 30+ consecutive days of clean public track record (no stale rows, no duplicates, all sides set).
+  T2: 10+ outside visitors returning within a week, unprompted (game or terminal).
+  T3: one unprompted "how do I get more / can I pay" from a real person.
+Until then: no Stripe account, no pricing page, no locks.
+
+---
+
 ## BLOCKERS LOG (newest on top)
 - **2026-08-05 — local secrets are masked.** Every secret in `.env.local` (ANTHROPIC_API_KEY, UPSTASH_REDIS_REST_URL/TOKEN, DEEPGRAM, FRED) is a literal `"[SENSITIVE]"` placeholder: they are Sensitive-type in Vercel, and `vercel env pull` can never decrypt those (re-verified against both development and preview scopes). Local Upstash/chat has therefore been non-functional since Phase A — the rate limiter fails open, stores no-op. **Not blocking the build**; BLOCKS the G2 live end-to-end run and local chat testing. Fix (Milek): paste the real values into `C:\dev\august\.env.local` from the Upstash/Anthropic dashboards, or unmark them Sensitive in Vercel and say "re-pull env". Milek pinged via hook.
 
