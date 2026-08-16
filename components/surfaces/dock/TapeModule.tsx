@@ -40,7 +40,7 @@ export default function TapeModule({
     <section className="ifm" aria-label="Desk tape">
       <div className="ifm-h">
         <span className="ifm-title">DESK TAPE</span>
-        <span className="ifm-tag" title="desk commentary — /admin entries and approved transcript extractions, not a market data feed">
+        <span className="ifm-tag" title="desk commentary — the desk's own notes, not a market data feed">
           DESK-SOURCED
         </span>
       </div>

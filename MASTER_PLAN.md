@@ -534,6 +534,14 @@ CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi c
 ### GATE R4 — preview + screenshots (desktop, phone, one deliberately failed feed showing its honest state, the ask-bar expanding into chat). HOLD, then merge.
 - [x] R4 approved ("r4 approved", 2026-08-16). Merged to main.
 
+## PUBLIC-LANGUAGE PASS (ACTIVE 2026-08-16 — branch feature/public-language off main; small round, one gate)
+- [x] P1 FEED EDIT: MarketWatch removed. CNBC + Yahoo remain behind the desk filter (30+50 items vs merged cap 15 — no thinning). Candidates flagged at gate: CNBC Markets vertical (live, slower), Nasdaq Markets RSS (live, current) — neither wired without sign-off.
+- [x] P2 QUIET ATTRIBUTION: publisher tag → 8px muted mono, absolute card corner, uppercase, 0.55 opacity; never removed while third-party headlines render. ALTERNATIVE shipped OFF: PUBLIC_FEED_MODE=desk → /api/headlines returns mode:"desk", front page swaps WHAT'S BEING SAID for FROM THE DESK (the tape's own notes + ask-August).
+- [x] P3 JARGON PURGE: useOwner() hook (session→role, false for visitors). Home card visitor voice "DESK · updated <age> · <n> new calls today"; LATEST INGEST owner-only. Wire: buildWire gets ingests only for owner (visitor kinds = LIVE/TRIG/TAPE); tag PIPELINE ACTIVITY→DESK ACTIVITY; tape tooltip + chat "▸ transcript" toggle reworded. DOM-probe evidence: zero banned-word hits in text/title/aria/placeholder on home + terminal signed out. (Paste-transcript workspace is owner-only by the audience split — never renders for visitors.)
+- [x] P4 SETTINGS REVIEW: knob table delivered at the gate (chat 10/min env CHAT_RATE_PER_MIN + 400/day global env CHAT_DAILY_CAP, no anon/signed-in tiering; stale = TRACKER_STALE_DAYS env default 5d + admin 1–60 runtime; rain default VISIBLE code constant; LIVE rail UNCAPPED (16 today); daily PIT attempts 3 code constant; calendar imminent 48h code constant; PUBLIC_FEED_MODE unset). Owner sets final values at approval; code constants change in one commit.
+### GATE PL — signed-OUT screenshots of home + terminal (zero jargon, quiet/zero attribution per config) + the settings table. HOLD, then merge.
+- [x] PL approved ("pl approved", 2026-08-16). Settings kept as tabled — no constant changes named. Merged to main.
+
 ## STANDING LAW (wins over everything above)
 The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.
 

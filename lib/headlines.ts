@@ -13,9 +13,12 @@ export type Headline = {
   publishedAt: number;
 };
 
+// PUBLIC-LANGUAGE P1 (2026-08-16): MarketWatch removed as a source entirely.
+// Two feeds remain, both behind the desk filter below. Candidates from the
+// same publishers' existing RSS sets, flagged for owner sign-off, are listed
+// at the gate — none wired without it.
 const FEEDS: Array<{ url: string; publisher: string }> = [
   { url: "https://www.cnbc.com/id/100003114/device/rss/rss.html", publisher: "CNBC" },
-  { url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", publisher: "MarketWatch" },
   { url: "https://finance.yahoo.com/news/rssindex", publisher: "Yahoo Finance" },
 ];
 

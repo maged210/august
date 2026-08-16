@@ -34,6 +34,7 @@ import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker
 import type { Direction } from "@/lib/intel/types";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
 import { publishRainSymbols } from "@/lib/rain-symbols";
+import { useOwner } from "@/lib/use-owner";
 import type { PublicTapeEntry } from "@/lib/tape";
 import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
@@ -465,7 +466,10 @@ export default function IdeasFeed() {
   // desk tape (G3 round 4) — fetched here, rendered by the dock's TapeModule
   const [tapeRows, setTapeRows] = useState<PublicTapeEntry[] | null>(null);
   const [tapeErr, setTapeErr] = useState(false);
-  // desk wire ingest events (G3 round 5) — redacted counts off /api/wire
+  // desk wire ingest events (G3 round 5) — redacted counts off /api/wire.
+  // PUBLIC-LANGUAGE P3: INGEST rows are internal vocabulary — they render
+  // only for the owner session; visitors' wire is LIVE / TRIG / TAPE.
+  const isOwner = useOwner();
   const [ingests, setIngests] = useState<PublicIngest[] | null>(null);
   // ≤700px: the dock hides behind a toggle (tablet band 701–1179 keeps it)
   const [dockOpen, setDockOpen] = useState(false);
@@ -606,8 +610,9 @@ export default function IdeasFeed() {
   // every source is still pending (skeleton)
   const wireEvents = useMemo(() => {
     if (ingests === null && tapeRows === null && feed === null && live === null) return null;
-    return buildWire(ingests ?? [], liveIdeas, tracked, tapeRows ?? []);
-  }, [ingests, liveIdeas, tracked, tapeRows, feed, live]);
+    // P3 — visitors never see INGEST rows; the owner session keeps them
+    return buildWire(isOwner ? ingests ?? [] : [], liveIdeas, tracked, tapeRows ?? []);
+  }, [ingests, liveIdeas, tracked, tapeRows, feed, live, isOwner]);
 
   // the selected row's full objects for the detail panel
   const selLive =
