@@ -56,7 +56,7 @@ export type MissionCtx = {
 };
 
 export const MISSIONS: Record<MissionKey, { label: string; evalFn: (c: MissionCtx) => boolean }> = {
-  beat: { label: "BEAT THE MARKET — finish above the SPY line", evalFn: (c) => c.roundPct > c.spyPct },
+  beat: { label: "BEAT THE MARKET — finish above the INDEX line", evalFn: (c) => c.roundPct > c.spyPct },
   momentum: { label: "MOMENTUM HUNTER — sell the day's fastest riser at +3% or better", evalFn: (c) => c.bestRiserWin },
   short: { label: "SHORT SELLER — book two profitable shorts", evalFn: (c) => c.shortWins >= 2 },
   survivor: { label: "SURVIVOR — stay in the market (60%+ of the day) and never breach 20% drawdown", evalFn: (c) => !c.margin && c.maxDD < 20 && c.exposureFrac >= 0.6 },
@@ -500,6 +500,8 @@ export type RoundSummary = {
   score: number; parts: Array<[string, number]>; xp: number;
   bonus: Array<[string, number]>;
   trades: number; wins: number; winRate: number; goodEntries: number; maxDD: number; margin: boolean;
+  /** best single deliberate-close gain, % (R1 A4 — never a hardcoded 0) */
+  bestTrade: number;
   riskGrade: Grade; reactionGrade: Grade;
   reactionsCorrect: number; reactionsTotal: number;
   realizedPct: number; streak: number;
@@ -517,7 +519,7 @@ type CarryState = {
   realized: number; streak: number; bonus: Array<[string, number]>;
   reactionsCorrect: number; reactionsTotal: number;
   oppWin: boolean; contraWin: boolean; allOrNothingHit: boolean; eqTouchedMinus5: boolean;
-  riskAccum: number; riskSamples: number; exposureTicks: number;
+  riskAccum: number; riskSamples: number; exposureTicks: number; bestTrade: number;
 };
 
 export type RoundRun = {
@@ -617,6 +619,7 @@ export function createRoundRun(
   let riskAccum = carry ? carry.riskAccum : 0;
   let riskSamples = carry ? carry.riskSamples : 0;
   let exposureTicks = carry ? carry.exposureTicks : 0;
+  let bestTrade = carry ? carry.bestTrade : 0;
   let done = false;
   let settling = false;
   const watches: Array<{ s: number; price: number; dir: 1 | -1; until: number }> = [];
@@ -661,6 +664,7 @@ export function createRoundRun(
       positions[s] = null;
       if (!settling) {
         trades += 1;
+        if (gain > bestTrade) bestTrade = gain;
         realized += value - p.qty * p.entry * 1; // booked P&L in $ vs invested
         if (gain > 0) {
           wins += 1;
@@ -846,6 +850,7 @@ export function createRoundRun(
       startEq, endEq, roundPct, spyPct, missionHit, score, parts, xp, bonus,
       trades, wins, winRate: trades ? Math.round((wins / trades) * 100) : 0,
       goodEntries, maxDD, margin, riskGrade, reactionGrade,
+      bestTrade: Math.round(bestTrade * 100) / 100,
       reactionsCorrect, reactionsTotal,
       realizedPct: Math.round((realized / startEq) * 10000) / 100,
       streak,
@@ -863,7 +868,7 @@ export function createRoundRun(
     _carry: () => ({
       cash, positions, peak, maxDD, trades, wins, goodEntries, shortWins, bestRiserWin,
       log, stamps, realized, streak, bonus, reactionsCorrect, reactionsTotal,
-      oppWin, contraWin, allOrNothingHit, eqTouchedMinus5, riskAccum, riskSamples, exposureTicks,
+      oppWin, contraWin, allOrNothingHit, eqTouchedMinus5, riskAccum, riskSamples, exposureTicks, bestTrade,
     }),
   };
   return run;

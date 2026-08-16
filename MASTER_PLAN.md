@@ -496,10 +496,10 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [ ] MARKET REGIME (CALCULATED): held inputs only — index trend from pulse series, VIX level+trend, desk book bias, NQ vs live-book stated levels → RISK ON / NEUTRAL / RISK OFF + "because" list w/ live values; confidence % only from a real formula; never advice.
 - [ ] DATA INTEGRITY LABELS wherever a market number renders: LIVE / DELAYED / SIMULATED / PROXY / UNAVAILABLE; absence says DATA UNAVAILABLE, never a bare dash.
 ## R1 AMENDMENTS (owner accepted the audit 2026-08-15; all in R1 scope)
-- [ ] A1 HARDENING: rate-limit every public route · gate /api/intel/settings · DELETE the ten live-but-dead routes (flights, quakes, command, markets, markets/history, intel world-RSS, inbox, comms/draft+send, day; parked surfaces rebuild from git) · sanitize ALL error responses (no env names, vendor bodies, raw err.message) · kill module-load getMarkets() · remove the dead "Live aircraft" chat claim.
-- [ ] A2 MOBILE: IDEAS drawer openable on phones · fix/remove sidebar collapse <1100px · clean delete timers on unmount.
-- [ ] A3 NAME INTEGRITY: "overnight H/L" label dies until true session data exists · NQ reconciles to ONE truth (real NQ=F; any proxy chipped PROXY).
-- [ ] A4 PIT: bestTrade computed or omitted (never hardcoded 0) · simulated benchmark stops printing "SPY" · tuning panel VALIDATES the admin token.
+- [x] A1 HARDENING: rate-limit every public route · gate /api/intel/settings · DELETE the ten live-but-dead routes (flights, quakes, command, markets, markets/history, intel world-RSS, inbox, comms/draft+send, day; parked surfaces rebuild from git) · sanitize ALL error responses (no env names, vendor bodies, raw err.message) · kill module-load getMarkets() · remove the dead "Live aircraft" chat claim.
+- [x] A2 MOBILE: IDEAS drawer openable on phones · fix/remove sidebar collapse <1100px · clean delete timers on unmount.
+- [x] A3 NAME INTEGRITY: "overnight H/L" label dies until true session data exists · NQ reconciles to ONE truth (real NQ=F; any proxy chipped PROXY).
+- [x] A4 PIT: bestTrade computed or omitted (never hardcoded 0) · simulated benchmark stops printing "SPY" · tuning panel VALIDATES the admin token.
 - [x] A5 (no build): getHistory() intraday approved as REUSE for R2 + future PIT replay; FRED + calendar JSON stay unwired until their round.
 
 ### GATE R1 — report + regime on preview + labels visible + one deliberately failed fetch showing its honest state. HOLD.
