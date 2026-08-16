@@ -70,6 +70,12 @@ export default function ThreadsSidebar({
     delTimers.current.delete(id);
     setPendingDel((p) => { const { [id]: _, ...rest } = p; return rest; });
   };
+  // R1 A2 — pending deletes die with the component: navigating away must not
+  // fire a DELETE the user can no longer undo
+  useEffect(() => {
+    const timers = delTimers.current;
+    return () => { for (const t of timers.values()) clearTimeout(t); timers.clear(); };
+  }, []);
 
   const pull = useCallback(() => {
     fetch("/api/threads?limit=30", { cache: "no-store" })
