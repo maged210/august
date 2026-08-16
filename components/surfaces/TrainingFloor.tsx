@@ -118,8 +118,11 @@ function LessonRoom({
   // L1 — tap the high, then the low
   const [tapStep, setTapStep] = useState<"hi" | "lo">("hi");
   const [taps, setTaps] = useState<Array<{ tick: number; which: "hi" | "lo" }>>([]);
-  // L3 — the ghost plan
+  // L3 — the ghost plan. The interval's bell callback validates against the
+  // REF — the state snapshot it closed over is stale by then.
   const [plan, setPlan] = useState<Partial<TradePlan>>({});
+  const planRef = useRef<Partial<TradePlan>>({});
+  useEffect(() => { planRef.current = plan; }, [plan]);
   const [arm, setArm] = useState<"stop" | "target" | null>(null);
 
   const say = useCallback((text: string) => {
@@ -179,7 +182,7 @@ function LessonRoom({
       return;
     }
     if (lesson.id === "L3") {
-      const p = plan;
+      const p = planRef.current;
       if (p.entry != null && p.stop != null && p.target != null && exitAtPlan(p as TradePlan, r.log)) {
         pass("exited at the plan. either side of it counts — discipline is the trade.");
       } else {
