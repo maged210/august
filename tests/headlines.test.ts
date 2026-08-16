@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeHeadlines, parseRss, type Headline } from "../lib/headlines";
+import { isDeskHeadline, mergeHeadlines, parseRss, type Headline } from "../lib/headlines";
 
 const RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>Feed</title>
@@ -47,4 +47,23 @@ test("mergeHeadlines: newest first, near-duplicate titles collapse, cap honored"
     merged.map((h) => h.title),
     ["Fresh take", "Fed holds rates!", "Old story"],
   ); // the B-duplicate at 90 collapsed into the A-copy at 100
+});
+
+test("isDeskHeadline: personal-finance chum drops, market headlines survive", () => {
+  const chum = [
+    "What the results of a primary race may mean for Social Security",
+    "I'm a retired CPA with $1.2 million in my 401(k) — what now?",
+    "My bonus was $42,000. Should I pay off my mortgage?",
+    "Medicaid rules could cost you the family home",
+    "How much do I need in my nest egg to retire at 55?",
+  ];
+  const desk = [
+    "Nvidia slides 3% as chip export rules tighten",
+    "Fed minutes to test the rally in rate-sensitive tech",
+    "Oil steadies after OPEC+ output surprise",
+    "Treasury yields jump on hot jobless claims print",
+  ];
+  for (const title of chum) assert.equal(isDeskHeadline({ title, link: "https://x.com/a" }), false, title);
+  for (const title of desk) assert.equal(isDeskHeadline({ title, link: "https://x.com/a" }), true, title);
+  assert.equal(isDeskHeadline({ title: "Markets wrap", link: "https://www.marketwatch.com/personal-finance/story" }), false);
 });

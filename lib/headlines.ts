@@ -69,6 +69,31 @@ export function parseRss(xml: string, publisher: string): Headline[] {
   return out;
 }
 
+// GROOM 2026-08-16 — the front page is a trading desk, not a money column.
+// Personal-finance verticals (retirement planning, benefits, advice-column
+// first person, household credit) drop before the merge. MarketWatch's
+// markets-only feed (mw_marketpulse) was probed as the cleaner fix but is a
+// stale archive (2025 pubDates) — the filter covers every feed instead.
+const CHUM = [
+  /\b401\s?\(?k\)?\b/i,
+  /\broth\b|\bIRA\b/,
+  /\bmedicaid\b|\bmedicare\b|\bsocial security\b/i,
+  /\bretir(?:e|ed|ee|ees|ement|ing)\b/i,
+  /\bestate plan|inheritance|\bheirs?\b|\bwill and testament\b/i,
+  /\bmortgage|\brefinanc|\bcredit card|\bcredit score|\bstudent loan/i,
+  /\bfinancial (?:advis[eo]r|planner)\b|\bCPA\b/,
+  /\bnest egg\b|\bnet worth\b|\bsavings account\b/i,
+  /\bmy (?:husband|wife|mother|father|mom|dad|family|kids?|son|daughter|bonus|paycheck)\b/i,
+  /\b(?:I'?m|I am|we'?re) \d{2}\b/i,
+  /\bshould (?:I|you|we)\b|\bhow much (?:do|should|can) (?:I|you|we)\b/i,
+];
+
+/** PURE. True when a headline belongs on a trading front page. */
+export function isDeskHeadline(h: Pick<Headline, "title" | "link">): boolean {
+  if (CHUM.some((re) => re.test(h.title))) return false;
+  return !/\/personal-finance\/|\/retirement\/|\/taxes\/|\/real-estate\//i.test(h.link);
+}
+
 /** PURE. Merge feeds newest-first, de-dupe near-identical titles, cap. */
 export function mergeHeadlines(lists: Headline[][], max: number = MAX_TOTAL): Headline[] {
   const seen = new Set<string>();
@@ -108,7 +133,7 @@ async function fetchFeed(url: string, publisher: string): Promise<Headline[]> {
 export async function getHeadlines(): Promise<Headline[]> {
   if (_cache && Date.now() - _cache.at < CACHE_MS) return _cache.rows;
   const lists = await Promise.all(FEEDS.map((f) => fetchFeed(f.url, f.publisher)));
-  const rows = mergeHeadlines(lists);
+  const rows = mergeHeadlines(lists.map((l) => l.filter(isDeskHeadline)));
   // don't cache a total blackout — retry on the next request instead
   if (rows.length > 0) _cache = { at: Date.now(), rows };
   return rows;
