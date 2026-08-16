@@ -5799,6 +5799,58 @@ button.pulse-line:focus-visible {
 .hb-pulsehead { align-items: center; gap: 8px; margin-bottom: 2px; }
 .hb-pending { font-family: var(--font-mono); font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
 
+/* R4 — THE FRONT PAGE: mini orb, countdown row, heatmap, feed cards, desk report */
+.hl-orb-mini { transform: scale(0.38); transform-origin: top center; margin-bottom: -110px; opacity: 0.9; transition: transform 300ms, margin 300ms; }
+@media (prefers-reduced-motion: reduce) { .hl-orb-mini { transition: none; } }
+
+.cdr { margin: 10px 0; }
+.cdr-quiet { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); margin: 8px 0; }
+.cdr-quietline { font-size: 10.5px; color: var(--dim); letter-spacing: 0.06em; }
+.cdr-head { margin-bottom: 6px; }
+.cdr-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+.cdr-card {
+  display: flex; flex-direction: column; gap: 3px; min-width: 200px; flex: 1 1 200px; max-width: 320px;
+  border: 1px solid var(--hair); padding: 10px 12px; font-family: var(--font-mono);
+}
+.cdr-released { border-style: dashed; }
+.cdr-name { font-size: 13px; font-weight: 800; letter-spacing: 0.18em; }
+.cdr-count { font-size: 22px; font-weight: 800; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+.cdr-when, .cdr-exp, .cdr-printed { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
+.cdr-react { font-size: 11px; font-weight: 700; }
+.cdr-noact { font-size: 9px; color: var(--dim); font-style: italic; }
+.cdr-impact { font-size: 8px; font-weight: 700; letter-spacing: 0.18em; padding: 2px 6px; border: 1px solid var(--hair); width: fit-content; }
+.cdr-impact.im-high { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
+.cdr-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.cdr-ask {
+  font-family: inherit; font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  background: none; border: 1px solid var(--hair); color: var(--ink, #d8ecd9); padding: 4px 8px; cursor: pointer; width: fit-content;
+}
+.cdr-ask:hover { border-color: var(--up, #7fe0a5); }
+.cdr-desk { font-size: 9px; letter-spacing: 0.1em; color: var(--up, #7fe0a5); text-decoration: none; border: 1px dashed rgb(127 224 165 / 0.4); padding: 4px 8px; }
+.cdr-strip { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.cdr-stripitem { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: 0.08em; }
+
+.shm { margin: 10px 0; }
+.shm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 6px; }
+.shm-tile {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  font-family: var(--font-mono); border: 1px solid var(--hair); padding: 8px 10px; cursor: pointer; color: var(--ink, #d8ecd9);
+}
+.shm-tile b { font-size: 11px; letter-spacing: 0.12em; }
+.shm-tile span { font-size: 10.5px; }
+.shm-tile.on { outline: 1px solid var(--up, #7fe0a5); }
+.shm-ctx { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 12px; margin-top: 8px; border: 1px dashed var(--hair); padding: 8px 12px; flex-wrap: wrap; }
+.shm-ctx b { letter-spacing: 0.12em; }
+
+.hb-deskreport { border: 1px solid var(--hair); padding: 8px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
+.hb-terminal-link { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--up, #7fe0a5); text-decoration: none; width: fit-content; }
+.hb-news-cards { display: flex; flex-direction: column; gap: 8px; }
+.hb-news-card { border: 1px solid var(--hair); padding: 8px 12px; }
+.hb-news-src { font-style: normal; font-size: 9px; letter-spacing: 0.14em; border: 1px solid var(--hair); padding: 1px 5px; }
+.hb-news-tkr { font-size: 9px; letter-spacing: 0.1em; color: var(--up, #7fe0a5); border: 1px dashed rgb(127 224 165 / 0.4); padding: 1px 5px; margin-left: 6px; }
+.hb-news-ask { font-family: var(--font-mono); font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em; background: none; border: 0; color: var(--dim); cursor: pointer; margin-left: 10px; text-decoration: underline dotted; }
+.hb-news-ask:hover { color: var(--ink, #d8ecd9); }
+
 /* COMMAND CENTER R3 — PIT trade review */
 .pit8-review {
   border: 1px dashed var(--line, #23392c); padding: 8px 12px; margin: 8px auto;

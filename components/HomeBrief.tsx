@@ -18,6 +18,8 @@ import type { PublicIngest } from "@/lib/transcripts";
 import type { Headline } from "@/lib/headlines";
 import { relativeTime } from "@/lib/ideas";
 import DataTag from "@/components/DataTag";
+import CountdownRow from "@/components/CountdownRow";
+import SectorHeatmap from "@/components/SectorHeatmap";
 import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
 import type { BiasRead, SessionLevels } from "@/lib/levels";
 
@@ -98,7 +100,9 @@ function Spark({ closes, up }: { closes: number[]; up: boolean }) {
   );
 }
 
-export default function HomeBrief() {
+const TICKER_WHITELIST = /(AAPL|MSFT|AMZN|GOOGL|NVDA|META|PLTR|CRM|AMD|AVGO|MU|SMCI|JPM|GS|BAC|WFC|XOM|CVX|OXY|SLB|WMT|MCD|NKE|SBUX|LLY|UNH|PFE|MRK|COIN|MSTR|HOOD|RIOT|TSLA|GME|AFRM|UPST|SPY|QQQ|BTC|ETH|NQ|ES|VIX)/g;
+
+export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode; onAsk?: (text: string) => void } = {}) {
   const [now, setNow] = useState(() => sessionNow());
   const [quotes, setQuotes] = useState<Record<string, Quote> | null>(null);
   const [quotesErr, setQuotesErr] = useState(false);
@@ -317,6 +321,13 @@ export default function HomeBrief() {
         </div>
       ) : null}
 
+      {/* R4 F1 — the ask bar rides directly under the apex; chat is the
+          ambient analyst, one engage away */}
+      {askBar}
+
+      {/* R4 F2 — WHAT'S COMING: the state-aware countdown row */}
+      <CountdownRow liveIdeas={live} onAsk={onAsk} />
+
       {/* pulse row — labeled, with honest failure states (R1) */}
       <div className="hb-pulsewrap">
         <div className="hb-row hb-pulsehead">
@@ -368,6 +379,9 @@ export default function HomeBrief() {
           </span>
         </div>
       ) : null}
+
+      {/* R4 F3 — WHAT'S MOVING: the sector heatmap */}
+      <SectorHeatmap onAsk={onAsk} />
 
       {/* desk line — null-aware: a failed source says so instead of printing
           a fabricated zero (R1 audit fix) */}
@@ -425,43 +439,72 @@ export default function HomeBrief() {
         </div>
       ) : null}
 
-      {/* latest ingest */}
-      {ingest !== undefined ? (
+      {/* R4 F6 — DESK REPORT: ingest + earnings condensed, teaser depth only,
+          one path into the Terminal */}
+      <div className="hb-deskreport">
+        {ingest !== undefined ? (
+          <div className="hb-row">
+            <span className="hb-label">LATEST INGEST</span>
+            {ingest === null ? (
+              <span className="hb-absent">nothing ingested yet</span>
+            ) : (
+              <span className="hb-ingest">
+                {ingest.source || "transcript"} → {ingest.ideaDrafts} idea draft
+                {ingest.ideaDrafts !== 1 ? "s" : ""} · {ingest.tapeDrafts} tape draft
+                {ingest.tapeDrafts !== 1 ? "s" : ""}
+                <span className="hb-dim"> · {relativeTime(ingest.ts)}</span>
+              </span>
+            )}
+          </div>
+        ) : null}
         <div className="hb-row">
-          <span className="hb-label">LATEST INGEST</span>
-          {ingest === null ? (
-            <span className="hb-absent">nothing ingested yet</span>
-          ) : (
-            <span className="hb-ingest">
-              {ingest.source || "transcript"} → {ingest.ideaDrafts} idea draft
-              {ingest.ideaDrafts !== 1 ? "s" : ""} · {ingest.tapeDrafts} tape draft
-              {ingest.tapeDrafts !== 1 ? "s" : ""}
-              <span className="hb-dim"> · {relativeTime(ingest.ts)}</span>
-            </span>
-          )}
+          <span className="hb-label">EARNINGS</span>
+          <DataTag kind="unavail" title="the earnings calendar needs a keyed provider tier — recorded under data still required" />
         </div>
-      ) : null}
+        <a className="hb-terminal-link" href="/?view=terminal">OPEN THE TERMINAL →</a>
+      </div>
 
-      {/* headlines */}
+      {/* R4 F4 — WHAT'S BEING SAID: headlines as cards (source · age ·
+          ticker chips · ask-August); existing RSS set only */}
       <div className="hb-news">
-        <span className="hb-label">HEADLINES</span>
+        <div className="hb-row">
+          <span className="hb-label">WHAT&apos;S BEING SAID</span>
+          {news !== null && news.length > 0 ? (
+            <DataTag kind="delayed" detail="15m" title="free RSS · 15m server cache" />
+          ) : null}
+        </div>
         {news === null ? (
           <span className="hb-absent">loading…</span>
         ) : news.length === 0 ? (
           <span className="hb-absent">{newsErr ? "headlines unreachable" : "no headlines right now"}</span>
         ) : (
-          <ul className="hb-news-list">
-            {news.slice(0, 5).map((h) => (
-              <li key={h.link}>
-                <a href={h.link} target="_blank" rel="noopener noreferrer" className="hb-news-title">
-                  {h.title}
-                </a>
-                <span className="hb-news-meta">
-                  {h.publisher}
-                  {h.publishedAt > 0 ? ` · ${relativeTime(h.publishedAt)}` : ""}
-                </span>
-              </li>
-            ))}
+          <ul className="hb-news-list hb-news-cards">
+            {news.slice(0, 5).map((h) => {
+              const tickers = [...new Set(h.title.match(TICKER_WHITELIST) ?? [])].slice(0, 3);
+              return (
+                <li key={h.link} className="hb-news-card">
+                  <a href={h.link} target="_blank" rel="noopener noreferrer" className="hb-news-title">
+                    {h.title}
+                  </a>
+                  <span className="hb-news-meta">
+                    <i className="hb-news-src">{h.publisher}</i>
+                    {h.publishedAt > 0 ? ` · ${relativeTime(h.publishedAt)}` : ""}
+                    {tickers.map((t) => (
+                      <b key={t} className="hb-news-tkr">{t}</b>
+                    ))}
+                    {onAsk ? (
+                      <button
+                        type="button"
+                        className="hb-news-ask"
+                        onClick={() => onAsk(`What does this headline mean for the market: "${h.title}" (${h.publisher})?`)}
+                      >
+                        ASK AUGUST →
+                      </button>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
