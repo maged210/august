@@ -479,7 +479,7 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 - [x] Sign-in PROMPTS, never walls (L5): after a run ends ("save this career"), on board name save, on a new device. Dismissible forever.
 
 ### GATE A1 — Milek signs in on desktop AND real phone; threads, career, records follow both directions. HOLD.
-- [ ] A1 approved.
+- [x] A1 approved 2026-08-15 — owner verified: both devices claimed, anonymous smoke green.
 
 ## P2 — POLISH
 - [x] Account menu (email, owner badge, sign out) in top bar + mobile drawer, per DESIGN_LAWS L1/L8.
