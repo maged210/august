@@ -546,15 +546,15 @@ CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi c
 CONCEPT: Topstep-style guided course; the PIT tape engine IS the classroom. Lives in the PIT mode select as TRAINING (tab bar stays three). Split template: lesson rail right, live scripted tape left. SIMULATED banner persists; every lesson footer: education, not investment advice.
 
 ## T1 — LESSON ENGINE (build once, lessons become content)
-- [ ] Lesson = data object: prose sections · SCRIPTED TAPE (deterministic seed + pinned RoundDef on tape engine v2) · DO-TASK w/ auto-validation · unlock rules · completion badge.
-- [ ] PROGRESSIVE CONTROLS: per-lesson control locks — L1 renders order buttons padlocked; capabilities unlock as taught. Locked state per L6 furniture.
-- [ ] COACH VOICE: floor commentary beats triggered by tape moments; dry desk-speak. No videos v1; optional media slot per lesson reserved.
-- [ ] Progress persists on identity (anonymous, claimable — existing pit-player pattern); lesson index w/ topic chips, locked states, progress.
+- [x] Lesson = data object: prose sections · SCRIPTED TAPE (deterministic seed + pinned RoundDef on tape engine v2) · DO-TASK w/ auto-validation · unlock rules · completion badge.
+- [x] PROGRESSIVE CONTROLS: per-lesson control locks — L1 renders order buttons padlocked; capabilities unlock as taught. Locked state per L6 furniture.
+- [x] COACH VOICE: floor commentary beats triggered by tape moments; dry desk-speak. No videos v1; optional media slot per lesson reserved.
+- [x] Progress persists on identity (anonymous, claimable — existing pit-player pattern); lesson index w/ topic chips, locked states, progress.
 
 ## T2 — CURRICULUM v1 (8 lessons, ~3–5 min each; sim tickers only, index-flavored names)
-- [ ] L1 READING THE TAPE — controls locked; watch a scripted day; task: tap the day's high and low after the bell.
-- [ ] L2 LONG & SHORT — buttons unlock on a gentle trend; task: close one profitable trade either direction.
-- [ ] L3 STOPS & TARGETS — the 2:1 rule; training-only ghost stop/target markers; task: plan the trade, exit at plan.
+- [x] L1 READING THE TAPE — controls locked; watch a scripted day; task: tap the day's high and low after the bell.
+- [x] L2 LONG & SHORT — buttons unlock on a gentle trend; task: close one profitable trade either direction.
+- [x] L3 STOPS & TARGETS — the 2:1 rule; training-only ghost stop/target markers; task: plan the trade, exit at plan.
 ### GATE T-G1 — engine + L1–L3 playable on preview; the padlock moment and first unlock must FEEL earned. HOLD.
 - [ ] T-G1 approved.
 
