@@ -532,7 +532,7 @@ CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi c
 - [x] F6 DESK REPORT card: desk line + latest ingest + earnings state in one card, OPEN THE TERMINAL link, teaser depth only.
 - RULES: no new data sources without explicit owner sign-off (event-odds APIs pre-authorized for DISCUSSION only, not build); everything is reuse of fetched-but-unwired data per the audit. Mobile: same modules stacked, tab bar unchanged, one primary CTA per screen (L4).
 ### GATE R4 — preview + screenshots (desktop, phone, one deliberately failed feed showing its honest state, the ask-bar expanding into chat). HOLD, then merge.
-- [ ] R4 approved.
+- [x] R4 approved ("r4 approved", 2026-08-16). Merged to main.
 
 ## STANDING LAW (wins over everything above)
 The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.
