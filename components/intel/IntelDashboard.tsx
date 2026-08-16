@@ -553,7 +553,7 @@ function PageHeader({
         <div className="rd-topglow" aria-hidden="true" />
         <div className="rd-bar2-left">
           <h1 className="rd-title">MARKET INTEL</h1>
-          <span className="rd-livechip"><span className="rd-livechip-dot" aria-hidden="true" />LIVE</span>
+          <span className="rd-livechip" title="Yahoo quotes · 30s poll · 60s server cache — not a real-time feed"><span className="rd-livechip-dot" aria-hidden="true" />DELAYED</span>
           <span className="rd-meta">
             <span className="rd-datechip">{data.clock.nice.toUpperCase()}</span>
             {/* shrink order at narrow desktop widths: this text ellipsizes
@@ -750,7 +750,7 @@ function LiveTape({ tape }: { tape: TapeItem[] }) {
       <span className="rd-tape-badge">
         <span className="rd-tape-badge-dot" aria-hidden="true" />
         {/* stage 8: mobile design label is the shorter "TAPE" (SPEC-mobile §4.2) */}
-        <span className="rd-tape-badge-full">LIVE TAPE</span>
+        <span className="rd-tape-badge-full" title="Yahoo quotes · delayed">TAPE · DELAYED</span>
         <span className="rd-tape-badge-short">TAPE</span>
       </span>
       <div className="rd-tape-scroll">
@@ -3197,7 +3197,7 @@ function InspectorIdea({ idea, quote, tracked, variants, publish, onRetryQuote }
           </span>
         </div>
         <div className="rd-insp-liveblk">
-          <div className="rd-insp-livelabel">LIVE · REAL-TIME</div>
+          <div className="rd-insp-livelabel" title="30s poll over a 60s server cache">PRICE · DELAYED</div>
           {live != null ? (
             <div className="rd-insp-liveprice">
               <span className="rd-live-dot-g" aria-hidden="true">◉</span>

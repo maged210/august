@@ -183,14 +183,14 @@ export default function BookHeatmapModule({
                 <span key={`t${t.ticker}`} className="if-mv-row">
                   <span className="if-mv-tkr">{t.ticker}</span>
                   <span className="if-mv-px">{fmtPx(t.quote!.price)}</span>
-                  <span className="if-mv-pct if-pos">{fmtPct(t.quote!.chgPct)}</span>
+                  <span className={`if-mv-pct ${t.quote!.chgPct >= 0 ? "if-pos" : "if-neg"}`}>{fmtPct(t.quote!.chgPct)}</span>
                 </span>
               ))}
               {movers.bottom.map((t) => (
                 <span key={`b${t.ticker}`} className="if-mv-row">
                   <span className="if-mv-tkr">{t.ticker}</span>
                   <span className="if-mv-px">{fmtPx(t.quote!.price)}</span>
-                  <span className="if-mv-pct if-neg">{fmtPct(t.quote!.chgPct)}</span>
+                  <span className={`if-mv-pct ${t.quote!.chgPct >= 0 ? "if-pos" : "if-neg"}`}>{fmtPct(t.quote!.chgPct)}</span>
                 </span>
               ))}
             </div>

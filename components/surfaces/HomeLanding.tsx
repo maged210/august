@@ -561,7 +561,7 @@ export default function HomeLanding({
           quotes only, absent entirely when none resolve */}
       {!conversationActive && pills.length > 0 ? (
         <div className="hl-tape" aria-label="Watching — live quotes">
-          <span className="hl-label hl-tape-label">WATCHING</span>
+          <span className="hl-label hl-tape-label">WATCHING <span className="dtag dtag-delayed" title="Yahoo quotes · 60s poll">DELAYED</span></span>
           <div className="hl-tape-chips">
             {pills.map((p) => (
               <span key={p.label} className="hl-pill">
