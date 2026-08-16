@@ -12,9 +12,8 @@
 /** Session-required route prefixes (signed out → 401). Personal integrations
  *  and paid-quota surfaces only. */
 export const GATED: readonly string[] = [
-  "/api/day", // Google Calendar
-  "/api/comms", // Gmail draft/send
-  "/api/inbox", // Gmail digest
+  // (R1 A1: /api/day, /api/comms, /api/inbox routes were DELETED with their
+  //  parked surfaces — rebuild from git when wanted)
   "/api/brief", // personal calendar+inbox brief (headlines are separate + public)
   "/api/speak", // ElevenLabs quota
   "/api/deepgram-token", // Deepgram grant mint

@@ -165,14 +165,14 @@ export async function getCommandSummary(): Promise<{
     const time = Number(p?.time) || 0;
     if (!bigQuake || time > bigQuake.time) bigQuake = { mag, place: String(p?.place || ""), time };
   }
-  const planes = aircraft != null ? `${aircraft.toLocaleString()} aircraft tracked` : "live flights on the globe";
+  // R1 A1 — the "Live aircraft" claim is GONE: its counter was only ever
+  // populated by the deleted /api/flights route. Quakes are genuinely fetched.
   const big = max ? `, biggest M${max.mag.toFixed(1)} ${shortPlace(max.place)}` : "";
-  const briefLine = `${q.count} quakes in 24h${big}; ${planes}.`;
+  const briefLine = `${q.count} quakes in 24h${big}.`;
   const snapshot =
     `\n\n---\nWORLD FEED (live situational data):\n` +
-    `Live aircraft (OpenSky)${aircraft != null ? ` — ${aircraft.toLocaleString()} currently tracked` : ""}, ` +
-    `recent earthquakes (USGS) — ${q.count} in the last 24h${max ? `, largest M${max.mag.toFixed(1)} near ${max.place}` : ""}. ` +
-    `When he asks about flights or quakes, answer from these in words — the globe surface is parked, so never offer to show it.`;
+    `Recent earthquakes (USGS) — ${q.count} in the last 24h${max ? `, largest M${max.mag.toFixed(1)} near ${max.place}` : ""}. ` +
+    `Flight tracking is not available — say so if asked; never invent aircraft numbers.`;
   return { aircraft, quakes: q.count, maxQuake: max, bigQuake, briefLine, snapshot };
 }
 

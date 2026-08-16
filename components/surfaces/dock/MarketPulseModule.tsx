@@ -5,6 +5,7 @@
 // Self-contained: owns its fetch loop; absent quotes simply don't render a
 // tile (no mock rows).
 
+import DataTag from "@/components/DataTag";
 import { useEffect, useState } from "react";
 
 const PULSE: Array<{ sym: string; label: string }> = [
@@ -89,6 +90,7 @@ export default function MarketPulseModule() {
     <section className="ifm" aria-label="Market pulse">
       <div className="ifm-h">
         <span className="ifm-title">MARKET PULSE</span>
+        <DataTag kind="delayed" detail="60s" title="Yahoo quotes · 60s server cache" />
       </div>
       {quotes === null ? (
         <div className="ifm-body ifm-pulse" aria-hidden="true">

@@ -1616,6 +1616,16 @@ export default function Home() {
         >
           PIT
         </button>
+        {/* R1 A2 — the IDEAS drawer gets its phone opener back (the audit
+            found it mounted but unreachable ≤700px) */}
+        <button
+          type="button"
+          className={`tab-item${railOpen ? " on" : ""}`}
+          aria-pressed={railOpen}
+          onClick={() => setRailOpen((v) => !v)}
+        >
+          IDEAS
+        </button>
       </nav>
 
       {/* UX2-T1 — the chat view's LEFT threads sidebar (Claude-style IA);

@@ -265,11 +265,17 @@ function PitInner({ active }: { active: boolean }) {
   useEffect(() => {
     try {
       const wanted = new URLSearchParams(window.location.search).get("tune") === "1";
-      const allowed =
-        process.env.NODE_ENV !== "production" ||
-        window.location.hostname === "localhost" ||
-        !!window.sessionStorage.getItem("aug-admin-token");
-      setTuneOn(wanted && allowed);
+      if (!wanted) return;
+      if (process.env.NODE_ENV !== "production" || window.location.hostname === "localhost") {
+        setTuneOn(true);
+        return;
+      }
+      // R1 A4 — the token must VALIDATE against the admin gate, not merely exist
+      const token = window.sessionStorage.getItem("aug-admin-token");
+      if (!token) return;
+      fetch("/api/admin/pit", { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => { if (r.ok) setTuneOn(true); })
+        .catch(() => {});
     } catch { /* stays off */ }
   }, []);
   useEffect(() => { tuneRef.current = tune; }, [tune]);
@@ -432,7 +438,7 @@ function PitInner({ active }: { active: boolean }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "daily", pct: Math.round(sum.roundPct * 100) / 100,
-            stats: { trades: sum.trades, wins: sum.wins, bestTrade: 0, perfectDips: sum.goodEntries },
+            stats: { trades: sum.trades, wins: sum.wins, bestTrade: sum.bestTrade, perfectDips: sum.goodEntries },
           }),
         }).then(() => refresh()).catch(() => {});
         return;
@@ -476,7 +482,7 @@ function PitInner({ active }: { active: boolean }) {
             week: pos.week, day: pos.day,
             final: final ?? false, rating: rating ?? undefined,
             careerPct: Math.round((finalEq / START_CASH - 1) * 10000) / 100,
-            stats: { trades: sum.trades, wins: sum.wins, bestTrade: 0, perfectDips: sum.goodEntries },
+            stats: { trades: sum.trades, wins: sum.wins, bestTrade: sum.bestTrade, perfectDips: sum.goodEntries },
           }),
         }).then(() => refresh()).catch(() => {});
 
@@ -906,7 +912,7 @@ function PitInner({ active }: { active: boolean }) {
                 ${result.startEq.toFixed(0)} → ${result.endEq.toFixed(0)}
               </p>
               <p className={`pit2-endpct ${result.endEq >= result.startEq ? "up" : "down"}`}>
-                {result.roundPct.toFixed(1)}% · SPY {result.spyPct >= 0 ? "+" : ""}{result.spyPct.toFixed(1)}%
+                {result.roundPct.toFixed(1)}% · INDEX {result.spyPct >= 0 ? "+" : ""}{result.spyPct.toFixed(1)}%
                 {" "}· {result.roundPct > result.spyPct ? "OUTPERFORMED MARKET" : "UNDERPERFORMED"}
               </p>
               <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay: tape, your trades, event moments" />

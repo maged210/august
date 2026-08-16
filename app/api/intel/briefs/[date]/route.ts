@@ -39,6 +39,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
     const brief = await generateBrief(resolveDate(date));
     return Response.json({ ok: true, brief });
   } catch (err) {
-    return Response.json({ ok: false, error: err instanceof Error ? err.message : "generate_failed" }, { status: 500 });
+    console.error("[intel/briefs] generate failed:", err instanceof Error ? err.message : err);
+    return Response.json({ ok: false, error: "generate_failed" }, { status: 500 });
   }
 }

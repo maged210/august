@@ -97,7 +97,7 @@ async function marketsFacts(): Promise<string | null> {
     lines.push(
       `NQ (${L.proxy}) ~${round(L.current)} — ${L.above ? "above" : "below"} the pivot ` +
         `(pivot ${round(L.pivot)}, resistance ${round(L.resistance)}, support ${round(L.support)}; ` +
-        `overnight high ${round(L.onHigh)}, low ${round(L.onLow)}). These index levels are ` +
+        `prior session high ${round(L.onHigh)}, low ${round(L.onLow)} — PROXY: QQQ×40, daily bar). These index levels are ` +
         `delayed proxy ESTIMATES, not the live CME tape.`,
     );
   }

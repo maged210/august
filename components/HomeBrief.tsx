@@ -11,12 +11,14 @@
 //   • HEADLINES — top 5 via free public RSS (/api/headlines, server-cached)
 // Empty/failed blocks render honest ∅ lines or nothing — never mock rows.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicIngest } from "@/lib/transcripts";
 import type { Headline } from "@/lib/headlines";
 import { relativeTime } from "@/lib/ideas";
+import DataTag from "@/components/DataTag";
+import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
 
 const PULSE: Array<{ sym: string; label: string }> = [
   { sym: "SPY", label: "SPY" },
@@ -98,8 +100,13 @@ function Spark({ closes, up }: { closes: number[]; up: boolean }) {
 export default function HomeBrief() {
   const [now, setNow] = useState(() => sessionNow());
   const [quotes, setQuotes] = useState<Record<string, Quote> | null>(null);
+  const [quotesErr, setQuotesErr] = useState(false);
+  const [quotesAt, setQuotesAt] = useState<number | null>(null);
   const [live, setLive] = useState<PublicIdea[] | null>(null);
+  const [liveErr, setLiveErr] = useState(false);
   const [cards, setCards] = useState<FeedCard[] | null>(null);
+  const [cardsErr, setCardsErr] = useState(false);
+  const [why, setWhy] = useState(false);
   const [ingest, setIngest] = useState<PublicIngest | null | undefined>(undefined); // undefined = pending
   const [news, setNews] = useState<Headline[] | null>(null);
   const [newsErr, setNewsErr] = useState(false);
@@ -121,21 +128,32 @@ export default function HomeBrief() {
       fetch(`/api/intel/quotes?symbols=${encodeURIComponent(PULSE.map((p) => p.sym).join(","))}`, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { quotes?: Record<string, Quote> }) => {
-          if (!cancelled && j.quotes) setQuotes(j.quotes);
+          if (cancelled || !j.quotes) return;
+          setQuotes(j.quotes);
+          setQuotesErr(false);
+          setQuotesAt(Date.now());
         })
-        .catch(() => {});
+        .catch(() => {
+          // R1 — failure is a STATE, not a silent nothing: existing numbers
+          // get a STALE tag, an empty pulse says DATA UNAVAILABLE
+          if (!cancelled) setQuotesErr(true);
+        });
       fetch("/api/ideas", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { ideas?: PublicIdea[] }) => {
-          if (!cancelled) setLive(Array.isArray(j.ideas) ? j.ideas : []);
+          if (!cancelled) { setLive(Array.isArray(j.ideas) ? j.ideas : []); setLiveErr(false); }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) setLiveErr(true);
+        });
       fetch("/api/intel/feed", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { ok?: boolean; ideas?: FeedCard[] }) => {
-          if (!cancelled && j.ok && Array.isArray(j.ideas)) setCards(j.ideas);
+          if (!cancelled && j.ok && Array.isArray(j.ideas)) { setCards(j.ideas); setCardsErr(false); }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) setCardsErr(true);
+        });
       fetch("/api/wire", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: { ingests?: PublicIngest[] }) => {
@@ -204,6 +222,38 @@ export default function HomeBrief() {
     (t) => t.q && Number.isFinite(t.q.price) && t.q.price > 0,
   );
 
+  // — MARKET REGIME (R1 apex): held inputs only, computed client-side from
+  //   the fetches this component already makes; pure math in lib/regime —
+  const regime = useMemo(() => {
+    if (!quotes) {
+      // hard quote failure: the apex says DATA UNAVAILABLE, it never vanishes
+      return quotesErr
+        ? computeRegime({ spyTrendPct: null, qqqTrendPct: null, vix: null, vixTrendPts: null, bookLongs: 0, bookShorts: 0, nqVsLevelPct: null })
+        : null;
+    }
+    const longs = (live ?? []).filter((i) => i.side === "long").length;
+    const shorts = (live ?? []).filter((i) => i.side === "short").length;
+    const nq = quotes["NQ=F"];
+    const nqLevels = (live ?? [])
+      .filter((i) => /^NQ\b/i.test(i.instrument.trim()))
+      .map((i) => parseStatedLevel(i.entry) ?? parseStatedLevel(i.target) ?? parseStatedLevel(i.stop))
+      .filter((n): n is number => n !== null);
+    const nqVsLevelPct =
+      nq && Number.isFinite(nq.price) && nqLevels.length > 0
+        ? ((nq.price - nqLevels.reduce((a, b) => a + b, 0) / nqLevels.length) /
+            (nqLevels.reduce((a, b) => a + b, 0) / nqLevels.length)) * 100
+        : null;
+    return computeRegime({
+      spyTrendPct: sparkTrendPct(quotes["SPY"]?.closes),
+      qqqTrendPct: sparkTrendPct(quotes["QQQ"]?.closes),
+      vix: Number.isFinite(quotes["^VIX"]?.price) ? quotes["^VIX"]!.price : null,
+      vixTrendPts: sparkTrendPts(quotes["^VIX"]?.closes),
+      bookLongs: longs,
+      bookShorts: shorts,
+      nqVsLevelPct,
+    });
+  }, [quotes, live, quotesErr]);
+
   const chip = (k: string, v: React.ReactNode) => (
     <span className="hb-chip">
       <span className="hb-chip-k">{k}</span> {v}
@@ -221,30 +271,93 @@ export default function HomeBrief() {
         </span>
       </div>
 
-      {/* pulse row */}
-      {tiles.length > 0 ? (
-        <div className="hb-pulse">
-          {tiles.map((t) => (
-            <span key={t.sym} className="hb-tile">
-              <span className="hb-tile-l">{t.label}</span>
-              <span className="hb-tile-px">{fmtPx(t.q!.price)}</span>
-              <span className={`hb-tile-chg ${t.q!.chgPct >= 0 ? "hl-up" : "hl-down"}`}>
-                {fmtPct(t.q!.chgPct)}
-              </span>
-              <Spark closes={t.q!.closes} up={t.q!.chgPct >= 0} />
-            </span>
-          ))}
+      {/* MARKET REGIME — the apex (R1): calculated, explainable, never advice */}
+      {regime ? (
+        <div className="hb-regime" aria-label="Market regime, calculated">
+          <div className="hb-regime-top">
+            <span className="hb-label">MARKET REGIME</span>
+            {regime.label === "UNAVAILABLE" ? (
+              <DataTag kind="unavail" title="needs at least 2 live inputs (index trend, VIX, book bias, NQ vs levels)" />
+            ) : (
+              <>
+                <span className={`hb-regime-read r-${regime.label.toLowerCase().replace(" ", "")}`}>
+                  {regime.label}
+                </span>
+                <DataTag kind="calc" title="deterministic read from the inputs below — a market condition, not advice" />
+                {regime.agreement ? (
+                  <span className="hb-regime-agree">
+                    {regime.agreement.agree} of {regime.agreement.voting} inputs agree
+                  </span>
+                ) : null}
+                <button type="button" className="hb-why" onClick={() => setWhy((v) => !v)} aria-expanded={why}>
+                  {why ? "HIDE" : "WHY"}
+                </button>
+              </>
+            )}
+          </div>
+          {why && regime.because.length > 0 ? (
+            <ul className="hb-because">
+              {regime.because.map((b) => (
+                <li key={b.input} className={b.vote > 0 ? "up" : b.vote < 0 ? "down" : ""}>
+                  <i aria-hidden>{b.vote > 0 ? "▲" : b.vote < 0 ? "▼" : "◆"}</i>
+                  <span className="hb-because-k">{b.input}</span>
+                  <span>{b.value}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 
-      {/* desk line */}
-      {live !== null || cards !== null ? (
+      {/* pulse row — labeled, with honest failure states (R1) */}
+      <div className="hb-pulsewrap">
+        <div className="hb-row hb-pulsehead">
+          <span className="hb-label">PULSE</span>
+          {tiles.length > 0 ? (
+            quotesErr ? (
+              <DataTag kind="stale" detail={quotesAt ? relativeTime(quotesAt) : undefined} title="quotes unreachable — showing the last good read" />
+            ) : (
+              <DataTag kind="delayed" detail="60s" title="Yahoo quotes · 60s server cache · 60s poll" />
+            )
+          ) : quotesErr ? (
+            <DataTag kind="unavail" title="quotes unreachable" />
+          ) : (
+            <span className="hb-pending">loading…</span>
+          )}
+        </div>
+        {tiles.length > 0 ? (
+          <div className="hb-pulse">
+            {tiles.map((t) => (
+              <span key={t.sym} className="hb-tile">
+                <span className="hb-tile-l">{t.label}</span>
+                <span className="hb-tile-px">{fmtPx(t.q!.price)}</span>
+                <span className={`hb-tile-chg ${t.q!.chgPct >= 0 ? "hl-up" : "hl-down"}`}>
+                  {fmtPct(t.q!.chgPct)}
+                </span>
+                <Spark closes={t.q!.closes} up={t.q!.chgPct >= 0} />
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* desk line — null-aware: a failed source says so instead of printing
+          a fabricated zero (R1 audit fix) */}
+      {live !== null || cards !== null || liveErr || cardsErr ? (
         <div className="hb-row">
           <span className="hb-label">DESK</span>
           <span className="hb-chips">
-            {chip("LIVE", <>{live?.length ?? 0}</>)}
-            {chip("TRACKED", <>{tracked.length}</>)}
-            {chip("TRIGGERED", <>{triggered}</>)}
+            {live !== null
+              ? chip("LIVE", <>{live.length}</>)
+              : liveErr
+                ? chip("LIVE", <DataTag kind="unavail" title="the ideas board is unreachable" />)
+                : null}
+            {cards !== null
+              ? chip("TRACKED", <>{tracked.length}</>)
+              : cardsErr
+                ? chip("TRACKED", <DataTag kind="unavail" title="the tracked feed is unreachable" />)
+                : null}
+            {cards !== null ? chip("TRIGGERED", <>{triggered}</>) : null}
             {winRate != null
               ? chip(
                   "WIN",

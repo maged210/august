@@ -5762,6 +5762,43 @@ button.pulse-line:focus-visible {
   padding: 10px 0 0;
   flex: none;
 }
+/* COMMAND CENTER R1 — data integrity tags + the regime apex */
+.dtag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.16em;
+  padding: 2px 6px; border: 1px solid var(--hair); border-radius: var(--r-full);
+  color: var(--dim); vertical-align: middle;
+}
+.dtag i { font-style: normal; font-weight: 600; letter-spacing: 0.04em; opacity: 0.8; }
+.dtag-live { color: #7fe0a5; border-color: rgb(127 224 165 / 0.5); }
+.dtag-delayed { color: var(--dim); }
+.dtag-sim { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
+.dtag-proxy { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
+.dtag-unavail { color: #e08a7a; border-color: rgb(224 138 122 / 0.5); }
+.dtag-calc { color: #9cc4e4; border-color: rgb(156 196 228 / 0.4); }
+.dtag-stale { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
+
+.hb-regime { margin: 10px 0 4px; }
+.hb-regime-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hb-regime-read { font-family: var(--font-mono); font-size: 15px; font-weight: 800; letter-spacing: 0.18em; }
+.hb-regime-read.r-riskon { color: #7fe0a5; }
+.hb-regime-read.r-riskoff { color: #e08a7a; }
+.hb-regime-read.r-neutral { color: var(--ink, #d8ecd9); }
+.hb-regime-agree { font-family: var(--font-mono); font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
+.hb-why {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.16em;
+  background: none; border: 1px solid var(--hair); color: var(--dim); padding: 2px 8px; cursor: pointer;
+}
+.hb-why:hover { color: var(--ink); }
+.hb-because { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.hb-because li { display: flex; gap: 8px; align-items: baseline; font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); }
+.hb-because li i { font-style: normal; width: 12px; }
+.hb-because li.up i { color: #7fe0a5; }
+.hb-because li.down i { color: #e08a7a; }
+.hb-because-k { letter-spacing: 0.1em; min-width: 150px; color: var(--body2, var(--dim)); }
+.hb-pulsehead { align-items: center; gap: 8px; margin-bottom: 2px; }
+.hb-pending { font-family: var(--font-mono); font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
+
 /* AUTH-1a B2/B3 — chat error state, close, thread deletes */
 .hl-errline {
   display: flex; align-items: center; gap: 10px; justify-content: center;

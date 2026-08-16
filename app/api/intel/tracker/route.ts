@@ -31,8 +31,7 @@ export async function GET(): Promise<Response> {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "tracker_failed";
-    console.error("[intel/tracker]", msg);
-    return Response.json({ configured: false, ran: false, tracked: [], error: msg }, { status: 500 });
+    console.error("[intel/tracker]", err instanceof Error ? err.message : err);
+    return Response.json({ configured: false, ran: false, tracked: [], error: "tracker_failed" }, { status: 500 });
   }
 }
