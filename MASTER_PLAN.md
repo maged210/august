@@ -488,6 +488,9 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 ### GATE A2 — full review on preview → merge → deploy. HOLD.
 - [ ] A2 approved.
 
+## QUEUED — COMMAND CENTER (build order received 2026-08-15; runs ONLY after AUTH-1a passes A1/A2 and merges — one build in flight at a time)
+Branch feature/command-center off post-auth main. Three gated rounds: R1 full audit report (gate: owner reads; nothing built; named-but-absent features recorded as "not present", never created) → dashboard hierarchy + MARKET REGIME apex + data-integrity labels · R2 NQ LEVELS first-class (prev high/low/close at honest pipeline granularity; bias = calculated market condition, never advice) + VIX-in-context · R3 PIT post-trade WHY IT WORKED/FAILED (observable round data only) + analyst grounding (existing chat, cites actual app data, never fabricates live numbers) + Phase-12 QA. Addendum law: DATA LAW unchanged (zero new paid sources/scraping — market-wide feeds render DATA UNAVAILABLE per honest states and land in "APIs still required"); DESIGN_LAWS.md supersedes the doc's visuals; the PIT stays the arcade career (no stop-loss/leverage/Sharpe this round); HONEST REGIME MATH (only held inputs: index trend, VIX level+trend, book bias, NQ vs stated levels; confidence % only if a real formula; always the "because" list). NOTE: the vision doc itself was not attached to the addendum — required for the R1 audit checklist.
+
 ## PARKED — AUTH-1b: THE WALL
 Build triggers — any TWO of three, then the wall ships in one round on the existing plumbing (L6 lock furniture + S7 visibility hooks + this identity layer):
   T1: 30+ consecutive days of clean public track record (no stale rows, no duplicates, all sides set).
