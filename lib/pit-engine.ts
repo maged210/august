@@ -488,6 +488,7 @@ export type PitEvent =
   | { type: "diamondHands"; stock: number }
   | { type: "paperHands"; stock: number }
   | { type: "news"; event: GameEvent }
+  | { type: "closedInfo"; stock: number; gain: number; worstPct: number }
   | { type: "reaction"; correct: boolean; action: ReactionAction }
   | { type: "streak"; count: number; xp: number };
 export type TickEnd = "margin" | "bell" | "fund" | null;
@@ -684,6 +685,7 @@ export function createRoundRun(
         if (!eqTouchedMinus5 && realized / startEq >= 0.15) allOrNothingHit = true;
         log.push({ s, tick: i, price, dir: p.dir, kind: "close", gain });
         onEvent({ type: "pop", text: `${gain >= 0 ? "+" : ""}${gain.toFixed(1)}% ${stocks[s].ticker}`, cls: gain >= 0 ? 1 : -1 });
+        onEvent({ type: "closedInfo", stock: s, gain, worstPct: p.worstPct });
         // organic reaction: closing the watched stock inside the window = EXIT
         const pend = pendings.find((q) => q.stock === s && q.action === null && i <= q.deadline);
         if (pend) pend.action = "exit";

@@ -5799,6 +5799,16 @@ button.pulse-line:focus-visible {
 .hb-pulsehead { align-items: center; gap: 8px; margin-bottom: 2px; }
 .hb-pending { font-family: var(--font-mono); font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
 
+/* COMMAND CENTER R3 — PIT trade review */
+.pit8-review {
+  border: 1px dashed var(--line, #23392c); padding: 8px 12px; margin: 8px auto;
+  max-width: 560px; width: 100%; text-align: left; font-family: var(--font-mono);
+}
+.pit8-review i { font-style: normal; display: block; font-size: 9px; letter-spacing: 0.2em; color: var(--steel, #8fa89b); margin-bottom: 4px; }
+.pit8-review p { font-size: 10.5px; margin: 3px 0; color: var(--fg, #d8ecd9); }
+.pit8-review p.up { border-left: 2px solid rgb(127 224 165 / 0.5); padding-left: 8px; }
+.pit8-review p.down { border-left: 2px solid rgb(224 138 122 / 0.5); padding-left: 8px; }
+
 /* COMMAND CENTER R2 — NQ LEVELS + VIX IN CONTEXT */
 .nql { display: flex; flex-direction: column; gap: 8px; }
 .nql-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
