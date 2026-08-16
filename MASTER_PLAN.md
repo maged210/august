@@ -551,6 +551,30 @@ Build triggers — any TWO of three, then the wall ships in one round on the exi
   T3: one unprompted "how do I get more / can I pay" from a real person.
 Until then: no Stripe account, no pricing page, no locks.
 
+# GAME-5 DELTA — S6 THE SHARE · S7 THE DESK TEASER · S8 RANDOMNESS POLICY (2026-08-15)
+
+> Composition-only additions to the shipped GAME-5. Branch: feature/game-5-delta off main. One gate, re-verifying the round with these included.
+
+## S8 — TAPE RANDOMNESS POLICY (foundation, first)
+- [x] CAREER: fresh tapes every run — daySeed = mix(runId, week, day), runId entropy widened; nothing memorizable across runs or players.
+- [x] DAILY + CHALLENGES: deterministic by design (one seed per date / per challenge link); identical across a player's 3 attempts on purpose.
+- [x] Events inherit their tape's policy automatically (they derive from the same seed).
+- [x] Smoke both directions: two career runs ⇒ DIFFERENT Day-1 tapes; two profiles on today's daily ⇒ IDENTICAL tapes.
+
+## S6 — THE SHARE (Wordle mechanics)
+- [x] Pure share builder (lib/pit-share): "THE PIT #n / WxDy · result% · n trades · earned stamp · link" + win/loss glyph strip from the deliberate-trade log (ending glyph appended); content asserted in the suite.
+- [x] COPY card on BUSTED / SEASON CLEARED / THE FUND / DAILY result (+ send-this-tape on career day results); native share sheet on mobile, clipboard on desktop; no images in v1.
+- [x] CHALLENGE LINK: ?challenge=seed.week.day.pct deep link — recipient gets the SAME tape, sender's score rendered as THE BAR all run; works for dailies and any career day; anonymous, no accounts.
+- [x] Challenge determinism verified: same link ⇒ identical tape; the bar renders.
+
+## S7 — THE DESK TEASER (losing is the ad)
+- [x] One live desk-call card on every ending screen: ticker · entry chip · risk badge · age · SEE THE DESK →, pulled from the real live book (newest first).
+- [x] Lock-ready: a visibility() check returning "open" today; AUTH-1 flips to the locked/blurred CTA with zero rework.
+- [x] Placement: below the share card, above RUN IT BACK; never a modal.
+
+### GATE G5D-G1 — unchanged bar + one: COPY the card after a real ending and paste it somewhere real — if it doesn't read like something you'd drop in a trading Discord, that's the revision note. HOLD.
+- [x] G5D-G1 approved ("G5D-G1 approved — merge", 2026-08-16). Merged to post-R4 main; tune-panel gate kept the R1 A4 validated-token check.
+
 ---
 
 ## BLOCKERS LOG (newest on top)

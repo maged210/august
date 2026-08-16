@@ -7839,3 +7839,38 @@ html.sheet-open .view-panel {
 
 .pit3-replay.tall { height: 130px; }
 .pit2-boards.solo { max-width: 420px; margin: 6px auto; width: 100%; }
+
+/* GAME-5 delta — S6 share card · S7 desk teaser */
+.pit6-share {
+  border: 1px solid var(--line); background: rgb(255 255 255 / 0.02);
+  padding: 10px 14px; margin: 10px auto; max-width: 480px; width: 100%;
+  font-family: var(--font-mono); text-align: center;
+}
+.pit6-share-line { font-size: 12px; letter-spacing: 0.04em; color: var(--fg); margin: 0 0 4px; }
+.pit6-share-glyphs { font-size: 16px; letter-spacing: 2px; margin: 0 0 8px; }
+.pit6-share-row { display: flex; justify-content: center; }
+.pit6-copy { font-size: 11px; padding: 8px 16px; }
+
+.pit6-desk {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--line); background: rgb(255 255 255 / 0.02);
+  padding: 10px 14px; margin: 6px auto 10px; max-width: 480px; width: 100%;
+  font-family: var(--font-mono); text-decoration: none; color: var(--fg);
+  transition: border-color 150ms;
+}
+.pit6-desk:hover { border-color: var(--green); }
+.pit6-desk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pit6-desk-head b { font-size: 13px; letter-spacing: 0.1em; }
+.pit6-desk-entry {
+  font-size: 10px; padding: 2px 7px; border: 1px solid var(--line); color: var(--fg);
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pit6-desk-risk { font-size: 8px; letter-spacing: 0.14em; padding: 2px 6px; border-radius: var(--r-full); border: 1px solid var(--steel); color: var(--steel); }
+.pit6-desk-risk.r-high { border-color: rgb(var(--amber-rgb) / 0.6); color: var(--amber); }
+.pit6-desk-age { font-size: 9px; color: var(--steel); }
+.pit6-desk-cta { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--green); white-space: nowrap; }
+.pit6-desk.locked .pit6-desk-head { filter: blur(3px); pointer-events: none; }
+.pit6-desk.locked .pit6-desk-cta { color: var(--amber); }
+
+.pit6-challenge { border-color: var(--amber); }
+.pit6-challenge .pit5-mode-name { color: var(--amber); }

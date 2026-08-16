@@ -16,9 +16,14 @@ import { explainTrades } from "@/lib/pit-review";
 import {
   DEFAULT_TUNE, FUND_TARGET, LADDER, MARGIN_FRAC, MISSIONS, SEASON_WEEKS, START_CASH,
   WEEK_PERKS, WEEK_WAYPOINTS,
-  advanceRun, createRoundRun, makeRound, pitRating, retuneRun, seasonTune, weekAdjust,
-  type PitEvent, type PitTune, type RoundRun, type RoundSummary, type RunPos,
+  advanceRun, careerDaySeed, createRoundRun, makeRound, pitRating, retuneRun, seasonTune, weekAdjust,
+  type PitEvent, type PitTune, type RoundRun, type RoundSummary, type RunPos, type TradeMark,
 } from "@/lib/pit-engine";
+import {
+  buildChallenge, buildShareText, dailyNumber, deskTeaserVisibility, glyphStrip,
+  parseChallenge, pickStamp, type Challenge,
+} from "@/lib/pit-share";
+import { relativeTime, type PublicIdea } from "@/lib/ideas";
 
 // ── error boundary ───────────────────────────────────────────────────────────
 class PitBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
@@ -113,6 +118,65 @@ function dailyCountdown(): string {
   }
 }
 
+// ── S6: the share card — text is the format ──────────────────────────────────
+function ShareCard({ tag, pct, trades, stamp, glyphs, challenge }: {
+  tag: string; pct: number; trades: number; stamp: string | null; glyphs: string; challenge: Challenge;
+}) {
+  const [copied, setCopied] = useState(false);
+  const url = `${typeof window !== "undefined" ? window.location.origin : ""}/?view=pit&challenge=${buildChallenge(challenge)}`;
+  const text = buildShareText({ tag, pct, trades, stamp, glyphs, url });
+  const doShare = async () => {
+    try {
+      const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
+      if (nav.share && window.matchMedia("(max-width: 700px)").matches) {
+        await nav.share({ text });
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { /* user dismissed the sheet — nothing to clean up */ }
+  };
+  return (
+    <div className="pit6-share">
+      <p className="pit6-share-line">{text.split("\n")[0]}</p>
+      <p className="pit6-share-glyphs">{glyphs}</p>
+      <div className="pit6-share-row">
+        <button type="button" className="pit2-btn pit6-copy" onClick={doShare}>
+          {copied ? "COPIED ✓" : "COPY · SEND THIS TAPE"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── S7: the desk teaser — losing is the ad ───────────────────────────────────
+function DeskTeaser() {
+  const [idea, setIdea] = useState<PublicIdea | null>(null);
+  useEffect(() => {
+    fetch("/api/ideas", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((j: { ideas?: PublicIdea[] }) => {
+        const list = Array.isArray(j.ideas) ? j.ideas : [];
+        if (list.length) setIdea(list[0]); // newest first — the live book's top card
+      })
+      .catch(() => {});
+  }, []);
+  if (!idea) return null;
+  const locked = deskTeaserVisibility() === "locked";
+  return (
+    <a className={`pit6-desk${locked ? " locked" : ""}`} href="/?view=terminal">
+      <span className="pit6-desk-head">
+        <b>{idea.instrument}</b>
+        {idea.entry ? <span className="pit6-desk-entry">{idea.entry}</span> : null}
+        <span className={`pit6-desk-risk r-${idea.riskLevel}`}>{idea.riskLevel.toUpperCase()} RISK</span>
+        <span className="pit6-desk-age">{relativeTime(idea.updatedAt)}</span>
+      </span>
+      <span className="pit6-desk-cta">{locked ? "UNLOCK THE DESK →" : "SEE THE DESK →"}</span>
+    </a>
+  );
+}
+
 // ── the persisted run (a career survives reloads; simulated, client-held) ────
 type RunAggState = { trades: number; wins: number; worstDayDD: number; missionsHit: number; daysPlayed: number };
 type CurveMark = { idx: number; kind: "open" | "close" | "event"; cls: 1 | -1 };
@@ -151,8 +215,8 @@ function saveRun(r: SavedRun | null): void {
 }
 
 // ── component ────────────────────────────────────────────────────────────────
-type Phase = "modes" | "brief" | "live" | "result" | "ended" | "daily-result";
-type Mode = "career" | "daily";
+type Phase = "modes" | "brief" | "live" | "result" | "ended" | "daily-result" | "challenge-result";
+type Mode = "career" | "daily" | "challenge";
 type RoundResult = RoundSummary & { n: number };
 type Ending = { kind: "busted" | "cleared" | "fund"; rating: ReturnType<typeof pitRating> };
 type TuneKey = keyof PitTune;
@@ -186,6 +250,7 @@ function PitInner({ active }: { active: boolean }) {
   /** a device-local run displaced by the account's — offered once (L10) */
   const [orphanRun, setOrphanRun] = useState<SavedRun | null>(null);
   const [countdown, setCountdown] = useState("");
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [bootErr, setBootErr] = useState<Error | null>(null);
   const [stamp, setStamp] = useState<string | null>(null);
   const [sizePct, setSizePct] = useState<(typeof SIZES)[number]>(100);
@@ -265,7 +330,10 @@ function PitInner({ active }: { active: boolean }) {
 
   useEffect(() => {
     try {
-      const wanted = new URLSearchParams(window.location.search).get("tune") === "1";
+      const params = new URLSearchParams(window.location.search);
+      // S6 — an incoming challenge link: same seed, sender's score as the bar
+      setChallenge(parseChallenge(params.get("challenge")));
+      const wanted = params.get("tune") === "1";
       if (!wanted) return;
       if (process.env.NODE_ENV !== "production" || window.location.hostname === "localhost") {
         setTuneOn(true);
@@ -283,20 +351,27 @@ function PitInner({ active }: { active: boolean }) {
 
   const week = pos.week;
   const dayIx = Math.min(pos.day, LADDER.length) - 1;
-  const def = mode === "daily"
-    ? dailyDefFor(etToday || "2026-01-01")
-    : weekAdjust(LADDER[dayIx], week);
+  const def =
+    mode === "daily" ? dailyDefFor(etToday || "2026-01-01") :
+    mode === "challenge" && challenge ? weekAdjust(LADDER[Math.min(challenge.day, LADDER.length) - 1], challenge.week) :
+    weekAdjust(LADDER[dayIx], week);
   const mission = MISSIONS[def.missionKey].label;
+
+  // S8 — the mode's seed policy in one place: daily/challenge shared by
+  // construction, career fresh per (runId, week, day)
+  const seedForNow = () =>
+    mode === "daily" ? dailySeed(etToday || "2026-01-01") :
+    mode === "challenge" && challenge ? challenge.seed :
+    careerDaySeed(runSeed.current, pos.week, pos.day);
 
   const briefTickers = useMemo(() => {
     if (phase !== "brief") return [];
     try {
-      const seed = mode === "daily" ? dailySeed(etToday || "2026-01-01") : runSeed.current + (week - 1) * 101 + pos.day;
-      const t = mode === "daily" ? tuneRef.current : seasonTune(week, tuneRef.current);
-      return makeRound(def, seed, t).stocks.map((s) => s.ticker);
+      const t = mode === "career" ? seasonTune(week, tuneRef.current) : tuneRef.current;
+      return makeRound(def, seedForNow(), t).stocks.map((s) => s.ticker);
     } catch { return []; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, mode, pos, week, etToday]);
+  }, [phase, mode, pos, week, etToday, challenge]);
 
   const onEvent = useCallback((ev: PitEvent) => {
     if (ev.type === "pop") {
@@ -336,7 +411,8 @@ function PitInner({ active }: { active: boolean }) {
 
   // ── run lifecycle ──────────────────────────────────────────────────────────
   const startNewRun = () => {
-    runSeed.current = (Date.now() % 100000) + 1;
+    // S8 — wide entropy: no two runs (or players) share tapes
+    runSeed.current = (((Date.now() & 0xffffff) * 1024) ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0 || 1;
     aggRef.current = { ...ZERO_AGG };
     curveRef.current = []; marksRef.current = []; boundsRef.current = [];
     saveRun(null); setSaved(null);
@@ -365,6 +441,11 @@ function PitInner({ active }: { active: boolean }) {
     setMode("daily");
     setPhase("brief");
   };
+  const startChallenge = () => {
+    if (!challenge) return;
+    setMode("challenge");
+    setPhase("brief");
+  };
 
   const openMarket = () => {
     try {
@@ -372,15 +453,16 @@ function PitInner({ active }: { active: boolean }) {
       floorRef.current = null;
       dayCurveRef.current = [];
       setFurthestYet(false);
-      if (mode === "daily") {
-        runRef.current = createRoundRun(def, dailySeed(etToday || "2026-01-01"), START_CASH, onEvent, {
-          tune: tuneRef.current,
-        });
-      } else {
-        runRef.current = createRoundRun(def, runSeed.current + (week - 1) * 101 + pos.day, careerEq, onEvent, {
+      if (mode === "career") {
+        runRef.current = createRoundRun(def, seedForNow(), careerEq, onEvent, {
           tune: seasonTune(week, tuneRef.current),
           initialStreak: careerStreak,
           fundAt: FUND_TARGET,
+        });
+      } else {
+        // daily + challenge: standalone $10K on the shared seed
+        runRef.current = createRoundRun(def, seedForNow(), START_CASH, onEvent, {
+          tune: tuneRef.current,
         });
       }
       setFocus(0);
@@ -438,6 +520,11 @@ function PitInner({ active }: { active: boolean }) {
       const res: RoundResult = { ...sum, n: run.def.n };
       setResult(res);
 
+      if (mode === "challenge") {
+        // exhibition match: nothing posts, the bar decides
+        setPhase("challenge-result");
+        return;
+      }
       if (mode === "daily") {
         setPhase("daily-result");
         fetch("/api/pit", {
@@ -564,9 +651,16 @@ function PitInner({ active }: { active: boolean }) {
       ctx.fillStyle = "#d8ecd9"; ctx.font = "600 12px ui-monospace, monospace";
       ctx.fillText(price.toFixed(2), hx + 12, hy + 4);
       ctx.fillStyle = "rgba(216,236,217,0.65)"; ctx.font = "600 11px ui-monospace, monospace";
-      const frame = mode === "daily" ? "DAILY PIT" : `WEEK ${pos.week} · DAY ${rdef.n}`;
+      const frame = mode === "daily" ? "DAILY PIT" : mode === "challenge" ? "CHALLENGE" : `WEEK ${pos.week} · DAY ${rdef.n}`;
       ctx.fillText(`${frame} · ${rdef.name} · SIM`, 12, 20);
       ctx.fillText(MISSIONS[rdef.missionKey].label, 12, 36);
+      if (mode === "challenge" && challenge) {
+        // S6 — the sender's score is THE BAR, on screen the whole run
+        const barTxt = `THE BAR ${challenge.pct >= 0 ? "+" : ""}${challenge.pct.toFixed(1)}%`;
+        ctx.fillStyle = (eq / run.startEq - 1) * 100 > challenge.pct ? "#7fe0a5" : "#ffd27a";
+        ctx.font = "700 12px ui-monospace, monospace";
+        ctx.fillText(barTxt, W - ctx.measureText(barTxt).width - 12, 40);
+      }
       ctx.fillStyle = eqFlash > 0.08 ? "#7fe0a5" : eqFlash < -0.08 ? "#e08a7a" : "#d8ecd9";
       ctx.font = "700 21px ui-monospace, monospace";
       ctx.fillText(`$${eq.toFixed(0)}`, 12, H - 16);
@@ -635,7 +729,7 @@ function PitInner({ active }: { active: boolean }) {
 
   // DAY REPLAY (result screens) — the day's tape + marks + event ticks
   useEffect(() => {
-    if (phase !== "result" && phase !== "daily-result") return;
+    if (phase !== "result" && phase !== "daily-result" && phase !== "challenge-result") return;
     const run = runRef.current;
     const canvas = replayRef.current;
     const ctx = canvas?.getContext("2d");
@@ -800,6 +894,21 @@ function PitInner({ active }: { active: boolean }) {
     </div>
   ) : null;
 
+  // S6 — share ingredients for the current result screen
+  const dayLog: TradeMark[] = runRef.current?.log ?? [];
+  const runMarksAsLog: TradeMark[] = marksRef.current
+    .filter((m) => m.kind !== "event")
+    .map((m) => ({ s: 0, tick: m.idx, price: 0, dir: m.cls, kind: m.kind as "open" | "close", gain: m.kind === "close" ? m.cls : undefined }));
+  const dailyDayN = ((parseInt((etToday || "2026-01-01").slice(8, 10), 10) || 1) % LADDER.length) + 1;
+  const dayChallenge: Challenge | null = result
+    ? mode === "daily"
+      ? { seed: dailySeed(etToday || "2026-01-01"), week: 3, day: dailyDayN, pct: result.roundPct }
+      : mode === "challenge" && challenge
+        ? { ...challenge, pct: result.roundPct } // pass it on — YOUR score is the new bar
+        : { seed: careerDaySeed(runSeed.current, pos.week, pos.day), week: pos.week, day: pos.day, pct: result.roundPct }
+    : null;
+  const dayStamp = result ? pickStamp({ ...result, missionKey: def.missionKey }) : null;
+
   return (
     <div className="pit2">
       <p className="pit-sim">SIMULATED — entertainment, not investment advice. No real orders.</p>
@@ -950,6 +1059,10 @@ function PitInner({ active }: { active: boolean }) {
               ) : null}
               {nextPos ? mapStrip(nextPos) : null}
               {nextPos ? <p className="pit2-stats">{nextWaypoint(nextPos)} · ${FUND_TARGET.toLocaleString()} pulls you off the floor</p> : null}
+              {dayChallenge ? (
+                <ShareCard tag={`W${pos.week}D${result.n}`} pct={result.roundPct} trades={result.trades}
+                  stamp={dayStamp} glyphs={glyphStrip(dayLog, "day")} challenge={dayChallenge} />
+              ) : null}
               <button type="button" className="pit2-btn pit2-run" onClick={() => { if (nextPos) setPos(nextPos); setPhase("brief"); }}>
                 NEXT DAY →
               </button>
@@ -986,6 +1099,15 @@ function PitInner({ active }: { active: boolean }) {
               {player?.pid.startsWith("v:") ? (
                 <SignInNudge line="save this career — records follow you to every device." />
               ) : null}
+              {dayChallenge ? (
+                <ShareCard tag={`W${pos.week}D${pos.day}`}
+                  pct={(result.endEq / START_CASH - 1) * 100}
+                  trades={aggRef.current.trades}
+                  stamp={ending.kind === "fund" ? "THE FUND" : ending.kind === "cleared" ? "SEASON CLEARED" : dayStamp}
+                  glyphs={glyphStrip(runMarksAsLog, ending.kind)}
+                  challenge={dayChallenge} />
+              ) : null}
+              <DeskTeaser />
               <button type="button" className="pit2-btn pit2-run" onClick={startNewRun}>RUN IT BACK</button>
               <button type="button" className="pit5-back" onClick={() => { setEnding(null); setPhase("modes"); }}>← THE FLOOR</button>
             </div>
@@ -1012,11 +1134,37 @@ function PitInner({ active }: { active: boolean }) {
                   {boards.today.length === 0 ? <li className="empty">nobody on today's board yet</li> : null}
                 </ol>
               </div>
+              {dayChallenge ? (
+                <ShareCard tag={`#${dailyNumber(etToday || "2026-01-01")}`} pct={result.roundPct} trades={result.trades}
+                  stamp={dayStamp} glyphs={glyphStrip(dayLog, "daily")} challenge={dayChallenge} />
+              ) : null}
+              <DeskTeaser />
               {(attemptsLeft ?? 0) > 0 ? (
                 <button type="button" className="pit2-btn pit2-run" onClick={() => setPhase("brief")}>RUN IT AGAIN ({attemptsLeft} LEFT)</button>
               ) : (
                 <p className="pit2-notreal">out of attempts — today's tape resets in {countdown}</p>
               )}
+              <button type="button" className="pit5-back" onClick={() => setPhase("modes")}>← THE FLOOR</button>
+            </div>
+          ) : phase === "challenge-result" && result && challenge ? (
+            <div className="pit2-verdict">
+              <p className="pit3-eyebrow">CHALLENGE — {def.name}</p>
+              <p className={`pit2-endpct ${result.roundPct > challenge.pct ? "up" : "down"}`}>
+                YOU {result.roundPct >= 0 ? "+" : ""}{result.roundPct.toFixed(1)}% · BAR {challenge.pct >= 0 ? "+" : ""}{challenge.pct.toFixed(1)}%
+              </p>
+              <p className="pit2-endpct">{result.roundPct > challenge.pct ? "BAR BEATEN" : "BAR MISSED"}</p>
+              <canvas ref={replayRef} className="pit3-replay" aria-label="Day replay" />
+              <div className="pit4-card">
+                <span>TRADES<b>{result.trades}</b></span>
+                <span>WIN RATE<b>{result.trades ? `${result.winRate}%` : "—"}</b></span>
+                <span>MAX DD<b>-{result.maxDD.toFixed(1)}%</b></span>
+              </div>
+              {dayChallenge ? (
+                <ShareCard tag={`W${challenge.week}D${challenge.day}`} pct={result.roundPct} trades={result.trades}
+                  stamp={result.roundPct > challenge.pct ? "BAR BEATEN" : dayStamp} glyphs={glyphStrip(dayLog, "day")} challenge={dayChallenge} />
+              ) : null}
+              <DeskTeaser />
+              <button type="button" className="pit2-btn pit2-run" onClick={() => setPhase("brief")}>RUN IT AGAIN</button>
               <button type="button" className="pit5-back" onClick={() => setPhase("modes")}>← THE FLOOR</button>
             </div>
           ) : (
@@ -1037,6 +1185,16 @@ function PitInner({ active }: { active: boolean }) {
                   }}>ADOPT</button>
                   <button type="button" onClick={() => setOrphanRun(null)}>DISCARD</button>
                 </div>
+              ) : null}
+
+              {challenge ? (
+                <button type="button" className="pit5-mode pit6-challenge" onClick={startChallenge}>
+                  <span className="pit5-mode-name">CHALLENGE</span>
+                  <span className="pit5-mode-line">
+                    someone sent you this tape — the bar is {challenge.pct >= 0 ? "+" : ""}{challenge.pct.toFixed(1)}%. beat it.
+                  </span>
+                  <span className="pit5-mode-line dim">same seed, same headlines · no account needed</span>
+                </button>
               ) : null}
 
               <button type="button" className="pit5-mode" onClick={saved ? continueRun : startNewRun}>
