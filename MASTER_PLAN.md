@@ -472,18 +472,18 @@ Rival ghost (August trades the same tape beside you — future flagship) · achi
 > Accounts + cross-device identity. Stripe/tiers/pricing/content-gating EXPLICITLY OUT (see PARKED). Nothing in this build may lock content. Branch: feature/auth-1a off main. DESIGN_LAWS.md committed first; this build complies. Two gates.
 
 ## P1 — ACCOUNTS + THE CLAIM
-- [ ] Auth.js (NextAuth v5) email magic link via Resend free tier — no passwords, no OAuth. /api/auth/session implemented properly; the unconfigured stub dies permanently.
-- [ ] User record: id, email, createdAt, isOwner (owner = magedmilek@gmail.com). ADMIN_TOKEN survives as break-glass only; /admin accepts the owner session as the daily path.
-- [ ] ACCOUNT CLAIM: first sign-in migrates the device's anonymous identity — chat threads, PIT career run, records, XP/week progress, daily streak, board names. One-way, idempotent (claimed visitors marked; re-runs no-op).
-- [ ] Second device with its own anon history: records merge best-of; the account's active career run wins; the device's unclaimed run offered once (adopt or discard).
-- [ ] Sign-in PROMPTS, never walls (L5): after a run ends ("save this career"), on board name save, on a new device. Dismissible forever.
+- [x] Auth.js (NextAuth v5) email magic link via Resend free tier — no passwords, no OAuth. /api/auth/session implemented properly; the unconfigured stub dies permanently.
+- [x] User record: id, email, createdAt, isOwner (owner = magedmilek@gmail.com). ADMIN_TOKEN survives as break-glass only; /admin accepts the owner session as the daily path.
+- [x] ACCOUNT CLAIM: first sign-in migrates the device's anonymous identity — chat threads, PIT career run, records, XP/week progress, daily streak, board names. One-way, idempotent (claimed visitors marked; re-runs no-op).
+- [x] Second device with its own anon history: records merge best-of; the account's active career run wins; the device's unclaimed run offered once (adopt or discard).
+- [x] Sign-in PROMPTS, never walls (L5): after a run ends ("save this career"), on board name save, on a new device. Dismissible forever.
 
 ### GATE A1 — Milek signs in on desktop AND real phone; threads, career, records follow both directions. HOLD.
 - [ ] A1 approved.
 
 ## P2 — POLISH
-- [ ] Account menu (email, owner badge, sign out) in top bar + mobile drawer, per DESIGN_LAWS L1/L8.
-- [ ] Session-aware chat caps: anonymous caps unchanged; signed-in gets the standard cap. No tiering.
+- [x] Account menu (email, owner badge, sign out) in top bar + mobile drawer, per DESIGN_LAWS L1/L8.
+- [x] Session-aware chat caps: anonymous caps unchanged; signed-in gets the standard cap. No tiering.
 
 ### GATE A2 — full review on preview → merge → deploy. HOLD.
 - [ ] A2 approved.
