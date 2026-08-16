@@ -534,6 +534,14 @@ CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi c
 ### GATE R4 — preview + screenshots (desktop, phone, one deliberately failed feed showing its honest state, the ask-bar expanding into chat). HOLD, then merge.
 - [x] R4 approved ("r4 approved", 2026-08-16). Merged to main.
 
+## PUBLIC-LANGUAGE PASS (ACTIVE 2026-08-16 — branch feature/public-language off main; small round, one gate)
+- [ ] P1 FEED EDIT: MarketWatch removed as a source entirely; remaining feeds keyword-filtered to markets-desk content only. If the list thins too far, candidates from existing RSS sets flagged at the gate — no new sources without owner sign-off.
+- [ ] P2 QUIET ATTRIBUTION: source tags on headline cards shrink to label voice (smallest muted mono, corner placement, DESIGN_LAWS). Attribution never removed while third-party headlines render. ALTERNATIVE behind config flag OFF by default: headlines module replaced by desk-only feed (tape + wire + desk report) for a zero-third-party-brand front page.
+- [ ] P3 JARGON PURGE (public surfaces only): INGEST / LATEST INGEST / transcript / drafts / extraction / pipeline never render for visitors. Home card → "DESK · updated <age> · <n> new calls today". Terminal DESK WIRE shows LIVE/TRIG/TAPE publicly; INGEST rows owner-only. Full string sweep; owner-signed-in keeps full detail.
+- [ ] P4 SETTINGS REVIEW: every env-configurable knob + current value tabled at the gate (chat caps anon/signed-in, stale-idea threshold, rain default, LIVE section cap, daily PIT attempts, calendar imminent-threshold hours) — owner sets final values once.
+### GATE PL — signed-OUT screenshots of home + terminal (zero jargon, quiet/zero attribution per config) + the settings table. HOLD, then merge.
+- [ ] PL approved.
+
 ## STANDING LAW (wins over everything above)
 The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.
 
