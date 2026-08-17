@@ -40,7 +40,7 @@ import type { TranscriptRecord } from "@/lib/transcripts";
 
 const TOKEN_KEY = "aug-admin-token";
 const STALE_DAYS_KEY = "aug-admin-stale-days";
-const STALE_DAYS_DEFAULT = 5;
+const STALE_DAYS_DEFAULT = 3;
 const TAPE_UNDO_MS = 6000;
 
 type GateState = "checking" | "locked" | "open" | "unconfigured";

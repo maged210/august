@@ -33,7 +33,7 @@ export const TRACKED_CAP = 300;
 
 /** Days without a re-mention before an idea is marked stale (visibly marked,
  * never deleted). Override with env TRACKER_STALE_DAYS in trackerStore. */
-export const DEFAULT_STALE_DAYS = 5;
+export const DEFAULT_STALE_DAYS = 3; // finalized 2026-08-16 (owner order, hotfix-grade)
 
 /** Days a terminal idea (TARGET_HIT/INVALIDATED) lingers before auto-CLOSED. */
 export const AUTO_CLOSE_TERMINAL_DAYS = 7;
