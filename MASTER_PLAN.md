@@ -542,47 +542,6 @@ CONCEPT: the AUGUST tab becomes a live market front page — Polymarket/Kalshi c
 ### GATE PL — signed-OUT screenshots of home + terminal (zero jargon, quiet/zero attribution per config) + the settings table. HOLD, then merge.
 - [x] PL approved ("pl approved", 2026-08-16). Settings kept as tabled — no constant changes named. Merged to main.
 
-<<<<<<< Updated upstream
-=======
-# TRAIN-1 — THE TRAINING FLOOR (ACTIVE 2026-08-16 — branch feature/train-1 off main; two gates)
-CONCEPT: Topstep-style guided course; the PIT tape engine IS the classroom. Lives in the PIT mode select as TRAINING (tab bar stays three). Split template: lesson rail right, live scripted tape left. SIMULATED banner persists; every lesson footer: education, not investment advice.
-
-## T1 — LESSON ENGINE (build once, lessons become content)
-- [x] Lesson = data object: prose sections · SCRIPTED TAPE (deterministic seed + pinned RoundDef on tape engine v2) · DO-TASK w/ auto-validation · unlock rules · completion badge.
-- [x] PROGRESSIVE CONTROLS: per-lesson control locks — L1 renders order buttons padlocked; capabilities unlock as taught. Locked state per L6 furniture.
-- [x] COACH VOICE: floor commentary beats triggered by tape moments; dry desk-speak. No videos v1; optional media slot per lesson reserved.
-- [x] Progress persists on identity (anonymous, claimable — existing pit-player pattern); lesson index w/ topic chips, locked states, progress.
-
-## T2 — CURRICULUM v1 (8 lessons, ~3–5 min each; sim tickers only, index-flavored names)
-- [x] L1 READING THE TAPE — controls locked; watch a scripted day; task: tap the day's high and low after the bell.
-- [x] L2 LONG & SHORT — buttons unlock on a gentle trend; task: close one profitable trade either direction.
-- [x] L3 STOPS & TARGETS — the 2:1 rule; training-only ghost stop/target markers; task: plan the trade, exit at plan.
-### GATE T-G1 — engine + L1–L3 playable on preview; the padlock moment and first unlock must FEEL earned. HOLD.
-- ROUND 1 VERDICT (2026-08-16): NOT approved — "lessons landed as pages with a chart; the reference model is a TRADING COCKPIT with lessons attached." Rebuild ordered:
-- [x] R1 TRAINING ACCOUNT: persistent chrome on every lesson — BAL · MAX LOSS LIMIT · REALIZED · UNREALIZED, tick-by-tick. $50,000 sim, MLL $48,000, persists across the course, RESET always available. MLL breach = teachable moment (coach line, account resets, lesson continues) — never a dead end.
-- [x] R2 ORDER PANEL: persistent ticket — contract-size selector + BUY MARKET / SELL MARKET / FLATTEN on the PIT's position/order systems. L1 keeps the padlock; from L2 the panel is LIVE IN EVERY LESSON (free trading anytime). Fills mark the tape: entry line + live position tag (+1 · −$14.00), green/red tick flashes while holding, realized P&L pop on close. Port the PIT's juice wholesale.
-- [x] R3 INTERACTIVE MECHANICS: L3 stop/target lines placed by tapping the chart, auto-flatten on touch, 2:1 validated from the learner's ACTUAL placed levels. All validation reads real fills/P&L. Coach reacts to the learner's own fills ("you sold the low" earns its keep).
-- [x] R4 TAPE FEEL: continuous sessions w/ PAUSE/RESUME + RESET CHART; free practice between beats; the tape never stops because a task completed.
-- ROUND 2 VERDICT (2026-08-16): still held — "the cockpit landed; the course's SPINE is missing: locks don't respond and progression is invisible."
-- [x] P1 RESPONSIVE LOCKS: locked controls ALWAYS react (padlock pulse + coach line + when it unlocks); promise inline ("BUY MARKET · 🔒 L2"); the unlock is STAGED (padlocks break open entering L2, coach beat "ticket's yours").
-- [x] P2 SESSION CLOCK: BELL IN M:SS while running / BELL RUNG after; bell-gated tasks say so next to the clock.
-- [x] P3 TAP TASKS TALK BACK: visible tap mode (crosshair + prompt overlay), every tap drops a marker instantly (✓ or retry nudge w/ a located hint), generous tolerance.
-- [x] P4 COMPLETION + ADVANCE: LESSON COMPLETE panel (badge · one learned line · account carry-over · NEXT LESSON dominant); auto-unlock; index shows ✓/▸/🔒; persistent "LESSON n OF 8" header + progress bar.
-- [x] P5 TAP HANDLER VERIFIED: pointer events (mouse + touch), plus a programmatic L1 end-to-end smoke in the suite (taps register, completion fires, L2 unlocks).
-- [ ] T-G1 approved (bar + spine: L1 taps → LESSON COMPLETE → L2 → padlocks break open → real trade → breathing UP&L, no step leaves the owner guessing).
-
-## T3 — FINISH + POLISH
-- [ ] L4 POSITION SIZING — survive a drawdown day at ≤50% size, no margin call.
-- [ ] L5 STRUCTURE & LEVELS — tap-to-mark two levels (NQ LEVELS vocabulary); trade one bounce off a marked level.
-- [ ] L6 HEADLINES LIE SOMETIMES — misleading-event mechanic as teacher; hold through a fake-out to a profitable exit.
-- [ ] L7 WHEN NOT TO TRADE — scripted chop day; restraint scored; finish with ≤1 trade.
-- [ ] L8 RISK FIRST — GRADUATION — margin-call anatomy + mini-combine (modest target, loss limit intact). TRAINED badge on RECORDS + handoff → start your career + one desk-teaser card.
-- [ ] Lesson index, badges, sign-in nudge on completion (prompts never walls), mobile layout (rail becomes a sheet, MOBILE-1 patterns), copy pass (dry desk-speak, SIM labels, zero real tickers in lesson tapes).
-### GATE T-G2 — full course run-through desktop + phone. Approve → merge.
-- [ ] T-G2 approved.
-
-RULES: zero new data sources — every tape generated · no videos/external embeds v1 · TRAINING never gates the game (CAREER + DAILY stay open; it's an offer, not a prerequisite).
-
 # QUEUED — TIERS-1: THE DAILY DESK (ordered 2026-08-16; one gate)
 SEQUENCE NOTE (recorded at queue time): the order says "branch feature/tiers-1 off main after feature/screener-1 merges" — no feature/screener-1 exists on local or origin and no SCREENER-1 order is on record. Held for owner sequencing.
 CONCEPT: LIVE book reorganizes by freshness (approval/refresh timestamps). Nothing deleted or hidden by aging — tiers are presentation over the same live book. TRACKED + performance history unchanged.
@@ -591,7 +550,6 @@ CONCEPT: LIVE book reorganizes by freshness (approval/refresh timestamps). Nothi
 - B3 WEEK BOUNDARY: trading week = Mon–Fri ET, rolls midnight ET Monday; unit test w/ Friday-approval + Monday-render case.
 ### GATE TIERS — preview + screenshots (terminal w/ three tiers populated incl. one EARLIER expanded w/ STALE chip, rail mirror, phone, front-page "N new today"). HOLD, then merge.
 
->>>>>>> Stashed changes
 ## STANDING LAW (wins over everything above)
 The audit reports reality (never create a named-but-absent feature) · DATA LAW: zero new paid/scraped sources — market-wide feeds (breadth, A/D, put/call, DXY, Fed expectations, stress indices, full calendar) render DATA UNAVAILABLE or are omitted, and land under "data still required" · DESIGN_LAWS.md governs visuals · the PIT stays the arcade career · SIMULATED never dresses as live.
 
