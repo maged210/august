@@ -24,6 +24,7 @@ import {
   parseChallenge, pickStamp, type Challenge,
 } from "@/lib/pit-share";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
+import TrainingFloor from "@/components/surfaces/TrainingFloor";
 
 // ── error boundary ───────────────────────────────────────────────────────────
 class PitBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
@@ -215,7 +216,7 @@ function saveRun(r: SavedRun | null): void {
 }
 
 // ── component ────────────────────────────────────────────────────────────────
-type Phase = "modes" | "brief" | "live" | "result" | "ended" | "daily-result" | "challenge-result";
+type Phase = "modes" | "brief" | "live" | "result" | "ended" | "daily-result" | "challenge-result" | "training";
 type Mode = "career" | "daily" | "challenge";
 type RoundResult = RoundSummary & { n: number };
 type Ending = { kind: "busted" | "cleared" | "fund"; rating: ReturnType<typeof pitRating> };
@@ -915,7 +916,22 @@ function PitInner({ active }: { active: boolean }) {
 
       {stamp ? <div className="pit3-stamp" role="status">{stamp}</div> : null}
 
-      {phase === "live" && run ? (
+      {phase === "training" ? (
+        <TrainingFloor
+          done={player?.training?.done ?? []}
+          onLessonDone={async (id) => {
+            try {
+              await fetch("/api/pit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "train", lesson: id }),
+              });
+            } catch { /* progress re-posts on the next completion */ }
+            refresh();
+          }}
+          onExit={() => setPhase("modes")}
+        />
+      ) : phase === "live" && run ? (
         <>
           <div className="pit3-strip">
             {run.stocks.map((st, s) => {
@@ -1222,6 +1238,17 @@ function PitInner({ active }: { active: boolean }) {
                     №1 {boards.today[0].name} {boards.today[0].pct >= 0 ? "+" : ""}{boards.today[0].pct.toFixed(1)}%
                   </span>
                 ) : <span className="pit5-mode-line dim">today's board is open</span>}
+              </button>
+
+              {/* TRAIN-1 — an offer, never a prerequisite: the game stays open */}
+              <button type="button" className="pit5-mode" onClick={() => setPhase("training")}>
+                <span className="pit5-mode-name">TRAINING</span>
+                <span className="pit5-mode-line">the training floor — guided lessons on the real tape engine</span>
+                <span className="pit5-mode-line dim">
+                  {(player?.training?.done?.length ?? 0) > 0
+                    ? `${player?.training?.done?.length}/8 complete${(player?.training?.done?.length ?? 0) >= 8 ? " · TRAINED" : ""}`
+                    : "start with L1 — reading the tape"}
+                </span>
               </button>
 
               <button type="button" className="pit5-mode slim" onClick={() => setRecordsOpen((v) => !v)}>

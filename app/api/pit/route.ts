@@ -176,6 +176,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!(await savePlayer(player))) {
       return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
     }
+  } else if (body.action === "train") {
+    // TRAIN-1 — a completed training-floor lesson. Idempotent set-add;
+    // anonymous progress lives on the visitor pid and claims like the rest.
+    const lesson = typeof body.lesson === "string" && /^L[1-8]$/.test(body.lesson) ? body.lesson : null;
+    if (!lesson) return Response.json({ ok: false, error: "lesson_invalid" }, { status: 400 });
+    const done = new Set(player.training?.done ?? []);
+    done.add(lesson);
+    player.training = { done: [...done].sort() };
+    if (!(await savePlayer(player))) {
+      return Response.json({ ok: false, error: "save_failed" }, { status: 500 });
+    }
   } else {
     return Response.json({ ok: false, error: "unknown_action" }, { status: 400 });
   }

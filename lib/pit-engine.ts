@@ -40,6 +40,11 @@ export const CATS: Record<string, Cat> = {
   health: { vol: 0.9, tickers: ["LLY", "UNH", "PFE", "MRK"] },
   crypto: { vol: 1.5, tickers: ["COIN", "MSTR", "HOOD", "RIOT"] },
   highvol: { vol: 1.65, tickers: ["TSLA", "GME", "AFRM", "UPST"] },
+  // TRAIN-1 — the training floor's universe: index-flavored SIM names only.
+  // Real tickers never appear in lesson tapes (standing rule).
+  trainCalm: { vol: 0.75, tickers: ["IDX-ALPHA", "IDX-BETA", "IDX-GAMMA", "IDX-DELTA"] },
+  trainTrend: { vol: 1.0, tickers: ["TRN-MOMO", "TRN-DRIFT", "TRN-GRIND", "TRN-RUNNR"] },
+  trainChop: { vol: 1.15, tickers: ["CHOP-1", "CHOP-2", "CHOP-3", "CHOP-4"] },
 };
 
 // ── MISSIONS: a data-driven registry — every mission is an evaluator ─────────
