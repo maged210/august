@@ -415,7 +415,12 @@ export function applyHousekeeping(idea: TrackedIdea, now: number, opts: EvalOpts
   const staleDays = opts.staleDays ?? DEFAULT_STALE_DAYS;
   const t = { ...idea, statusHistory: [...idea.statusHistory] };
 
-  t.stale = now - t.lastMentionAt > staleDays * DAY_MS;
+  // STALE targets the UNTRIGGERED book only (owner scope 2026-08-16):
+  // ACTIVE (thesis-only watch) and ARMED (trigger never crossed). A card
+  // that fired — TRIGGERED / TARGET_HIT / INVALIDATED — is performance
+  // history and never wears the chip.
+  t.stale = (t.status === "ACTIVE" || t.status === "ARMED")
+    && now - t.lastMentionAt > staleDays * DAY_MS;
 
   if (t.status === "TARGET_HIT" || t.status === "INVALIDATED") {
     const terminalAt = [...t.statusHistory].reverse().find((h) => h.state === t.status)?.at ?? t.createdAt;
