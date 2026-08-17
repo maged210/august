@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/brief",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/intel-track",
+      "schedule": "5 21 * * *"
     }
   ]
 }
