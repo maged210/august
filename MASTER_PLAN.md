@@ -567,7 +567,7 @@ CONCEPT: Topstep-style guided course; the PIT tape engine IS the classroom. Live
 - [x] P3 TAP TASKS TALK BACK: visible tap mode (crosshair + prompt overlay), every tap drops a marker instantly (✓ or retry nudge w/ a located hint), generous tolerance.
 - [x] P4 COMPLETION + ADVANCE: LESSON COMPLETE panel (badge · one learned line · account carry-over · NEXT LESSON dominant); auto-unlock; index shows ✓/▸/🔒; persistent "LESSON n OF 8" header + progress bar.
 - [x] P5 TAP HANDLER VERIFIED: pointer events (mouse + touch), plus a programmatic L1 end-to-end smoke in the suite (taps register, completion fires, L2 unlocks).
-- [ ] T-G1 approved (bar + spine: L1 taps → LESSON COMPLETE → L2 → padlocks break open → real trade → breathing UP&L, no step leaves the owner guessing).
+- [x] T-G1 approved ("T-G1 approved — merge", 2026-08-17, round 3). Owner ordered merge at this gate; T3 (L4–L8, mobile sheet, copy pass) continues toward T-G2 with the index holding honest locks.
 
 ## T3 — FINISH + POLISH
 - [ ] L4 POSITION SIZING — survive a drawdown day at ≤50% size, no margin call.
