@@ -252,7 +252,7 @@ export default function Home() {
   }, []);
 
   // G3 fix 1 — the transcript's bottom clearance follows the dock's REAL
-  // height (composer + voice bar + stop controls change it turn to turn).
+  // height (composer + stop controls change it turn to turn).
   // A ResizeObserver writes --dock-h; .hl-convo-inner pads by it.
   useEffect(() => {
     const el = dockWrapRef.current;
@@ -992,9 +992,9 @@ export default function Home() {
                 <StopIcon />
               </button>
             ) : null}
-            {/* Sound, bell, and theme moved to the landing's quiet top-bar
-                cluster (HomeLanding) — the conversation cluster keeps only
-                the in-conversation controls: stop and the mood switcher
+            {/* Bell and theme live in the landing's quiet top-bar cluster
+                (HomeLanding) — the conversation cluster keeps only the
+                in-conversation controls: stop and the mood switcher
                 (which has no home on the landing). */}
             <button
               type="button"

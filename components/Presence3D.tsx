@@ -880,14 +880,14 @@ export default function Presence3D({
     // dense short fringe with a few long whipping spikes (power-law length), drifting
     // angular clumps, slow undulation + fast flicker = violent contained energy. All
     // motion is in the vertex shader (uTime/uAmp), so it's GPU-cheap; it flows on its
-    // own at idle and surges with AUGUST's voice.
+    // own at idle and surges with the state energy.
     // ----- tuning knobs (isolated, as asked) -----------------------------------
     const minDim = Math.min(window.innerWidth || 1280, window.innerHeight || 800);
     const weakGPU = (navigator.hardwareConcurrency || 8) <= 4;
     const CORONA_COUNT = minDim < 540 || weakGPU ? 240 : 620; // filament density
     const CORONA_LEN = 1.0; // spike-length scale
     const CORONA_TURB = 1.0; // turbulence / whip
-    const CORONA_GAIN = 1.4; // voice reactivity
+    const CORONA_GAIN = 1.4; // energy reactivity
     const CORONA_RIN = R_ORB * 1.015; // where filaments start (just off the rim)
     const CORONA_MAXLEN = 2.4; // soft-cap asymptote — the longest spikes reach well out (~2.5×)
     // ---------------------------------------------------------------------------

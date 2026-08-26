@@ -35,7 +35,7 @@ let warnedUnconfigured = false;
 // param types pin auth()'s middleware overload (not the route-handler one).
 const guard = auth((req: NextAuthRequest, _event: NextFetchEvent) => {
   // AUTH-1a B1: the gate list is data (lib/route-gates) and unit-tested —
-  // the anonymous principal surface (chat/threads/memory/pit) never 401s.
+  // the anonymous principal surface (chat/memory/pit) never 401s.
   // Auth is ADDITIVE: a session upgrades the principal; absence changes nothing.
   if (isGated(req.nextUrl.pathname) && !req.auth?.user) {
     return NextResponse.json({ error: "auth_required" }, { status: 401 });

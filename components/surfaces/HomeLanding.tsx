@@ -3,9 +3,9 @@
 // The AUGUST home landing — the ask-first face of the Presence panel, ported
 // from docs/design/AUGUST Home.dc.html. Layout, palette, and behavior follow
 // the design; every value on screen is real: the clock is the live ET time,
-// the state word is the live presence state, RECENT THREADS is the Upstash
-// thread store, WATCHING is live quotes off /api/intel/quotes. Empty feeds
-// simply don't render — no mock rows, no skeletons.
+// the state word is the live presence state, WATCHING is live quotes off
+// /api/intel/quotes. Empty feeds simply don't render — no mock rows, no
+// skeletons.
 //
 // The orb stays the living WebGL Presence3D: the design's halo ring, pulsing
 // glow, and gradient circle are CSS layers (globals.css, .hl-orb*), and the
@@ -214,9 +214,6 @@ export default function HomeLanding({
       cancelled = true;
     };
   }, []);
-
-  // RECENT THREADS moved to the LEFT sidebar (UX2-T1) — the landing keeps
-  // only the WATCHING quotes for its bottom strip.
 
   // WATCHING — live quotes, gentle 60s poll riding the server's 60s cache.
   // Re-keyed on `watch` (the public five, or the signed-in watchlist once it

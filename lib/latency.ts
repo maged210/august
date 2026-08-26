@@ -21,7 +21,7 @@ let turn = 0;
 const delta = (a: number | undefined, b: number): string =>
   a !== undefined ? `${Math.round(b - a)}ms` : "n/a";
 
-/** Begin a new turn at t0. Called once per send (voice or typed). */
+/** Begin a new turn at t0. Called once per send. */
 export function latReset(): void {
   turn += 1;
   marks = { t0: now() };

@@ -87,7 +87,7 @@ function schedule(c: AudioContext, name: UiTone): void {
 
 /** Play a UI tone. Silently does nothing when audio is unavailable or blocked by
  *  the autoplay policy (a later user gesture unblocks the context). The caller
- *  gates on the sound toggle + voice mute. */
+ *  gates on the stored sound preference. */
 export function playTone(name: UiTone): void {
   const c = ensure();
   if (!c) return;
