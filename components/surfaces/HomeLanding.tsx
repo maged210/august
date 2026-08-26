@@ -3,9 +3,9 @@
 // The AUGUST home landing — the ask-first face of the Presence panel, ported
 // from docs/design/AUGUST Home.dc.html. Layout, palette, and behavior follow
 // the design; every value on screen is real: the clock is the live ET time,
-// the state word is the live presence state, RECENT THREADS is the Upstash
-// thread store, WATCHING is live quotes off /api/intel/quotes. Empty feeds
-// simply don't render — no mock rows, no skeletons.
+// the state word is the live presence state, WATCHING is live quotes off
+// /api/intel/quotes. Empty feeds simply don't render — no mock rows, no
+// skeletons.
 //
 // The orb stays the living WebGL Presence3D: the design's halo ring, pulsing
 // glow, and gradient circle are CSS layers (globals.css, .hl-orb*), and the
@@ -52,21 +52,12 @@ type Account = { email: string };
 type HomeLandingProps = {
   state: AugustState;
   theme: Theme;
-  amplitudeRef: React.MutableRefObject<number>;
   /** The Presence panel is the deck's active surface (gates the ⌘K focus). */
   active: boolean;
   /** A conversation is live — the bar + chips yield to the existing reply UI. */
   conversationActive: boolean;
-  micSupported: boolean;
-  listening: boolean;
   busy: boolean;
-  voiceMode: boolean;
   onSend: (text: string) => void;
-  onToggleMic: () => void;
-  onToggleVoiceMode: () => void;
-  /** UX2-T1 — opens the threads slide-over drawer (mobile only; the desktop
-      sidebar manages itself) */
-  onOpenThreads: () => void;
   /** CORE V2 P5 — the conversation column (ChatTranscript), rendered by the
       page so message state stays there. Shown while a conversation is active;
       the landing's heading/chips/activity yield to it and the orb compacts. */
@@ -74,8 +65,6 @@ type HomeLandingProps = {
   // Quiet top-bar cluster — everything the design omits but the app keeps.
   pushState: PushState;
   onNotify: () => void;
-  soundOn: boolean;
-  onToggleSound: () => void;
   /** F7 — the moon button opens the theme menu; selection applies directly */
   onSetTheme: (t: Theme) => void;
   /** the rain intensity dial — lives INSIDE the theme menu (matrix only) */
@@ -93,22 +82,13 @@ const THEME_OPTIONS: Array<{ id: Theme; label: string }> = [
 export default function HomeLanding({
   state,
   theme,
-  amplitudeRef,
   active,
   conversationActive,
-  micSupported,
-  listening,
   busy,
-  voiceMode,
   onSend,
-  onToggleMic,
-  onToggleVoiceMode,
-  onOpenThreads,
   transcript,
   pushState,
   onNotify,
-  soundOn,
-  onToggleSound,
   onSetTheme,
   rainPreset,
   onSetRainPreset,
@@ -235,9 +215,6 @@ export default function HomeLanding({
     };
   }, []);
 
-  // RECENT THREADS moved to the LEFT sidebar (UX2-T1) — the landing keeps
-  // only the WATCHING quotes for its bottom strip.
-
   // WATCHING — live quotes, gentle 60s poll riding the server's 60s cache.
   // Re-keyed on `watch` (the public five, or the signed-in watchlist once it
   // lands); the cadence itself is unchanged.
@@ -290,31 +267,13 @@ export default function HomeLanding({
   };
 
   // The real system state word — 'SYSTEMS STEADY' only when he actually is.
-  const stateWord =
-    state === "listening"
-      ? "LISTENING"
-      : state === "thinking"
-        ? "THINKING"
-        : state === "speaking"
-          ? "SPEAKING"
-          : "SYSTEMS STEADY";
+  const stateWord = state === "thinking" ? "THINKING" : "SYSTEMS STEADY";
 
   return (
     <div className={`home-landing${conversationActive ? " convo" : ""}`}>
       {/* top bar — wordmark · live clock + live state · quiet control cluster */}
       <div className="hl-top">
         <div className="hl-brand">
-          {/* UX2-T1 — mobile-only threads drawer trigger (the desktop
-              sidebar lives beside the panel and manages itself) */}
-          <button
-            type="button"
-            className="hl-threads-btn"
-            onClick={onOpenThreads}
-            aria-label="Open conversations"
-            title="Conversations"
-          >
-            <ThreadsGlyph />
-          </button>
           <span className="hl-brand-dot" aria-hidden />
           <span className="hl-wordmark">AUGUST</span>
         </div>
@@ -364,16 +323,6 @@ export default function HomeLanding({
                 <BellGlyph off={pushState === "denied"} on={pushState === "granted"} />
               </button>
             )}
-            <button
-              type="button"
-              className="hl-ctl"
-              onClick={onToggleSound}
-              title={soundOn ? "UI sounds on" : "UI sounds off"}
-              aria-pressed={soundOn}
-              aria-label={soundOn ? "Turn UI sounds off" : "Turn UI sounds on"}
-            >
-              <ToneGlyph off={!soundOn} />
-            </button>
             {/* F7 — THE moon menu: theme selection + (matrix only) the ticker
                 rain intensity dial, one quiet dropdown styled to the theme */}
             <div className="hl-rainwrap" ref={rainWrapRef}>
@@ -435,9 +384,6 @@ export default function HomeLanding({
                       clock; the control cluster folds in here */}
                   <div className="hl-menu-mobile">
                     <span className="hl-menu-k">CONTROLS</span>
-                    <button type="button" className="hl-rainopt" onClick={onToggleSound}>
-                      {soundOn ? "SOUND · ON" : "SOUND · OFF"}
-                    </button>
                     {pushState !== "unsupported" ? (
                       <button type="button" className="hl-rainopt" onClick={onNotify}>
                         NOTIFICATIONS{pushState === "granted" ? " · ON" : ""}
@@ -493,12 +439,7 @@ export default function HomeLanding({
         <div className="hl-orb-ring" aria-hidden />
         <div className="hl-orb-core" aria-hidden />
         <div className="hl-orb-gl">
-          <Presence3D
-            state={state}
-            amplitudeRef={amplitudeRef}
-            theme={theme}
-            orbFraction={ORB_GL_FRACTION}
-          />
+          <Presence3D state={state} theme={theme} orbFraction={ORB_GL_FRACTION} />
         </div>
       </div>
 
@@ -527,29 +468,6 @@ export default function HomeLanding({
                 spellCheck={false}
                 autoComplete="off"
               />
-              {micSupported && (
-                <button
-                  type="button"
-                  className={`hl-mic${listening ? " on" : ""}`}
-                  onClick={onToggleMic}
-                  aria-label={listening ? "Stop listening" : "Speak"}
-                  aria-pressed={listening}
-                >
-                  <MicGlyph active={listening} />
-                </button>
-              )}
-              {micSupported && (
-                <button
-                  type="button"
-                  className={`hl-mic${voiceMode ? " on" : ""}`}
-                  onClick={onToggleVoiceMode}
-                  aria-label="Enter hands-free voice mode"
-                  aria-pressed={voiceMode}
-                  title="Hands-free voice mode"
-                >
-                  <WaveGlyph />
-                </button>
-              )}
               <span className="hl-kbd" aria-hidden>
                 ⌘K
               </span>
@@ -595,68 +513,6 @@ function fmtChg(n: number): string {
 // landing's quiet cluster.
 // ---------------------------------------------------------------------------
 
-/* UX2-T1 — the mobile threads-drawer trigger: three conversation lines. */
-function ThreadsGlyph() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <line x1="4" y1="7" x2="20" y2="7" />
-      <line x1="4" y1="12" x2="16" y2="12" />
-      <line x1="4" y1="17" x2="12" y2="17" />
-    </svg>
-  );
-}
-
-function MicGlyph({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={active ? 2.1 : 1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <rect x="9" y="2" width="6" height="12" rx="3" />
-      <path d="M5 10a7 7 0 0 0 14 0" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-    </svg>
-  );
-}
-
-function WaveGlyph() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <line x1="3" y1="9.5" x2="3" y2="14.5" />
-      <line x1="7.5" y1="6" x2="7.5" y2="18" />
-      <line x1="12" y1="3" x2="12" y2="21" />
-      <line x1="16.5" y1="6" x2="16.5" y2="18" />
-      <line x1="21" y1="9.5" x2="21" y2="14.5" />
-    </svg>
-  );
-}
-
 // BriefGlyph retired with the popup (UX2-T2) — the brief is the home state.
 
 function BellGlyph({ off = false, on = false }: { off?: boolean; on?: boolean }) {
@@ -695,27 +551,6 @@ function BellGlyph({ off = false, on = false }: { off?: boolean; on?: boolean })
       <path d="M8 2a3.5 3.5 0 0 0-3.5 3.5c0 3-1.3 4-1.3 4h9.6s-1.3-1-1.3-4A3.5 3.5 0 0 0 8 2Z" />
       <path d="M6.6 12a1.5 1.5 0 0 0 2.8 0" />
       {on && <circle cx="12.2" cy="3.8" r="2" fill="currentColor" stroke="none" />}
-    </svg>
-  );
-}
-
-function ToneGlyph({ off }: { off?: boolean }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M9 18V6l10-2v12" />
-      <circle cx="6.5" cy="18" r="2.5" />
-      <circle cx="16.5" cy="16" r="2.5" />
-      {off ? <line x1="3" y1="3" x2="21" y2="21" /> : null}
     </svg>
   );
 }

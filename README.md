@@ -1,11 +1,13 @@
 # AUGUST — v0
 
 A personal AI companion behind a single dark, cinematic web page. A living ink-circle
-in the center, one input bar at the bottom. Type to it or talk to it; it replies in
-text and voice, in its own dry, warm, economical voice.
+in the center, one input bar at the bottom. Type to it; it replies in text, in its
+own dry, warm, economical voice.
 
 This is **v0 — the front door**. No map, no external tools, no accounts. A page that
-boots, listens, and talks back with a real personality.
+boots and talks back with a real personality.
+
+> Voice retired Aug 2026: AUGUST does not speak or listen. There is no TTS/STT setup.
 
 ## Run it
 
@@ -19,14 +21,6 @@ boots, listens, and talks back with a real personality.
 
    ```
    ANTHROPIC_API_KEY=sk-ant-...
-   ```
-
-   Optionally add ElevenLabs for a premium voice (without it, AUGUST uses the browser
-   voice):
-
-   ```
-   ELEVENLABS_API_KEY=...
-   ELEVENLABS_VOICE_ID=...
    ```
 
    Optionally add Upstash Redis to give AUGUST **persistent memory** of you across
@@ -51,13 +45,11 @@ boots, listens, and talks back with a real personality.
 ## How it works
 
 - The page loads with a short boot HUD, then the circle resolves out of noise into idle.
-- Type in the bar **or** tap the mic and speak.
+- Type in the bar.
 - Your text + the running conversation go to `/api/chat`, which calls Claude
   (`claude-sonnet-4-6`) with the AUGUST persona and **streams** the reply back.
-- The reply renders as text near the circle **and** is spoken aloud — via ElevenLabs
-  (`eleven_turbo_v2_5`) when configured, otherwise the browser voice.
-- The circle moves through four states — **idle, listening, thinking, speaking** —
-  reacting to live audio amplitude while listening and speaking.
+- The reply renders as text near the circle.
+- The circle moves through its states — **idle, thinking**.
 
 Conversation history lives in memory for the session only. There is no database.
 
@@ -65,15 +57,12 @@ Conversation history lives in memory for the session only. There is no database.
 
 | File | What it is |
 | --- | --- |
-| `app/page.tsx` | The experience — boot, state machine, send/mic loops |
+| `app/page.tsx` | The experience — boot, state machine, send loop |
 | `app/api/chat/route.ts` | Claude proxy, streaming (server-side, holds the key) |
-| `app/api/speak/route.ts` | ElevenLabs TTS proxy, streaming (server-side, holds the key) |
 | `app/api/memory/route.ts` | Background memory updates + `/forget` wipe (server-side) |
-| `components/Circle.tsx` | The living circle: SVG smoke + shards + canvas haze, 4 states |
-| `components/Composer.tsx` | The input bar + mic button |
+| `components/Composer.tsx` | The input bar |
 | `components/Globe.tsx` | MapLibre dark globe — fly-to + labeled marker |
 | `lib/persona.ts` | The AUGUST system prompt + the `USER_NAME` constant |
-| `lib/speech.ts` | STT + TTS helpers — `speak()` is isolated for easy swapping |
 | `lib/memory.ts` | Long-term memory: Upstash profile + summaries, Haiku merge (server-side) |
 | `lib/tools.ts` | Claude tool-use defs (look_closer / close_map) + guidance |
 
@@ -126,8 +115,8 @@ Desk slide (`/?screen=desk`).
   asking AUGUST ("take me to the world", "open the desk", "go to markets") — a
   `go_to_screen` tool slides the deck (markets/intel are accepted aliases for the desk).
 - **Presence** (home) is a Three.js centerpiece of slowly-rotating concentric mechanical
-  rings, audio-reactive off the mic and his TTS (loads `/public/circle.glb` instead if it
-  exists), with corner readouts wired to the live feeds.
+  rings (loads `/public/circle.glb` instead if it exists), with corner readouts wired to
+  the live feeds.
 - **Desk** is the market terminal (BOARD · TAPE · ARCHIVE · SOURCES · OPTIONS): today's
   brief beside a live trade blotter + inspector, the full market grid, past briefs, and the
   sources/options workbench. It lazy-mounts (dynamic import + IntersectionObserver) so the
@@ -139,7 +128,7 @@ Desk slide (`/?screen=desk`).
 
 | Deck file | What it is |
 | --- | --- |
-| `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings, audio-reactive |
+| `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings |
 | `components/Deck.tsx` | Horizontal scroll-snap deck + indicator dots + arrow keys + `goTo()` |
 | `components/command/CommandGlobe.tsx` | MapLibre intelligence globe — flights / quakes / day-night, HUD, toggles |
 | `components/surfaces/CommsSurface.tsx` | Comms surface — Gmail read + draft/confirm/send |
@@ -213,18 +202,9 @@ later passes — each is one more cached proxy route + WebGL layer.
 
 ## Known v0 limits
 
-- **Voice input is desktop-Chrome.** It uses the browser Web Speech API
-  (`SpeechRecognition`), which works on desktop Chrome but is unreliable on iOS Safari.
-  Phone voice comes in v1 via cloud STT (Deepgram / Whisper). v0 is desktop-local.
-- **TTS uses ElevenLabs** (`eleven_turbo_v2_5`) through `app/api/speak`, played back
-  through a Web Audio `AnalyserNode` so the circle pulses to his real voice. If
-  `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` aren't set (or the call fails), `speak()`
-  falls back to the built-in browser voice with a synthetic envelope, so the app always
-  talks. Swapping TTS providers stays a one-function change in
-  [`lib/speech.ts`](lib/speech.ts).
-- Replies are kept tight and speakable (the system prompt enforces this).
+- Replies are kept tight (the system prompt enforces this).
 
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS · `@anthropic-ai/sdk` (server-side) ·
-ElevenLabs TTS · Upstash Redis · MapLibre GL · Three.js · Web Speech API · Canvas + SVG.
+Upstash Redis · MapLibre GL · Three.js · Canvas + SVG.

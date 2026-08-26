@@ -4,13 +4,12 @@
 // browsable signed out).
 //
 // GATED (signed out → 401): lib/route-gates GATED — personal integrations
-// and paid-quota surfaces only (/api/day, /api/comms, /api/inbox, /api/brief,
-// /api/speak, /api/deepgram-token, /api/push/subscribe).
+// and paid-quota surfaces only (/api/brief, /api/push/subscribe).
 //
 // NEVER GATED (AUTH-1a B1, the chat-privacy-hotfix surface): /api/chat,
-// /api/threads, /api/memory, /api/pit — these serve anonymous visitors via
-// per-visitor principals; a missing vid is MINTED, never refused. A session
-// upgrades the principal; its absence changes nothing.
+// /api/memory, /api/pit — these serve anonymous visitors via per-visitor
+// principals; a missing vid is MINTED, never refused. A session upgrades
+// the principal; its absence changes nothing.
 //
 // NOT gated (public data or separately protected):
 //   /api/cron/*  (CRON_SECRET)  ·  /api/markets  ·  /api/quakes
@@ -36,7 +35,7 @@ let warnedUnconfigured = false;
 // param types pin auth()'s middleware overload (not the route-handler one).
 const guard = auth((req: NextAuthRequest, _event: NextFetchEvent) => {
   // AUTH-1a B1: the gate list is data (lib/route-gates) and unit-tested —
-  // the anonymous principal surface (chat/threads/memory/pit) never 401s.
+  // the anonymous principal surface (chat/memory/pit) never 401s.
   // Auth is ADDITIVE: a session upgrades the principal; absence changes nothing.
   if (isGated(req.nextUrl.pathname) && !req.auth?.user) {
     return NextResponse.json({ error: "auth_required" }, { status: 401 });
@@ -68,8 +67,6 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 export const config = {
   matcher: [
     "/api/brief/:path*",
-    "/api/speak/:path*",
-    "/api/deepgram-token/:path*",
     "/api/push/subscribe/:path*",
   ],
 };

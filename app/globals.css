@@ -899,12 +899,9 @@ body::after {
    view panels, dock, and view bar so the sidebar never covers content. — */
 .has-rail {
   --rail-w: 0px;
-  /* UX2-T1 — the LEFT threads sidebar's footprint; 0 unless the chat view
-     carries .has-threads at desktop width */
-  --sb-w: 0px;
   /* UX6 — THE chat column width: transcript, its head row, the ask bar and
      the composer dock all align to this one centered column (measured inside
-     the sidebar+rail-aware panel, so it re-centers as either edge moves) */
+     the rail-aware panel, so it re-centers as the edge moves) */
   --chat-col: 720px;
 }
 @media (min-width: 1100px) {
@@ -920,27 +917,19 @@ body::after {
   .view-tab-ideas {
     display: none;
   }
-  /* UX2-T1 — threads sidebar footprint (chat view only) */
-  .has-threads {
-    --sb-open-w: 244px;
-    --sb-w: var(--sb-open-w);
-  }
-  :root[data-threads="collapsed"] .has-threads {
-    --sb-w: 30px;
-  }
 }
 .has-rail .view-panel {
   right: var(--rail-w);
-  left: var(--sb-w);
+  left: 0;
 }
 .has-rail .dock-wrap {
   right: var(--rail-w);
-  left: var(--sb-w);
+  left: 0;
 }
 .has-rail .view-bar {
-  left: calc(50% + (var(--sb-w) - var(--rail-w)) / 2);
+  left: calc(50% - var(--rail-w) / 2);
 }
-/* UX1/UX2-T1 — the reflow is animated (desktop only; the vars can't
+/* UX1 — the reflow is animated (desktop only; the vars can't
    transition, but the offsets they feed can) */
 @media (min-width: 1100px) {
   .has-rail .view-panel,
@@ -1090,248 +1079,6 @@ body::after {
 @media (min-width: 1100px) {
   .ir-collapse {
     display: inline-flex;
-  }
-}
-
-/* — UX2-T1 · the chat view's LEFT threads sidebar ---------------------------
-   Same anatomy as the ideas rail, mirrored: fixed left sidebar ≥1100px
-   (collapsible to a vertical THREADS edge tab), slide-over drawer below. */
-.threads-sb {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  z-index: 40; /* drawer mode: above the dock and view bar */
-  width: min(300px, 86vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--glass-strong);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-right: 1px solid var(--line);
-  transform: translateX(-102%);
-  visibility: hidden;
-  transition:
-    transform var(--dur-med) var(--ease),
-    visibility 0s linear var(--dur-med);
-}
-.threads-sb.open {
-  transform: none;
-  visibility: visible;
-  transition: transform var(--dur-med) var(--ease);
-}
-.ts-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 39;
-  background: rgba(0, 0, 0, 0.45);
-}
-@media (min-width: 1100px) {
-  .threads-sb {
-    width: var(--sb-open-w, 244px);
-    transform: none;
-    visibility: visible;
-    transition: transform var(--dur-med) var(--ease);
-    z-index: 15;
-    background: var(--glass);
-  }
-  :root[data-threads="collapsed"] .threads-sb {
-    transform: translateX(-102%);
-    visibility: hidden;
-    transition:
-      transform var(--dur-med) var(--ease),
-      visibility 0s linear var(--dur-med);
-  }
-  .ts-scrim,
-  .ts-close {
-    display: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .threads-sb {
-    transition: none;
-  }
-}
-
-/* the collapsed sidebar's edge tab — vertical, mid-left */
-.ts-tab {
-  display: none;
-}
-@media (min-width: 1100px) {
-  .ts-tab {
-    position: fixed;
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-    z-index: 16;
-    display: inline-flex;
-    align-items: center;
-    writing-mode: vertical-rl;
-    rotate: 180deg;
-    padding: 16px 6px;
-    border: 1px solid var(--line);
-    border-left: none;
-    border-radius: 0 var(--r-md) var(--r-md) 0;
-    background: var(--glass-strong);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    font-family: var(--font-mono);
-    font-size: var(--fs-label);
-    letter-spacing: var(--track-label);
-    color: var(--ash);
-    cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-snappy);
-  }
-  .ts-tab:hover {
-    color: var(--bone);
-  }
-  .ts-tab:focus-visible {
-    outline: 1px solid var(--steel);
-    outline-offset: 1px;
-  }
-}
-
-.ts-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: calc(env(safe-area-inset-top, 0px) + 14px) 12px 10px;
-}
-.ts-new {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 9px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: rgb(var(--steel-rgb) / 0.1);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: var(--track-label);
-  color: var(--bone);
-  transition:
-    background var(--dur-fast) var(--ease-snappy),
-    border-color var(--dur-fast) var(--ease-snappy);
-}
-.ts-new:hover {
-  background: rgb(var(--steel-rgb) / 0.18);
-}
-.ts-new:focus-visible {
-  outline: 1px solid var(--steel);
-  outline-offset: 1px;
-}
-.ts-collapse,
-.ts-close {
-  appearance: none;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--ash);
-  font-size: 13px;
-  line-height: 1;
-  padding: 6px 7px;
-  border-radius: var(--r-sm);
-}
-.ts-collapse {
-  display: none;
-}
-@media (min-width: 1100px) {
-  .ts-collapse {
-    display: inline-flex;
-  }
-}
-.ts-collapse:hover,
-.ts-close:hover {
-  color: var(--bone);
-}
-.ts-collapse:focus-visible,
-.ts-close:focus-visible {
-  outline: 1px solid var(--steel);
-  outline-offset: 1px;
-}
-.ts-label {
-  padding: 8px 16px 6px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: var(--track-label);
-  color: var(--ink-mute);
-}
-.ts-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  padding: 0 8px calc(env(safe-area-inset-bottom, 0px) + 16px);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ts-thread {
-  appearance: none;
-  border: none;
-  background: none;
-  cursor: pointer;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border-radius: var(--r-md);
-  text-align: left;
-  color: var(--ash);
-  transition:
-    background var(--dur-fast) var(--ease-snappy),
-    color var(--dur-fast) var(--ease-snappy);
-}
-.ts-thread:hover {
-  background: var(--glass);
-  color: var(--bone);
-}
-.ts-thread.on {
-  background: rgb(var(--steel-rgb) / 0.14);
-  color: var(--bone);
-}
-.ts-thread:focus-visible {
-  outline: 1px solid var(--steel);
-  outline-offset: 1px;
-}
-.ts-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-caption);
-}
-.ts-age {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.06em;
-  color: var(--ink-mute);
-}
-.ts-empty {
-  margin-top: 22px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: var(--track-label);
-  color: var(--ink-mute);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ts-empty-sub {
-  letter-spacing: 0.08em;
-  opacity: 0.7;
-}
-@media (max-width: 700px) {
-  .ts-thread,
-  .ts-new {
-    min-height: 44px;
   }
 }
 
@@ -1647,199 +1394,6 @@ body::after {
   text-transform: uppercase;
   color: var(--steel);
   opacity: 0.55;
-}
-
-/* Morning Brief — the once-a-day spoken read, presented top-centre on Presence.
-   Distinct from THE BRIEF (lower-left per-surface lines). */
-/* Docked to the right (the free mid-right zone beside the orb) so the orb stays
-   the central hero, visible + erupting while AUGUST delivers. */
-.morning-brief {
-  position: absolute;
-  top: 50%;
-  right: clamp(20px, 3.5vw, 52px);
-  left: auto;
-  transform: translateY(-50%);
-  width: clamp(300px, 32vw, 380px);
-  z-index: 8;
-  pointer-events: auto;
-  animation: mb-in 0.6s var(--ease) both;
-}
-@keyframes mb-in {
-  from {
-    opacity: 0;
-    transform: translate(26px, -50%);
-  }
-  to {
-    opacity: 1;
-    transform: translate(0, -50%);
-  }
-}
-/* Bottom-sheet slide for the mobile layout (see the media query below). */
-@keyframes mb-in-sheet {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.mb-card {
-  background: var(--glass-strong);
-  border: 1px solid var(--line);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow-3), inset 0 1px 0 rgb(var(--wash-rgb) / 0.04);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  padding: var(--sp-3) var(--sp-4) 14px;
-  /* Capped to the viewport with the body text scrolling, so a long brief docked
-     at the side never overflows top/bottom (head + controls stay pinned). */
-  display: flex;
-  flex-direction: column;
-  max-height: min(76vh, 600px);
-}
-.mb-card.playing {
-  border-color: var(--accent-line);
-  box-shadow: var(--shadow-3), 0 0 0 1px var(--accent-line), inset 0 1px 0 rgb(var(--steel-rgb) / 0.06);
-}
-.mb-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 9px;
-}
-.mb-eyebrow {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
-  font-size: 9px;
-  color: var(--steel);
-  flex: none;
-}
-.mb-greeting {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--ash);
-  flex: 1;
-}
-.mb-x {
-  font-size: 12px;
-  line-height: 1;
-  color: rgba(154, 154, 159, 0.6);
-  transition: color 0.15s;
-  flex: none;
-}
-.mb-x:hover {
-  color: var(--bone);
-}
-.mb-text {
-  font-size: 14.5px;
-  line-height: 1.62;
-  color: var(--bone);
-  opacity: 0.92;
-  /* The scroll region when the brief is long; head + foot stay pinned. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.mb-foot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 13px;
-  flex-wrap: wrap;
-  flex: none;
-}
-.mb-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 7px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  color: var(--bone);
-  background: rgb(var(--wash-rgb) / 0.03);
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-  flex: none;
-}
-.mb-btn:hover {
-  border-color: rgb(var(--steel-rgb) / 0.5);
-  background: rgb(var(--steel-rgb) / 0.1);
-}
-.mb-play {
-  color: var(--steel);
-}
-.mb-stop {
-  color: var(--amber); /* dark value is the old literal #c9a24a; light gets the ink variant */
-}
-.mb-meta {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--steel);
-  opacity: 0.6;
-}
-.mb-raw {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--neg); /* dark value is the old literal #bb7d72; light gets the ink variant */
-  opacity: 0.85;
-}
-
-/* compact bar — not-yet-compiled / compiling / error */
-.mb-pill {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--glass-strong);
-  border: 1px solid var(--line);
-  border-radius: var(--r-full);
-  box-shadow: var(--shadow-2);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 8px 10px 8px 16px;
-}
-.mb-pill-text {
-  font-size: 12px;
-  color: var(--bone);
-  opacity: 0.82;
-  flex: 1;
-}
-.mb-go {
-  padding: 5px 12px;
-  border-radius: 9999px;
-  color: var(--steel);
-}
-.mb-pulse {
-  animation: mb-pulse 1.5s ease-in-out infinite;
-}
-@keyframes mb-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.95;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .morning-brief {
-    animation: none;
-  }
-  .mb-pulse {
-    animation: none;
-  }
 }
 
 /* generic terminal surface */
@@ -2500,12 +2054,6 @@ body::after {
   align-items: center;
 }
 
-/* The morning-brief pill's sign-in control is an anchor — strip the UA link
-   styling so it reads as its sibling buttons do. */
-a.mb-btn {
-  text-decoration: none;
-}
-
 @media (max-width: 720px) {
   .surface {
     padding: 84px 22px clamp(170px, 24vh, 260px);
@@ -2577,20 +2125,6 @@ a.mb-btn {
     left: 22px;
     right: 22px;
     max-width: none;
-  }
-  /* Mobile: a full-width bottom sheet docked above the composer, so the orb stays
-     visible up top while the brief is delivered. */
-  .morning-brief {
-    top: auto;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 150px);
-    left: 12px;
-    right: 12px;
-    width: auto;
-    transform: none;
-    animation: mb-in-sheet 0.5s var(--ease) both;
-  }
-  .mb-text {
-    font-size: 13.5px;
   }
 }
 
@@ -3288,111 +2822,12 @@ a.mb-btn {
   background: rgb(var(--wash-rgb) / 0.03);
 }
 
-/* Voice-mode toggle — when live it fills with the accent and breathes, an
-   unmistakable "the mic is on" cue (privacy). Contrast colour is --charcoal (the
-   stage), which is dark-on-accent in dark theme and light-on-accent in light. */
-.ctl-voice.on,
-.ctl-voice.on:hover {
-  color: var(--charcoal);
-  background: var(--steel);
-  border-color: var(--steel);
-  animation: voice-live 1.8s var(--ease) infinite;
-}
-@keyframes voice-live {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px rgb(var(--steel-rgb) / 0.22);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgb(var(--steel-rgb) / 0.4);
-  }
-}
-
-/* The persistent "voice mode is live" bar above the composer — shows whose turn
-   it is (listening / thinking / speaking) and an obvious way out. */
-.voice-bar {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 6px 6px 13px;
-  border-radius: var(--r-full);
-  background: rgb(var(--wash-rgb) / 0.04);
-  border: 1px solid var(--line);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  pointer-events: auto;
-  animation: voice-bar-in var(--dur-med) var(--ease) backwards;
-}
-@keyframes voice-bar-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-.voice-bar-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-  background: var(--steel);
-  animation: voice-pulse 1.5s var(--ease) infinite;
-}
-@keyframes voice-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgb(var(--steel-rgb) / 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgb(var(--steel-rgb) / 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgb(var(--steel-rgb) / 0);
-  }
-}
-.voice-bar.voice-thinking .voice-bar-dot {
-  background: var(--ash);
-  animation-duration: 2.4s;
-}
-.voice-bar.voice-speaking .voice-bar-dot {
-  animation-duration: 0.85s;
-}
-.voice-bar-label {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--bone);
-}
-.voice-bar-exit {
-  margin-left: 4px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ash);
-  border: 1px solid var(--line);
-  background: transparent;
-  border-radius: var(--r-full);
-  padding: 4px 10px;
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-}
-.voice-bar-exit:hover {
-  color: var(--bone);
-  border-color: var(--line-strong);
-}
 .reply-text {
   font-size: 13.5px;
   line-height: 1.6;
   color: var(--bone);
   opacity: 0.92;
   white-space: pre-wrap;
-}
-.reply-interim {
-  font-size: 13px;
-  line-height: 1.5;
-  font-style: italic;
-  color: var(--ash);
 }
 .reply-status {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -4120,12 +3555,6 @@ body {
     height: 44px;
     width: 44px;
   }
-  /* On a phone there's no Esc — the in-bar Exit is the primary way out, so give it
-     a thumb-sized hit area. */
-  .voice-bar-exit {
-    padding: 9px 14px;
-    font-size: 10px;
-  }
   .reply-dock {
     max-height: 32vh;
     padding: 8px 14px 11px;
@@ -4192,10 +3621,8 @@ body {
    ====================================================================== */
 
 /* Weighted press: controls dip on press and spring back. */
-.mb-btn,
 .dock-ctl,
 .dock-x,
-.mb-x,
 .widget-retry,
 .comms-connect-btn,
 .command-reset,
@@ -4207,10 +3634,8 @@ body {
     background var(--dur-fast) var(--ease-snappy),
     transform var(--dur-fast) var(--ease-spring);
 }
-.mb-btn:active,
 .dock-ctl:active,
 .dock-x:active,
-.mb-x:active,
 .widget-retry:active,
 .comms-connect-btn:active,
 .command-reset:active,
@@ -4222,10 +3647,8 @@ body {
 /* Focus-visible: one restrained accent ring (charcoal gap + steel), keyboard
    only — pointer clicks don't ring. */
 .ctl-round:focus-visible,
-.mb-btn:focus-visible,
 .dock-ctl:focus-visible,
 .dock-x:focus-visible,
-.mb-x:focus-visible,
 .widget-retry:focus-visible,
 .comms-connect-btn:focus-visible,
 .command-reset:focus-visible,
@@ -4408,55 +3831,6 @@ body {
   max-width: 62vw;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Summon chip — re-opens the Morning Brief. Tucked into the top-right corner (out
-   of the centre stack so the orb + deck dots breathe), clear of the corner tick. */
-.brief-summon {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 14px);
-  /* 112px clears the fixed INTEL link (it spans ~16-90px from the right edge);
-     the old clamp(40px,5vw,72px) always ended INSIDE the link's box → overlap. */
-  right: calc(env(safe-area-inset-right, 0px) + 112px);
-  left: auto;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ash);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-full);
-  padding: 7px 15px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  pointer-events: auto;
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    border-color var(--dur-fast) var(--ease-snappy),
-    transform var(--dur-fast) var(--ease-spring);
-}
-.brief-summon:hover {
-  color: var(--bone);
-  border-color: var(--line-strong);
-}
-.brief-summon:active {
-  transform: scale(0.96);
-}
-.brief-summon:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--charcoal), 0 0 0 3px var(--accent-line);
-}
-.brief-summon-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--steel);
-  box-shadow: 0 0 8px rgb(var(--steel-rgb) / 0.7);
 }
 
 /* Word-rail — the four surfaces as one quiet mono line above the composer band.
@@ -4694,19 +4068,6 @@ button.pulse-line:focus-visible {
 .presence-stack > * {
   pointer-events: auto;
 }
-.presence-stack .morning-brief {
-  position: static;
-  top: auto;
-  right: auto;
-  bottom: auto;
-  left: auto;
-  width: auto;
-  transform: none;
-  flex: 0 1 auto;
-  min-height: 0;
-  /* The dock coords moved to the stack — a plain fade replaces the slide-in. */
-  animation: pulse-card-in 0.6s var(--ease) both;
-}
 .presence-stack .pulse-card {
   position: static;
   left: auto;
@@ -4746,8 +4107,7 @@ button.pulse-line:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .presence-rail,
-  .pulse-card,
-  .presence-stack .morning-brief {
+  .pulse-card {
     transition: none;
     animation: none;
   }
@@ -4777,24 +4137,6 @@ button.pulse-line:focus-visible {
   color: var(--ash);
   opacity: 0.6;
 }
-.composer-mic {
-  color: var(--ash);
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    background var(--dur-fast) var(--ease-snappy);
-}
-.composer-mic:hover {
-  color: var(--bone);
-  background: rgb(var(--wash-rgb) / 0.06);
-}
-.composer-mic.on {
-  color: var(--steel);
-  background: rgb(var(--steel-rgb) / 0.18);
-}
-.composer-mic-ping {
-  background: rgb(var(--steel-rgb) / 0.2);
-}
-
 /* Mobile: tighten the centre type so it stays clear of the lattice. */
 @media (max-width: 760px) {
   .presence-center-t1 {
@@ -5308,30 +4650,6 @@ button.pulse-line:focus-visible {
 .hl-input::placeholder {
   color: var(--dim);
 }
-.hl-mic {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--dim);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    background var(--dur-fast) var(--ease-snappy);
-}
-.hl-mic:hover {
-  color: var(--ink);
-}
-.hl-mic.on {
-  color: var(--label);
-  background: rgba(201, 169, 106, 0.14);
-}
-.hl-mic:focus-visible,
 .hl-chip:focus-visible {
   outline: 1px solid var(--label);
   outline-offset: 2px;
@@ -5392,35 +4710,6 @@ button.pulse-line:focus-visible {
   min-height: 0;
   justify-content: flex-start;
   padding: 0;
-}
-
-/* — activity: real threads (WATCHING moved to the bottom strip, R5) -------- */
-/* UX2-T1 — threads moved to the LEFT sidebar; the mobile trigger sits by the
-   wordmark (hidden ≥1100px where the sidebar is fixed) */
-.hl-threads-btn {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dim);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-snappy);
-}
-.hl-threads-btn:hover {
-  color: var(--ink);
-}
-.hl-threads-btn:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
-@media (min-width: 1100px) {
-  .hl-threads-btn {
-    display: none;
-  }
 }
 
 /* — UX2-T2 · THE DAILY BRIEF — the chat view's home state -------------------
@@ -5680,10 +4969,6 @@ button.pulse-line:focus-visible {
   .hl-account-email {
     max-width: 110px;
   }
-  .hl-mic {
-    width: 44px;
-    height: 44px;
-  }
   .hl-kbd {
     display: none;
   }
@@ -5905,7 +5190,7 @@ button.pulse-line:focus-visible {
 .vixc-line { font-family: var(--font-mono); font-size: 11px; color: var(--body2, var(--dim)); font-style: italic; margin: 0; }
 .hb-nql .nql-bias { font-size: 9px; padding: 1px 6px; }
 
-/* AUTH-1a B2/B3 — chat error state, close, thread deletes */
+/* AUTH-1a B2/B3 — chat error state, close */
 .hl-errline {
   display: flex; align-items: center; gap: 10px; justify-content: center;
   font-family: var(--font-mono); font-size: 11px; color: var(--amber);
@@ -5923,21 +5208,6 @@ button.pulse-line:focus-visible {
   padding: 4px 8px; margin-left: auto;
 }
 .hl-convo-close:hover { color: var(--fg); }
-.ts-row { display: flex; align-items: stretch; }
-.ts-row .ts-thread { flex: 1; min-width: 0; }
-.ts-del {
-  font-family: var(--font-mono); background: none; border: 0; color: var(--steel);
-  cursor: pointer; padding: 0 8px; opacity: 0; transition: opacity 120ms;
-}
-.ts-row:hover .ts-del, .ts-del:focus-visible { opacity: 1; }
-@media (max-width: 1100px) { .ts-del { opacity: 0.6; } } /* touch: always reachable */
-.ts-pending { display: flex; align-items: center; justify-content: space-between; opacity: 0.7; }
-.ts-pending .ts-title { color: var(--steel); font-style: italic; }
-.ts-undo {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
-  background: none; border: 1px solid var(--line); color: var(--fg);
-  padding: 3px 10px; cursor: pointer;
-}
 .hl-newchat {
   display: inline-flex;
   align-items: center;
@@ -5986,7 +5256,7 @@ button.pulse-line:focus-visible {
   /* G3 fix 1: bottom clearance = the dock's MEASURED height (--dock-h,
      ResizeObserver in page.tsx) + the keyboard inset + breathing room — the
      last message can never sit under the input, at any dock composition
-     (voice bar, stop controls) or keyboard state. */
+     (stop controls) or keyboard state. */
   padding: 16px 0
     calc(var(--dock-h, 132px) + var(--kb-inset, 0px) + 18px);
 }
@@ -6008,10 +5278,6 @@ button.pulse-line:focus-visible {
 }
 .hl-msg.aug {
   align-self: stretch;
-}
-.hl-msg.you.interim {
-  opacity: 0.55;
-  font-style: italic;
 }
 
 /* streaming caret — blinks at the end of the in-flight reply */
@@ -6601,10 +5867,6 @@ button.pulse-line:focus-visible {
   }
   .wp-add {
     flex-wrap: wrap;
-  }
-  /* The brief pill's sign-in anchor keeps a 44px touch target on phones. */
-  .mb-signin {
-    min-height: 44px;
   }
 }
 
@@ -7561,18 +6823,15 @@ html.sheet-open .hl-convo,
 html.sheet-open .view-panel {
   overflow: hidden !important;
 }
-.ir-scrim,
-.ts-scrim {
+.ir-scrim {
   touch-action: none;
   overscroll-behavior: contain;
 }
-.ir-body,
-.ts-body {
+.ir-body {
   overscroll-behavior: contain;
 }
 @media (max-width: 1100px) {
-  .ideas-rail,
-  .threads-sb {
+  .ideas-rail {
     width: min(360px, 92vw);
     box-shadow: var(--shadow-3, 0 20px 60px rgba(0, 0, 0, 0.55));
   }

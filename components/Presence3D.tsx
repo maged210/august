@@ -4,14 +4,12 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { Mood } from "@/lib/tools";
 
-export type AugustState = "boot" | "idle" | "listening" | "thinking" | "speaking";
+export type AugustState = "boot" | "idle" | "thinking";
 export type Theme = "dark" | "light" | "batman" | "matrix";
 export type { Mood };
 
 type Props = {
   state: AugustState;
-  /** 0..1 live audio level — mic RMS while listening, TTS envelope while speaking. */
-  amplitudeRef: React.MutableRefObject<number>;
   theme?: Theme;
   /** Accent mood — re-temperatures the orb's light rig (see MOOD_LIGHT). */
   mood?: Mood;
@@ -343,14 +341,9 @@ const CRYSTAL_REST = [0.38, 0.72, 0.16]; // resting euler (rad) — the face it 
 // The states are read off the TUMBLE: the facets doing the work is the whole
 // point of a faceted body. Rates in rad/s.
 const TUMBLE_IDLE = 0.085; // slow, deliberate — a stone turning over
-const TUMBLE_LISTEN = 0.14; // base while listening…
-const TUMBLE_LISTEN_GAIN = 1.5; // …plus this × mic amplitude: it visibly reacts to a voice
 const TUMBLE_THINK = 0.5; // searching — fast, and it hunts (see THINK_SWEEP)
 const TUMBLE_THINK_SWEEP = 0.85; // rad/s of the sweep sine: speed swells and eases = purposeful
-const TUMBLE_SPEAK = 0.16; // speaking rides the pulse more than the spin
-const TUMBLE_SPEAK_GAIN = 0.7;
 const TUMBLE_WOBBLE = 0.42; // cross-axis rate (× the yaw rate) → a real tumble, not a turntable
-const SHIMMER_GAIN = 0.55; // amplitude → envMapIntensity lift: the gem catches light as it speaks
 
 // Deterministic PRNG (mulberry32). Seeded per call, so buildCrystal is pure:
 // identical geometry on server, client, and every HMR pass.
@@ -552,7 +545,6 @@ const KEY_POS = new THREE.Vector3(
 
 export default function Presence3D({
   state,
-  amplitudeRef,
   theme = "dark",
   mood = "steel",
   orbFraction,
@@ -888,14 +880,14 @@ export default function Presence3D({
     // dense short fringe with a few long whipping spikes (power-law length), drifting
     // angular clumps, slow undulation + fast flicker = violent contained energy. All
     // motion is in the vertex shader (uTime/uAmp), so it's GPU-cheap; it flows on its
-    // own at idle and surges with AUGUST's voice.
+    // own at idle and surges with the state energy.
     // ----- tuning knobs (isolated, as asked) -----------------------------------
     const minDim = Math.min(window.innerWidth || 1280, window.innerHeight || 800);
     const weakGPU = (navigator.hardwareConcurrency || 8) <= 4;
     const CORONA_COUNT = minDim < 540 || weakGPU ? 240 : 620; // filament density
     const CORONA_LEN = 1.0; // spike-length scale
     const CORONA_TURB = 1.0; // turbulence / whip
-    const CORONA_GAIN = 1.4; // voice reactivity
+    const CORONA_GAIN = 1.4; // energy reactivity
     const CORONA_RIN = R_ORB * 1.015; // where filaments start (just off the rim)
     const CORONA_MAXLEN = 2.4; // soft-cap asymptote — the longest spikes reach well out (~2.5×)
     // ---------------------------------------------------------------------------
@@ -1120,7 +1112,6 @@ export default function Presence3D({
     // replacement — update() once per frame, then read delta/elapsed.
     const timer = new THREE.Timer();
     let easedGlow = 1;
-    let easedAmp = 0;
     let easedScale = 1;
     // Accumulated tumble angle. The states change the RATE, so the angle is
     // integrated rather than derived from t — a state flip changes the speed
@@ -1146,11 +1137,6 @@ export default function Presence3D({
       const st = stateRef.current;
       const L = LOOK[themeRef.current];
 
-      const rawAmp = Math.max(0, Math.min(1, amplitudeRef.current || 0));
-      const ampRate = rawAmp > easedAmp ? 11 : 4;
-      easedAmp += (rawAmp - easedAmp) * (1 - Math.exp(-dt * ampRate));
-      const amp = easedAmp;
-
       // State → energy (drives corona/glow/rim), scale, and the TUMBLE RATE. On a
       // faceted body the tumble is the loudest signal there is: each state turns
       // the stone with its own character, so a glance tells you which one it's in.
@@ -1158,24 +1144,12 @@ export default function Presence3D({
       let scaleTarget = 1;
       let spinRate = TUMBLE_IDLE; // idle: slow and deliberate, the facets doing the work
       switch (st) {
-        case "listening":
-          // The voice literally drives it: louder in the mic = faster, bigger.
-          energyTarget = 1.15 + amp * 0.7;
-          scaleTarget = 1.012 + amp * 0.03;
-          spinRate = TUMBLE_LISTEN + amp * TUMBLE_LISTEN_GAIN;
-          break;
         case "thinking":
           // Searching: fast, but it swells and eases rather than running flat —
           // the stone is hunting for something, not idling on a turntable.
           energyTarget = 1.3 + 0.1 * Math.sin(t * 1.6);
           scaleTarget = 1.008;
           spinRate = TUMBLE_THINK * (0.55 + 0.45 * Math.sin(t * TUMBLE_THINK_SWEEP));
-          break;
-        case "speaking":
-          // Speaking pulses: the envelope drives scale first, spin second.
-          energyTarget = 1.15 + amp * 1.0;
-          scaleTarget = 1.02 + amp * 0.05;
-          spinRate = TUMBLE_SPEAK + amp * TUMBLE_SPEAK_GAIN;
           break;
         default:
           energyTarget = 1;
@@ -1185,12 +1159,12 @@ export default function Presence3D({
       easedGlow += (energyTarget - easedGlow) * Math.min(1, dt * 3);
       easedScale += (scaleTarget - easedScale) * Math.min(1, dt * 3);
 
-      // Corona: a flowing particle field driven by the voice envelope + state
-      // energy. All motion is in the shader — we just feed it time + amplitude, so
-      // orb and corona breathe and surge as one living thing.
+      // Corona: a flowing particle field driven by the state energy. All motion
+      // is in the shader — we just feed it time + energy, so orb and corona
+      // breathe and surge as one living thing.
       const coronaAmp = reduced
-        ? Math.min(0.5, (easedGlow - 1) * 0.4 + amp * 0.6)
-        : Math.min(1.4, (easedGlow - 1) * 0.7 + amp * 1.15);
+        ? Math.min(0.5, (easedGlow - 1) * 0.4)
+        : Math.min(1.4, (easedGlow - 1) * 0.7);
       coronaMat.uniforms.uTime.value = reduced ? t * 0.15 : t;
       coronaMat.uniforms.uAmp.value = coronaAmp;
 
@@ -1203,12 +1177,12 @@ export default function Presence3D({
       keyLight.color.lerp(tint.key, ck);
       fillLight.color.lerp(tint.fill, ck);
 
-      // Living rim — a slow shimmer rides on the state/voice response.
+      // Living rim — a slow shimmer rides on the state response.
       const rimShimmer = reduced ? 1 : 1 + Math.sin(t * 1.1) * 0.06;
       rimMat.uniforms.uIntensity.value =
-        L.rimIntensity * (0.85 + (easedGlow - 1) * 0.6 + amp * 0.5) * rimShimmer;
-      glowMat.opacity = L.glowOpacity * moodEnergy * (0.85 + (easedGlow - 1) * 0.9 + amp * 0.8);
-      const glowPulse = reduced ? 1 : 1 + Math.sin(t * 0.7) * 0.05 + amp * 0.18;
+        L.rimIntensity * (0.85 + (easedGlow - 1) * 0.6) * rimShimmer;
+      glowMat.opacity = L.glowOpacity * moodEnergy * (0.85 + (easedGlow - 1) * 0.9);
+      const glowPulse = reduced ? 1 : 1 + Math.sin(t * 0.7) * 0.05;
       glow.scale.setScalar(glowPulse);
 
       // Starfield: an extremely slow roll around the view axis + one whole-cloud
@@ -1219,14 +1193,9 @@ export default function Presence3D({
           starBase * (1 + Math.sin(t * STARS.twinkleHz * Math.PI * 2) * STARS.twinkle);
       }
 
-      // Shimmer: the voice lifts how hard the room burns into the facets, so the
-      // stone visibly catches light as it reacts — the reflection-side of the
-      // amplitude response that the scale pulse handles geometrically.
-      crystalMat.envMapIntensity = L.envIntensity * (1 + amp * SHIMMER_GAIN);
-
       // Slow breathing + a gentle drift at idle.
       const breathe = reduced ? 0 : Math.sin(t * 0.62) * 0.011 + Math.sin(t * 0.29) * 0.006;
-      root.scale.setScalar(easedScale + breathe + amp * (reduced ? 0.01 : 0.04));
+      root.scale.setScalar(easedScale + breathe);
       if (!reduced) {
         root.rotation.z = Math.sin(t * 0.07) * 0.03;
         root.position.y = Math.sin(t * 0.45) * 0.03;
@@ -1323,7 +1292,7 @@ export default function Presence3D({
       renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
-  }, [amplitudeRef, orbFraction]);
+  }, [orbFraction]);
 
   return <div ref={mountRef} className="presence-3d" />;
 }

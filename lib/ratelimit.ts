@@ -25,22 +25,19 @@ function getRedis(): Redis {
 }
 
 type RouteKey =
-  | "chat" | "speak" | "intel" | "memory" | "inbox" | "brief" | "token"
+  | "chat" | "intel" | "memory" | "inbox" | "brief"
   | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
-  | "threads" | "watchlist" | "feeds" | "ideas" | "admin" | "transcripts"
+  | "watchlist" | "feeds" | "ideas" | "admin" | "transcripts"
   | "bars" | "tape" | "wire" | "headlines" | "pit" | "account" | "quotes" | "desk";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
   chat: 10,   // Anthropic tokens — most expensive
-  speak: 40,  // ElevenLabs quota — raised for per-sentence voice pipelining (≈2-4 short
-              // calls per spoken turn instead of 1); still bounds runaway cost
   intel: 30,  // Anthropic synthesis but heavily cached, generous
   memory: 20, // Upstash writes + occasional Anthropic summarisation
   inbox: 20,  // Gmail API quota — read-only, server-cached
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
-  token: 30,  // Deepgram STT grant-token mint — cheap, one per voice session/~2min, generous
   intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
   intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
   intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
@@ -52,7 +49,6 @@ const LIMITS: Record<RouteKey, number> = {
   commsSend: 10, // Gmail send — tight: each send dispatches real mail
   watchers: 10, // Watchers cron — an external ~15min pinger is far under this
   "intel-track": 10, // Idea Tracker cron — same external-pinger profile as watchers
-  threads: 30, // conversation persistence — one background POST per completed reply
   watchlist: 30, // per-user watchlist reads/writes — cheap Redis ops
   feeds: 30,  // per-user feed prefs + onboarded flag — cheap Redis ops
   ideas: 30,  // public trade-ideas rail — cheap Redis read, 60s client poll

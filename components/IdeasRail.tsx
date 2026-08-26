@@ -65,8 +65,7 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
     return () => window.clearInterval(id);
   }, []);
 
-  // Esc handling lives in the page's single Esc stack (voice mode → drawer →
-  // reply panel) — a listener here could shadow the voice-mode kill switch.
+  // Esc handling lives in the page's single Esc stack (drawer → reply panel).
 
   const count = ideas?.length ?? 0;
 
