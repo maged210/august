@@ -1,20 +1,14 @@
-// Voice-turn latency trace. Hands-free voice runs ONE turn at a time, so a single
-// module-level record is enough. Each mark logs its delta from the relevant prior
-// mark with a [LAT] prefix, so the trace streams live in the console and is robust
-// to out-of-order completion — with sentence-pipelining, first audio (t4) can land
-// BEFORE the LLM finishes (t2b), which is exactly the win we want to see.
+// Chat-turn latency trace. One turn at a time, so a single module-level record
+// is enough. Each mark logs its delta from the relevant prior mark with a [LAT]
+// prefix, so the trace streams live in the console.
 //
 // Marks (all relative to t0):
-//   t0   transcript committed (speech_final / UtteranceEnd) ≈ handleSend start — turn start
+//   t0   handleSend start — turn start
 //   t1   /api/chat request sent
 //   t2   /api/chat FIRST token received
 //   t2b  /api/chat full response done
-//   t3   first /api/speak request sent
-//   t4   first audio plays   ← HEADLINE: t0→t4 = time-to-first-audio
-//
-// Spans page.tsx (t0,t1,t2,t2b) and lib/speech.ts (t3,t4) via this shared module.
 
-type Key = "t0" | "t1" | "t2" | "t2b" | "t3" | "t4";
+type Key = "t0" | "t1" | "t2" | "t2b";
 
 const isBrowser = typeof window !== "undefined";
 const now = (): number =>
@@ -43,7 +37,7 @@ export function latMark(key: Key): void {
   if (!active || marks[key] !== undefined) return;
   const t = now();
   marks[key] = t;
-  const { t0, t1, t2, t3 } = marks;
+  const { t0, t1, t2 } = marks;
   switch (key) {
     case "t1":
       console.log(`[LAT] t0→t1   ${delta(t0, t)}  · chat request sent`);
@@ -53,15 +47,6 @@ export function latMark(key: Key): void {
       break;
     case "t2b":
       console.log(`[LAT] t2→t2b  ${delta(t2, t)}  · LLM full response`);
-      break;
-    case "t3":
-      console.log(`[LAT] t0→t3   ${delta(t0, t)}  · first TTS request sent`);
-      break;
-    case "t4":
-      console.log(`[LAT] t3→t4   ${delta(t3, t)}  · TTS first audio`);
-      console.log(
-        `[LAT] ⭐ t0→t4 ${delta(t0, t)}  · TIME-TO-FIRST-AUDIO (stop talking → Daniel speaks)`,
-      );
       break;
   }
 }

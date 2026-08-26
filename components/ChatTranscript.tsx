@@ -16,8 +16,6 @@ type ChatTranscriptProps = {
   messages: ChatMessage[];
   /** Streaming / unfinalized assistant text (a partial, or a system feedback line). */
   replyText: string;
-  /** Live STT partial while the mic is open. */
-  interim: string;
   /** He's generating — shows the caret on the streaming line, or dots before it. */
   thinking: boolean;
   onNewChat: () => void;
@@ -29,7 +27,6 @@ type ChatTranscriptProps = {
 export default function ChatTranscript({
   messages,
   replyText,
-  interim,
   thinking,
   onNewChat,
   error,
@@ -59,7 +56,7 @@ export default function ChatTranscript({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming, interim, thinking, error]);
+  }, [messages, streaming, thinking, error]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -107,7 +104,6 @@ export default function ChatTranscript({
               {thinking ? <span className="hl-caret" aria-hidden /> : null}
             </div>
           ) : null}
-          {interim ? <div className="hl-msg you interim">{interim}</div> : null}
           {thinking && !streaming ? (
             <div className="hl-msg aug hl-thinking" aria-label="AUGUST is thinking">
               <span aria-hidden />

@@ -1,7 +1,7 @@
 // AUTH-1a B1 — the session-gate route list as DATA, pure and unit-tested.
 //
 // LAW (SCOPE RULING, DESIGN_LAWS L10): auth is ADDITIVE. Every route that
-// serves anonymous visitors through the per-visitor principal (chat, threads,
+// serves anonymous visitors through the per-visitor principal (chat,
 // memory — the chat-privacy-hotfix surface) must NEVER be middleware-gated:
 // a missing visitor id gets minted, never refused. The middleware gates only
 // the truly personal / spend surfaces that have no anonymous mode.
@@ -13,10 +13,9 @@
  *  and paid-quota surfaces only. */
 export const GATED: readonly string[] = [
   // (R1 A1: /api/day, /api/comms, /api/inbox routes were DELETED with their
-  //  parked surfaces — rebuild from git when wanted)
+  //  parked surfaces — rebuild from git when wanted. Voice retirement Aug 2026
+  //  deleted /api/speak + /api/deepgram-token outright.)
   "/api/brief", // personal calendar+inbox brief (headlines are separate + public)
-  "/api/speak", // ElevenLabs quota
-  "/api/deepgram-token", // Deepgram grant mint
   "/api/push/subscribe", // per-user device subscriptions
 ];
 
@@ -24,7 +23,6 @@ export const GATED: readonly string[] = [
  *  so the suite can assert they never appear in GATED. */
 export const ANONYMOUS_SURFACE: readonly string[] = [
   "/api/chat",
-  "/api/threads",
   "/api/memory",
   "/api/pit",
   "/api/ideas",

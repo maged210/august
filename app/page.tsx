@@ -4,36 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatTranscript from "@/components/ChatTranscript";
 import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
-import ThreadsSidebar from "@/components/ThreadsSidebar";
 import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
-// MorningBrief popup parked (UX2-T2) — the daily brief renders AS the chat
-// view's home state (HomeBrief inside HomeLanding); only the spoken "brief
-// me" voice path still reads the compiled text below.
-import type { MorningBriefData } from "@/components/MorningBrief";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import PitSurface from "@/components/surfaces/PitSurface";
 import { resolveView, type ViewId } from "@/lib/screens";
 import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
-import {
-  createRecognizer,
-  createSpeechQueue,
-  isRecognitionSupported,
-  primeAudio,
-  primeVoices,
-  speak,
-  type Recognizer,
-  type RecognizerCallbacks,
-  type SpeakHandle,
-  type SpeechQueue,
-} from "@/lib/speech";
-import {
-  closeDeepgramAudio,
-  createDeepgramRecognizer,
-  isDeepgramRecognizerSupported,
-  probeDeepgram,
-} from "@/lib/deepgram";
 import { latMark, latReset } from "@/lib/latency";
 import {
   enablePush,
@@ -41,7 +18,7 @@ import {
   registerServiceWorker,
   type PushState,
 } from "@/lib/push-client";
-import { playTone, setSoundEnabled, soundEnabled, type UiTone } from "@/lib/sound";
+import { playTone, soundEnabled, type UiTone } from "@/lib/sound";
 
 // WebGL components load only in the browser, and each heavy view owns its own
 // laziness: HomeLanding carries the Presence orb's dynamic import and
@@ -79,77 +56,12 @@ function splitToolStream(raw: string): { text: string; tools: ToolEvent[] } {
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
-// Index just past the first sentence terminator at/after `from` whose chunk is at
-// least `minLen` chars (for streaming TTS): lets the queue speak each sentence as it
-// completes while the rest of the reply still generates. Returns -1 if no usable
-// boundary yet. minLen avoids splitting on a stray early "1." / "Mr." and lets us
-// keep the FIRST chunk small (fast first audio) but coalesce later ones (fewer
-// /api/speak calls — the route is rate-limited).
-function sentenceChunkEnd(s: string, from: number, minLen: number): number {
-  const re = /[.!?…]["')\]]?(?:\s|$)/g;
-  re.lastIndex = from;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    const end = m.index + m[0].length;
-    if (end - from >= minLen) return end;
-  }
-  return -1;
-}
-
-// ---------------------------------------------------------------------------
-// Real microphone amplitude via a Web Audio AnalyserNode — drives "listening".
-// ---------------------------------------------------------------------------
-async function startMicLevel(
-  amplitudeRef: React.MutableRefObject<number>,
-): Promise<() => void> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const AC: typeof AudioContext =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const audioCtx = new AC();
-  const source = audioCtx.createMediaStreamSource(stream);
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.8;
-  source.connect(analyser);
-
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  let raf = 0;
-  const loop = () => {
-    analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const v = (data[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / data.length);
-    amplitudeRef.current = Math.min(1, rms * 3.4);
-    raf = requestAnimationFrame(loop);
-  };
-  loop();
-
-  return () => {
-    cancelAnimationFrame(raf);
-    stream.getTracks().forEach((t) => t.stop());
-    audioCtx.close().catch(() => {});
-    amplitudeRef.current = 0;
-  };
-}
-
-// ---------------------------------------------------------------------------
-
 export default function Home() {
   const [state, setState] = useState<AugustState>("boot");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [replyText, setReplyText] = useState("");
   // B2 — failures are a styled system state, never an AUGUST message
   const [chatError, setChatError] = useState<string | null>(null);
-  const [interim, setInterim] = useState("");
-  const [micSupported, setMicSupported] = useState(false);
-  // Deepgram streaming STT availability (server key present + browser can run the
-  // pipeline). Preferred over Web Speech everywhere — it's the reliable, phone-first
-  // engine. Web Speech remains the fallback when Deepgram isn't configured.
-  const [deepgramAvailable, setDeepgramAvailable] = useState(false);
   const [booted, setBooted] = useState(false);
   // CORE V2 — the single page's two views: Chat (the Presence orb + reply dock)
   // and the Intel Terminal (the embedded desk / public ideas feed). Driven by
@@ -170,25 +82,10 @@ export default function Home() {
   const railSyncedRef = useRef(false);
   // (F9 removed the desktop IDEAS-tab behavior — the media-query effect below
   // now only clears stale drawer flags when crossing up past 1100px.)
-  // UX2-T1 — the chat view's LEFT threads sidebar: drawer below 1100px,
-  // collapsible fixed sidebar above (same contracts as the ideas rail:
-  // data-threads applied pre-paint, aug-threads in localStorage).
-  const [threadsOpen, setThreadsOpen] = useState(false);
-  const threadsOpenRef = useRef(false);
-  const [threadsCollapsed, setThreadsCollapsed] = useState(false);
-  const threadsSyncedRef = useRef(false);
-  // the conversation on screen (drives the sidebar's active highlight)
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  // Reply panel controls: dismissible, expandable transcript, persistent voice mute.
+  // Reply panel controls: dismissible, expandable transcript.
   const [panelOpen, setPanelOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dockClosing, setDockClosing] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [soundOn, setSoundOn] = useState(true);
-  // Morning Brief — the compiled spoken read. UX2-T2 removed its popup; the
-  // text is kept only so "brief me" (voice) can still play it.
-  const [brief, setBrief] = useState<MorningBriefData | null>(null);
-  const [briefPlaying, setBriefPlaying] = useState(false);
   // Matrix / dark / light / gotham theme — persisted; the toggle flips the
   // whole token system. Matrix is the CORE V2 default stage.
   const [theme, setTheme] = useState<Theme>("matrix");
@@ -199,46 +96,17 @@ export default function Home() {
   // VISIBLE (~80% of the original loudness) is the default. Lives beside the
   // theme control; applies live to the page-level canvas behind both views.
   const [rainPreset, setRainPreset] = useState<RainPreset>("visible");
-  // Hands-free voice mode: a continuous listen → think → speak → listen loop.
-  const [voiceMode, setVoiceMode] = useState(false);
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
   // Starts "unsupported" so SSR + first client render match; the mount effect resolves it.
   const [pushState, setPushState] = useState<PushState>("unsupported");
-  // One-shot screen-reader announcements for the privacy-critical transitions
-  // (mic goes live / off) — a persistent live region the visual bar can't cover.
-  const [voiceAnnounce, setVoiceAnnounce] = useState("");
 
-  const amplitudeRef = useRef(0);
-  // Voice-mode loop refs (read inside recognizer/speech callbacks that outlive a render).
-  const voiceModeRef = useRef(false);
-  // Mirror of deepgramAvailable for the recognizer selection inside beginListening
-  // (called from timers/callbacks that close over a stale render).
-  const deepgramAvailableRef = useRef(false);
-  const speechQueueRef = useRef<SpeechQueue | null>(null);
-  const reArmTimerRef = useRef(0);
-  const voiceErrorsRef = useRef(0);
-  // Last STT diagnostic (e.g. a Deepgram close code) — shown if voice falls back.
-  const voiceDiagRef = useRef("");
   const messagesRef = useRef<ChatMessage[]>([]);
-  const speakHandleRef = useRef<SpeakHandle | null>(null);
-  const recognizerRef = useRef<Recognizer | null>(null);
-  const micCleanupRef = useRef<(() => void) | null>(null);
-  const listeningActiveRef = useRef(false);
-  // Monotonic counter stamped per beginListening() call so stale async callbacks
-  // from a prior recognizer (fired after we've torn it down and started a new one)
-  // are ignored rather than corrupting shared refs or triggering double re-arms.
-  const recSessionRef = useRef(0);
   const sessionIdRef = useRef<string>("");
-  // Server-side conversation thread (the landing's RECENT THREADS). null until
-  // the first completed exchange persists one; a page load or /forget starts a
-  // fresh conversation → fresh thread. Best-effort only — never blocks chat.
-  const threadIdRef = useRef<string | null>(null);
   // Mirror of `view` for callbacks that outlive a render (switchView reads it
   // to decide whether a switch actually changes anything).
   const viewRef = useRef<ViewId>("chat");
   const replyDockRef = useRef<HTMLDivElement | null>(null);
   const dockWrapRef = useRef<HTMLDivElement | null>(null);
-  const mutedRef = useRef(false);
   const soundOnRef = useRef(true);
   const closeTimerRef = useRef(0);
   const themingTimerRef = useRef(0);
@@ -262,10 +130,6 @@ export default function Home() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [replyText, historyOpen, messages]);
 
-  useEffect(() => {
-    mutedRef.current = muted;
-  }, [muted]);
-
   // Open/close the reply panel with the dock-in/dock-out animations.
   const openPanel = useCallback(() => {
     window.clearTimeout(closeTimerRef.current);
@@ -283,16 +147,12 @@ export default function Home() {
     }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
   }, []);
 
-  // ONE Esc stack, owned here (a second capture-phase listener elsewhere could
-  // shadow the voice-mode kill switch — the privacy-critical one): voice mode
-  // exits first, then the ideas drawer closes, then the reply panel dismisses.
-  // Works even while typing.
+  // ONE Esc stack, owned here: the ideas drawer closes first, then the reply
+  // panel dismisses. Works even while typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (voiceModeRef.current) exitVoiceMode();
-      else if (threadsOpenRef.current) setThreadsOpen(false);
-      else if (railOpenRef.current) setRailOpen(false);
+      if (railOpenRef.current) setRailOpen(false);
       else closePanel();
     };
     window.addEventListener("keydown", onKey);
@@ -304,10 +164,6 @@ export default function Home() {
     railOpenRef.current = railOpen;
   }, [railOpen]);
 
-  useEffect(() => {
-    threadsOpenRef.current = threadsOpen;
-  }, [threadsOpen]);
-
   // Crossing up past 1100px turns the drawer into the sidebar — clear the
   // drawer flag so a stale `open` can't silently eat an Esc later. The same
   // query drives what the IDEAS tab toggles (collapse vs drawer).
@@ -315,8 +171,7 @@ export default function Home() {
     const mq = window.matchMedia("(min-width: 1100px)");
     const apply = () => {
       if (mq.matches) {
-        setRailOpen(false);
-        setThreadsOpen(false); // drawer → sidebar; clear the drawer flags
+        setRailOpen(false); // drawer → sidebar; clear the drawer flag
       }
     };
     apply();
@@ -346,33 +201,12 @@ export default function Home() {
 
   const toggleRailCollapsed = useCallback(() => setRailCollapsed((v) => !v), []);
 
-  // UX2-T1 — threads sidebar collapse: same adopt-then-sync contract.
-  useEffect(() => {
-    setThreadsCollapsed(document.documentElement.getAttribute("data-threads") === "collapsed");
-  }, []);
-  useEffect(() => {
-    if (!threadsSyncedRef.current) {
-      threadsSyncedRef.current = true; // first run mirrors the pre-paint attribute
-      return;
-    }
-    const el = document.documentElement;
-    if (threadsCollapsed) el.setAttribute("data-threads", "collapsed");
-    else el.removeAttribute("data-threads");
-    try {
-      window.localStorage.setItem("aug-threads", threadsCollapsed ? "collapsed" : "open");
-    } catch {
-      /* private mode — won't persist */
-    }
-  }, [threadsCollapsed]);
-
-  const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed((v) => !v), []);
-
   // M3 — while a sheet is open, the page behind it must not scroll (the
   // sheets scroll internally; the scrim owns the rest of the screen).
   useEffect(() => {
-    document.documentElement.classList.toggle("sheet-open", railOpen || threadsOpen);
+    document.documentElement.classList.toggle("sheet-open", railOpen);
     return () => document.documentElement.classList.remove("sheet-open");
-  }, [railOpen, threadsOpen]);
+  }, [railOpen]);
 
   // Clicking anywhere outside the dock + composer cluster dismisses the panel.
   useEffect(() => {
@@ -385,7 +219,7 @@ export default function Home() {
     return () => document.removeEventListener("pointerdown", onDown);
   }, [panelOpen, closePanel]);
 
-  // Boot: prime the voice list, detect mic support, resolve into idle.
+  // Boot: resolve into idle.
   useEffect(() => {
     if (!sessionIdRef.current) {
       sessionIdRef.current =
@@ -393,41 +227,13 @@ export default function Home() {
           ? crypto.randomUUID()
           : `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     }
-    primeVoices();
-    setMicSupported(isRecognitionSupported());
-    try {
-      if (window.localStorage.getItem("aug-muted") === "1") {
-        setMuted(true);
-        mutedRef.current = true;
-      }
-    } catch {
-      /* private mode — mute just won't persist */
-    }
-    const on = soundEnabled();
-    setSoundOn(on);
-    soundOnRef.current = on;
+    soundOnRef.current = soundEnabled();
     const id = window.setTimeout(() => {
       setState("idle");
       setBooted(true);
-      if (soundOnRef.current && !mutedRef.current) playTone("ready");
+      if (soundOnRef.current) playTone("ready");
     }, 2200);
     return () => window.clearTimeout(id);
-  }, []);
-
-  // Probe Deepgram STT once on mount (server key present + browser can run the
-  // pipeline). When available it becomes the STT engine for both voice mode and
-  // tap-to-talk; otherwise the loop falls back to Web Speech, then text.
-  useEffect(() => {
-    let cancelled = false;
-    probeDeepgram().then((configured) => {
-      if (cancelled) return;
-      const usable = configured && isDeepgramRecognizerSupported();
-      deepgramAvailableRef.current = usable;
-      setDeepgramAvailable(usable);
-    });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   // PWA: register the (minimal) service worker and resolve the push-control state.
@@ -482,65 +288,10 @@ export default function Home() {
     };
   }, []);
 
-  // Cleanup on unmount.
-  useEffect(() => {
-    return () => {
-      try {
-        window.speechSynthesis?.cancel();
-      } catch {
-        /* noop */
-      }
-      micCleanupRef.current?.();
-      recognizerRef.current?.stop();
-      speakHandleRef.current?.cancel();
-      speechQueueRef.current?.cancel();
-      closeDeepgramAudio();
-      window.clearTimeout(reArmTimerRef.current);
-    };
-  }, []);
-
-  function stopSpeaking() {
-    speakHandleRef.current?.cancel();
-    speakHandleRef.current = null;
-    speechQueueRef.current?.cancel();
-    speechQueueRef.current = null;
-    amplitudeRef.current = 0;
-    // The brief shares the single speak handle — if it was reading, the card's
-    // control must fall back from Stop to Replay.
-    setBriefPlaying(false);
-  }
-
-  function stopListening() {
-    listeningActiveRef.current = false;
-    recognizerRef.current?.stop();
-    recognizerRef.current = null;
-    micCleanupRef.current?.();
-    micCleanupRef.current = null;
-    amplitudeRef.current = 0;
-  }
-
-  // UI tones obey both switches: the sound toggle, and the voice mute
-  // (sounds never play while muted).
+  // UI tones obey the stored sound preference.
   function uiTone(name: UiTone) {
-    if (!soundOnRef.current || mutedRef.current) return;
+    if (!soundOnRef.current) return;
     playTone(name);
-  }
-
-  function toggleMute() {
-    const next = !mutedRef.current;
-    mutedRef.current = next;
-    setMuted(next);
-    try {
-      window.localStorage.setItem("aug-muted", next ? "1" : "0");
-    } catch {
-      /* non-persistent */
-    }
-    if (next) {
-      stopSpeaking();
-      setState((s) => (s === "speaking" ? "idle" : s));
-    } else if (soundOnRef.current) {
-      playTone("toggle"); // only audible feedback on UNmute — never while muted
-    }
   }
 
   // The bell control. Deliberate, never auto-prompted. On a fresh browser it requests
@@ -588,340 +339,9 @@ export default function Home() {
     openPanel();
   }
 
-  function toggleSound() {
-    const next = !soundOnRef.current;
-    soundOnRef.current = next;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    if (next && !mutedRef.current) playTone("toggle");
-  }
-
   function stopGeneration() {
     // Halts the in-flight stream; the partial text stays on screen.
     abortRef.current?.abort();
-  }
-
-  function stopVoice() {
-    // Skip his current speech. In voice mode that hands the turn back to you
-    // (re-arm); otherwise settle to idle.
-    stopSpeaking();
-    concludeSpeech();
-  }
-
-  // --- Hands-free voice mode ------------------------------------------------
-  // A continuous loop: listen (user mic → orb) → think → speak (Daniel → orb) →
-  // listen again, no per-turn buttons. It reuses the existing recognizer, the
-  // existing /api/chat brain (persona + memory + tools), and ElevenLabs speak().
-  // BARGE-IN is intentionally out of scope for v1 — AUGUST finishes speaking
-  // before the mic re-opens. The hook for it would live here: while the speech
-  // queue plays, run a lightweight mic VAD and, on detected user speech, call
-  // stopSpeaking() + beginListening(). Not built now (needs echo cancellation so
-  // his own voice doesn't trigger it).
-
-  // Single-slot timer, last-writer-wins: re-arm callers (concludeSpeech, silence
-  // onEnd, benign-error onError) are mutually exclusive within a turn, so clearing
-  // the prior pending re-arm before scheduling a new one is intentional de-dup —
-  // never two live re-arms at once. The fire-time check makes a late timer a no-op
-  // after exit (voiceModeRef cleared) or once listening has already resumed.
-  function reArmListen(delay: number) {
-    window.clearTimeout(reArmTimerRef.current);
-    reArmTimerRef.current = window.setTimeout(() => {
-      if (voiceModeRef.current && !listeningActiveRef.current) beginListening();
-    }, delay);
-  }
-
-  // The single continuation after ANY spoken turn ends: in voice mode, loop back
-  // to listening; otherwise settle to idle.
-  function concludeSpeech() {
-    amplitudeRef.current = 0;
-    speakHandleRef.current = null;
-    speechQueueRef.current = null;
-    // In voice mode, loop straight back to listening (beginListening flips the
-    // state ~150ms later); the orb stays at its calm speaking baseline in the gap
-    // — no "thinking" flash after he's already finished talking.
-    if (voiceModeRef.current) reArmListen(150);
-    else setState("idle");
-  }
-
-  function speakReply(text: string) {
-    if (mutedRef.current) {
-      concludeSpeech();
-      return;
-    }
-    setState("speaking");
-    speakHandleRef.current = speak(text, {
-      onLevel: (v) => {
-        amplitudeRef.current = v;
-      },
-      onEnd: () => concludeSpeech(),
-      onError: () => concludeSpeech(),
-    });
-  }
-
-  // Open the mic for one utterance. Shared by tap-to-talk and the voice-mode
-  // loop; the recognizer callbacks branch on voiceModeRef for re-arm vs idle.
-  function beginListening() {
-    stopListening(); // tear down any prior capture first
-    primeAudio();
-    stopSpeaking();
-    if (!voiceModeRef.current) setReplyText(""); // tap clears; voice keeps last reply visible
-    setInterim("");
-    openPanel();
-    listeningActiveRef.current = true;
-    setState("listening");
-
-    // Stamp this recognizer instance. Callbacks capture mySession at creation time
-    // and bail immediately if recSessionRef has moved on — prevents a stale onerror/
-    // onend (fired async after stopListening → rec.stop()) from corrupting the new
-    // session's listeningActiveRef or scheduling a spurious re-arm.
-    const mySession = ++recSessionRef.current;
-
-    // Deepgram owns its own audio graph and reports the mic level via onLevel;
-    // Web Speech can't, so only in that fallback do we run a separate analyser
-    // to drive the listening orb.
-    const useDeepgram = deepgramAvailableRef.current;
-    if (!useDeepgram) {
-      startMicLevel(amplitudeRef)
-        .then((cleanup) => {
-          if (recSessionRef.current === mySession && listeningActiveRef.current) {
-            micCleanupRef.current = cleanup;
-          } else {
-            cleanup();
-          }
-        })
-        .catch(() => {
-          /* analyser is optional — recognition still works without the orb meter */
-        });
-    }
-
-    const callbacks: RecognizerCallbacks = {
-      onLevel: (v) => {
-        if (recSessionRef.current === mySession && listeningActiveRef.current) {
-          amplitudeRef.current = v;
-        }
-      },
-      onStart: () => {
-        // A real capture start (Deepgram fires this on socket open) is strong
-        // evidence the transient trouble cleared — reset the streak so the "5
-        // consecutive failures" semantics stay actually consecutive.
-        if (recSessionRef.current !== mySession) return;
-        voiceErrorsRef.current = 0;
-        voiceDiagRef.current = "";
-      },
-      onPartial: (t) => {
-        if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
-        setInterim(t);
-      },
-      onResult: (t) => {
-        if (recSessionRef.current !== mySession || !listeningActiveRef.current) return;
-        listeningActiveRef.current = false;
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        setInterim("");
-        voiceErrorsRef.current = 0; // a clean capture clears the error streak
-        voiceDiagRef.current = "";
-        if (voiceModeRef.current) handleTranscript(t);
-        else handleSend(t);
-      },
-      onEnd: () => {
-        if (recSessionRef.current !== mySession) return; // stale — already restarted
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        if (listeningActiveRef.current) {
-          // ended on silence with no transcript — restart promptly
-          listeningActiveRef.current = false;
-          setInterim("");
-          if (voiceModeRef.current) reArmListen(300);
-          else setState((s) => (s === "listening" ? "idle" : s));
-        }
-      },
-      onError: (err, detail) => {
-        if (recSessionRef.current !== mySession) return; // stale — ignore completely
-        if (detail) voiceDiagRef.current = detail; // e.g. a Deepgram close code
-        micCleanupRef.current?.();
-        micCleanupRef.current = null;
-        amplitudeRef.current = 0;
-        const wasActive = listeningActiveRef.current;
-        listeningActiveRef.current = false;
-        setInterim("");
-
-        // Intentional stop (new turn / exit called rec.stop()) — don't re-arm.
-        if (err === "aborted") {
-          if (!voiceModeRef.current && wasActive) setState((s) => (s === "listening" ? "idle" : s));
-          return;
-        }
-
-        // Voice setup couldn't load (AudioWorklet module fetch/parse failed) — the
-        // mic is fine, so don't blame permission; fall back to text gracefully.
-        if (err === "worklet-unsupported") {
-          if (wasActive) voiceTrouble("Voice setup couldn't load in this browser — text still works.");
-          return;
-        }
-
-        // Fatal: mic permission denied or hardware unavailable.
-        if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
-          if (wasActive) micBlocked();
-          return;
-        }
-
-        // no-speech: the browser timed out waiting for the user to speak.
-        // This is normal during pauses and must NOT count as a failure — doing so
-        // was what caused voiceTrouble() to fire after a few seconds of silence.
-        if (err === "no-speech") {
-          if (voiceModeRef.current && wasActive) reArmListen(300);
-          else if (!voiceModeRef.current && wasActive) setState((s) => (s === "listening" ? "idle" : s));
-          return;
-        }
-
-        // Transient (network / bad-grammar / etc.): count genuine failures and
-        // back out only after several consecutive real errors. Guard wasActive so
-        // a stale error from a recognizer we deliberately stopped doesn't re-arm.
-        if (voiceModeRef.current && wasActive) {
-          voiceErrorsRef.current += 1;
-          if (voiceErrorsRef.current >= 5) {
-            voiceTrouble();
-            return;
-          }
-          // Back off between reconnects so a hard failure isn't a tight retry storm.
-          reArmListen(Math.min(400 * voiceErrorsRef.current, 2500));
-        } else if (!voiceModeRef.current && wasActive) {
-          setState((s) => (s === "listening" ? "idle" : s));
-        }
-      },
-    };
-    const rec = useDeepgram
-      ? createDeepgramRecognizer(callbacks)
-      : createRecognizer(callbacks);
-    recognizerRef.current = rec;
-    rec.start();
-  }
-
-  function enterVoiceMode() {
-    if (!deepgramAvailable && !micSupported) {
-      setReplyText(
-        "Hands-free voice isn't available in this browser. Text and tap-to-talk still work.",
-      );
-      openPanel();
-      return;
-    }
-    voiceModeRef.current = true;
-    setVoiceMode(true);
-    voiceErrorsRef.current = 0;
-    setVoiceAnnounce("Voice mode on — microphone live.");
-    uiTone("ready");
-    primeAudio();
-    beginListening();
-  }
-
-  function exitVoiceMode() {
-    voiceModeRef.current = false;
-    setVoiceMode(false);
-    window.clearTimeout(reArmTimerRef.current);
-    abortRef.current?.abort(); // drop any in-flight reply
-    stopListening();
-    stopSpeaking();
-    closeDeepgramAudio(); // release the shared capture context (no-op if Web Speech)
-    setInterim("");
-    setState((s) => (s === "boot" ? s : "idle"));
-    setVoiceAnnounce("Voice mode off.");
-    uiTone("toggle");
-  }
-
-  function toggleVoiceMode() {
-    if (voiceModeRef.current) exitVoiceMode();
-    else enterVoiceMode();
-  }
-
-  // Permission/hardware denial: stop the loop, keep text working, say so plainly.
-  function micBlocked() {
-    voiceModeRef.current = false;
-    setVoiceMode(false);
-    window.clearTimeout(reArmTimerRef.current);
-    listeningActiveRef.current = false;
-    closeDeepgramAudio();
-    setState((s) => (s === "listening" ? "idle" : s));
-    setReplyText(
-      "I can't reach your microphone — check this site's mic permission in the browser. You can still talk to me by typing.",
-    );
-    setVoiceAnnounce("Microphone unavailable — voice mode off. Text still works.");
-    openPanel();
-  }
-
-  // Repeated recognizer failures (e.g. a rejected STT connection), or a one-shot
-  // setup failure: back out gracefully, keeping text. Optional message overrides
-  // the default copy (e.g. a worklet that couldn't load). The default surfaces the
-  // last diagnostic (a Deepgram close code) so a real failure is visible, not generic.
-  function voiceTrouble(message?: string) {
-    voiceModeRef.current = false;
-    setVoiceMode(false);
-    window.clearTimeout(reArmTimerRef.current);
-    listeningActiveRef.current = false;
-    closeDeepgramAudio();
-    setState((s) => (s === "listening" ? "idle" : s));
-    const diag = voiceDiagRef.current;
-    setReplyText(
-      message ??
-        `Voice connection kept dropping${diag ? ` (${diag})` : ""} — I've switched to text. Type to me.`,
-    );
-    setVoiceAnnounce("Voice mode off — the speech connection was unavailable. Text still works.");
-    openPanel();
-  }
-
-  // A couple of spoken commands handled locally (no brain round-trip). Everything
-  // else flows to /api/chat, where the existing tools (go_to_screen, set_mood,
-  // watchers) already act on his words. Returns true if handled here.
-  function tryVoiceCommand(raw: string): boolean {
-    const t = raw.trim().toLowerCase().replace(/[.!?,]+$/g, "");
-    if (
-      voiceModeRef.current &&
-      (t === "exit voice mode" ||
-        t === "stop listening" ||
-        t === "stop voice mode" ||
-        t === "turn off voice mode" ||
-        t === "turn off voice" ||
-        t === "exit voice" ||
-        t === "end voice mode")
-    ) {
-      exitVoiceMode();
-      setReplyText("Voice mode off.");
-      openPanel();
-      return true;
-    }
-    if (
-      t.length <= 32 &&
-      /\b(brief me|play (?:the |my )?brief|read (?:me )?the brief|morning brief)\b/.test(t)
-    ) {
-      voiceBrief();
-      return true;
-    }
-    return false;
-  }
-
-  function handleTranscript(t: string) {
-    if (tryVoiceCommand(t)) return;
-    handleSend(t);
-  }
-
-  // "Brief me" by voice: play the compiled read if one is waiting; otherwise
-  // say so plainly (UX2-T2 removed the popup/compile-on-demand path — the
-  // home screen already shows the live brief).
-  function voiceBrief() {
-    setInterim("");
-    if (brief) {
-      if (mutedRef.current) {
-        setReplyText("Voice is muted — unmute to hear the brief.");
-        openPanel();
-        concludeSpeech();
-      } else {
-        playBrief(); // its onEnd routes through concludeSpeech (re-arm in voice mode)
-      }
-      return;
-    }
-    setReplyText("No compiled brief is waiting — the home screen carries today's live read.");
-    openPanel();
-    concludeSpeech();
   }
 
   // --- View routing (CORE V2) ------------------------------------------------
@@ -1058,13 +478,10 @@ export default function Home() {
     applyMood(MOODS[(MOODS.indexOf(mood) + 1) % MOODS.length]);
   }
 
-  // On boot, ask whether today's compiled brief is waiting (cheap GET, never
-  // compiles) so the "brief me" voice command can play it. UX2-T2: no popup —
-  // a ?brief=1 push arrival just lands home (the home IS the brief now); the
+  // A ?brief=1 push arrival just lands home (the home IS the brief now); the
   // param is stripped so a reload doesn't linger.
   useEffect(() => {
     if (!booted) return;
-    let cancelled = false;
     try {
       const u = new URL(window.location.href);
       if (u.searchParams.has("brief")) {
@@ -1074,17 +491,6 @@ export default function Home() {
     } catch {
       /* no-op */
     }
-    fetch("/api/brief", { cache: "no-store" })
-      .then((r) =>
-        r.ok ? (r.json() as Promise<{ ready?: boolean; brief?: MorningBriefData | null }>) : null,
-      )
-      .then((j) => {
-        if (!cancelled && j?.ready && j.brief) setBrief(j.brief);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [booted]);
 
   // Deep-link: an old Watcher push or a stale bookmark opens "/?screen=..." —
@@ -1130,40 +536,6 @@ export default function Home() {
     }
   }, []);
 
-  // Speak the brief — reuses the chat speech path so AUGUST's orb pulses to his
-  // real voice. Gated behind this click so the browser autoplay policy is satisfied.
-  function playBrief() {
-    if (!brief) return;
-    if (mutedRef.current) {
-      // Muted: don't speak (and don't tear down anything in flight just to say so).
-      // The card already shows the text; nudge him to unmute to hear it.
-      setReplyText("Voice is muted — unmute to hear the brief.");
-      openPanel();
-      return;
-    }
-    primeAudio();
-    stopSpeaking();
-    stopListening();
-    abortRef.current?.abort(); // a brief read supersedes any in-flight chat too
-    setBriefPlaying(true);
-    setState("speaking");
-    speakHandleRef.current = speak(brief.text, {
-      onLevel: (v) => {
-        amplitudeRef.current = v;
-      },
-      onEnd: () => {
-        setBriefPlaying(false);
-        concludeSpeech();
-      },
-      onError: () => {
-        setBriefPlaying(false);
-        concludeSpeech();
-      },
-    });
-  }
-
-  // compileBriefNow / dismissBrief retired with the popup (UX2-T2).
-
   // Flag the next surface change as AUGUST-driven so it doesn't dismiss his reply.
   function markAugNav() {
     augNavRef.current = true;
@@ -1193,18 +565,12 @@ export default function Home() {
   }
 
   // CORE V2 P5 — the transcript's "+ NEW CHAT": reset the on-screen
-  // conversation only. Long-term memory and saved threads are untouched
-  // (unlike /forget); the next exchange opens a fresh thread.
+  // conversation only. Long-term memory is untouched (unlike /forget).
   function startNewChat() {
     genRef.current += 1; // supersede any in-flight stream
     abortRef.current?.abort();
-    stopSpeaking();
-    stopListening();
     messagesRef.current = [];
     setMessages([]);
-    threadIdRef.current = null;
-    setActiveThreadId(null);
-    setInterim("");
     setReplyText("");
     setChatError(null);
     setHistoryOpen(false);
@@ -1219,54 +585,11 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "forget" }),
     }).catch(() => {});
-    stopSpeaking();
-    stopListening();
     messagesRef.current = [];
     setMessages([]);
-    threadIdRef.current = null; // the wiped conversation is over — next exchange opens a new thread
-    setActiveThreadId(null);
-    setInterim("");
     openPanel();
     setHistoryOpen(false);
-    const line = "Done. I've let it go — we start clean.";
-    setReplyText(line);
-    speakReply(line);
-  }
-
-  // Open a saved thread from the landing's RECENT THREADS: load its messages
-  // into the conversation and point threadIdRef at it so the next exchange
-  // CONTINUES that thread (the save path upserts by id).
-  async function openThread(id: string) {
-    try {
-      const res = await fetch(`/api/threads/${encodeURIComponent(id)}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(String(res.status));
-      const j = (await res.json()) as {
-        thread?: { id: string; messages?: Array<{ role: string; content: string }> };
-      };
-      const t = j.thread;
-      if (!t || !Array.isArray(t.messages)) throw new Error("malformed");
-      genRef.current += 1; // supersede any in-flight stream
-      abortRef.current?.abort();
-      stopSpeaking();
-      stopListening();
-      const msgs: ChatMessage[] = t.messages.filter(
-        (m): m is ChatMessage =>
-          (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string",
-      );
-      messagesRef.current = msgs;
-      setMessages(msgs);
-      threadIdRef.current = t.id;
-      setActiveThreadId(t.id);
-      setInterim("");
-      const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
-      setReplyText(lastAssistant?.content ?? "");
-      setHistoryOpen(true); // land on the full transcript, ready to continue
-      openPanel();
-      setState((s) => (s === "boot" ? s : "idle"));
-    } catch {
-      setReplyText("Couldn't open that thread just now.");
-      openPanel();
-    }
+    setReplyText("Done. I've let it go — we start clean.");
   }
 
   async function handleSend(raw: string) {
@@ -1278,11 +601,8 @@ export default function Home() {
       return;
     }
 
-    latReset(); // t0 — turn start (≈ transcript committed for the voice path)
-    primeAudio();
-    stopSpeaking(); // a new message always cuts current speech
-    stopListening();
-    abortRef.current?.abort(); // ...and supersedes any in-flight generation
+    latReset(); // t0 — turn start
+    abortRef.current?.abort(); // a new message supersedes any in-flight generation
     const gen = ++genRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1290,7 +610,6 @@ export default function Home() {
     const next = [...messagesRef.current, { role: "user" as const, content: text }];
     messagesRef.current = next;
     setMessages(next);
-    setInterim("");
     setReplyText("");
     setChatError(null);
     openPanel(); // a new reply (re)opens the panel
@@ -1303,8 +622,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // voice turns ask for Haiku 4.5 server-side (lowest TTFT for the spoken loop).
-        body: JSON.stringify({ messages: next, voice: voiceModeRef.current }),
+        body: JSON.stringify({ messages: next }),
         signal: controller.signal,
       });
       if (gen !== genRef.current) return; // superseded while connecting
@@ -1313,7 +631,6 @@ export default function Home() {
         if (gen !== genRef.current) return;
         setChatError("rate cap — give it a minute, then retry");
         setState("idle");
-        concludeSpeech(); // re-arms the mic in voice mode so the loop survives
         return;
       }
 
@@ -1323,33 +640,12 @@ export default function Home() {
         if (gen !== genRef.current) return;
         setChatError(res.status >= 500 ? "desk unreachable — retry" : `desk declined (${res.status}) — retry`);
         setState("idle");
-        concludeSpeech(); // keep the voice-mode loop alive after a failed turn
         return;
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let appliedTools = 0;
-
-      // Streaming TTS: start speaking the first sentence the moment it lands so
-      // playback begins before the full reply finishes generating; the remainder
-      // is spoken as one more chunk at the end. ~1-2 /api/speak calls per turn
-      // (the route is rate-limited to 15/min), reusing the Daniel voice + orb.
-      // The queue's onEnd → concludeSpeech, which re-arms the mic in voice mode.
-      let queue: SpeechQueue | null = null;
-      let spokenLen = 0;
-      const makeQueue = (): SpeechQueue =>
-        createSpeechQueue({
-          onStart: () => {
-            if (gen === genRef.current) setState("speaking");
-          },
-          onLevel: (v) => {
-            amplitudeRef.current = v;
-          },
-          onEnd: () => {
-            if (gen === genRef.current) concludeSpeech();
-          },
-        });
 
       for (;;) {
         const { value, done } = await reader.read();
@@ -1368,28 +664,6 @@ export default function Home() {
           applyToolEvents(parsed.tools.slice(appliedTools));
           appliedTools = parsed.tools.length;
         }
-        // Per-sentence pipelining — voice mode only, where hands-free latency matters
-        // most. Push each sentence to the prefetching queue the moment it completes so
-        // playback starts on sentence one and later sentences are fetched/decoded while
-        // earlier ones play (no dead air, TTS overlaps the LLM). The FIRST chunk is kept
-        // short (minLen 18) for the fastest possible first audio; later chunks coalesce
-        // to ~80 chars so a long reply doesn't burn the /api/speak rate limit. Typed
-        // replies stay a single smooth /api/speak call.
-        if (voiceModeRef.current && !mutedRef.current) {
-          for (;;) {
-            const end = sentenceChunkEnd(parsed.text, spokenLen, spokenLen === 0 ? 18 : 80);
-            if (end <= 0) break;
-            const chunk = parsed.text.slice(spokenLen, end).trim();
-            if (chunk) {
-              if (!queue) {
-                queue = makeQueue();
-                speechQueueRef.current = queue;
-              }
-              queue.push(chunk);
-            }
-            spokenLen = end;
-          }
-        }
       }
 
       const { text: spoken, tools } = splitToolStream(full);
@@ -1402,22 +676,6 @@ export default function Home() {
         setMessages(withAssistant);
         uiTone("reply");
 
-        if (mutedRef.current) {
-          queue?.cancel(); // muted mid-reply: drop any eagerly-started audio
-          concludeSpeech(); // no audio — but keep the voice-mode loop alive
-        } else if (queue) {
-          // We started speaking sentence one mid-stream — speak the remainder.
-          const remainder = spoken.slice(spokenLen).trim();
-          if (remainder) queue.push(remainder);
-          queue.end(); // onEnd → concludeSpeech once the queue drains
-        } else {
-          // Short reply / no sentence boundary mid-stream — speak it whole.
-          const q = makeQueue();
-          speechQueueRef.current = q;
-          q.push(reply);
-          q.end();
-        }
-
         // Background: update long-term memory. Fire-and-forget — never blocks the reply.
         void fetch("/api/memory", {
           method: "POST",
@@ -1429,45 +687,17 @@ export default function Home() {
             assistantText: reply,
           }),
         }).catch(() => {});
-
-        // Background: persist the conversation as a thread (RECENT THREADS on the
-        // landing). Fire-and-forget and best-effort — a failure never blocks or
-        // breaks the chat. Pre-trimmed to the server caps (≤40 messages, ≤8KB
-        // each — see lib/threads.ts) so long sessions keep persisting instead of
-        // tripping the route's 400 validation.
-        void fetch("/api/threads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: threadIdRef.current ?? undefined,
-            messages: withAssistant.slice(-40).map((m) => ({
-              role: m.role,
-              content: m.content.length > 8000 ? m.content.slice(0, 8000) : m.content,
-            })),
-          }),
-        })
-          .then((r) => (r.ok ? (r.json() as Promise<{ id?: string }>) : null))
-          .then((d) => {
-            if (d && typeof d.id === "string") {
-              threadIdRef.current = d.id;
-              setActiveThreadId(d.id);
-            }
-          })
-          .catch(() => {});
-      } else {
-        concludeSpeech();
       }
+      setState("idle");
     } catch (err) {
       if (gen !== genRef.current) return; // superseded — stay silent
       if ((err as Error)?.name === "AbortError") {
-        // Stop/exit/supersede: intentional halt. Don't re-arm here — exitVoiceMode
-        // already cleared voiceModeRef, and a superseding turn owns the next step.
+        // Stop/supersede: intentional halt. The superseding turn owns the next step.
         setState("idle");
         return;
       }
       setChatError("connection lost — retry");
       setState("idle");
-      concludeSpeech(); // re-arm the mic in voice mode so the loop recovers
     }
   }
 
@@ -1482,67 +712,33 @@ export default function Home() {
     void handleSend(last.content);
   }
 
-  function toggleMic() {
-    // Voice mode owns the mic and re-arms automatically — its own toggle controls
-    // it, so a manual tap here is a no-op while hands-free is on.
-    if (voiceModeRef.current) return;
-    if (listeningActiveRef.current) {
-      // Tap again = cancel listening (no send).
-      stopListening();
-      setInterim("");
-      setState("idle");
-      return;
-    }
-    beginListening();
-  }
-
-  const statusLabel =
-    state === "thinking" ? "THINKING" : state === "listening" ? "LISTENING" : null;
-
-  // Either STT engine enables voice + tap-to-talk. Deepgram is preferred and works
-  // on phones where Web Speech (micSupported) doesn't.
-  const voiceCapable = micSupported || deepgramAvailable;
+  const statusLabel = state === "thinking" ? "THINKING" : null;
 
   // The landing is the IDLE state of the Presence panel. Once a conversation is
-  // live (messages, a streamed/failed reply, voice mode, him thinking/speaking),
-  // the existing reply panel + composer own the screen and the landing's ask bar
-  // and chips yield (showSuggestions semantics from the design).
+  // live (messages, a streamed/failed reply, him thinking), the existing reply
+  // panel + composer own the screen and the landing's ask bar and chips yield
+  // (showSuggestions semantics from the design).
   const conversationActive =
-    voiceMode ||
-    messages.length > 0 ||
-    replyText !== "" ||
-    interim !== "" ||
-    state === "thinking" ||
-    state === "speaking";
+    messages.length > 0 || replyText !== "" || state === "thinking";
   const landingIdle = view === "chat" && !conversationActive;
   // One input per screen: the landing has its ask bar, the intel desk has its
   // own contextual ASK AUGUST bar — the global composer dock renders on
   // neither unless a conversation is live ON SCREEN. conversationActive is
   // deliberately sticky (messages persist all session so the landing stays in
   // its conversation layout); the desk instead keys off what is visibly live —
-  // voice mode, an in-flight reply, or the reply card being open. A dismissed
-  // panel with old history must not summon the dock over the desk.
-  const conversationLive =
-    voiceMode ||
-    state === "thinking" ||
-    state === "speaking" ||
-    (panelOpen && (replyText !== "" || interim !== ""));
+  // an in-flight reply, or the reply card being open. A dismissed panel with
+  // old history must not summon the dock over the desk.
+  const conversationLive = state === "thinking" || (panelOpen && replyText !== "");
   const intelPanelIdle = view === "terminal" && !conversationLive;
   // GAME-2 — the PIT owns its surface; the dock composer stands down there
   const pitIdle = view === "pit" && !conversationLive;
 
   return (
     <main
-      className={`stage-vignette has-rail${view === "chat" ? " has-threads" : ""} relative h-[100dvh] w-screen overflow-hidden`}
+      className="stage-vignette has-rail relative h-[100dvh] w-screen overflow-hidden"
     >
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
-      {/* Always-present live region for the privacy-critical voice transitions —
-          a conditionally-mounted bar wouldn't announce its first "mic live" state. */}
-      <div className="sr-only" aria-live="assertive" aria-atomic="true">
-        {voiceAnnounce}
-      </div>
-
       {/* the code-rain — the matrix theme's stage layer, behind everything;
           the intensity dial (R1-REDO) can switch it off entirely */}
       {theme === "matrix" && rainPreset !== "off" ? <MatrixRain preset={rainPreset} /> : null}
@@ -1628,21 +824,6 @@ export default function Home() {
         </button>
       </nav>
 
-      {/* UX2-T1 — the chat view's LEFT threads sidebar (Claude-style IA);
-          the terminal view unmounts it and reclaims the width */}
-      {view === "chat" ? (
-        <ThreadsSidebar
-          open={threadsOpen}
-          onClose={() => setThreadsOpen(false)}
-          collapsed={threadsCollapsed}
-          onToggleCollapsed={toggleThreadsCollapsed}
-          activeThreadId={activeThreadId}
-          onOpenThread={openThread}
-          onNewChat={startNewChat}
-          refreshKey={messages.length}
-        />
-      ) : null}
-
       {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
           (collapsible to an edge tab, UX1), drawer below */}
       <IdeasRail
@@ -1665,22 +846,14 @@ export default function Home() {
           <HomeLanding
             state={state}
             theme={theme}
-            amplitudeRef={amplitudeRef}
             active={view === "chat"}
             conversationActive={conversationActive}
-            micSupported={voiceCapable}
-            listening={state === "listening"}
             busy={state === "thinking"}
-            voiceMode={voiceMode}
             onSend={handleSend}
-            onToggleMic={toggleMic}
-            onToggleVoiceMode={toggleVoiceMode}
-            onOpenThreads={() => setThreadsOpen(true)}
             transcript={
               <ChatTranscript
                 messages={messages}
                 replyText={replyText}
-                interim={interim}
                 thinking={state === "thinking"}
                 onNewChat={startNewChat}
                 error={chatError}
@@ -1689,13 +862,11 @@ export default function Home() {
             }
             pushState={pushState}
             onNotify={handleNotify}
-            soundOn={soundOn}
-            onToggleSound={toggleSound}
             onSetTheme={applyTheme}
             rainPreset={rainPreset}
             onSetRainPreset={applyRainPreset}
           />
-          {/* MorningBrief popup parked (UX2-T2) — HomeBrief owns the home state */}
+          {/* HomeBrief owns the home state (UX2-T2) */}
         </div>
       </section>
       <section
@@ -1731,7 +902,7 @@ export default function Home() {
       >
         {view === "terminal" &&
         panelOpen &&
-        (replyText || interim || (historyOpen && messages.length > 0)) ? (
+        (replyText || (historyOpen && messages.length > 0)) ? (
           <div
             className={`reply-dock${historyOpen ? " history" : ""}${dockClosing ? " closing" : ""}`}
             role="log"
@@ -1787,77 +958,29 @@ export default function Home() {
                       </p>
                     ) : null;
                   })()}
-                  {interim ? <p className="reply-interim">{interim}</p> : null}
                 </>
-              ) : interim ? (
-                <p className="reply-interim">{interim}</p>
               ) : (
                 <p className="reply-text">{replyText}</p>
               )}
             </div>
           </div>
-        ) : view === "terminal" && statusLabel && !voiceMode ? (
-          // Chat-view thinking/listening cues live inside the transcript now.
+        ) : view === "terminal" && statusLabel ? (
+          // Chat-view thinking cues live inside the transcript now.
           <div className="reply-status">{statusLabel}</div>
         ) : null}
 
-        {voiceMode ? (
-          <div className={`voice-bar voice-${state}`}>
-            <span className="voice-bar-dot" aria-hidden />
-            <span className="voice-bar-label">
-              {state === "listening"
-                ? "Listening…"
-                : state === "thinking"
-                  ? "Thinking…"
-                  : state === "speaking"
-                    ? "Speaking"
-                    : "Voice mode on"}
-            </span>
-            <button
-              type="button"
-              className="voice-bar-exit"
-              onClick={exitVoiceMode}
-              aria-label="Exit hands-free voice mode"
-              title="Exit voice mode (Esc)"
-            >
-              Exit
-            </button>
-          </div>
-        ) : null}
-
-        {/* On the idle landing the design's ask bar IS the input (mic + voice
-            mode ride inside it), and the intel desk carries its own contextual
-            ASK AUGUST bar — the dock composer stands down on both (one input
-            per screen); it returns the moment a conversation is live or the
-            deck slides to World/Comms. */}
+        {/* On the idle landing the design's ask bar IS the input, and the
+            intel desk carries its own contextual ASK AUGUST bar — the dock
+            composer stands down on both (one input per screen); it returns
+            the moment a conversation is live. */}
         {!landingIdle && !intelPanelIdle && !pitIdle ? (
         <div className="composer-row">
           <Composer
             onSend={handleSend}
-            onToggleMic={toggleMic}
-            listening={state === "listening"}
             busy={state === "thinking"}
-            micSupported={voiceCapable}
             autoFocus={booted}
           />
           <div className="composer-ctls">
-            <button
-              type="button"
-              className={`ctl-round ctl-voice${voiceMode ? " on" : ""}`}
-              onClick={toggleVoiceMode}
-              disabled={!voiceCapable || !booted}
-              title={
-                !voiceCapable
-                  ? "Hands-free voice isn't available in this browser"
-                  : voiceMode
-                    ? "Exit voice mode (Esc)"
-                    : "Hands-free voice mode"
-              }
-              aria-pressed={voiceMode}
-              aria-label={voiceMode ? "Exit hands-free voice mode" : "Enter hands-free voice mode"}
-            >
-              <VoiceModeIcon active={voiceMode} />
-            </button>
             {state === "thinking" ? (
               <button
                 type="button"
@@ -1868,31 +991,11 @@ export default function Home() {
               >
                 <StopIcon />
               </button>
-            ) : state === "speaking" ? (
-              <button
-                type="button"
-                className="ctl-round"
-                onClick={stopVoice}
-                title="Stop voice"
-                aria-label="Stop voice"
-              >
-                <StopIcon />
-              </button>
             ) : null}
-            <button
-              type="button"
-              className={`ctl-round${muted ? " on" : ""}`}
-              onClick={toggleMute}
-              title={muted ? "Voice muted — click to unmute" : "Mute voice"}
-              aria-pressed={muted}
-              aria-label={muted ? "Unmute voice" : "Mute voice"}
-            >
-              {muted ? <VoiceOffIcon /> : <VoiceIcon />}
-            </button>
             {/* Sound, bell, and theme moved to the landing's quiet top-bar
                 cluster (HomeLanding) — the conversation cluster keeps only
-                the in-conversation controls: voice mode, stop, mute, and the
-                mood switcher (which has no home on the landing). */}
+                the in-conversation controls: stop and the mood switcher
+                (which has no home on the landing). */}
             <button
               type="button"
               className="ctl-round ctl-mood"
@@ -1911,7 +1014,7 @@ export default function Home() {
 }
 
 // ---------------------------------------------------------------------------
-// Small control icons (match the Composer's mic icon style).
+// Small control icons.
 // ---------------------------------------------------------------------------
 
 function StopIcon() {
@@ -1961,62 +1064,6 @@ function BellOffIcon() {
       <path d="M11.4 11.5H3.2s1.3-1 1.3-4v-.3" />
       <path d="M6.6 12a1.5 1.5 0 0 0 2.8 0" />
       <line x1="2.5" y1="2.5" x2="13.5" y2="13.5" />
-    </svg>
-  );
-}
-
-// A centered audio waveform — the "hands-free voice" metaphor, kept distinct
-// from the Composer's tap-to-talk mic and the sound toggle so the cluster reads
-// clearly. The live/breathing treatment comes from .ctl-voice.on in CSS.
-function VoiceModeIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={active ? 2.4 : 2}
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <line x1="3" y1="9.5" x2="3" y2="14.5" />
-      <line x1="7.5" y1="6" x2="7.5" y2="18" />
-      <line x1="12" y1="3" x2="12" y2="21" />
-      <line x1="16.5" y1="6" x2="16.5" y2="18" />
-      <line x1="21" y1="9.5" x2="21" y2="14.5" />
-    </svg>
-  );
-}
-
-function VoiceIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
-      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-      <path d="M18.5 5.5a9.5 9.5 0 0 1 0 13" />
-    </svg>
-  );
-}
-
-function VoiceOffIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
-      <line x1="15" y1="9" x2="21" y2="15" />
-      <line x1="21" y1="9" x2="15" y2="15" />
-    </svg>
-  );
-}
-
-function ToneIcon({ off }: { off?: boolean }) {
-  // A small note — the UI-tones toggle (distinct from the voice speaker).
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 18V6l10-2v12" />
-      <circle cx="6.5" cy="18" r="2.5" />
-      <circle cx="16.5" cy="16" r="2.5" />
-      {off ? <line x1="3" y1="3" x2="21" y2="21" /> : null}
     </svg>
   );
 }
