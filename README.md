@@ -60,7 +60,6 @@ Conversation history lives in memory for the session only. There is no database.
 | `app/page.tsx` | The experience — boot, state machine, send loop |
 | `app/api/chat/route.ts` | Claude proxy, streaming (server-side, holds the key) |
 | `app/api/memory/route.ts` | Background memory updates + `/forget` wipe (server-side) |
-| `components/Circle.tsx` | The living circle: SVG smoke + shards + canvas haze |
 | `components/Composer.tsx` | The input bar |
 | `components/Globe.tsx` | MapLibre dark globe — fly-to + labeled marker |
 | `lib/persona.ts` | The AUGUST system prompt + the `USER_NAME` constant |

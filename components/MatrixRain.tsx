@@ -1,8 +1,8 @@
 "use client";
 
 // Matrix code-rain — the [data-theme="matrix"] background layer. One 2D
-// canvas, perf-first per the house canvas rules (Circle.tsx's skeleton plus
-// Presence3D's park/resume gating):
+// canvas, perf-first per the house canvas rules (Presence3D's park/resume
+// gating):
 //   • DPR capped at 2, ResizeObserver sizing with zero-size self-heal
 //   • one rAF loop; columns advance on an accumulator — the rain is discrete
 //     glyph steps, nothing here needs 60fps

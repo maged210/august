@@ -18,7 +18,6 @@ import {
   registerServiceWorker,
   type PushState,
 } from "@/lib/push-client";
-import { playTone, soundEnabled, type UiTone } from "@/lib/sound";
 
 // WebGL components load only in the browser, and each heavy view owns its own
 // laziness: HomeLanding carries the Presence orb's dynamic import and
@@ -107,7 +106,6 @@ export default function Home() {
   const viewRef = useRef<ViewId>("chat");
   const replyDockRef = useRef<HTMLDivElement | null>(null);
   const dockWrapRef = useRef<HTMLDivElement | null>(null);
-  const soundOnRef = useRef(true);
   const closeTimerRef = useRef(0);
   const themingTimerRef = useRef(0);
   // Generation counter + abort: a new send (or the stop control) supersedes any
@@ -227,11 +225,9 @@ export default function Home() {
           ? crypto.randomUUID()
           : `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     }
-    soundOnRef.current = soundEnabled();
     const id = window.setTimeout(() => {
       setState("idle");
       setBooted(true);
-      if (soundOnRef.current) playTone("ready");
     }, 2200);
     return () => window.clearTimeout(id);
   }, []);
@@ -288,12 +284,6 @@ export default function Home() {
     };
   }, []);
 
-  // UI tones obey the stored sound preference.
-  function uiTone(name: UiTone) {
-    if (!soundOnRef.current) return;
-    playTone(name);
-  }
-
   // The bell control. Deliberate, never auto-prompted. On a fresh browser it requests
   // permission + subscribes; otherwise it explains the current state (iOS needs the
   // app installed first; a blocked permission must be re-enabled in site settings).
@@ -323,7 +313,6 @@ export default function Home() {
     const r = await enablePush();
     setPushState(getPushState());
     if (r.ok) {
-      uiTone("ready");
       setReplyText("Notifications enabled. I’ll be able to reach you off-screen.");
     } else if (r.reason === "ios-install") {
       setReplyText(
@@ -614,7 +603,6 @@ export default function Home() {
     setChatError(null);
     openPanel(); // a new reply (re)opens the panel
     setState("thinking");
-    uiTone("send");
 
     let full = "";
     try {
@@ -674,7 +662,6 @@ export default function Home() {
         const withAssistant = [...next, { role: "assistant" as const, content: reply }];
         messagesRef.current = withAssistant;
         setMessages(withAssistant);
-        uiTone("reply");
 
         // Background: update long-term memory. Fire-and-forget — never blocks the reply.
         void fetch("/api/memory", {
