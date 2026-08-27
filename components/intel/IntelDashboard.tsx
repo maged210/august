@@ -5645,7 +5645,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                     is the once-daily post-close pass; the header states both */}
                 <span className="rd-bhead-meta">
                   {isStack
-                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR`
+                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR · EVALUATED DAILY AT CLOSE`
                     : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · EVALUATED DAILY AT CLOSE · NEXT PASS 21:05 UTC`}
                 </span>
                 {owner && (
