@@ -74,6 +74,12 @@ type Role = { owner: boolean; authConfigured: boolean; signedIn: boolean };
 // publish curation control for one tracked idea (owner-only; null hides it)
 type PublishCtl = { published: boolean; busy: boolean; onToggle: () => void };
 
+// INTEGRITY-1 — user-initiated CLOSE for one tracked idea (owner-only; null
+// hides it). TWO-TAP: the first tap arms (CLOSE → CONFIRM), the second
+// commits; the arm times out. The only lever for ideas that can never resolve
+// on their own (TRIGGERED with no stated target/invalidation).
+type CloseCtl = { armed: boolean; busy: boolean; onTap: () => void };
+
 // /api/intel/desk payload (SPEC-wiring §4 #1) — each part independently
 // nullable; a null part means its component renders NOTHING (no placeholder).
 type DeskFng = { value: number; rating: string; asOf: number };
@@ -1850,12 +1856,14 @@ function RdSparkM({ closes, tone }: { closes: number[]; tone: ChartTone }) {
  * REUSED InspChart (real 1M daily closes — the design's own chart was seeded
  * and self-labeled illustrative, so the label here is the honest
  * PRICE · 1M · DAILY), the shared LEVELS fields, conf + source cite. */
-function MobileIdeaCard({ idea, tracked, open, publish, onToggle, dayGeneratedAt }: {
+function MobileIdeaCard({ idea, tracked, open, publish, close, onToggle, dayGeneratedAt }: {
   idea: BlotterIdea;
   tracked: TrackedIdea | null;
   open: boolean;
   /** owner curation — chip + 44px action in the expanded body; null hides it */
   publish: PublishCtl | null;
+  /** INTEGRITY-1 — two-tap CLOSE in the owner row (null hides it) */
+  close: CloseCtl | null;
   onToggle: () => void;
   /** DAY BOARDS scope: the scoped brief's generatedAt — non-null renders the
    * CREATED / ALERTED / SO FAR facts block (same lib/intel/dayBoard.ts
@@ -2019,19 +2027,34 @@ function MobileIdeaCard({ idea, tracked, open, publish, onToggle, dayGeneratedAt
               <span className="rd-msrc rd-msrc-plain">▸ {idea.channelTitle}</span>
             ) : null /* redacted payload — no attribution, no source row */}
           </div>
-          {publish && (
+          {(publish || close) && (
             <div className="rd-mpub">
-              {publish.published && <span className="rd-chip rd-chip-pub">PUBLISHED</span>}
-              <button
-                type="button"
-                className={`rd-btn rd-btn-sm${publish.published ? "" : " rd-btn-pub"}`}
-                disabled={publish.busy}
-                aria-busy={publish.busy}
-                title={publish.published ? "remove from the public feed" : "publish to the public feed"}
-                onClick={publish.onToggle}
-              >
-                {publish.busy ? "…" : publish.published ? "UNPUBLISH" : "PUBLISH"}
-              </button>
+              {publish?.published && <span className="rd-chip rd-chip-pub">PUBLISHED</span>}
+              {publish && (
+                <button
+                  type="button"
+                  className={`rd-btn rd-btn-sm${publish.published ? "" : " rd-btn-pub"}`}
+                  disabled={publish.busy}
+                  aria-busy={publish.busy}
+                  title={publish.published ? "remove from the public feed" : "publish to the public feed"}
+                  onClick={publish.onToggle}
+                >
+                  {publish.busy ? "…" : publish.published ? "UNPUBLISH" : "PUBLISH"}
+                </button>
+              )}
+              {/* INTEGRITY-1 — two-tap CLOSE: arm, then confirm (4s window) */}
+              {close && (
+                <button
+                  type="button"
+                  className={`rd-btn rd-btn-sm rd-btn-close${close.armed ? " armed" : ""}`}
+                  disabled={close.busy}
+                  aria-busy={close.busy}
+                  title={close.armed ? "tap again to close this tracked idea" : "close this tracked idea (two-tap)"}
+                  onClick={close.onTap}
+                >
+                  {close.busy ? "…" : close.armed ? "CONFIRM CLOSE" : "CLOSE"}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2061,7 +2084,7 @@ type MobilePast = {
 
 function MobileBoard({
   blotter, trackedByIdeaId, trackedList, filter, onFilter, brief, quotes,
-  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, onAddSource, onGenerateBrief, day, past,
+  loading, busy, aiOn, youtubeOk, trackerOk, owner, publishCtl, closeCtl, onAddSource, onGenerateBrief, day, past,
 }: {
   blotter: BlotterIdea[];
   trackedByIdeaId: Map<string, TrackedIdea>;
@@ -2078,6 +2101,8 @@ function MobileBoard({
   owner: boolean;
   /** owner curation control for a tracked record (null hides publish UI) */
   publishCtl: (t: TrackedIdea | null) => PublishCtl | null;
+  /** INTEGRITY-1 — two-tap CLOSE control for a tracked record (null hides it) */
+  closeCtl: (t: TrackedIdea | null) => CloseCtl | null;
   onAddSource: () => void;
   onGenerateBrief: () => void;
   day: MobileDayScope | null;
@@ -2363,6 +2388,7 @@ function MobileBoard({
                 tracked={t}
                 open={expandedId === idea.id}
                 publish={publishCtl(t)}
+                close={closeCtl(t)}
                 onToggle={() => setExpandedId((c) => (c === idea.id ? null : idea.id))}
                 dayGeneratedAt={day && brief ? brief.generatedAt : null}
               />
@@ -2459,6 +2485,7 @@ function MobileBoard({
                             tracked={t}
                             open={expandedId === cardKey}
                             publish={publishCtl(t)}
+                            close={closeCtl(t)}
                             onToggle={() => setExpandedId((c) => (c === cardKey ? null : cardKey))}
                             dayGeneratedAt={dayBrief.generatedAt}
                           />
@@ -3380,7 +3407,7 @@ function InspectorIdea({ idea, quote, tracked, variants, publish, onRetryQuote }
   );
 }
 
-function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, publish, onBackToIdea, quotePending, onRetryQuote }: {
+function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, briefStatus, publish, close, onBackToIdea, quotePending, onRetryQuote }: {
   idea: BlotterIdea | null;
   tracked: TrackedIdea | null;
   variants: TrackedIdea[];
@@ -3394,6 +3421,8 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
   briefStatus: OptionsProviderStatus | null;
   /** owner curation control for the selected tracked idea (null hides it) */
   publish: PublishCtl | null;
+  /** INTEGRITY-1 — two-tap CLOSE for the selected tracked idea (null hides it) */
+  close: CloseCtl | null;
   onBackToIdea: () => void;
   /** a selection-quote fetch for THIS row's ticker is genuinely in flight —
    * the only condition allowed to render the quote-loading treatment */
@@ -3424,6 +3453,19 @@ function Inspector({ idea, tracked, variants, rowNo, rowCount, mode, option, bri
           </span>
         ) : (
           crumb && <span className="rd-insp-crumb" title={crumb}>▸ {crumb}</span>
+        )}
+        {/* INTEGRITY-1 — two-tap CLOSE: arm, then confirm (4s window) */}
+        {!opt && close && (
+          <button
+            type="button"
+            className={`rd-btn rd-btn-sm rd-btn-close${close.armed ? " armed" : ""}`}
+            disabled={close.busy}
+            aria-busy={close.busy}
+            title={close.armed ? "tap again to close this tracked idea" : "close this tracked idea (two-tap)"}
+            onClick={close.onTap}
+          >
+            {close.busy ? "…" : close.armed ? "CONFIRM CLOSE" : "CLOSE"}
+          </button>
         )}
       </div>
       {opt ? (
@@ -4903,6 +4945,10 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
   const [publishedIds, setPublishedIds] = useState<Set<string> | null>(null);
   // trackedId with a publish POST/DELETE in flight
   const [pubBusy, setPubBusy] = useState<string | null>(null);
+  // INTEGRITY-1 — CLOSE two-tap state: armed trackedId + in-flight trackedId
+  const [closeArmId, setCloseArmId] = useState<string | null>(null);
+  const [closeBusy, setCloseBusy] = useState<string | null>(null);
+  const closeArmTimer = useRef(0);
   // source id with a PATCH/DELETE in flight (SOURCES tab row toggle)
   const [srcBusy, setSrcBusy] = useState<string | null>(null);
 
@@ -5101,6 +5147,39 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       setPubBusy(null);
     }
   }, []);
+
+  // INTEGRITY-1 — CLOSE one tracked idea. Two-tap: tap 1 arms (4s window),
+  // tap 2 POSTs; success refreshes the tracker so the row shows CLOSED.
+  const tapClose = useCallback(
+    async (trackedId: string) => {
+      if (closeBusy) return;
+      if (closeArmId !== trackedId) {
+        setCloseArmId(trackedId);
+        window.clearTimeout(closeArmTimer.current);
+        closeArmTimer.current = window.setTimeout(() => setCloseArmId(null), 4000);
+        return;
+      }
+      window.clearTimeout(closeArmTimer.current);
+      setCloseArmId(null);
+      setCloseBusy(trackedId);
+      try {
+        const r = await fetch("/api/intel/tracker/close", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trackedId }),
+        });
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j?.ok) throw new Error();
+        await fetchTracker(); // the row now reads CLOSED from the store
+      } catch {
+        /* nothing was closed — the row stays as it is */
+      } finally {
+        setCloseBusy(null);
+      }
+    },
+    [closeArmId, closeBusy, fetchTracker],
+  );
+  useEffect(() => () => window.clearTimeout(closeArmTimer.current), []);
 
   // enable/disable one source — optimistic flip, revert on error, reconcile
   // the server-derived fields (status) with a reload on success
@@ -5392,6 +5471,17 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
         }
       : null;
 
+  // INTEGRITY-1 — CLOSE control for one tracked record: owner-only, tracked
+  // rows only, hidden once the row is already CLOSED
+  const closeCtl = (t: TrackedIdea | null): CloseCtl | null =>
+    owner && t && t.status !== "CLOSED"
+      ? {
+          armed: closeArmId === t.id,
+          busy: closeBusy === t.id,
+          onTap: () => tapClose(t.id),
+        }
+      : null;
+
   // inspector breadcrumb position — the selected row's 1-based index among
   // ITS SECTION's visible rows in DISPLAY order (OVERALL: horizon groups;
   // a day board: flat, in brief order), and the derived denominator
@@ -5531,6 +5621,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                 trackerOk={trackerOk}
                 owner={owner}
                 publishCtl={publishCtl}
+                closeCtl={closeCtl}
                 onAddSource={() => setTab("SOURCES")}
                 onGenerateBrief={generateBrief}
                 day={isStack ? { date: todayKey } : null}
@@ -5661,6 +5752,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                 option={selectedOption}
                 briefStatus={boardBrief?.options?.providerStatus ?? null}
                 publish={publishCtl(selectedTracked)}
+                close={closeCtl(selectedTracked)}
                 onBackToIdea={() => setInspectorMode("idea")}
                 quotePending={selQuoteView === "loading"}
                 onRetryQuote={retrySelQuote}

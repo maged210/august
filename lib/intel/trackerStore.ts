@@ -17,6 +17,7 @@ import { getBrief, listBriefDates, logIntel } from "./store";
 import {
   applyHousekeeping,
   applySnapshot,
+  closeIdea,
   DEFAULT_STALE_DAYS,
   enforceCap,
   upsertIdeas,
@@ -66,6 +67,29 @@ async function saveTracked(tracked: TrackedIdea[]): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   await redis.set(KEY, JSON.stringify(tracked));
+}
+
+export type CloseTrackedResult =
+  | { ok: true; already: boolean; idea: TrackedIdea }
+  | { ok: false; error: "storage_unconfigured" | "tracked_not_found" | "store_write_failed" };
+
+/** User-initiated CLOSE (INTEGRITY-1) — load, close one idea by tracker id,
+ * save. Same single-blob read-modify-write discipline as the pass; the cron
+ * is the only other writer and every pass converges (last-write-wins). */
+export async function closeTracked(id: string, reason?: string): Promise<CloseTrackedResult> {
+  const redis = getRedis();
+  if (!redis) return { ok: false, error: "storage_unconfigured" };
+  const tracked = await loadTracked();
+  const target = tracked.find((t) => t.id === id);
+  if (!target) return { ok: false, error: "tracked_not_found" };
+  if (target.status === "CLOSED") return { ok: true, already: true, idea: target };
+  const closed = closeIdea(target, Date.now(), reason);
+  try {
+    await saveTracked(tracked.map((t) => (t.id === id ? closed : t)));
+  } catch {
+    return { ok: false, error: "store_write_failed" };
+  }
+  return { ok: true, already: false, idea: closed };
 }
 
 export type TrackerPassResult = {

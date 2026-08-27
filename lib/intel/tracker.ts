@@ -408,6 +408,23 @@ export function applySnapshot(idea: TrackedIdea, snap: PriceSnap, opts: EvalOpts
   return t;
 }
 
+/** User-initiated CLOSE (the PHASE2 deferred follow-up, INTEGRITY-1): the desk
+ * closes any non-CLOSED idea now, with the reason recorded honestly in the
+ * status history. Terminal — a later re-mention starts a NEW lifecycle
+ * (upsertIdeas skips CLOSED identities by design). This is the only lever for
+ * ideas that can never resolve on their own (TRIGGERED with no stated
+ * target/invalidation — TDOC-class rows). */
+export function closeIdea(idea: TrackedIdea, now: number, reason = "closed by the desk"): TrackedIdea {
+  if (idea.status === "CLOSED") return idea;
+  const t: TrackedIdea = { ...idea, statusHistory: [...idea.statusHistory] };
+  t.status = "CLOSED";
+  t.closedAt = now;
+  t.closedReason = reason;
+  t.stale = false; // closed is history, never stale
+  t.statusHistory.push({ state: "CLOSED", at: now, price: t.lastQuote?.price ?? null, reason });
+  return t;
+}
+
 /** Time-based bookkeeping: staleness marking and auto-close of long-terminal
  * ideas. Price-independent — runs even when no quote is available. */
 export function applyHousekeeping(idea: TrackedIdea, now: number, opts: EvalOpts = {}): TrackedIdea {

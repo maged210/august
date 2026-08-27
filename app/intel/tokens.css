@@ -1687,6 +1687,9 @@ textarea.rd-input { resize: vertical; min-height: 110px; }
 .rd-c-src .rd-chip-pub { margin-right: 6px; }
 .rd-btn-pub { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold-bd); background: var(--rd-pub-gold-bg); }
 .rd-btn-pub:hover { color: var(--rd-pub-gold); border-color: var(--rd-pub-gold); }
+/* INTEGRITY-1 — two-tap CLOSE: quiet until armed, then it reads like the risk it is */
+.rd-btn-close { margin-left: auto; }
+.rd-btn-close.armed { color: var(--rd-bear); border-color: var(--rd-bear); font-weight: 700; }
 .rd-pub-count {
   display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
   font-family: var(--rd-mono); font-size: 8.5px; letter-spacing: 0.08em;
