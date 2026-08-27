@@ -427,6 +427,18 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
     id: existing.id,
     updatedAt: Date.now(),
   };
+  // INTEGRITY-1 — a human RESTATEMENT of the call (entry or side changed)
+  // re-arms the machine's read: the prior evaluation judged a statement that
+  // no longer exists, so even a sticky TRIGGERED clears and the next pass
+  // evaluates the NEW statement. Sticky-vs-price stays; sticky-vs-human doesn't.
+  const restated =
+    (fields.entry !== undefined && fields.entry !== existing.entry) ||
+    ("side" in fields && fields.side !== existing.side);
+  if (restated) delete updated.evaluation;
+  // leaving review by human hand retires the conflict note with it
+  if (fields.status !== undefined && fields.status !== "review" && existing.status === "review") {
+    delete updated.reviewReason;
+  }
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
     return updated;
@@ -452,13 +464,16 @@ export async function setIdeaEvaluation(id: string, evaluation: IdeaEvaluation):
 }
 
 /** INTEGRITY-1 — a live row whose side and entry language disagree leaves the
- *  public wire for REVIEW until a human resolves the direction. */
+ *  public wire for REVIEW until a human resolves the direction. updatedAt is
+ *  PRESERVED: it measures the last HUMAN statement (the staleness law), and a
+ *  machine demotion is not one — a re-armed-unresolved row that ping-pongs
+ *  back must not have its stale clock reset by the machine. */
 export async function demoteIdeaToReview(id: string, reason: string): Promise<boolean> {
   const redis = getRedis();
   if (!redis) return false;
   const existing = await getIdea(id);
   if (!existing) return false;
-  const updated: Idea = { ...existing, status: "review", reviewReason: reason, updatedAt: Date.now() };
+  const updated: Idea = { ...existing, status: "review", reviewReason: reason };
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
     return true;
@@ -551,6 +566,22 @@ const DIR_NUM_RE = new RegExp(
   "gi",
 );
 const ABOVE_WORDS = new Set(["above", "over", "clear", "clears", "reclaim", "reclaims"]);
+// A number wearing a UNIT is not a price level: "$100M revenue", "50-day
+// moving average", "200dma", "21-day EMA", "30% off highs", "5% yield", "2x".
+// Checked against the text immediately after the matched number.
+const UNIT_AFTER_RE = /^\s*(?:%|x\b|(?:mm?|bn?|t)\b(?![\w.])|[-‑\s]?(?:day|week|month|year|yr)s?\b|d?ma\b|ema\b|sma\b)/i;
+// …but a trailing k is the desk's thousands shorthand ("above 21.5k") — a
+// price, multiplied through, not a unit rejection.
+const K_AFTER_RE = /^\s*k\b(?![\w.])/i;
+// Risk language immediately before a dir keyword marks a STOP, not an entry:
+// "long above 9,450; stop below 9,400" is one-directional with its risk
+// inline. ("out" is deliberately absent — "break out above X" is an entry.)
+const STOP_BEFORE_RE = /\b(?:stop(?:s|ped)?|cut(?:\s+it)?|risk(?:ing)?|invalid\w*|exit\w*)\s*(?:it\s+|is\s+|at\s+)?$/i;
+// Bare 19xx/20xx integers (no $, no comma, no decimals) read as YEARS, not
+// prices — "loses 2024 support". A real four-digit price is written $2,024 /
+// 2,024 / 2024.50 in this book's idiom.
+const YEAR_LIKE = (raw: string, value: number) =>
+  Number.isInteger(value) && value >= 1990 && value <= 2039 && !/[$,.]/.test(raw);
 // two-sided phrasing check by keywords alone (covers "break above X OR break
 // below $Y" where only one side carries a number)
 const BREAK_ABOVE_RE = /\bbreak\w*(?:\s+out)?\s+above\b/i;
@@ -564,7 +595,11 @@ const toNum = (s: string): number => Number(s.replace(/,/g, ""));
 
 /** PURE. Read the crossable trigger the entry language states. A range takes
  *  its far edge (fully cleared: above 772–772.50 → 772.50; below 766–767 →
- *  766). Both directions present → two_sided. Nothing crossable → null. */
+ *  766). Unit-qualified numbers ($100M, 50-day, 30%, 200dma, bare years) are
+ *  NOT price levels and never match — inventing a trigger is worse than
+ *  NEEDS_LEVEL. Inline risk language ("…; stop below 9,400") is a stop, not a
+ *  second entry. Both entry directions present → two_sided. Nothing crossable
+ *  → null. */
 export function parseEntryTrigger(entry: string): ParsedTrigger | null {
   const e = entry.trim();
   if (!e) return null;
@@ -572,10 +607,17 @@ export function parseEntryTrigger(entry: string): ParsedTrigger | null {
   for (const m of e.matchAll(DIR_NUM_RE)) {
     const word = m[1].toLowerCase();
     const dir: "above" | "below" = ABOVE_WORDS.has(word) ? "above" : "below";
+    // the text right after the LAST number of this match decides the unit test
+    const after = e.slice((m.index ?? 0) + m[0].length);
+    const kMult = K_AFTER_RE.test(after) ? 1000 : 1;
+    if (kMult === 1 && UNIT_AFTER_RE.test(after)) continue; // "$100M", "50-day", "30%" — not a price
+    if (STOP_BEFORE_RE.test(e.slice(0, m.index ?? 0))) continue; // inline stop, not an entry
     const a = toNum(m[2]);
     const b = m[3] != null ? toNum(m[3]) : null;
     if (!Number.isFinite(a) || a <= 0) continue;
-    const level = b != null && Number.isFinite(b) && b > 0 ? (dir === "above" ? Math.max(a, b) : Math.min(a, b)) : a;
+    if (b == null && kMult === 1 && YEAR_LIKE(m[2], a)) continue; // "loses 2024 support" — a year
+    const level =
+      (b != null && Number.isFinite(b) && b > 0 ? (dir === "above" ? Math.max(a, b) : Math.min(a, b)) : a) * kMult;
     hits.push({ dir, level });
   }
   const dirs = new Set(hits.map((h) => h.dir));
@@ -642,7 +684,9 @@ export function evaluateLiveIdea(
         dir,
         price,
         at: now,
-        reason: `daily close ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)`,
+        // "close-pass price", not "daily close" — for 24/7 instruments (BTC)
+        // the 21:05 UTC snapshot is a pass price, not an exchange close
+        reason: `close-pass price ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)`,
       };
     }
   }
@@ -655,7 +699,9 @@ export function evaluateLiveIdea(
     at: now,
     reason:
       price == null
-        ? "no quote resolved — crossing unevaluated this pass"
+        ? stale
+          ? `no quote resolved — crossing unconfirmed; no re-statement in ${staleDays}d`
+          : "no quote resolved — crossing unevaluated this pass"
         : stale
           ? `trigger uncrossed and no re-statement in ${staleDays}d`
           : "stated trigger not yet crossed",

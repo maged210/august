@@ -526,8 +526,13 @@ export default function AdminConsole() {
   // REFRESHES that idea instead (levels updated, thesis archived into its
   // history, age reset) and the draft is consumed (closed) — no duplicates.
   const approveDraft = async (draft: Idea, edits: DraftEdits) => {
+    // INTEGRITY-1 — the twin match includes REVIEW rows: a fresh clean
+    // statement refreshes (and thereby resolves) a conflicted twin instead of
+    // opening a parallel row on the same instrument
     const live = (ideas ?? []).find(
-      (i) => i.status === "live" && i.instrument.trim().toUpperCase() === draft.instrument.trim().toUpperCase(),
+      (i) =>
+        (i.status === "live" || i.status === "review") &&
+        i.instrument.trim().toUpperCase() === draft.instrument.trim().toUpperCase(),
     );
     const side = edits.side ?? draft.side ?? suggestSide(edits.entry ?? draft.entry) ?? null;
     const fields = {
@@ -1186,6 +1191,9 @@ function AdminStrip({
 }) {
   const live = ideas?.filter((i) => i.status === "live").length ?? null;
   const drafts = ideas?.filter((i) => i.status === "draft").length ?? null;
+  // INTEGRITY-1 — conflicted rows awaiting a human are the count that most
+  // needs visibility; the chip renders only when there are any
+  const review = ideas?.filter((i) => i.status === "review").length ?? null;
   const last = transcripts.length > 0 ? transcripts[0] : null;
   const chip = (k: string, v: React.ReactNode) => (
     <span className="adm-strip-chip">
@@ -1200,6 +1208,7 @@ function AdminStrip({
       </span>
       <span className="adm-strip-mid">
         {live !== null ? chip("LIVE", live) : null}
+        {review !== null && review > 0 ? chip("REVIEW", review) : null}
         {tracked !== null ? chip("TRACKED", tracked) : null}
         {drafts !== null ? chip("DRAFTS", drafts) : null}
         {ideas !== null ? chip("TAPE", tape.length) : null}
@@ -1430,7 +1439,12 @@ function BookRow({
             REFRESH
           </button>
         ) : null}
-        {idea.status === "live" ? (
+        {/* INTEGRITY-1 — review rows get direct CLOSE/INVALIDATE too: retiring
+            a conflicted call must never require transiently publishing it.
+            RE-ARM on a review row without fixing side/entry just re-demotes on
+            the next pass — resolve the direction first (the chip's tooltip
+            carries the conflict). */}
+        {idea.status === "live" || idea.status === "review" ? (
           <>
             <button type="button" className="adm-btn adm-btn-warn" disabled={busy} onClick={() => onPatch({ status: "closed" })}>
               CLOSE
@@ -1438,6 +1452,17 @@ function BookRow({
             <button type="button" className="adm-btn adm-btn-warn" disabled={busy} onClick={() => onPatch({ status: "invalidated" })}>
               INVALIDATE
             </button>
+            {idea.status === "review" ? (
+              <button
+                type="button"
+                className="adm-btn"
+                disabled={busy}
+                title="publish as live — unresolved side/entry conflicts re-demote on the next pass"
+                onClick={() => onPatch({ status: "live" })}
+              >
+                RE-ARM
+              </button>
+            ) : null}
           </>
         ) : (
           <button type="button" className="adm-btn" disabled={busy} onClick={() => onPatch({ status: "live" })}>

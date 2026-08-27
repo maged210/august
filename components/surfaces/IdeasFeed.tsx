@@ -573,7 +573,11 @@ export default function IdeasFeed() {
 
   const tracked = feed?.ideas ?? [];
   const liveIdeas = live ?? [];
-  const trig = tracked.filter((i) => i.status === "TRIGGERED").length;
+  // INTEGRITY-1 — the header counts cover the whole board: tracked lifecycles
+  // PLUS live desk calls whose daily evaluation concluded TRIGGERED
+  const trig =
+    tracked.filter((i) => i.status === "TRIGGERED").length +
+    liveIdeas.filter((i) => i.evaluation?.state === "TRIGGERED").length;
   const arm = tracked.filter((i) => i.status === "ARMED").length;
   const visible = tracked.filter((i) => matchesFilter(filter, i.status));
 
@@ -996,7 +1000,8 @@ function MobileCard({
 }: {
   ticker: string;
   side: { side: "LONG" | "SHORT" | "WATCH" | "NEUT"; derived: boolean } | null;
-  statusChip: { label: string; cls: string };
+  /** title carries the evaluation's honest reason (INTEGRITY-1) when present */
+  statusChip: { label: string; cls: string; title?: string };
   entry: string;
   reason: string;
   age: string;
@@ -1021,7 +1026,7 @@ function MobileCard({
             {side.side}
           </span>
         ) : null}
-        <span className={statusChip.cls}>
+        <span className={statusChip.cls} title={statusChip.title}>
           <span className="if-life-dot" aria-hidden="true" />
           {statusChip.label}
         </span>

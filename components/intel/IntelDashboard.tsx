@@ -5641,12 +5641,15 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                   — until the publish listing lands, absent for non-owners. */}
               <div className="rd-bhead">
                 <span className="rd-bhead-title">{isStack ? "DAY BOARD" : "TRADE BLOTTER"}</span>
-                {/* INTEGRITY-1 — quotes refresh at 30s, but lifecycle EVALUATION
-                    is the once-daily post-close pass; the header states both */}
+                {/* INTEGRITY-1 — the honest cadences: quotes poll at 30s; the
+                    TRACKER lifecycle evaluates on each pass (page-load passes
+                    are ~2-min throttled) with the guaranteed daily pass at
+                    21:05 UTC. Only the published BOOK (IdeasFeed) is strictly
+                    once-daily — its label says "evaluated daily at close". */}
                 <span className="rd-bhead-meta">
                   {isStack
-                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR · EVALUATED DAILY AT CLOSE`
-                    : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · EVALUATED DAILY AT CLOSE · NEXT PASS 21:05 UTC`}
+                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR · DAILY PASS 21:05 UTC`
+                    : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · LIFECYCLE PER PASS · DAILY PASS 21:05 UTC`}
                 </span>
                 {owner && (
                   <span

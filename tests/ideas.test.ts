@@ -448,3 +448,34 @@ test("evaluateLiveIdea: no crossable trigger → NEEDS_LEVEL, stated plainly", (
   assert.equal(e.level, null);
   assert.match(e.reason, /no crossable trigger/);
 });
+
+test("parseEntryTrigger: unit-qualified numbers are NOT price levels (adversarial-review guards)", () => {
+  assert.equal(parseEntryTrigger("over $100M revenue run-rate confirms the thesis"), null);
+  assert.equal(parseEntryTrigger("reclaims the 50-day moving average"), null);
+  assert.equal(parseEntryTrigger("above the 200dma"), null);
+  assert.equal(parseEntryTrigger("holds above the 21-day EMA"), null);
+  assert.equal(parseEntryTrigger("down over 30% from highs, buy the washout"), null);
+  assert.equal(parseEntryTrigger("above 5% yield"), null);
+  assert.equal(parseEntryTrigger("loses 2024 support"), null); // a year, not a price
+  // …but the desk's thousands shorthand IS a price
+  assert.deepEqual(parseEntryTrigger("above 21.5k"), { kind: "level", dir: "above", level: 21500 });
+});
+
+test("parseEntryTrigger: inline stop language is a stop, not a second entry direction", () => {
+  assert.deepEqual(parseEntryTrigger("long above 9,450; stop below 9,400"), {
+    kind: "level",
+    dir: "above",
+    level: 9450,
+  });
+  assert.deepEqual(parseEntryTrigger("reclaims 190; cut it below 182"), {
+    kind: "level",
+    dir: "above",
+    level: 190,
+  });
+  // regression: "break out above X" is an entry — 'out' must not read as risk language
+  assert.deepEqual(parseEntryTrigger("break out above $15.37"), {
+    kind: "level",
+    dir: "above",
+    level: 15.37,
+  });
+});

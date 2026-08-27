@@ -15,6 +15,7 @@
 // in lib/ideas.ts with the other pure helpers; this file owns orchestration
 // and I/O, mirroring the tracker.ts / trackerStore.ts split.
 
+import { deskSymbolFor } from "@/lib/desk-symbols";
 import { getQuote } from "@/lib/markets";
 import {
   BOOK_STALE_DAYS,
@@ -46,9 +47,11 @@ export async function runBookPass(now: number = Date.now()): Promise<BookPassRes
   const live = (await listIdeas("live"));
   if (live.length === 0) return { ran: true, live: 0, demotedToReview: 0, counts };
 
-  // one quote per distinct instrument (getQuote rides the 60s-cached Yahoo fetch)
+  // one quote per distinct instrument (getQuote rides the 60s-cached Yahoo
+  // fetch), routed through the desk's shorthand map so "NQ"/"CL" evaluate
+  // against the instrument the desk means — never the wrong listing
   const symbols = [...new Set(live.map((i) => i.instrument.trim().toUpperCase()))];
-  const settled = await Promise.allSettled(symbols.map((s) => getQuote(s)));
+  const settled = await Promise.allSettled(symbols.map((s) => getQuote(deskSymbolFor(s))));
   const quotes = new Map<string, number>();
   settled.forEach((r, idx) => {
     if (r.status === "fulfilled" && r.value) quotes.set(symbols[idx], r.value.price);

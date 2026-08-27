@@ -3,9 +3,12 @@
 // UX2-T4/T5 — THE DESK HEATMAP + MOVERS STRIP. A Finviz-style map of OUR
 // book. INTEGRITY-1 DEDUPE RULE: ONE TILE PER TICKER — an instrument that is
 // both a live desk call and a tracked card renders once, and TRACKED WINS
-// (the tracked card carries the measured lifecycle; the live row is the same
-// call before measurement). Within a source, first occurrence wins (both
-// lists arrive newest-first). Equal tile sizing stays the honest layout (no
+// while its lifecycle is OPEN (the tracked card carries the measured
+// lifecycle; the live row is the same call before measurement). A TERMINAL
+// tracked card (target hit / invalidated / closed) is history and never
+// shadows a current live call on the same ticker. Within a source, first
+// occurrence wins (both lists arrive newest-first). Equal tile sizing stays
+// the honest layout (no
 // position data exists — a plain filled grid IS the squarified treemap for
 // equal weights; hand-rolled, zero dependencies). Color encodes
 // TODAY's % move off the existing price pipeline: tracked rows already carry
@@ -80,21 +83,27 @@ export default function BookHeatmapModule({
   }, [liveSyms]);
 
   const tiles: Tile[] = useMemo(() => {
-    // ONE TILE PER TICKER, TRACKED WINS (see the header comment): tracked
-    // cards claim their ticker first; live ideas fill only unclaimed tickers.
+    // ONE TILE PER TICKER, TRACKED WINS — while the lifecycle is OPEN. Order
+    // of claim: open tracked cards (ARMED/ACTIVE/TRIGGERED — the measured
+    // current call), then live desk calls, then terminal tracked cards
+    // (TARGET_HIT/INVALIDATED/CLOSED — history must not shadow a current call
+    // on the same ticker). Within a source, first occurrence (newest) wins.
     const seen = new Set<string>();
     const out: Tile[] = [];
-    for (const c of cards) {
+    const trackedTile = (c: FeedCard): Tile => ({
+      key: `trk:${c.id}`,
+      ticker: c.ticker.toUpperCase(),
+      side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
+      quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
+      select: selectionFromTracked(c),
+    });
+    const isOpen = (c: FeedCard) =>
+      c.status === "ARMED" || c.status === "ACTIVE" || c.status === "TRIGGERED";
+    for (const c of cards.filter(isOpen)) {
       const ticker = c.ticker.toUpperCase();
       if (seen.has(ticker)) continue;
       seen.add(ticker);
-      out.push({
-        key: `trk:${c.id}`,
-        ticker,
-        side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
-        quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
-        select: selectionFromTracked(c),
-      });
+      out.push(trackedTile(c));
     }
     for (const i of liveIdeas) {
       const ticker = i.instrument.toUpperCase();
@@ -109,6 +118,12 @@ export default function BookHeatmapModule({
         quote: q && Number.isFinite(q.chgPct) && q.price > 0 ? q : null,
         select: selectionFromLive(i),
       });
+    }
+    for (const c of cards.filter((c) => !isOpen(c))) {
+      const ticker = c.ticker.toUpperCase();
+      if (seen.has(ticker)) continue;
+      seen.add(ticker);
+      out.push(trackedTile(c));
     }
     // F4 — Finviz reading order: hottest gainers first, losers last, the
     // quote-less tail at the end
@@ -172,13 +187,20 @@ export default function BookHeatmapModule({
       ) : (
         <div className="ifm-body">
           <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per ticker, tracked wins">
-            {tiles.map((t) => (
+            {tiles.map((t) => {
+              // key match, or ticker match when the selected row's tile was
+              // claimed by the other source — the map always shows where the
+              // selected instrument lives
+              const sel =
+                selection != null &&
+                (selection.key === t.key || selection.ticker.trim().toUpperCase() === t.ticker);
+              return (
               <button
                 key={t.key}
                 type="button"
                 role="option"
-                aria-selected={selection?.key === t.key}
-                className={`if-hm-tile${selection?.key === t.key ? " sel" : ""}${t.quote ? "" : " noq"}`}
+                aria-selected={sel}
+                className={`if-hm-tile${sel ? " sel" : ""}${t.quote ? "" : " noq"}`}
                 style={tileStyle(t)}
                 title={`${t.ticker}${t.quote ? ` · ${fmtPct(t.quote.chgPct)} today` : " · no quote"} — click to select`}
                 onClick={() => onSelect(t.select)}
@@ -186,7 +208,8 @@ export default function BookHeatmapModule({
                 <span className="if-hm-tkr">{t.ticker}</span>
                 <span className="if-hm-pct">{t.quote ? fmtPct(t.quote.chgPct) : "·"}</span>
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* T5 — movers: today's top/bottom three across the book */}
