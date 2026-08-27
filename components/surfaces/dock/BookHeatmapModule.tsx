@@ -1,9 +1,13 @@
 "use client";
 
 // UX2-T4/T5 — THE DESK HEATMAP + MOVERS STRIP. A Finviz-style map of OUR
-// book: one equal tile per live + tracked idea (no position data exists, so
-// equal sizing is the honest layout — a plain filled grid IS the squarified
-// treemap for equal weights; hand-rolled, zero dependencies). Color encodes
+// book. INTEGRITY-1 DEDUPE RULE: ONE TILE PER TICKER — an instrument that is
+// both a live desk call and a tracked card renders once, and TRACKED WINS
+// (the tracked card carries the measured lifecycle; the live row is the same
+// call before measurement). Within a source, first occurrence wins (both
+// lists arrive newest-first). Equal tile sizing stays the honest layout (no
+// position data exists — a plain filled grid IS the squarified treemap for
+// equal weights; hand-rolled, zero dependencies). Color encodes
 // TODAY's % move off the existing price pipeline: tracked rows already carry
 // their quote; live instruments ride one /api/intel/quotes call (the desk
 // shorthand mapped through chartSymbolFor). No quote → a neutral ∅ tile,
@@ -76,25 +80,34 @@ export default function BookHeatmapModule({
   }, [liveSyms]);
 
   const tiles: Tile[] = useMemo(() => {
+    // ONE TILE PER TICKER, TRACKED WINS (see the header comment): tracked
+    // cards claim their ticker first; live ideas fill only unclaimed tickers.
+    const seen = new Set<string>();
     const out: Tile[] = [];
+    for (const c of cards) {
+      const ticker = c.ticker.toUpperCase();
+      if (seen.has(ticker)) continue;
+      seen.add(ticker);
+      out.push({
+        key: `trk:${c.id}`,
+        ticker,
+        side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
+        quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
+        select: selectionFromTracked(c),
+      });
+    }
     for (const i of liveIdeas) {
+      const ticker = i.instrument.toUpperCase();
+      if (seen.has(ticker)) continue;
+      seen.add(ticker);
       const s = sideOf(i);
       const q = liveQuotes[chartSymbolFor(i.instrument)];
       out.push({
         key: `live:${i.id}`,
-        ticker: i.instrument.toUpperCase(),
+        ticker,
         side: s?.side === "LONG" ? "LONG" : s?.side === "SHORT" ? "SHORT" : null,
         quote: q && Number.isFinite(q.chgPct) && q.price > 0 ? q : null,
         select: selectionFromLive(i),
-      });
-    }
-    for (const c of cards) {
-      out.push({
-        key: `trk:${c.id}`,
-        ticker: c.ticker.toUpperCase(),
-        side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
-        quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
-        select: selectionFromTracked(c),
       });
     }
     // F4 — Finviz reading order: hottest gainers first, losers last, the
@@ -158,7 +171,7 @@ export default function BookHeatmapModule({
         </div>
       ) : (
         <div className="ifm-body">
-          <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per idea">
+          <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per ticker, tracked wins">
             {tiles.map((t) => (
               <button
                 key={t.key}
