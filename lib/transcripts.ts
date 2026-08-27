@@ -18,6 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Redis } from "@upstash/redis";
 import {
+  entryConflict,
   MAX_LEVEL_CHARS,
   MAX_THESIS_CHARS,
   validateIdeaCreate,
@@ -161,6 +162,21 @@ export function applyEntryRule(
   return { ideas: keptIdeas, tape: outTape.slice(0, MAX_TAPE_PER_TRANSCRIPT) };
 }
 
+/**
+ * PURE (INTEGRITY-1). THE CONFLICT RULE: side and trigger direction must
+ * agree. A candidate whose stated side contradicts its entry language, or
+ * whose entry is two-sided ("break above X for bulls; break below Y for
+ * bears" collapsed into one row), lands in REVIEW — never publishable as
+ * live until a human resolves the direction. Runs AFTER applyEntryRule, so
+ * every row here still passed the idea validator.
+ */
+export function applyConflictRule(ideas: IdeaCreateInput[]): IdeaCreateInput[] {
+  return ideas.map((i) => {
+    const conflict = entryConflict(i.side, i.entry);
+    return conflict ? { ...i, status: "review" as const } : i;
+  });
+}
+
 // --- extraction -------------------------------------------------------------
 
 export function aiConfigured(): boolean {
@@ -274,8 +290,11 @@ export async function extractFromTranscript(
   );
   const input = toolUse?.input as { ideas?: unknown; tape?: unknown } | undefined;
   // F6 — the entry rule is enforced in code, not just prompted: entry-less
-  // idea candidates demote to tape notes no matter what the model emitted
-  return applyEntryRule(normalizeCandidates(input?.ideas), normalizeTapeCandidates(input?.tape));
+  // idea candidates demote to tape notes no matter what the model emitted.
+  // INTEGRITY-1 — the conflict rule follows the same discipline: side vs
+  // entry-language disagreement (or a two-sided entry) lands in REVIEW.
+  const ruled = applyEntryRule(normalizeCandidates(input?.ideas), normalizeTapeCandidates(input?.tape));
+  return { ideas: applyConflictRule(ruled.ideas), tape: ruled.tape };
 }
 
 // --- store ------------------------------------------------------------------

@@ -6559,6 +6559,11 @@ button.pulse-line:focus-visible {
   color: var(--pos);
   border-color: rgb(var(--pos-rgb) / 0.5);
 }
+/* INTEGRITY-1 — review: a side/entry conflict awaiting a human */
+.adm-status-review {
+  color: var(--amber);
+  border-color: rgb(var(--amber-rgb) / 0.5);
+}
 .adm-status-invalidated {
   color: var(--neg);
   border-color: rgb(var(--neg-rgb) / 0.5);

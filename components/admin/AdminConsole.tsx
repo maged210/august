@@ -98,6 +98,7 @@ function suggestTapeSentiment(note: string): TapeSentiment | null {
 
 const STATUS_LABEL: Record<IdeaStatus, string> = {
   draft: "DRAFT",
+  review: "REVIEW", // INTEGRITY-1 — side/entry-language conflict awaiting a human
   live: "LIVE",
   closed: "CLOSED",
   invalidated: "INVALID",
@@ -701,7 +702,8 @@ export default function AdminConsole() {
     const sa = isStale(a) ? 0 : 1;
     const sb = isStale(b) ? 0 : 1;
     if (sa !== sb) return sa - sb;
-    const order: Record<IdeaStatus, number> = { live: 0, invalidated: 1, closed: 2, draft: 3 };
+    // review sorts ahead of live — a conflicted row needs the human first
+    const order: Record<IdeaStatus, number> = { review: 0, live: 1, invalidated: 2, closed: 3, draft: 4 };
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
     return b.updatedAt - a.updatedAt;
   });
@@ -1373,7 +1375,12 @@ function BookRow({
     >
       <div className="adm-book-head">
         <span className="adm-sym">{idea.instrument}</span>
-        <span className={`adm-status adm-status-${idea.status}`}>{STATUS_LABEL[idea.status]}</span>
+        <span
+          className={`adm-status adm-status-${idea.status}`}
+          title={idea.status === "review" ? idea.reviewReason ?? "side/entry conflict" : undefined}
+        >
+          {STATUS_LABEL[idea.status]}
+        </span>
         {stale ? (
           <span className="adm-stale-chip" title={`no touch in over the stale window — refresh or close`}>
             STALE
