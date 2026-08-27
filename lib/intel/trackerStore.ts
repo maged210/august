@@ -122,10 +122,23 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
   }
 
   // ── quotes: one batch across the live tickers ───────────────────────────────
-  const liveTickers = [...new Set(tracked.filter((t) => t.status !== "CLOSED").map((t) => t.ticker))].slice(
-    0,
-    MAX_QUOTED_TICKERS,
+  // INTEGRITY-1 — the cap used to slice a STABLE insertion-ordered list, so the
+  // same tail tickers were starved every pass and their ARMED ideas could never
+  // trigger. Evaluable ideas (ARMED with a numeric trigger, TRIGGERED with live
+  // levels) now rank ahead of thesis-only ACTIVE, so every idea that CAN
+  // transition gets its quote before the cap bites.
+  const evaluable = new Set(
+    tracked
+      .filter(
+        (t) =>
+          (t.status === "ARMED" && t.statedLevels.trigger?.value != null) ||
+          t.status === "TRIGGERED",
+      )
+      .map((t) => t.ticker),
   );
+  const liveTickers = [...new Set(tracked.filter((t) => t.status !== "CLOSED").map((t) => t.ticker))]
+    .sort((a, b) => Number(evaluable.has(b)) - Number(evaluable.has(a)))
+    .slice(0, MAX_QUOTED_TICKERS);
   const settled = await Promise.allSettled(liveTickers.map((s) => getQuote(s)));
   const quotes = new Map<string, number>();
   settled.forEach((r, i) => {

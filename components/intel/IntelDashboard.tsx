@@ -5550,10 +5550,12 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                   — until the publish listing lands, absent for non-owners. */}
               <div className="rd-bhead">
                 <span className="rd-bhead-title">{isStack ? "DAY BOARD" : "TRADE BLOTTER"}</span>
+                {/* INTEGRITY-1 — quotes refresh at 30s, but lifecycle EVALUATION
+                    is the once-daily post-close pass; the header states both */}
                 <span className="rd-bhead-meta">
                   {isStack
                     ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR`
-                    : `${blotter.length} IDEAS · ▾ URGENCY · AUTO-REFRESH 30s`}
+                    : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · EVALUATED DAILY AT CLOSE · NEXT PASS 21:05 UTC`}
                 </span>
                 {owner && (
                   <span

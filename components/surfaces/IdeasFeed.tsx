@@ -87,6 +87,20 @@ const LIFE_META: Record<TrackedStatus, { label: string; chip: string; family: st
   CLOSED: { label: "CLOSED", chip: "if-life-exp", family: "if-lc-exp" },
 };
 
+// INTEGRITY-1 — the truth chip for a published idea: the daily book pass's
+// conclusion replaces the old blanket LIVE. ARMED (crossable trigger stated,
+// fresh, uncrossed) still reads LIVE — it is; the other conclusions say what
+// is actually true. A row the pass hasn't seen yet keeps plain LIVE. Chip
+// classes reuse the tracked lifecycle families — no new styling.
+function liveStatusChip(idea: PublicIdea): { label: string; cls: string; title?: string } {
+  const ev = idea.evaluation;
+  if (!ev || ev.state === "ARMED") return { label: "LIVE", cls: "if-live-chip", title: ev?.reason };
+  if (ev.state === "TRIGGERED")
+    return { label: "TRIGGERED", cls: "if-life if-life-trig", title: ev.reason };
+  if (ev.state === "STALE") return { label: "STALE", cls: "if-life if-life-exp", title: ev.reason };
+  return { label: "NEEDS LEVEL", cls: "if-life if-life-act", title: ev.reason };
+}
+
 const FILTERS = ["ALL", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -262,10 +276,15 @@ function LiveRow({
           )}
         </span>
         <span className="if-bc">
-          <span className="if-live-chip">
-            <span className="if-life-dot" aria-hidden="true" />
-            LIVE
-          </span>
+          {(() => {
+            const chip = liveStatusChip(idea);
+            return (
+              <span className={chip.cls} title={chip.title}>
+                {chip.label === "LIVE" ? <span className="if-life-dot" aria-hidden="true" /> : null}
+                {chip.label}
+              </span>
+            );
+          })()}
         </span>
         {/* R6 — ENTRY gets real width; full text rides the hover title */}
         <span className="if-bc">
@@ -747,7 +766,11 @@ export default function IdeasFeed() {
             </div>
           ) : (
             <div className="if-mcards">
-              {liveIdeas.length > 0 ? <div className="if-mgroup">LIVE — DESK CALLS</div> : null}
+              {liveIdeas.length > 0 ? (
+                <div className="if-mgroup" title="evaluated daily at close · next pass 21:05 UTC">
+                  LIVE — EVALUATED DAILY AT CLOSE · 21:05 UTC
+                </div>
+              ) : null}
               {liveIdeas.map((idea) => (
                 <MobileCard
                   key={idea.id}
@@ -758,7 +781,7 @@ export default function IdeasFeed() {
                   }}
                   ticker={idea.instrument}
                   side={sideOf(idea)}
-                  statusChip={{ label: "LIVE", cls: "if-live-chip" }}
+                  statusChip={liveStatusChip(idea)}
                   entry={idea.entry}
                   reason={idea.thesis}
                   age={relativeTime(idea.createdAt)}
@@ -865,7 +888,10 @@ export default function IdeasFeed() {
                     <div className="if-bgroup hot">
                       <span className="if-bgroup-tick" aria-hidden="true" />
                       <span className="if-bgroup-label">LIVE</span>
-                      <span className="if-bgroup-sub">DESK CALLS — CURRENT</span>
+                      {/* the honest Hobby cadence — one evaluation pass, post-close */}
+                      <span className="if-bgroup-sub">
+                        DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS 21:05 UTC
+                      </span>
                       <span className="if-bgroup-hair" aria-hidden="true" />
                       <span className="if-bgroup-count">
                         {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
