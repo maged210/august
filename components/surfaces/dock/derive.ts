@@ -36,35 +36,13 @@ export function sideOf(idea: PublicIdea): ResolvedSide | null {
   return d ? { side: d, derived: true } : null;
 }
 
-// Desk shorthand → Yahoo chart symbol, for the chart/pulse ONLY (the server's
-// normalizeYahooSymbol handles crypto; futures/index shorthands would pass
-// through to the wrong listing). Deliberately NOT applied to the quote paths
-// the desk already uses — this maps for charts without changing any existing
-// behavior.
-const CHART_SYM: Record<string, string> = {
-  NQ: "NQ=F",
-  ES: "ES=F",
-  YM: "YM=F",
-  RTY: "RTY=F",
-  CL: "CL=F",
-  GC: "GC=F",
-  SI: "SI=F",
-  NG: "NG=F",
-  SPX: "^GSPC",
-  NDX: "^NDX",
-  DJI: "^DJI",
-  VIX: "^VIX",
-  DXY: "DX-Y.NYB",
-  BTC: "BTC-USD",
-  ETH: "ETH-USD",
-  SOL: "SOL-USD",
-  DOGE: "DOGE-USD",
-  XRP: "XRP-USD",
-};
+// Desk shorthand → Yahoo chart symbol. INTEGRITY-1 lifted the table to
+// lib/desk-symbols.ts so the server's daily book pass evaluates the SAME
+// instrument the desk charts; this re-export keeps every existing import.
+import { deskSymbolFor } from "@/lib/desk-symbols";
 
 export function chartSymbolFor(ticker: string): string {
-  const s = ticker.trim().toUpperCase();
-  return CHART_SYM[s] ?? s;
+  return deskSymbolFor(ticker);
 }
 
 // — the desk's ONE selection constructor pair (G3 r5; moved here for UX2-T4

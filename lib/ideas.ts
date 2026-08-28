@@ -14,8 +14,11 @@ import { Redis } from "@upstash/redis";
 
 /** ADMIN-1: "invalidated" joins the lifecycle — a call that broke its premise.
  *  Like closed it never reaches the public wire (only "live" is served); the
- *  book manager keeps the two apart so the desk's record stays honest. */
-export type IdeaStatus = "draft" | "live" | "closed" | "invalidated";
+ *  book manager keeps the two apart so the desk's record stays honest.
+ *  INTEGRITY-1: "review" — the stated side and the entry language disagree
+ *  (or the entry is two-sided). A conflicted call never publishes as live;
+ *  it waits in review until a human resolves the direction. */
+export type IdeaStatus = "draft" | "review" | "live" | "closed" | "invalidated";
 export type IdeaSource = "manual" | "extracted";
 export type IdeaRiskLevel = "low" | "medium" | "high";
 /** UX4 — the desk's stated direction. OPTIONAL and absent-by-default: the
@@ -24,6 +27,32 @@ export type IdeaRiskLevel = "low" | "medium" | "high";
  *  side stays honest (the blotter falls back to its derived-from-levels
  *  rendering, clearly marked as derived). */
 export type IdeaSide = "long" | "short" | "watch";
+
+/** INTEGRITY-1 — what the daily close pass concluded about a LIVE idea.
+ *  The entry string stays free-form and honest to the source; this is the
+ *  machine's read of it, kept separate and recomputed by the pass:
+ *  - ARMED        parseable crossing trigger, not yet crossed, freshly stated
+ *  - TRIGGERED    the stated crossing was observed at a daily close (sticky —
+ *                 a fired call is performance history, it never un-fires)
+ *  - STALE        parseable but uncrossed past the stale horizon (3d default —
+ *                 STALE narrows to the untriggered book, house law 2026-08-16)
+ *  - NEEDS_LEVEL  no crossable trigger in the entry text — the pass cannot
+ *                 evaluate it, and the tile must say so instead of "LIVE" */
+export type IdeaEvalState = "ARMED" | "TRIGGERED" | "STALE" | "NEEDS_LEVEL";
+
+export type IdeaEvaluation = {
+  state: IdeaEvalState;
+  /** parsed crossing level (null for NEEDS_LEVEL) */
+  level: number | null;
+  /** crossing direction the entry language states (null for NEEDS_LEVEL) */
+  dir: "above" | "below" | null;
+  /** the daily close the conclusion used (null when no quote resolved) */
+  price: number | null;
+  /** when the pass concluded this (epoch ms) */
+  at: number;
+  /** honest, human-readable cause */
+  reason: string;
+};
 
 export type Idea = {
   id: string;
@@ -44,11 +73,18 @@ export type Idea = {
   /** prior theses, oldest first — populated when a dedupe-approve REFRESHES a
    *  live idea (ADMIN-1); admin-side only, never on the public wire */
   thesisHistory?: string[];
+  /** INTEGRITY-1 — set only by the daily book pass (server), never by hand;
+   *  absent until the first pass sees the idea */
+  evaluation?: IdeaEvaluation;
+  /** INTEGRITY-1 — why this row sits in review (side/trigger conflict detail) */
+  reviewReason?: string;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 };
 
-/** What the public rail receives: live ideas, provenance stripped. */
+/** What the public rail receives: live ideas, provenance stripped. The
+ *  evaluation rides along (INTEGRITY-1) so tiles can say TRIGGERED / STALE /
+ *  NEEDS LEVEL instead of a blanket LIVE. */
 export type PublicIdea = Pick<
   Idea,
   | "id"
@@ -59,6 +95,7 @@ export type PublicIdea = Pick<
   | "stop"
   | "riskLevel"
   | "side"
+  | "evaluation"
   | "createdAt"
   | "updatedAt"
 >;
@@ -69,7 +106,7 @@ export const MAX_THESIS_CHARS = 2000;
 export const MAX_LEVEL_CHARS = 120;
 export const MAX_IDEAS = 500;
 
-export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "live", "closed", "invalidated"];
+export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "review", "live", "closed", "invalidated"];
 export const MAX_THESIS_HISTORY = 10;
 export const IDEA_SOURCES: readonly IdeaSource[] = ["manual", "extracted"];
 export const IDEA_RISKS: readonly IdeaRiskLevel[] = ["low", "medium", "high"];
@@ -88,6 +125,7 @@ export function toPublicIdea(i: Idea): PublicIdea {
     ...(i.stop ? { stop: i.stop } : {}),
     riskLevel: i.riskLevel,
     ...(i.side ? { side: i.side } : {}),
+    ...(i.evaluation ? { evaluation: i.evaluation } : {}),
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
   };
@@ -389,11 +427,58 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
     id: existing.id,
     updatedAt: Date.now(),
   };
+  // INTEGRITY-1 — a human RESTATEMENT of the call (entry or side changed)
+  // re-arms the machine's read: the prior evaluation judged a statement that
+  // no longer exists, so even a sticky TRIGGERED clears and the next pass
+  // evaluates the NEW statement. Sticky-vs-price stays; sticky-vs-human doesn't.
+  const restated =
+    (fields.entry !== undefined && fields.entry !== existing.entry) ||
+    ("side" in fields && fields.side !== existing.side);
+  if (restated) delete updated.evaluation;
+  // leaving review by human hand retires the conflict note with it
+  if (fields.status !== undefined && fields.status !== "review" && existing.status === "review") {
+    delete updated.reviewReason;
+  }
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
     return updated;
   } catch {
     return null;
+  }
+}
+
+/** INTEGRITY-1 — the daily book pass records its conclusion WITHOUT bumping
+ *  updatedAt: staleness measures the last human statement, and a nightly
+ *  evaluation write must never reset that clock. */
+export async function setIdeaEvaluation(id: string, evaluation: IdeaEvaluation): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  const existing = await getIdea(id);
+  if (!existing) return false;
+  try {
+    await redis.set(K.idea(id), JSON.stringify({ ...existing, evaluation }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** INTEGRITY-1 — a live row whose side and entry language disagree leaves the
+ *  public wire for REVIEW until a human resolves the direction. updatedAt is
+ *  PRESERVED: it measures the last HUMAN statement (the staleness law), and a
+ *  machine demotion is not one — a re-armed-unresolved row that ping-pongs
+ *  back must not have its stale clock reset by the machine. */
+export async function demoteIdeaToReview(id: string, reason: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  const existing = await getIdea(id);
+  if (!existing) return false;
+  const updated: Idea = { ...existing, status: "review", reviewReason: reason };
+  try {
+    await redis.set(K.idea(id), JSON.stringify(updated));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -463,4 +548,162 @@ export function suggestSide(entry: string): IdeaSide | null {
   const short = SHORT_ENTRY_RE.test(e);
   if (long === short) return null;
   return long ? "long" : "short";
+}
+
+// --- INTEGRITY-1 — reading a crossable trigger out of the entry text --------
+// The entry string stays verbatim and free-form (the house law); these helpers
+// are the machine's read of it. Only crossing language directly attached to a
+// number is evaluable — "holds support", "watch for continuation", "break
+// below the trendline" have no crossable level and honestly parse to null.
+
+// "$1,117.50" · "9.45" · "772" — commas tolerated, $ optional.
+const LEVEL_NUM = String.raw`\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)`;
+// direction keyword immediately followed by a number (optionally a range like
+// "772–772.50"); distance matters — "below the short-term uptrend; … $57.70"
+// must NOT read 57.70 as the trigger.
+const DIR_NUM_RE = new RegExp(
+  String.raw`\b(above|over|under|below|loses?|clears?|reclaims?)\s+(?:the\s+)?${LEVEL_NUM}(?:\s*(?:[–—-]|to)\s*${LEVEL_NUM})?`,
+  "gi",
+);
+const ABOVE_WORDS = new Set(["above", "over", "clear", "clears", "reclaim", "reclaims"]);
+// A number wearing a UNIT is not a price level: "$100M revenue", "50-day
+// moving average", "200dma", "21-day EMA", "30% off highs", "5% yield", "2x".
+// Checked against the text immediately after the matched number.
+const UNIT_AFTER_RE = /^\s*(?:%|x\b|(?:mm?|bn?|t)\b(?![\w.])|[-‑\s]?(?:day|week|month|year|yr)s?\b|d?ma\b|ema\b|sma\b)/i;
+// …but a trailing k is the desk's thousands shorthand ("above 21.5k") — a
+// price, multiplied through, not a unit rejection.
+const K_AFTER_RE = /^\s*k\b(?![\w.])/i;
+// Risk language immediately before a dir keyword marks a STOP, not an entry:
+// "long above 9,450; stop below 9,400" is one-directional with its risk
+// inline. ("out" is deliberately absent — "break out above X" is an entry.)
+const STOP_BEFORE_RE = /\b(?:stop(?:s|ped)?|cut(?:\s+it)?|risk(?:ing)?|invalid\w*|exit\w*)\s*(?:it\s+|is\s+|at\s+)?$/i;
+// Bare 19xx/20xx integers (no $, no comma, no decimals) read as YEARS, not
+// prices — "loses 2024 support". A real four-digit price is written $2,024 /
+// 2,024 / 2024.50 in this book's idiom.
+const YEAR_LIKE = (raw: string, value: number) =>
+  Number.isInteger(value) && value >= 1990 && value <= 2039 && !/[$,.]/.test(raw);
+// two-sided phrasing check by keywords alone (covers "break above X OR break
+// below $Y" where only one side carries a number)
+const BREAK_ABOVE_RE = /\bbreak\w*(?:\s+out)?\s+above\b/i;
+const BREAK_BELOW_RE = /\bbreak\w*(?:\s+out)?\s+below\b/i;
+
+export type ParsedTrigger =
+  | { kind: "level"; dir: "above" | "below"; level: number }
+  | { kind: "two_sided" };
+
+const toNum = (s: string): number => Number(s.replace(/,/g, ""));
+
+/** PURE. Read the crossable trigger the entry language states. A range takes
+ *  its far edge (fully cleared: above 772–772.50 → 772.50; below 766–767 →
+ *  766). Unit-qualified numbers ($100M, 50-day, 30%, 200dma, bare years) are
+ *  NOT price levels and never match — inventing a trigger is worse than
+ *  NEEDS_LEVEL. Inline risk language ("…; stop below 9,400") is a stop, not a
+ *  second entry. Both entry directions present → two_sided. Nothing crossable
+ *  → null. */
+export function parseEntryTrigger(entry: string): ParsedTrigger | null {
+  const e = entry.trim();
+  if (!e) return null;
+  const hits: Array<{ dir: "above" | "below"; level: number }> = [];
+  for (const m of e.matchAll(DIR_NUM_RE)) {
+    const word = m[1].toLowerCase();
+    const dir: "above" | "below" = ABOVE_WORDS.has(word) ? "above" : "below";
+    // the text right after the LAST number of this match decides the unit test
+    const after = e.slice((m.index ?? 0) + m[0].length);
+    const kMult = K_AFTER_RE.test(after) ? 1000 : 1;
+    if (kMult === 1 && UNIT_AFTER_RE.test(after)) continue; // "$100M", "50-day", "30%" — not a price
+    if (STOP_BEFORE_RE.test(e.slice(0, m.index ?? 0))) continue; // inline stop, not an entry
+    const a = toNum(m[2]);
+    const b = m[3] != null ? toNum(m[3]) : null;
+    if (!Number.isFinite(a) || a <= 0) continue;
+    if (b == null && kMult === 1 && YEAR_LIKE(m[2], a)) continue; // "loses 2024 support" — a year
+    const level =
+      (b != null && Number.isFinite(b) && b > 0 ? (dir === "above" ? Math.max(a, b) : Math.min(a, b)) : a) * kMult;
+    hits.push({ dir, level });
+  }
+  const dirs = new Set(hits.map((h) => h.dir));
+  if (dirs.size > 1) return { kind: "two_sided" };
+  if (BREAK_ABOVE_RE.test(e) && BREAK_BELOW_RE.test(e)) return { kind: "two_sided" };
+  if (hits.length === 0) return null;
+  return { kind: "level", dir: hits[0].dir, level: hits[0].level };
+}
+
+export type EntryConflict = "two_sided" | "side_mismatch";
+
+/** PURE. Side and trigger direction must agree (INTEGRITY-1): a two-sided
+ *  entry, or a stated side that contradicts the entry language, is a conflict
+ *  — such a row belongs in REVIEW, never LIVE. */
+export function entryConflict(side: IdeaSide | undefined, entry: string): EntryConflict | null {
+  const parsed = parseEntryTrigger(entry);
+  if (parsed?.kind === "two_sided") return "two_sided";
+  if (LONG_ENTRY_RE.test(entry) && SHORT_ENTRY_RE.test(entry)) return "two_sided";
+  if (side === "long" || side === "short") {
+    const impliedSide: IdeaSide | null =
+      parsed?.kind === "level" ? (parsed.dir === "above" ? "long" : "short") : suggestSide(entry);
+    if (impliedSide && impliedSide !== side) return "side_mismatch";
+  }
+  return null;
+}
+
+/** Stale horizon for the untriggered book — same dial as the tracker
+ *  (TRACKER_STALE_DAYS overrides; finalized at 3, owner order 2026-08-16). */
+export const BOOK_STALE_DAYS = 3;
+const DAY_MS = 86_400_000;
+
+/** PURE. One live idea vs one daily close (INTEGRITY-1). Precedence:
+ *  TRIGGERED is sticky (a fired call is performance history and never
+ *  un-fires) → NEEDS_LEVEL (nothing crossable — the tile must say so, not
+ *  "LIVE") → STALE (crossable but uncrossed past the horizon; STALE narrows
+ *  to the untriggered book) → ARMED. */
+export function evaluateLiveIdea(
+  idea: Pick<Idea, "entry" | "updatedAt" | "evaluation">,
+  price: number | null,
+  now: number,
+  staleDays: number = BOOK_STALE_DAYS,
+): IdeaEvaluation {
+  const prior = idea.evaluation;
+  if (prior?.state === "TRIGGERED") return prior; // sticky — performance history
+
+  const parsed = parseEntryTrigger(idea.entry);
+  if (!parsed || parsed.kind !== "level") {
+    return {
+      state: "NEEDS_LEVEL",
+      level: null,
+      dir: null,
+      price,
+      at: now,
+      reason: "no crossable trigger stated in the entry",
+    };
+  }
+  const { dir, level } = parsed;
+  if (price != null) {
+    const crossed = dir === "above" ? price >= level : price <= level;
+    if (crossed) {
+      return {
+        state: "TRIGGERED",
+        level,
+        dir,
+        price,
+        at: now,
+        // "close-pass price", not "daily close" — for 24/7 instruments (BTC)
+        // the 21:05 UTC snapshot is a pass price, not an exchange close
+        reason: `close-pass price ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)`,
+      };
+    }
+  }
+  const stale = now - idea.updatedAt > staleDays * DAY_MS;
+  return {
+    state: stale ? "STALE" : "ARMED",
+    level,
+    dir,
+    price,
+    at: now,
+    reason:
+      price == null
+        ? stale
+          ? `no quote resolved — crossing unconfirmed; no re-statement in ${staleDays}d`
+          : "no quote resolved — crossing unevaluated this pass"
+        : stale
+          ? `trigger uncrossed and no re-statement in ${staleDays}d`
+          : "stated trigger not yet crossed",
+  };
 }

@@ -16,12 +16,15 @@ import {
   MAX_LEVEL_CHARS,
   MAX_THESIS_CHARS,
   createIdea,
+  entryConflict,
+  evaluateLiveIdea,
   getIdea,
   ideasConfigured,
   listIdeas,
   listLiveIdeas,
   mergeIdeaRecords,
   mergeIdeas,
+  parseEntryTrigger,
   relativeTime,
   suggestSide,
   toPublicIdea,
@@ -349,4 +352,130 @@ test("store: unconfigured Redis serves empty/null and refuses writes", async () 
   );
   assert.equal(await updateIdea("idea_abc123", { status: "live" }), null);
   assert.equal(await mergeIdeas("idea_a", "idea_b"), null);
+});
+
+// --- INTEGRITY-1 · parseEntryTrigger / entryConflict / evaluateLiveIdea ------
+
+test("parseEntryTrigger: crossing language adjacent to a number parses; ranges take the far edge", () => {
+  assert.deepEqual(parseEntryTrigger("Break above $9.45"), { kind: "level", dir: "above", level: 9.45 });
+  assert.deepEqual(parseEntryTrigger("Drop under $197.25"), { kind: "level", dir: "below", level: 197.25 });
+  assert.deepEqual(parseEntryTrigger("break below $1,117.50"), { kind: "level", dir: "below", level: 1117.5 });
+  assert.deepEqual(parseEntryTrigger("below 72"), { kind: "level", dir: "below", level: 72 });
+  // range: fully cleared — above takes the high edge, below the low edge
+  assert.deepEqual(parseEntryTrigger("breaking above $9.24–$9.25 resistance; stock at/near $10"), {
+    kind: "level",
+    dir: "above",
+    level: 9.25,
+  });
+});
+
+test("parseEntryTrigger: no crossable trigger → null (holds/watch/trendline language)", () => {
+  assert.equal(parseEntryTrigger("holds support around $25"), null);
+  assert.equal(parseEntryTrigger("Bouncing off support"), null);
+  assert.equal(parseEntryTrigger("watch for continued market weakness"), null);
+  // "below" a trendline, no adjacent number — the later target number must NOT be read as the trigger
+  assert.equal(
+    parseEntryTrigger("confirmation break below short-term uptrend; gap fill target ~$57.70–$56"),
+    null,
+  );
+});
+
+test("parseEntryTrigger: two-sided calls are two_sided, never collapsed to one direction", () => {
+  // the SPY row that started this — verbatim
+  assert.deepEqual(
+    parseEntryTrigger("Break above 772–772.50 for bulls; break below 766–767 for bears"),
+    { kind: "two_sided" },
+  );
+  // keyword-only two-sidedness (only one side carries a number)
+  assert.deepEqual(
+    parseEntryTrigger(
+      "after earnings report; break above downtrend resistance OR break below $107 for put-selling/DCA",
+    ),
+    { kind: "two_sided" },
+  );
+});
+
+test("entryConflict: side and trigger direction must agree", () => {
+  // two-sided → conflict regardless of side
+  assert.equal(
+    entryConflict(undefined, "Break above 772–772.50 for bulls; break below 766–767 for bears"),
+    "two_sided",
+  );
+  // stated side against the entry language → mismatch
+  assert.equal(entryConflict("short", "break above $50"), "side_mismatch");
+  assert.equal(entryConflict("long", "falls under $95.30"), "side_mismatch");
+  // agreement (incl. language suggestSide can't read but the parser can) → clean
+  assert.equal(entryConflict("short", "Drop under $197.25"), null);
+  assert.equal(entryConflict("long", "Break above $9.45"), null);
+  // unparseable entry with a stated side is NOT a conflict — it's NEEDS_LEVEL territory
+  assert.equal(entryConflict("long", "holds support around $25"), null);
+});
+
+const EVAL_NOW = 1_750_000_000_000;
+const fresh = { entry: "break above $100", updatedAt: EVAL_NOW - 86_400_000, evaluation: undefined };
+
+test("evaluateLiveIdea: ARMED → TRIGGERED when the daily close crosses the stated trigger", () => {
+  const armed = evaluateLiveIdea(fresh, 99, EVAL_NOW);
+  assert.equal(armed.state, "ARMED");
+  const fired = evaluateLiveIdea(fresh, 101, EVAL_NOW);
+  assert.equal(fired.state, "TRIGGERED");
+  assert.equal(fired.level, 100);
+  assert.equal(fired.dir, "above");
+  // below-direction crossing
+  const short = evaluateLiveIdea({ ...fresh, entry: "below 72" }, 71.5, EVAL_NOW);
+  assert.equal(short.state, "TRIGGERED");
+});
+
+test("evaluateLiveIdea: TRIGGERED is sticky — a fired call never un-fires", () => {
+  const fired = evaluateLiveIdea(fresh, 101, EVAL_NOW);
+  const later = evaluateLiveIdea({ ...fresh, evaluation: fired }, 90, EVAL_NOW + 86_400_000);
+  assert.equal(later.state, "TRIGGERED");
+  assert.equal(later.at, fired.at); // the crossing record stays frozen
+});
+
+test("evaluateLiveIdea: STALE lands at the horizon on the UNtriggered book only", () => {
+  const old = { ...fresh, updatedAt: EVAL_NOW - 4 * 86_400_000 }; // 4d > 3d default
+  assert.equal(evaluateLiveIdea(old, 99, EVAL_NOW).state, "STALE");
+  // crossing beats staleness — a fired old idea is performance history, not stale
+  assert.equal(evaluateLiveIdea(old, 101, EVAL_NOW).state, "TRIGGERED");
+  // fresh + uncrossed stays ARMED
+  assert.equal(evaluateLiveIdea(fresh, 99, EVAL_NOW).state, "ARMED");
+});
+
+test("evaluateLiveIdea: no crossable trigger → NEEDS_LEVEL, stated plainly", () => {
+  const e = evaluateLiveIdea({ ...fresh, entry: "holds support around $25" }, 30, EVAL_NOW);
+  assert.equal(e.state, "NEEDS_LEVEL");
+  assert.equal(e.level, null);
+  assert.match(e.reason, /no crossable trigger/);
+});
+
+test("parseEntryTrigger: unit-qualified numbers are NOT price levels (adversarial-review guards)", () => {
+  assert.equal(parseEntryTrigger("over $100M revenue run-rate confirms the thesis"), null);
+  assert.equal(parseEntryTrigger("reclaims the 50-day moving average"), null);
+  assert.equal(parseEntryTrigger("above the 200dma"), null);
+  assert.equal(parseEntryTrigger("holds above the 21-day EMA"), null);
+  assert.equal(parseEntryTrigger("down over 30% from highs, buy the washout"), null);
+  assert.equal(parseEntryTrigger("above 5% yield"), null);
+  assert.equal(parseEntryTrigger("loses 2024 support"), null); // a year, not a price
+  // …but the desk's thousands shorthand IS a price
+  assert.deepEqual(parseEntryTrigger("above 21.5k"), { kind: "level", dir: "above", level: 21500 });
+});
+
+test("parseEntryTrigger: inline stop language is a stop, not a second entry direction", () => {
+  assert.deepEqual(parseEntryTrigger("long above 9,450; stop below 9,400"), {
+    kind: "level",
+    dir: "above",
+    level: 9450,
+  });
+  assert.deepEqual(parseEntryTrigger("reclaims 190; cut it below 182"), {
+    kind: "level",
+    dir: "above",
+    level: 190,
+  });
+  // regression: "break out above X" is an entry — 'out' must not read as risk language
+  assert.deepEqual(parseEntryTrigger("break out above $15.37"), {
+    kind: "level",
+    dir: "above",
+    level: 15.37,
+  });
 });

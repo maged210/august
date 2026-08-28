@@ -17,6 +17,7 @@ import { getBrief, listBriefDates, logIntel } from "./store";
 import {
   applyHousekeeping,
   applySnapshot,
+  closeIdea,
   DEFAULT_STALE_DAYS,
   enforceCap,
   upsertIdeas,
@@ -27,6 +28,27 @@ import { etDateKey } from "./session";
 
 const KEY = "august:intel:tracked:v1";
 const LASTRUN_KEY = "august:intel:tracked:lastrun";
+// INTEGRITY-1 — CLOSE tombstones (Redis hash, id → {at, reason}). A user
+// CLOSE is NOT re-derivable from (stored set, brief, quotes), so plain
+// last-write-wins does NOT converge for it: a pass holding a stale blob
+// across its quote batch would silently resurrect the idea. The tombstone is
+// written atomically per-field (HSET, no read-modify-write), every pass folds
+// pending tombstones in after loading, and a tombstone is deleted only once
+// the saved blob durably shows the idea CLOSED.
+const CLOSED_KEY = "august:intel:tracked:closed:v1";
+
+type CloseTombstone = { at: number; reason: string };
+
+function parseTombstone(raw: unknown): CloseTombstone | null {
+  try {
+    const v = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (typeof v !== "object" || v === null) return null;
+    const t = v as CloseTombstone;
+    return Number.isFinite(t.at) && typeof t.reason === "string" ? t : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Page-load passes are throttled to this; the cron passes force. */
 const PASS_MIN_GAP_MS = 2 * 60_000;
@@ -68,6 +90,38 @@ async function saveTracked(tracked: TrackedIdea[]): Promise<void> {
   await redis.set(KEY, JSON.stringify(tracked));
 }
 
+export type CloseTrackedResult =
+  | { ok: true; already: boolean; idea: TrackedIdea }
+  | { ok: false; error: "storage_unconfigured" | "tracked_not_found" | "store_write_failed" };
+
+/** User-initiated CLOSE (INTEGRITY-1) — tombstone first (atomic HSET, the
+ * durable record no concurrent pass can clobber), then the blob update for
+ * an immediately-consistent read. A pass overlapping this write may briefly
+ * resurrect the row in ITS save, but the next pass folds the tombstone back
+ * in — the close always converges, never silently disappears. */
+export async function closeTracked(id: string, reason?: string): Promise<CloseTrackedResult> {
+  const redis = getRedis();
+  if (!redis) return { ok: false, error: "storage_unconfigured" };
+  const tracked = await loadTracked();
+  const target = tracked.find((t) => t.id === id);
+  if (!target) return { ok: false, error: "tracked_not_found" };
+  if (target.status === "CLOSED") return { ok: true, already: true, idea: target };
+  const now = Date.now();
+  const closed = closeIdea(target, now, reason);
+  try {
+    await redis.hset(CLOSED_KEY, {
+      [id]: JSON.stringify({
+        at: now,
+        reason: closed.closedReason ?? "closed by the desk",
+      } satisfies CloseTombstone),
+    });
+    await saveTracked(tracked.map((t) => (t.id === id ? closed : t)));
+  } catch {
+    return { ok: false, error: "store_write_failed" };
+  }
+  return { ok: true, already: false, idea: closed };
+}
+
 export type TrackerPassResult = {
   configured: boolean;
   ran: boolean;
@@ -100,6 +154,29 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
 
   let tracked = await loadTracked();
 
+  // ── fold pending CLOSE tombstones in (INTEGRITY-1) ─────────────────────────
+  // A user CLOSE that a concurrent pass clobbered re-applies here; applied
+  // tombstones are pruned only AFTER this pass's save has made them durable.
+  let appliedTombstones: string[] = [];
+  try {
+    const stones = (await redis.hgetall<Record<string, unknown>>(CLOSED_KEY)) ?? {};
+    for (const [id, raw] of Object.entries(stones)) {
+      const stone = parseTombstone(raw);
+      if (!stone) continue;
+      const idx = tracked.findIndex((t) => t.id === id);
+      if (idx === -1) {
+        appliedTombstones.push(id); // idea evicted/gone — the tombstone is spent
+        continue;
+      }
+      if (tracked[idx].status !== "CLOSED") {
+        tracked[idx] = closeIdea(tracked[idx], stone.at, stone.reason);
+      }
+      appliedTombstones.push(id);
+    }
+  } catch {
+    appliedTombstones = []; // best-effort — unfolded stones just wait for the next pass
+  }
+
   // ── ingest: fold the latest brief's ideas into the tracked set ─────────────
   // Today's brief when it exists, else the most recent stored brief (weekend /
   // early-morning case). Ingestion is idempotent — contributed idea ids dedupe.
@@ -122,10 +199,23 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
   }
 
   // ── quotes: one batch across the live tickers ───────────────────────────────
-  const liveTickers = [...new Set(tracked.filter((t) => t.status !== "CLOSED").map((t) => t.ticker))].slice(
-    0,
-    MAX_QUOTED_TICKERS,
+  // INTEGRITY-1 — the cap used to slice a STABLE insertion-ordered list, so the
+  // same tail tickers were starved every pass and their ARMED ideas could never
+  // trigger. Evaluable ideas (ARMED with a numeric trigger, TRIGGERED with live
+  // levels) now rank ahead of thesis-only ACTIVE, so every idea that CAN
+  // transition gets its quote before the cap bites.
+  const evaluable = new Set(
+    tracked
+      .filter(
+        (t) =>
+          (t.status === "ARMED" && t.statedLevels.trigger?.value != null) ||
+          t.status === "TRIGGERED",
+      )
+      .map((t) => t.ticker),
   );
+  const liveTickers = [...new Set(tracked.filter((t) => t.status !== "CLOSED").map((t) => t.ticker))]
+    .sort((a, b) => Number(evaluable.has(b)) - Number(evaluable.has(a)))
+    .slice(0, MAX_QUOTED_TICKERS);
   const settled = await Promise.allSettled(liveTickers.map((s) => getQuote(s)));
   const quotes = new Map<string, number>();
   settled.forEach((r, i) => {
@@ -152,6 +242,19 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
   const { kept, evicted, overflow } = enforceCap(tracked);
   if (overflow) await logIntel("tracker_cap_overflow", { size: kept.length });
   await saveTracked(kept);
+  // prune only tombstones whose close is now durably in the saved blob (or
+  // whose idea is gone) — a tombstone written mid-pass survives for the next one
+  if (appliedTombstones.length > 0) {
+    try {
+      const durable = appliedTombstones.filter((id) => {
+        const t = kept.find((k) => k.id === id);
+        return !t || t.status === "CLOSED";
+      });
+      if (durable.length > 0) await redis.hdel(CLOSED_KEY, ...durable);
+    } catch {
+      /* best-effort — an unpruned stone is idempotent */
+    }
+  }
   try {
     await redis.set(LASTRUN_KEY, now);
   } catch {

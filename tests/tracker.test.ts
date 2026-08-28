@@ -7,6 +7,7 @@ import {
   applyHousekeeping,
   applySnapshot,
   AUTO_CLOSE_TERMINAL_DAYS,
+  closeIdea,
   mfeMaeView,
   newTrackedIdea,
   pnlView,
@@ -412,4 +413,43 @@ test("daySoFar: the engine's pnlView unchanged; untracked is an explicit none·u
   assert.equal(daySoFar(fired).kind, "since_called");
   // untracked → explicit, labeled absence
   assert.deepEqual(daySoFar(null), { kind: "none", reason: "untracked" });
+});
+
+// --- INTEGRITY-1 · user-initiated CLOSE --------------------------------------
+
+test("closeIdea: closes any open idea now, reason recorded, history entry carries the last quote", () => {
+  // the TDOC shape: TRIGGERED with no stated target/invalidation — the idea
+  // that can never resolve on its own; CLOSE is its only lever
+  const t0 = newTrackedIdea(briefIdea({ ticker: "TDOC", entry: { value: 9.15, text: "$9.15" } }), T0);
+  const fired = run(t0, [9.2, 6.33]); // triggers, then bleeds — and sits open forever
+  assert.equal(fired.status, "TRIGGERED");
+
+  const closed = closeIdea(fired, T0 + 10 * MIN, "closed by the desk — no stated exit");
+  assert.equal(closed.status, "CLOSED");
+  assert.equal(closed.closedReason, "closed by the desk — no stated exit");
+  assert.equal(closed.closedAt, T0 + 10 * MIN);
+  assert.equal(closed.stale, false);
+  const last = closed.statusHistory[closed.statusHistory.length - 1];
+  assert.equal(last.state, "CLOSED");
+  assert.equal(last.price, 6.33); // the last observed quote, honest — not a guess
+  // idempotent: closing a closed idea is a no-op
+  assert.equal(closeIdea(closed, T0 + 20 * MIN), closed);
+});
+
+test("closeIdea: a closed idea takes no further snapshots, and a re-mention starts a NEW lifecycle", () => {
+  const t0 = newTrackedIdea(briefIdea({ ticker: "UBER", direction: "bearish", entry: { value: 71.8, text: "$71.80" } }), T0);
+  const closed = closeIdea(run(t0, [71.5]), T0 + 10 * MIN);
+  // frozen: applySnapshot refuses closed ideas
+  const after = applySnapshot(closed, { at: T0 + 20 * MIN, price: 60 }, { force: true });
+  assert.equal(after.status, "CLOSED");
+  assert.equal(after.lastQuote?.price, 71.5);
+  // a fresh mention of the same call opens a NEW tracked idea, not a resurrection
+  const { tracked, added } = upsertIdeas(
+    [closed],
+    [briefIdea({ ticker: "UBER", direction: "bearish", entry: { value: 71.8, text: "$71.80" }, channelTitle: "TestChannel" })],
+    T0 + 30 * MIN,
+  );
+  assert.equal(added, 1);
+  assert.equal(tracked.length, 2);
+  assert.equal(tracked[0].status, "CLOSED"); // the closed record remains as history
 });

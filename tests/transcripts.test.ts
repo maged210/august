@@ -14,6 +14,7 @@ import {
   MAX_TRANSCRIPT_CHARS,
   aiConfigured,
   listTranscripts,
+  applyConflictRule,
   applyEntryRule,
   normalizeCandidates,
   storeTranscript,
@@ -151,4 +152,20 @@ test("store: unconfigured Redis no-ops and never throws", async () => {
   assert.equal(await storeTranscript("text", "src"), null);
   await updateTranscript("tr_x", { status: "processed" }); // must not throw
   assert.deepEqual(await listTranscripts(), []);
+});
+
+// --- INTEGRITY-1 · the conflict rule ----------------------------------------
+
+test("conflict rule: side vs entry-language disagreement lands in REVIEW, never draft-to-live", () => {
+  const out = applyConflictRule(
+    normalizeCandidates([
+      { ...GOOD, entry: "break above 21,450", side: "short" }, // mismatch
+      { ...GOOD, instrument: "SPY", entry: "Break above 772–772.50 for bulls; break below 766–767 for bears" }, // two-sided
+      { ...GOOD, instrument: "HOOD", entry: "falls under $95.30", side: "short" }, // agreement
+    ]),
+  );
+  assert.equal(out.length, 3);
+  assert.equal(out[0].status, "review");
+  assert.equal(out[1].status, "review");
+  assert.equal(out[2].status, "draft");
 });
