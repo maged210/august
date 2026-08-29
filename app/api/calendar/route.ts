@@ -5,6 +5,7 @@
 // card gets the REASON, never a fabricated 0). The free feed carries no
 // `actual` — the client states that, never a beat/miss.
 import { getCalendarWeek, eventState, reactionAfter, type ReactionResult, type ReactionWhy } from "@/lib/calendar-feed";
+import { backfillActuals } from "@/lib/calendar-actuals";
 import { getHistory } from "@/lib/markets";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
@@ -31,20 +32,33 @@ export async function GET(req: Request): Promise<Response> {
       no_preprint_bar: "bars don't cover the print",
       window_incomplete: "bars don't cover the full 15m",
     };
-    const anyReleased = events.some((e) => e.state === "released");
+    const released = events.filter((e) => e.state === "released");
     let reactions: Record<string, ReactionResult> = {};
-    if (anyReleased) {
-      const bars = await getHistory("NQ=F", "yahoo", "5D").catch(() => []);
-      reactions = Object.fromEntries(
-        events.filter((e) => e.state === "released").map((e) => [e.id, reactionAfter(bars, e.ts, 15)]),
-      );
+    let actuals: Record<string, string> = {};
+    if (released.length > 0) {
+      // actuals for printed majors — the fixed FRED mapping, cache-first (the
+      // 21:05 pass warms it); timeboxed so a slow FRED never stalls the row.
+      const [bars, acts] = await Promise.all([
+        getHistory("NQ=F", "yahoo", "5D").catch(() => []),
+        Promise.race([
+          backfillActuals(released),
+          new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 2500)),
+        ]).catch(() => ({}) as Record<string, string>),
+      ]);
+      actuals = acts;
+      reactions = Object.fromEntries(released.map((e) => [e.id, reactionAfter(bars, e.ts, 15)]));
     }
     return Response.json(
       {
         ok: true,
         events: events.map((e) => {
           const r = e.state === "released" ? reactions[e.id] : undefined;
-          return { ...e, reaction15m: r?.ok ? r.pct : null, reactionWhy: r && !r.ok ? WHY[r.why] : null };
+          return {
+            ...e,
+            reaction15m: r?.ok ? r.pct : null,
+            reactionWhy: r && !r.ok ? WHY[r.why] : null,
+            actual: e.state === "released" ? (actuals[e.id] ?? null) : null,
+          };
         }),
       },
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } },

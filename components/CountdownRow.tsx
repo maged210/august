@@ -15,7 +15,13 @@ import DataTag from "@/components/DataTag";
 import type { PublicIdea } from "@/lib/ideas";
 import type { CalEvent, EventState } from "@/lib/calendar-feed";
 
-type Row = CalEvent & { state: EventState; reaction15m: number | null; reactionWhy: string | null };
+type Row = CalEvent & {
+  state: EventState;
+  reaction15m: number | null;
+  reactionWhy: string | null;
+  /** the printed value, backfilled from FRED for the mapped majors */
+  actual: string | null;
+};
 
 // Under this the 15m move is tape noise — say "flat", not a signed "-0.0%".
 const FLAT_PCT = 0.05;
@@ -133,7 +139,13 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
             ) : (
               <span className="cdr-react">NQ 15m reaction — · {e.reactionWhy ?? "unavailable"}</span>
             )}
-            <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
+            {e.actual ? (
+              <span className="cdr-exp" title="backfilled from FRED — the value the source agency published">
+                actual {e.actual} · FRED
+              </span>
+            ) : (
+              <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
+            )}
             {onAsk ? (
               <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
                 ASK AUGUST →
