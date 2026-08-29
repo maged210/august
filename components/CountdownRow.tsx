@@ -90,7 +90,7 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
         <span className="hb-label">CALENDAR</span>
         {next ? (
           <span className="cdr-quietline">
-            next: {next.cls ?? next.title.toUpperCase()} · {fmtEt(next.ts)} · in {countdown(next.ts, now)}
+            next: {next.title.toUpperCase()} · {fmtEt(next.ts)} · in {countdown(next.ts, now)}
           </span>
         ) : (
           <span className="cdr-quietline">nothing high-impact on this week&apos;s tape</span>
@@ -108,8 +108,11 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
       </div>
       <div className="cdr-cards">
         {released.map((e) => (
-          <div key={e.ts} className="cdr-card cdr-released">
-            <span className="cdr-name">{e.cls ?? e.title.toUpperCase()}</span>
+          <div key={e.id} className="cdr-card cdr-released">
+            {/* the feed's FULL title, never the collapsed class — "Prelim GDP
+                q/q" and "Prelim GDP Price Index q/q" both classify as GDP, and
+                a "FOMC Member X Speaks" is not an FOMC decision */}
+            <span className="cdr-name">{e.title.toUpperCase()}</span>
             <span className="cdr-printed">PRINTED · {fmtEt(e.ts)}</span>
             <span className="cdr-exp">
               {e.forecast ? `expected ${e.forecast}` : null}
@@ -123,15 +126,15 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
             ) : null}
             <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
             {onAsk ? (
-              <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.cls ?? e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
+              <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
                 ASK AUGUST →
               </button>
             ) : null}
           </div>
         ))}
         {imminent.map((e) => (
-          <div key={e.ts} className="cdr-card">
-            <span className="cdr-name">{e.cls ?? e.title.toUpperCase()}</span>
+          <div key={e.id} className="cdr-card">
+            <span className="cdr-name">{e.title.toUpperCase()}</span>
             <span className="cdr-count">{countdown(e.ts, now)}</span>
             <span className="cdr-when">{fmtEt(e.ts)}</span>
             <span className="cdr-exp">
@@ -158,8 +161,8 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
       {distant.length > 0 ? (
         <div className="cdr-strip">
           {distant.slice(0, 4).map((e) => (
-            <span key={e.ts} className="cdr-stripitem">
-              {e.cls ?? e.title.toUpperCase()} · {fmtEt(e.ts)}
+            <span key={e.id} className="cdr-stripitem">
+              {e.title.toUpperCase()} · {fmtEt(e.ts)}
             </span>
           ))}
         </div>

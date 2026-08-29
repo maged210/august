@@ -17,6 +17,31 @@ test("classify: the big four; weekly claims are NOT the jobs report", () => {
   assert.equal(classifyEvent("Flash Manufacturing PMI"), null);
 });
 
+test("classify: member speeches are NOT the FOMC; chair remarks are", () => {
+  // live-feed titles, 2026-08-26/28 — a Low-impact Barkin speech rendered as
+  // a big-four "FOMC" card before this guard
+  assert.equal(classifyEvent("FOMC Member Barkin Speaks"), null);
+  assert.equal(classifyEvent("FOMC Member Hammack Speaks"), null);
+  assert.equal(classifyEvent("Fed Chairman Warsh Speaks"), "FOMC");
+  assert.equal(classifyEvent("Fed Chair Powell Speaks"), "FOMC");
+  // both GDP series classify GDP — the CARD shows the full title, the class
+  // only drives inclusion
+  assert.equal(classifyEvent("Prelim GDP q/q"), "GDP");
+  assert.equal(classifyEvent("Prelim GDP Price Index q/q"), "GDP");
+});
+
+test("ids: series+timestamp, stable, distinct at shared timestamps", () => {
+  // the real Wed 08:30 collision: two GDP series print at the same second
+  const at = "2026-08-26T08:30:00-04:00";
+  const gdp = parseCalRow({ title: "Prelim GDP q/q", country: "USD", date: at, impact: "High" })!;
+  const gdpPi = parseCalRow({ title: "Prelim GDP Price Index q/q", country: "USD", date: at, impact: "Medium" })!;
+  assert.equal(gdp.ts, gdpPi.ts); // same timestamp…
+  assert.notEqual(gdp.id, gdpPi.id); // …distinct identity — keys never collide
+  // stable: the same row parses to the same id every time
+  assert.equal(gdp.id, parseCalRow({ title: "Prelim GDP q/q", country: "USD", date: at, impact: "High" })!.id);
+  assert.equal(gdp.id, `Prelim GDP q/q@${Date.parse(at)}`);
+});
+
 test("state: distant >48h, imminent <48h, released ≤12h old, past after", () => {
   const now = Date.UTC(2026, 7, 17, 12, 0);
   assert.equal(eventState(now + 60 * 3600_000, now), "distant");

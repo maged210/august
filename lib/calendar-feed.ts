@@ -8,6 +8,10 @@
 import type { Candle } from "./markets";
 
 export type CalEvent = {
+  /** stable identity: series title + timestamp. NEVER the timestamp alone —
+   *  the feed stacks releases on shared timestamps (verified 2026-08-26:
+   *  seven USD rows at 08:30 ET). */
+  id: string;
   title: string;
   country: string;
   /** epoch ms (the feed carries ET-offset ISO strings) */
@@ -25,10 +29,14 @@ export type EventState = "distant" | "imminent" | "released" | "past";
 const FEED = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
 /** PURE. Classify a title into the big four; null otherwise. Weekly claims
- *  are deliberately NOT the jobs report. */
+ *  are deliberately NOT the jobs report, and regional-Fed member speeches are
+ *  NOT the FOMC (the feed titles them "FOMC Member X Speaks", usually Low
+ *  impact — promoting them made a Barkin speech render as "FOMC"). Chair
+ *  remarks stay classified: they move the tape. */
 export function classifyEvent(title: string): EventClass | null {
   const t = title.trim();
   if (/unemployment claims/i.test(t)) return null;
+  if (/\bFOMC member/i.test(t)) return null;
   if (/\bCPI\b|consumer price/i.test(t)) return "CPI";
   if (/\bFOMC\b|federal funds rate|fed chair/i.test(t)) return "FOMC";
   if (/non-?farm|\bNFP\b|unemployment rate|average hourly earnings/i.test(t)) return "JOBS";
@@ -68,6 +76,7 @@ export function parseCalRow(raw: unknown): CalEvent | null {
   if (!Number.isFinite(ts)) return null;
   const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
   return {
+    id: `${r.title.trim()}@${ts}`,
     title: r.title.trim(),
     country: typeof r.country === "string" ? r.country : "",
     ts,
