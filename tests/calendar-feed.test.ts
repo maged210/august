@@ -50,17 +50,42 @@ test("state: distant >48h, imminent <48h, released ≤12h old, past after", () =
   assert.equal(eventState(now - 20 * 3600_000, now), "past");
 });
 
-test("reaction: needs bars covering BOTH ends; never estimated", () => {
-  const t0 = Date.UTC(2026, 7, 19, 18, 0) / 1000; // 14:00 ET print
-  const bars: Candle[] = Array.from({ length: 12 }, (_, i) => ({
-    time: t0 + i * 300, open: 100, high: 101, low: 99, close: 100 + i * 0.1,
-  }));
+const mkBar = (t0: number, offMin: number, open: number, close: number): Candle => ({
+  time: t0 + offMin * 60, open, high: Math.max(open, close), low: Math.min(open, close), close,
+});
+
+test("reaction: pre-print anchor -> t+15m open; the impulse INSIDE the print bar counts", () => {
+  const t0 = Date.UTC(2026, 7, 26, 12, 30) / 1000; // 08:30 ET print, pre-market bars present
+  // The exact shape that rendered "-0.0%": flat tape into the print, the whole
+  // move (-0.32%) inside the 08:30 bar, then drift. The old anchor (close of
+  // the print bar) measured only the drift.
+  const bars: Candle[] = [
+    mkBar(t0, -15, 100, 100), mkBar(t0, -10, 100, 100), mkBar(t0, -5, 100, 100),
+    mkBar(t0, 0, 100, 99.7), mkBar(t0, 5, 99.7, 99.66), mkBar(t0, 10, 99.66, 99.69),
+    mkBar(t0, 15, 99.68, 99.72), mkBar(t0, 20, 99.72, 99.7),
+  ];
   const r = reactionAfter(bars, t0 * 1000, 15);
-  assert.ok(r !== null && Math.abs(r - 0.3) < 0.01); // +0.3% over 15m
-  // bars end before t+15m → null
-  assert.equal(reactionAfter(bars.slice(0, 2), t0 * 1000, 15), null);
-  // no bar near the print → null
-  assert.equal(reactionAfter(bars, (t0 - 7200) * 1000, 15), null);
+  assert.ok(r.ok);
+  // (open of the t+15m bar - close of the last pre-print bar) / anchor
+  assert.ok(Math.abs(r.pct - -0.32) < 0.005);
+});
+
+test("reaction: honest refusals name the reason; never estimated", () => {
+  const t0 = Date.UTC(2026, 7, 26, 12, 30) / 1000;
+  // no bars at all
+  assert.deepEqual(reactionAfter([], t0 * 1000, 15), { ok: false, why: "no_bars" });
+  // bars begin AT the print — no pre-print trade to anchor on
+  const noPre: Candle[] = [0, 5, 10, 15, 20].map((m) => mkBar(t0, m, 100, 100));
+  assert.deepEqual(reactionAfter(noPre, t0 * 1000, 15), { ok: false, why: "no_preprint_bar" });
+  // bars stop before t+15m (print near the session close)
+  const cut: Candle[] = [-5, 0, 5].map((m) => mkBar(t0, m, 100, 100));
+  assert.deepEqual(reactionAfter(cut, t0 * 1000, 15), { ok: false, why: "window_incomplete" });
+  // a session-break gap right where the window ends is NOT covered
+  const gapped: Candle[] = [...[-5, 0, 5].map((m) => mkBar(t0, m, 100, 100)), mkBar(t0, 90, 101, 101)];
+  assert.deepEqual(reactionAfter(gapped, t0 * 1000, 15), { ok: false, why: "window_incomplete" });
+  // 30m bars are too coarse to anchor a 15m window — refuse, don't approximate
+  const coarse: Candle[] = [-30, 0, 30].map((m) => mkBar(t0, m, 100, 100));
+  assert.deepEqual(reactionAfter(coarse, t0 * 1000, 15), { ok: false, why: "no_preprint_bar" });
 });
 
 test("parse: ET-offset ISO dates land as epoch ms; malformed refuses", () => {

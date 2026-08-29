@@ -467,15 +467,20 @@ function buildFlow(actives: ScreenQuote[]): FlowItem[] {
 // --- price-chart history (for the main chart widget) ----------------------
 const TF_YAHOO: Record<string, { interval: string; range: string }> = {
   "1D": { interval: "5m", range: "1d" },
+  // 5m bars across the week — the calendar reaction window needs 5m
+  // granularity BEYOND today (Yahoo's 1d range starts at midnight ET, so a
+  // prior-evening print loses its bars); same endpoint, additive key.
+  "5D": { interval: "5m", range: "5d" },
   "1W": { interval: "30m", range: "5d" },
   "1M": { interval: "1d", range: "1mo" },
 };
 const TF_CB: Record<string, { gran: number; n: number }> = {
   "1D": { gran: 300, n: 288 },
+  "5D": { gran: 300, n: 1440 },
   "1W": { gran: 3600, n: 168 },
   "1M": { gran: 21600, n: 120 },
 };
-const TF_TTL: Record<string, number> = { "1D": 120_000, "1W": 600_000, "1M": 3_600_000 };
+const TF_TTL: Record<string, number> = { "1D": 120_000, "5D": 300_000, "1W": 600_000, "1M": 3_600_000 };
 
 export async function getHistory(sym: string, kind: string, tf: string): Promise<Candle[]> {
   const t = TF_YAHOO[tf] ? tf : "1D";

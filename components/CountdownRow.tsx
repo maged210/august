@@ -3,8 +3,8 @@
 // WHAT'S COMING (R4 F2) — the state-aware countdown row. Three states per
 // card (F2-A): DISTANT = one slim muted line, never a hero; IMMINENT = the
 // full countdown card with expected/prior + impact; RELEASED = the print
-// flips live with the honest reaction line (omitted when the bars don't
-// cover it) and an explicit note that the free feed carries no actuals.
+// flips live with the honest reaction line ("—" plus the reason when the
+// bars don't cover it, "flat" under 0.05% — never a fabricated "-0.0%").
 // BRIDGE RULE (F2-B): every card carries ask-August; when the live book
 // holds an index call, the "desk is positioned" chip links the Terminal.
 // QUIET-DAY RULE (F2-C): with nothing inside 48h the whole row collapses
@@ -15,7 +15,10 @@ import DataTag from "@/components/DataTag";
 import type { PublicIdea } from "@/lib/ideas";
 import type { CalEvent, EventState } from "@/lib/calendar-feed";
 
-type Row = CalEvent & { state: EventState; reaction15m: number | null };
+type Row = CalEvent & { state: EventState; reaction15m: number | null; reactionWhy: string | null };
+
+// Under this the 15m move is tape noise — say "flat", not a signed "-0.0%".
+const FLAT_PCT = 0.05;
 
 const INDEX_RE = /^(NQ|ES|SPY|QQQ|YM|RTY)\b/i;
 
@@ -120,10 +123,16 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
               {e.previous ? `prior ${e.previous}` : null}
             </span>
             {e.reaction15m !== null ? (
-              <span className={`cdr-react ${e.reaction15m >= 0 ? "hl-up" : "hl-down"}`}>
-                NQ {e.reaction15m >= 0 ? "+" : ""}{e.reaction15m.toFixed(1)}% in the 15m after the print
-              </span>
-            ) : null}
+              Math.abs(e.reaction15m) < FLAT_PCT ? (
+                <span className="cdr-react">NQ flat in the 15m after the print</span>
+              ) : (
+                <span className={`cdr-react ${e.reaction15m >= 0 ? "hl-up" : "hl-down"}`}>
+                  NQ {e.reaction15m >= 0 ? "+" : ""}{e.reaction15m.toFixed(1)}% in the 15m after the print
+                </span>
+              )
+            ) : (
+              <span className="cdr-react">NQ 15m reaction — · {e.reactionWhy ?? "unavailable"}</span>
+            )}
             <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
             {onAsk ? (
               <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
