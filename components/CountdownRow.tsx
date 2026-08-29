@@ -134,7 +134,12 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
                 </span>
               )
             ) : (
-              <span className="cdr-react">NQ 15m reaction — · {e.reactionWhy ?? "unavailable"}</span>
+              // reactionWhy is null only when the CLIENT flipped this card to
+              // released ahead of the next poll (the server payload still said
+              // imminent) — the truth is timing, not a data failure
+              <span className="cdr-react">
+                NQ 15m reaction — · {e.reactionWhy ?? (now - e.ts < 16 * 60_000 ? "the 15m window is still open" : "awaiting refresh")}
+              </span>
             )}
             {e.actual ? (
               <span className="cdr-exp" title="backfilled from FRED — the value the source agency published">

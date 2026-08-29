@@ -41,18 +41,26 @@ test("format: feed-style values; toFixed's -0.0 never renders", () => {
   assert.equal(formatActual(-0.2, "thousands"), "0K");
 });
 
-test("vintage guard: only the printed period passes", () => {
+test("vintage guard: only the printed period AND vintage pass", () => {
   const aug26 = Date.parse("2026-08-26T08:30:00-04:00");
-  // monthly majors report the PRIOR month
-  assert.equal(observationMatchesEvent("2026-07-01", aug26, "monthly"), true);
-  assert.equal(observationMatchesEvent("2026-06-01", aug26, "monthly"), false); // FRED not ingested yet → refuse
-  assert.equal(observationMatchesEvent("2026-08-01", aug26, "monthly"), false);
-  // GDP estimates report the quarter 3–5 months back (advance/2nd/final)
-  assert.equal(observationMatchesEvent("2026-04-01", aug26, "quarterly"), true); // Q2, 2nd estimate in Aug
+  // monthly majors report the PRIOR month (pre-ingest FRED shows a further
+  // month back, so the period alone refuses; realtime is not consulted)
+  assert.equal(observationMatchesEvent({ date: "2026-07-01" }, aug26, "monthly"), true);
+  assert.equal(observationMatchesEvent({ date: "2026-06-01" }, aug26, "monthly"), false);
+  assert.equal(observationMatchesEvent({ date: "2026-08-01" }, aug26, "monthly"), false);
+  // GDP estimates revise the SAME quarterly observation in place — the value
+  // is only THIS print's when its vintage was published on/after the print
+  // day. Real case (ALFRED, 2026): GDP Price Index Q2 was 6.3 on Aug 25 and
+  // 6.4 on Aug 27; the period check alone would have served 6.3 as Wednesday's
+  // "actual".
+  assert.equal(observationMatchesEvent({ date: "2026-04-01", realtimeStart: "2026-08-26" }, aug26, "quarterly"), true);
+  assert.equal(observationMatchesEvent({ date: "2026-04-01", realtimeStart: "2026-08-25" }, aug26, "quarterly"), false); // pre-ingest: previous estimate
+  assert.equal(observationMatchesEvent({ date: "2026-04-01", realtimeStart: null }, aug26, "quarterly"), false); // unproven vintage → refuse
+  assert.equal(observationMatchesEvent({ date: "2026-04-01" }, aug26, "quarterly"), false);
   const jul30 = Date.parse("2026-07-30T08:30:00-04:00");
-  assert.equal(observationMatchesEvent("2026-04-01", jul30, "quarterly"), true); // advance
-  assert.equal(observationMatchesEvent("2026-01-01", aug26, "quarterly"), false); // stale quarter
-  assert.equal(observationMatchesEvent("garbage", aug26, "monthly"), false);
+  assert.equal(observationMatchesEvent({ date: "2026-04-01", realtimeStart: "2026-07-30" }, jul30, "quarterly"), true); // advance
+  assert.equal(observationMatchesEvent({ date: "2026-01-01", realtimeStart: "2026-08-26" }, aug26, "quarterly"), false); // stale quarter
+  assert.equal(observationMatchesEvent({ date: "garbage" }, aug26, "monthly"), false);
 });
 
 function fakeStore(): ActualsStore & { data: Map<string, string> } {
@@ -73,9 +81,11 @@ test("backfill: fetch once, cache, and serve repeats from the cache", async () =
   const ev = { id: "Prelim GDP q/q@1", title: "Prelim GDP q/q", ts: Date.parse("2026-08-26T08:30:00-04:00") };
   const store = fakeStore();
   let calls = 0;
-  const fetcher: FredFetcher = async () => {
+  const fetcher: FredFetcher = async (_series, _units, realtimeStart) => {
     calls++;
-    return { date: "2026-04-01", value: 1.5 };
+    // quarterly fetches must open the vintage window from the day before the print
+    assert.equal(realtimeStart, "2026-08-25");
+    return { date: "2026-04-01", value: 1.5, realtimeStart: "2026-08-26" };
   };
   const first = await backfillActuals([ev], { store, fetcher, now });
   assert.deepEqual(first, { [ev.id]: "1.5%" });
@@ -85,13 +95,32 @@ test("backfill: fetch once, cache, and serve repeats from the cache", async () =
   assert.equal(calls, 1); // cache hit — FRED not touched again
 });
 
+test("backfill: a pre-ingest quarterly value never masquerades as the print", async () => {
+  // The 2026-08-26 GDP Price Index case: between the 08:30 print and FRED's
+  // ingest, the latest observation is the SAME quarter still carrying the
+  // advance estimate (6.3). Period-only checking served it as "actual".
+  const now = Date.parse("2026-08-26T08:45:00-04:00");
+  const ev = { id: "Prelim GDP Price Index q/q@1", title: "Prelim GDP Price Index q/q", ts: Date.parse("2026-08-26T08:30:00-04:00") };
+  const store = fakeStore();
+  let calls = 0;
+  const preIngest: FredFetcher = async () => {
+    calls++;
+    return { date: "2026-04-01", value: 6.3, realtimeStart: "2026-08-25" }; // still the advance vintage
+  };
+  const res = await backfillActuals([ev], { store, fetcher: preIngest, now });
+  assert.deepEqual(res, {}); // refused — disclaimer stays, no fabricated actual
+  // and the refusal is negative-cached so the immediate retry spends nothing
+  await backfillActuals([ev], { store, fetcher: preIngest, now });
+  assert.equal(calls, 1);
+});
+
 test("backfill: unprinted, unmapped, and stale-vintage events never fill", async () => {
   const now = Date.parse("2026-08-26T12:00:00-04:00");
   const store = fakeStore();
   let calls = 0;
   const staleFetcher: FredFetcher = async () => {
     calls++;
-    return { date: "2026-06-01", value: 0.4 }; // FRED hasn't ingested the print
+    return { date: "2026-06-01", value: 0.4, realtimeStart: null }; // FRED hasn't ingested the print
   };
   const future = { id: "CPI m/m@f", title: "CPI m/m", ts: now + 3600_000 };
   const unmapped = { id: "Unemployment Claims@u", title: "Unemployment Claims", ts: now - 3600_000 };

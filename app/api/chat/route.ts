@@ -88,6 +88,10 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return new Response("Invalid request body.", { status: 400 });
   }
+  // The ask buttons never set voice (the voice loop is retired) — a hand-built
+  // voice+calendarAsk request must not seed the SHARED day cache with the
+  // Haiku tier, so it simply gets no cache at all.
+  if (isVoice) calendarAsk = null;
   const model = isVoice ? VOICE_MODEL : TEXT_MODEL;
 
   // Keep only well-formed turns before sending them on.
@@ -114,8 +118,13 @@ export async function POST(req: Request): Promise<Response> {
   if (calendarAsk && cleaned.length === 1 && cleaned[0].role === "user") {
     const ev = (await getCalendarWeek().catch(() => [])).find((e) => e.id === calendarAsk);
     const kind = ev ? matchAskPrompt(ev, cleaned[0].content) : null;
-    if (ev && kind) {
-      calAskKey = askCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind);
+    // The prompt kind must also match the event's ACTUAL state right now: the
+    // "released" prompt asserts "just printed", and honoring it pre-print
+    // would let anyone seed the shared cache with an answer about a release
+    // that hasn't happened (timing-based poisoning, no text needed).
+    const stateOk = ev && kind ? (kind === "released" ? ev.ts <= Date.now() : ev.ts > Date.now()) : false;
+    if (ev && kind && stateOk) {
+      calAskKey = askCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind, cleaned[0].content);
       const cache = getAskCache();
       if (cache) {
         try {
@@ -130,6 +139,11 @@ export async function POST(req: Request): Promise<Response> {
           /* fail open — a Redis blip means a normal spend, not a 500 */
         }
       }
+    } else {
+      // Visibility for the silent-miss mode: feed-snapshot skew (forecast
+      // revision mid-caches) or a state mismatch lands here — the request
+      // still answers, it just spends uncached.
+      console.log(`[chat] calendar-ask id present but not honored (${!ev ? "unknown event" : !kind ? "prompt mismatch" : "state mismatch"}) — uncached spend`);
     }
   }
 
@@ -182,10 +196,16 @@ export async function POST(req: Request): Promise<Response> {
   // remembers + the live snapshots) rides in a second, uncached block after it.
   const stableSystem = SYSTEM_PROMPT + TOOL_GUIDANCE;
   // A cacheable calendar-ask answer is served to EVERY visitor who clicks the
-  // same card today — the caller's personal memory must not shape (or leak
-  // into) it. That path gets the global snapshots only.
-  const dynamicSystem =
-    (calAskKey ? "" : buildMemorySection(profile, summaries)) + marketsSnapshot + commandSnapshot + deskSnapshot;
+  // same card today, for up to 24h — so NOTHING volatile or personal may
+  // shape it: no caller memory (privacy) and no live market/desk snapshots
+  // (an hours-stale "NQ is at X right now" replayed as fresh would be a
+  // fabrication). The guidance block keeps the model from inventing numbers
+  // it doesn't have.
+  const CAL_ASK_GUIDANCE =
+    "\n\n---\nThis is a calendar-card question about a scheduled economic release. You have NO live tape, NO printed value, and no personal memory in context, and this answer may be replayed to other visitors later today. Explain the mechanics and the scenarios for this release plainly; do NOT state current prices or levels, and do NOT invent the printed value.";
+  const dynamicSystem = calAskKey
+    ? CAL_ASK_GUIDANCE
+    : buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: stableSystem, cache_control: { type: "ephemeral" } },
   ];

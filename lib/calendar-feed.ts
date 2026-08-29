@@ -117,10 +117,24 @@ export function matchAskPrompt(
   return text === p.released ? "released" : text === p.imminent ? "imminent" : null;
 }
 
+// FNV-1a 32-bit — a tiny pure digest (no node:crypto: this module ships in
+// the client bundle).
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
 /** PURE. Cache key for a calendar ask — per event, per prompt kind (the
- *  pre-print and post-print questions get different answers), per UTC day. */
-export function askCacheKey(eventId: string, isoDay: string, kind: "released" | "imminent"): string {
-  return `aug:calask:v1:${kind}:${isoDay}:${eventId}`;
+ *  pre-print and post-print questions get different answers), per UTC day,
+ *  per canonical prompt text: the imminent prompt embeds forecast/previous,
+ *  and a mid-day feed revision must start a FRESH entry rather than serve an
+ *  answer reasoning about the old numbers. */
+export function askCacheKey(eventId: string, isoDay: string, kind: "released" | "imminent", promptText: string): string {
+  return `aug:calask:v1:${kind}:${isoDay}:${fnv1a(promptText)}:${eventId}`;
 }
 
 /** PURE. Map a raw feed row; null when malformed. */

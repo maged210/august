@@ -57,45 +57,84 @@ export function formatActual(value: number, fmt: FredMapping["fmt"]): string {
   return `${s === "-0.0" ? "0.0" : s}%`;
 }
 
-/** PURE. Whether a FRED observation period is THE period the event printed.
- *  Monthly majors report the prior month; GDP estimates report the quarter
- *  3–5 months back (advance/2nd/final). Anything else refuses — if FRED
- *  hasn't ingested the print yet, its latest observation is the PREVIOUS
- *  period, and serving that as "actual" would be a fabrication. */
+/** PURE. Whether a FRED observation IS the value the event printed.
+ *  Monthly majors report the prior month — before FRED ingests the print its
+ *  latest observation is a FURTHER month back (diff 2), so the period alone
+ *  refuses. Quarterly GDP estimates are different: FRED revises the SAME
+ *  quarterly observation in place (advance → 2nd → final all live on the
+ *  quarter-start date), so between a Prelim/Final print and FRED's ingest the
+ *  period check would pass while the VALUE is still the previous estimate —
+ *  the quarterly branch therefore also requires the observation's
+ *  realtime_start (the date the current value was published) to be on/after
+ *  the event's ET date. Anything else refuses: a stale estimate served as
+ *  "actual" would be a fabrication. */
 export function observationMatchesEvent(
-  obsDate: string,
+  obs: { date: string; realtimeStart?: string | null },
   eventTs: number,
   cadence: FredMapping["cadence"],
 ): boolean {
-  const om = /^(\d{4})-(\d{2})-\d{2}$/.exec(obsDate);
+  const om = /^(\d{4})-(\d{2})-\d{2}$/.exec(obs.date);
   if (!om) return false;
-  const em = /^(\d{4})-(\d{2})/.exec(
-    new Date(eventTs).toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
-  );
+  const eventEtDate = new Date(eventTs).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const em = /^(\d{4})-(\d{2})/.exec(eventEtDate);
   if (!em) return false;
   const diff = Number(em[1]) * 12 + Number(em[2]) - (Number(om[1]) * 12 + Number(om[2]));
-  return cadence === "monthly" ? diff === 1 : diff >= 3 && diff <= 5;
+  if (cadence === "monthly") return diff === 1;
+  if (diff < 3 || diff > 5) return false;
+  // in-place quarterly revisions: only a vintage published on/after the print
+  // day proves the value IS this estimate and not the previous one
+  const rt = obs.realtimeStart;
+  return typeof rt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rt) && rt >= eventEtDate;
 }
 
 // --- FRED fetch (injectable for tests) -------------------------------------
-export type FredObservation = { date: string; value: number } | null;
-export type FredFetcher = (series: string, units: FredUnits) => Promise<FredObservation>;
+export type FredObservation = { date: string; value: number; realtimeStart: string | null } | null;
+/** realtimeStart (quarterly only): opens FRED's vintage window so the row's
+ *  realtime_start is the TRUE publication date of the current value — with
+ *  the default window FRED clamps realtime_start to today, which would make
+ *  a pre-ingest fetch on the print day look freshly published. */
+export type FredFetcher = (
+  series: string,
+  units: FredUnits,
+  realtimeStart?: string | null,
+) => Promise<FredObservation>;
 
-async function fetchFredLatest(series: string, units: FredUnits): Promise<FredObservation> {
+async function fetchFredLatest(
+  series: string,
+  units: FredUnits,
+  realtimeStart?: string | null,
+): Promise<FredObservation> {
   const key = (process.env.FRED_API_KEY || "").trim();
   // Same guard as lib/markets getMacro: real keys are 32 chars; placeholders skip.
   if (key.length < 16) return null;
   try {
-    const res = await fetch(
-      `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${key}&file_type=json&sort_order=desc&limit=1&units=${units}`,
-      { cache: "no-store" },
-    );
+    let url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${key}&file_type=json&sort_order=desc&limit=10&units=${units}`;
+    // Vintage window from the day BEFORE the print: a value still current from
+    // an earlier release clamps to realtime_start = that day (refused by the
+    // guard); a value ingested on/after the print day keeps its true
+    // publication date (accepted).
+    if (realtimeStart) url += `&realtime_start=${realtimeStart}&realtime_end=9999-12-31`;
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return null;
-    const j = (await res.json()) as { observations?: Array<{ date?: unknown; value?: unknown }> };
-    const o = j?.observations?.[0];
-    const v = Number(o?.value); // FRED marks missing values "." → NaN → refuse
-    if (!o || typeof o.date !== "string" || !Number.isFinite(v)) return null;
-    return { date: o.date, value: v };
+    const j = (await res.json()) as {
+      observations?: Array<{ date?: unknown; value?: unknown; realtime_start?: unknown }>;
+    };
+    const rows = (j?.observations ?? []).filter(
+      (o): o is { date: string; value: string; realtime_start?: string } =>
+        typeof o?.date === "string" && Number.isFinite(Number(o?.value)), // FRED marks missing "." → NaN → drop
+    );
+    if (rows.length === 0) return null;
+    // newest observation period; among its vintages, the newest vintage
+    const maxDate = rows.reduce((m, o) => (o.date > m ? o.date : m), rows[0].date);
+    const vintages = rows.filter((o) => o.date === maxDate);
+    const pick = vintages.reduce((m, o) =>
+      String(o.realtime_start ?? "") > String(m.realtime_start ?? "") ? o : m,
+    );
+    return {
+      date: pick.date,
+      value: Number(pick.value),
+      realtimeStart: typeof pick.realtime_start === "string" ? pick.realtime_start : null,
+    };
   } catch {
     return null;
   }
@@ -185,13 +224,21 @@ export async function backfillActuals(
         return;
       }
       if (await store.get(MISS_KEY(e.id))) return; // recent miss — don't hammer FRED
-      const obs = await fetcher(map.series, map.units);
-      if (obs && observationMatchesEvent(obs.date, e.ts, map.cadence)) {
+      // quarterly: open the vintage window from the day before the print so
+      // realtime_start carries the current value's true publication date
+      const rtStart =
+        map.cadence === "quarterly"
+          ? new Date(e.ts - 24 * 3600_000).toLocaleDateString("en-CA", { timeZone: "America/New_York" })
+          : null;
+      const obs = await fetcher(map.series, map.units, rtStart);
+      if (obs && observationMatchesEvent(obs, e.ts, map.cadence)) {
         const val = formatActual(obs.value, map.fmt);
         out[e.id] = val;
         await store.set(ACTUAL_KEY(e.id), val, ACTUAL_TTL_S);
       } else {
-        await store.set(MISS_KEY(e.id), "1", MISS_TTL_S);
+        // sentinel must NOT be JSON-parseable: @upstash/redis auto-deserializes
+        // on get, so "1" would come back as number 1 and fail the string guard
+        await store.set(MISS_KEY(e.id), "x", MISS_TTL_S);
       }
     }),
   );
