@@ -87,6 +87,42 @@ export function reactionAfter(bars: Candle[], tsMs: number, minutes: number): Re
   return { ok: true, pct: ((end.open - pre.close) / pre.close) * 100 };
 }
 
+/** PURE. Shared ET stamp — the client's card and the server's canonical ask
+ *  prompts must produce IDENTICAL strings (the chat cache validates on it). */
+export function fmtEt(ts: number): string {
+  return new Date(ts).toLocaleString("en-US", {
+    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  }) + " ET";
+}
+
+/** PURE. The canonical ASK AUGUST prompts for an event — deterministic per
+ *  event (no countdowns, no "now"), so one answer per event per day can be
+ *  cached. The client sends exactly these; the server refuses to cache
+ *  anything else. */
+export function askPrompts(e: Pick<CalEvent, "title" | "ts" | "forecast" | "previous">): { released: string; imminent: string } {
+  return {
+    released: `The ${e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`,
+    imminent: `${e.title} prints ${fmtEt(e.ts)} (expected ${e.forecast ?? "n/a"}, prior ${e.previous ?? "n/a"}). What could this move?`,
+  };
+}
+
+/** PURE. Which canonical prompt a message is — null means "not a calendar
+ *  ask": the chat cache must never store or serve arbitrary text under an
+ *  event's key (a visitor could poison the shared answer otherwise). */
+export function matchAskPrompt(
+  e: Pick<CalEvent, "title" | "ts" | "forecast" | "previous">,
+  text: string,
+): "released" | "imminent" | null {
+  const p = askPrompts(e);
+  return text === p.released ? "released" : text === p.imminent ? "imminent" : null;
+}
+
+/** PURE. Cache key for a calendar ask — per event, per prompt kind (the
+ *  pre-print and post-print questions get different answers), per UTC day. */
+export function askCacheKey(eventId: string, isoDay: string, kind: "released" | "imminent"): string {
+  return `aug:calask:v1:${kind}:${isoDay}:${eventId}`;
+}
+
 /** PURE. Map a raw feed row; null when malformed. */
 export function parseCalRow(raw: unknown): CalEvent | null {
   const r = raw as { title?: unknown; country?: unknown; date?: unknown; impact?: unknown; forecast?: unknown; previous?: unknown };

@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import DataTag from "@/components/DataTag";
 import type { PublicIdea } from "@/lib/ideas";
-import type { CalEvent, EventState } from "@/lib/calendar-feed";
+import { askPrompts, fmtEt, type CalEvent, type EventState } from "@/lib/calendar-feed";
 
 type Row = CalEvent & {
   state: EventState;
@@ -28,11 +28,6 @@ const FLAT_PCT = 0.05;
 
 const INDEX_RE = /^(NQ|ES|SPY|QQQ|YM|RTY)\b/i;
 
-function fmtEt(ts: number): string {
-  return new Date(ts).toLocaleString("en-US", {
-    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
-  }) + " ET";
-}
 function countdown(ts: number, now: number): string {
   const s = Math.max(0, Math.floor((ts - now) / 1000));
   const d = Math.floor(s / 86400);
@@ -44,7 +39,9 @@ function countdown(ts: number, now: number): string {
 
 export default function CountdownRow({ liveIdeas, onAsk }: {
   liveIdeas: PublicIdea[] | null;
-  onAsk?: (text: string) => void;
+  /** calendarAskId rides along so the chat route can serve one cached answer
+   *  per event per day instead of spending on every click */
+  onAsk?: (text: string, calendarAskId?: string) => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [err, setErr] = useState(false);
@@ -147,7 +144,7 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
               <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
             )}
             {onAsk ? (
-              <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
+              <button type="button" className="cdr-ask" onClick={() => onAsk(askPrompts(e).released, e.id)}>
                 ASK AUGUST →
               </button>
             ) : null}
@@ -166,7 +163,7 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
             <span className={`cdr-impact im-${String(e.impact).toLowerCase()}`}>{String(e.impact).toUpperCase()} IMPACT</span>
             <span className="cdr-acts">
               {onAsk ? (
-                <button type="button" className="cdr-ask" onClick={() => onAsk(`${e.title} prints ${fmtEt(e.ts)} (expected ${e.forecast ?? "n/a"}, prior ${e.previous ?? "n/a"}). What could this move?`)}>
+                <button type="button" className="cdr-ask" onClick={() => onAsk(askPrompts(e).imminent, e.id)}>
                   ASK AUGUST →
                 </button>
               ) : null}
