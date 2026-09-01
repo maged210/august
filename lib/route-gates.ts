@@ -25,6 +25,7 @@ export const ANONYMOUS_SURFACE: readonly string[] = [
   "/api/chat",
   "/api/memory",
   "/api/pit",
+  "/api/call", // THE CALL — visitor-principal takes, claimed on sign-in
   "/api/ideas",
   "/api/watchlist", // in-route guard decides; anonymous callers are tolerated
   "/api/feeds",
