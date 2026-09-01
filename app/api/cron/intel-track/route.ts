@@ -8,6 +8,7 @@
 // AUTH: identical model to /api/cron/watchers — `Authorization: Bearer
 // <CRON_SECRET>`, timing-safe compare, refuses in production when unset.
 import { timingSafeEqual } from "node:crypto";
+import { runCallPass } from "@/lib/call";
 import { runBookPass } from "@/lib/ideas-eval";
 import { runTrackerPass } from "@/lib/intel/trackerStore";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
@@ -43,8 +44,21 @@ async function handle(req: Request): Promise<Response> {
     // daily pass: every LIVE idea's stated trigger vs the daily close, stale
     // marking, and conflict demotion to REVIEW. See lib/ideas-eval.ts.
     const book = await runBookPass();
+    // THE CALL (feature/the-call) — the same 21:05 pass settles today's call
+    // against today's close, then generates tomorrow's from the regime state
+    // at this moment. Non-fatal: a call failure never breaks the tracker.
+    let call: Awaited<ReturnType<typeof runCallPass>> | { configured: false; settled: null; generated: null } = {
+      configured: false,
+      settled: null,
+      generated: null,
+    };
+    try {
+      call = await runCallPass();
+    } catch (err) {
+      console.warn("[cron/intel-track] call pass skipped:", err instanceof Error ? err.message : err);
+    }
     console.log(
-      `[cron/intel-track] configured=${result.configured} tracked=${result.tracked.length} quoted=${result.quoted ?? 0} transitions=${result.transitions ?? 0} book=${book.live} bookCounts=${JSON.stringify(book.counts)} review=${book.demotedToReview}`,
+      `[cron/intel-track] configured=${result.configured} tracked=${result.tracked.length} quoted=${result.quoted ?? 0} transitions=${result.transitions ?? 0} book=${book.live} bookCounts=${JSON.stringify(book.counts)} review=${book.demotedToReview} call=${call.settled ?? "-"}/${call.generated ?? "-"}`,
     );
     // Do NOT echo the full tracked set to the pinger — summary only.
     return new Response(
@@ -57,6 +71,7 @@ async function handle(req: Request): Promise<Response> {
         transitions: result.transitions ?? 0,
         evicted: result.evicted ?? 0,
         book,
+        call: { settled: call.settled, generated: call.generated },
       }),
       { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
     );
