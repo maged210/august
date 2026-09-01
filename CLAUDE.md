@@ -27,8 +27,14 @@ Guidance for Claude Code working in this repo.
 
 ## Decided
 
-- THE CALL — a one-line thesis under the regime pill plus a daily above/below
-  call vs AUGUST; AUGUST's side derived deterministically from the regime
-  model, settled in the 21:05 pass, scored as hit rate. It replaces the
-  Morning Brief. Sequenced after the What's Coming fix; not part of the
-  terminal-integrity branch.
+- THE CALL shipped (feature/the-call). One card on the floor under the regime
+  line: AUGUST's daily NQ call vs the owner, settled against Yahoo's daily bar
+  in the 21:05 pass, running records for both sides from 0–0. Direction is
+  DETERMINISTIC from the regime model — the sign of its vote sum (RISK ON →
+  higher, RISK OFF → lower, NEUTRAL follows its lean; dead even or unavailable
+  = no call that day). The thesis line is the feature's ONLY model use and is
+  cached per regime-vote fingerprint flip — never per view, never per user.
+  No exchange calendar exists: trading days derive from Yahoo's daily bars
+  (a date that never prints a bar voids as NO_SESSION). Identity is the Pit's
+  claim layer. Push rides the settle event seam (lib/call-events) — NEXT
+  branch, not this one.
