@@ -21,6 +21,7 @@ import { relativeTime } from "@/lib/ideas";
 import { useOwner } from "@/lib/use-owner";
 import DataTag from "@/components/DataTag";
 import CountdownRow from "@/components/CountdownRow";
+import TheCallCard from "@/components/TheCallCard";
 import SectorHeatmap from "@/components/SectorHeatmap";
 import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
 import type { BiasRead, SessionLevels } from "@/lib/levels";
@@ -339,6 +340,11 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
           ) : null}
         </div>
       ) : null}
+
+      {/* THE CALL (feature/the-call) — one card, directly under the regime
+          line; replaces the retired Morning Brief. Direction is deterministic
+          from the regime model; the thesis line is its only model use. */}
+      <TheCallCard />
 
       {/* R4 F1 — the ask bar rides directly under the apex; chat is the
           ambient analyst, one engage away */}
