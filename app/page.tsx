@@ -104,6 +104,17 @@ export default function Home() {
   const augNavRef = useRef(false);
   const augNavTimerRef = useRef(0);
 
+  // Dismiss the answer card — Esc and the card's ✕ share this. It must also
+  // SUPERSEDE: an in-flight ask keeps streaming into the card otherwise (the
+  // next chunk would repaint what the user just dismissed), so it claims a
+  // fresh generation, aborts the stream, and stands the orb down.
+  const dismissAnswer = useCallback(() => {
+    abortRef.current?.abort();
+    genRef.current++;
+    setAnswer(null);
+    setState((s) => (s === "thinking" ? "idle" : s));
+  }, []);
+
   // ONE Esc stack, owned here: the ideas drawer closes first, then the answer
   // card clears. Works even while typing (the bar's own Esc clears its draft
   // before the event reaches here — see HomeLanding).
@@ -111,11 +122,11 @@ export default function Home() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (railOpenRef.current) setRailOpen(false);
-      else setAnswer(null);
+      else dismissAnswer();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [dismissAnswer]);
 
   useEffect(() => {
     railOpenRef.current = railOpen;
@@ -290,10 +301,10 @@ export default function Home() {
       } catch {
         /* no-op */
       }
-      if (viewRef.current !== v && !augNavRef.current) setAnswer(null);
+      if (viewRef.current !== v && !augNavRef.current) dismissAnswer();
       setView(v);
     },
-    [],
+    [dismissAnswer],
   );
 
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
@@ -705,6 +716,10 @@ export default function Home() {
   async function runInput(raw: string, calendarAskId?: string) {
     abortRef.current?.abort();
     const gen = ++genRef.current;
+    // a superseded ask can no longer stand the orb down — if THIS input is a
+    // command (which never owns the orb), reset thinking → idle here; runAsk
+    // re-raises it for the ask lane.
+    setState((s) => (s === "thinking" ? "idle" : s));
     // a calendar-card ask button is an ASK by construction
     if (calendarAskId) return runAsk(raw.trim(), gen, calendarAskId);
     const parsed = parseCommand(raw);
@@ -742,7 +757,7 @@ export default function Home() {
         }
         return;
       case "clear":
-        setAnswer(null);
+        dismissAnswer();
         return;
       case "forget":
         return forgetMemory();
@@ -869,7 +884,7 @@ export default function Home() {
             active={view === "chat"}
             onSend={runInput}
             answer={answer}
-            onClearAnswer={() => setAnswer(null)}
+            onClearAnswer={dismissAnswer}
             pushState={pushState}
             onNotify={handleNotify}
             onSetTheme={applyTheme}
