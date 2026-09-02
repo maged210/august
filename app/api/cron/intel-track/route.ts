@@ -10,6 +10,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { backfillPrintedWeek } from "@/lib/calendar-actuals";
 import { runCallPass } from "@/lib/call";
+import { flushCallPush, registerCallPush } from "@/lib/call-push";
 import { runBookPass } from "@/lib/ideas-eval";
 import { runTrackerPass } from "@/lib/intel/trackerStore";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
@@ -63,10 +64,20 @@ async function handle(req: Request): Promise<Response> {
       settled: null,
       generated: null,
     };
+    // feature/pwa-push — the settle seam's ONE subscriber: the handler
+    // stashes the settle; flushCallPush (below, AFTER the pass) sends the
+    // day's single notification once tomorrow's call exists too.
+    registerCallPush();
     try {
       call = await runCallPass();
     } catch (err) {
       console.warn("[cron/intel-track] call pass skipped:", err instanceof Error ? err.message : err);
+    }
+    let push: Awaited<ReturnType<typeof flushCallPush>> = null;
+    try {
+      push = await flushCallPush();
+    } catch (err) {
+      console.warn("[cron/intel-track] call push skipped:", err instanceof Error ? err.message : err);
     }
     console.log(
       `[cron/intel-track] configured=${result.configured} tracked=${result.tracked.length} quoted=${result.quoted ?? 0} transitions=${result.transitions ?? 0} book=${book.live} bookCounts=${JSON.stringify(book.counts)} review=${book.demotedToReview} actuals=${actuals} call=${call.settled ?? "-"}/${call.generated ?? "-"}`,
@@ -84,6 +95,7 @@ async function handle(req: Request): Promise<Response> {
         book,
         actuals,
         call: { settled: call.settled, generated: call.generated },
+        push: push ? { recipients: push.recipients, sent: push.sent, pruned: push.pruned, failed: push.failed } : null,
       }),
       { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } },
     );

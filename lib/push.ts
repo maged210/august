@@ -76,6 +76,11 @@ function ensureVapid(): boolean {
   return true;
 }
 
+/** VAPID configured + web-push initialized — senders check before dispatching. */
+export function vapidReady(): boolean {
+  return ensureVapid();
+}
+
 /** True when both the subscription store (Upstash) and the VAPID keypair are set. */
 export function pushConfigured(): boolean {
   return (
