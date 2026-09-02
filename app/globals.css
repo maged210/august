@@ -5115,6 +5115,35 @@ button.pulse-line:focus-visible {
 .cdr-strip { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
 .cdr-stripitem { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: 0.08em; }
 
+/* ── THE CALL (feature/the-call) — one card, directly under the regime line.
+      Data lines are mono caps; the thesis is the serif-italic register (the
+      one deliberate register shift on the floor — Georgia, no webfont). ── */
+.callcard {
+  display: flex; flex-direction: column; gap: 5px;
+  border: 1px solid var(--hair); padding: 10px 12px; margin: 8px 0 2px;
+  font-family: var(--font-mono);
+}
+.call-block { display: flex; flex-direction: column; gap: 4px; }
+.call-thesis {
+  font-family: Georgia, "Times New Roman", serif; font-style: italic;
+  font-size: 13.5px; line-height: 1.45; color: var(--ink, #d8ecd9);
+  letter-spacing: 0.01em; margin: 0 0 2px;
+}
+.call-head { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.22em; color: var(--label); }
+.call-line { font-size: 12.5px; font-weight: 800; letter-spacing: 0.14em; }
+.call-quiet { color: var(--dim); font-weight: 700; }
+.call-why { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
+.call-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.call-btn {
+  font-family: inherit; font-size: 10px; font-weight: 800; letter-spacing: 0.16em;
+  background: none; border: 1px solid var(--hair); color: var(--ink, #d8ecd9);
+  padding: 5px 12px; cursor: pointer;
+}
+.call-btn:hover:not(:disabled) { border-color: var(--up, #7fe0a5); }
+.call-btn:disabled { opacity: 0.5; cursor: default; }
+.call-note { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
+.call-record { font-size: 10px; color: var(--dim); letter-spacing: 0.14em; margin-top: 2px; }
+
 .shm { margin: 10px 0; }
 .shm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 6px; }
 .shm-tile {

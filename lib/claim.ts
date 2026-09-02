@@ -7,6 +7,7 @@ import { Redis } from "@upstash/redis";
 import { migrateThreads } from "./threads";
 import { migrateMemory } from "./memory";
 import { claimPitPlayer } from "./pit";
+import { claimCallRecord } from "./call";
 import { normalizeEmail } from "./user-scope";
 
 const MARKER = (vid: string) => `august:claim:v1:${vid}`;
@@ -40,6 +41,8 @@ export async function claimVisitor(emailRaw: string, visitorId: string): Promise
     const threads = await migrateThreads({ visitorId }, email);
     await migrateMemory({ visitorId }, email);
     await claimPitPlayer(`v:${visitorId}`, `u:${email}`);
+    // THE CALL — the device's record + any live take follow the account
+    await claimCallRecord(`v:${visitorId}`, `u:${email}`);
     await redis.set(MARKER(visitorId), email);
     return { ok: true, already: false, threads };
   } catch {
