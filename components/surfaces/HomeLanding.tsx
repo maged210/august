@@ -65,7 +65,8 @@ type HomeLandingProps = {
       the landing's heading/chips/activity yield to it and the orb compacts. */
   transcript?: React.ReactNode;
   // Quiet top-bar cluster — everything the design omits but the app keeps.
-  pushState: PushState;
+  // "unknown" = the async subscription check hasn't resolved — no bell yet.
+  pushState: PushState | "unknown";
   onNotify: () => void;
   /** F7 — the moon button opens the theme menu; selection applies directly */
   onSetTheme: (t: Theme) => void;
@@ -306,7 +307,9 @@ export default function HomeLanding({
             {/* THE BELL (feature/pwa-push) — the only push control. Mono-caps
                 titles per state; the tap flow (incl. two-tap OFF) lives in the
                 page's handleNotify. Unsupported still renders (slashed) so the
-                state is stated, never silently absent. */}
+                state is stated, never silently absent — but not before the
+                async check has actually resolved. */}
+            {pushState !== "unknown" && (
             <button
               type="button"
               className={`hl-ctl${pushState === "on" ? " on" : ""}`}
@@ -327,6 +330,7 @@ export default function HomeLanding({
             >
               <BellGlyph off={pushState === "denied" || pushState === "unsupported"} on={pushState === "on"} />
             </button>
+            )}
             {/* F7 — THE moon menu: theme selection + (matrix only) the ticker
                 rain intensity dial, one quiet dropdown styled to the theme */}
             <div className="hl-rainwrap" ref={rainWrapRef}>
@@ -388,7 +392,7 @@ export default function HomeLanding({
                       clock; the control cluster folds in here */}
                   <div className="hl-menu-mobile">
                     <span className="hl-menu-k">CONTROLS</span>
-                    {pushState !== "unsupported" ? (
+                    {pushState !== "unsupported" && pushState !== "unknown" ? (
                       <button type="button" className="hl-rainopt" onClick={onNotify}>
                         THE CALL PUSH{pushState === "on" ? " · ON" : ""}
                       </button>

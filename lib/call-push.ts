@@ -17,6 +17,7 @@
 import {
   fmtClosePct,
   fmtRecord,
+  nextWeekday,
   readCallState,
   type CallResult,
   type CallSide,
@@ -106,6 +107,12 @@ export function composeCallPush(state: CallState): { title: string; body: string
     parts.push("TOMORROW: NO CALL — the regime is unavailable");
   } else if (state.noCall) {
     parts.push(`NEXT CALL ${weekdayShort(state.noCall.nextDate).toUpperCase()}`);
+  } else {
+    // Friday's REAL flush state: settled, no active (nothing generates until
+    // Sunday's pass), no noCall marker (readCallState suppresses the weekday
+    // gap when a settle is showing) — the forward line derives from the
+    // settled date, so the week's last push still says when the next call is
+    parts.push(`NEXT CALL ${weekdayShort(nextWeekday(s.forDate)).toUpperCase()}`);
   }
 
   return { title: "THE CALL", body: parts.join(" · ") };
@@ -157,10 +164,6 @@ export async function flushCallPush(deps?: FlushDeps): Promise<CallPushLogEntry 
   if (!kv) return null;
   if (!deps?.transport && !vapidReady()) return null; // VAPID unset — no sender
 
-  // a day never sends twice (pinger double-runs, retries)
-  const took = await kv.set(PUSHED_KEY(e.forDate), "x", { nx: true, ex: PUSHED_TTL_S });
-  if (took === null) return null;
-
   const subs = deps?.subs ?? (await listAllSubscriptions(deps?.pushKv !== undefined ? { kv: deps.pushKv } : undefined));
   const byPrincipal = new Map<string, StoredPushSub[]>();
   for (const s of subs) {
@@ -169,8 +172,15 @@ export async function flushCallPush(deps?: FlushDeps): Promise<CallPushLogEntry 
     byPrincipal.set(s.principal, list);
   }
 
+  // a day never sends twice (pinger double-runs, retries). Taken as late as
+  // possible — after every read that can throw — but BEFORE dispatch: between
+  // a lost day (visible in the log gap) and a double-sent day, the double is
+  // the honesty failure.
+  const took = await kv.set(PUSHED_KEY(e.forDate), "x", { nx: true, ex: PUSHED_TTL_S });
+  if (took === null) return null;
+
   const readState =
-    deps?.readState ?? ((cid: string) => readCallState(cid, { readRegime: NO_REGIME }));
+    deps?.readState ?? ((cid: string) => readCallState(cid, { readRegime: NO_REGIME, readonly: true }));
 
   const entry: CallPushLogEntry = {
     day: e.forDate,

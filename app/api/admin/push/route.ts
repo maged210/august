@@ -34,18 +34,22 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: "push_not_configured" }, { status: 501 });
   }
 
-  // the owner's devices: the account principal + the dev fallback identity
-  const cids = [`u:${OWNER_EMAIL}`, "v:dev-local"];
-  const subs = (await Promise.all(cids.map((c) => listSubscriptionsFor(c)))).flat();
+  // the owner's devices: the account principal, plus the dev fallback
+  // identity ONLY outside production (the aug_vid cookie is client-supplied,
+  // so "v:dev-local" is forgeable — a prod test send must never reach it)
+  const cids = [`u:${OWNER_EMAIL}`, ...(process.env.NODE_ENV === "production" ? [] : ["v:dev-local"])];
+  const perCid = await Promise.all(cids.map((c) => listSubscriptionsFor(c)));
+  const subs = perCid.flat();
   if (subs.length === 0) {
     return Response.json({ ok: false, error: "no_owner_subscriptions" }, { status: 404 });
   }
 
   // a REAL body when today has one (the exact message subscribers got or
-  // would get); a plainly-marked wire check otherwise — never fabricated
+  // would get); a plainly-marked wire check otherwise — never fabricated.
+  // readonly: a stubbed-regime read must never bootstrap-write a day record.
   let state: CallState | null = null;
   try {
-    state = await readCallState(`u:${OWNER_EMAIL}`, { readRegime: NO_REGIME });
+    state = await readCallState(`u:${OWNER_EMAIL}`, { readRegime: NO_REGIME, readonly: true });
   } catch {
     state = null;
   }
@@ -57,7 +61,7 @@ export async function POST(req: Request): Promise<Response> {
   const r = await dispatch(subs, payload);
   await logTestSend({
     day: etDate(),
-    recipients: 1,
+    recipients: perCid.filter((list) => list.length > 0).length,
     devices: r.total,
     sent: r.sent,
     pruned: r.pruned,

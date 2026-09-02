@@ -161,6 +161,7 @@ export async function enablePush(): Promise<EnableResult> {
     const reg = await navigator.serviceWorker.ready;
     // Dedupe: reuse an existing subscription if present.
     let sub = await reg.pushManager.getSubscription();
+    const fresh = !sub;
     if (!sub) {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true, // mandatory on Chromium; harmless elsewhere
@@ -174,7 +175,12 @@ export async function enablePush(): Promise<EnableResult> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(sub.toJSON()), // { endpoint, expirationTime, keys:{p256dh,auth} }
     });
-    if (!res.ok) return { ok: false, reason: "error" };
+    if (!res.ok) {
+      // the server never learned about a FRESH subscription — roll it back so
+      // the bell can't read ON while no push will ever arrive
+      if (fresh) await sub.unsubscribe().catch(() => {});
+      return { ok: false, reason: "error" };
+    }
     return { ok: true };
   } catch (e) {
     console.warn("[push] enable failed:", e);

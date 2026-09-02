@@ -99,7 +99,9 @@ export default function Home() {
   const [rainPreset, setRainPreset] = useState<RainPreset>("visible");
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
   // Starts "unsupported" so SSR + first client render match; the mount effect resolves it.
-  const [pushState, setPushState] = useState<PushState>("unsupported");
+  // "unknown" until the async real-subscription check resolves — the bell
+  // renders nothing rather than flashing a slashed UNSUPPORTED at first paint
+  const [pushState, setPushState] = useState<PushState | "unknown">("unknown");
 
   const messagesRef = useRef<ChatMessage[]>([]);
   const sessionIdRef = useRef<string>("");
@@ -297,12 +299,15 @@ export default function Home() {
   async function handleNotify() {
     const s = await getPushState();
     if (s === "on") {
-      if (Date.now() - bellArmRef.current < 10_000) {
+      const dt = Date.now() - bellArmRef.current;
+      // the two-tap needs a DELIBERATE second tap: under 600ms is a double-fire
+      // (mobile double-tap), which must not silently kill the subscription
+      if (dt > 600 && dt < 10_000) {
         bellArmRef.current = 0;
         const ok = await disablePush();
         setPushState(await getPushState());
         setReplyText(ok ? "PUSH OFF — NO MORE DAILY CALLS ON THIS DEVICE." : "COULDN'T TURN PUSH OFF — TRY AGAIN.");
-      } else {
+      } else if (dt > 600) {
         bellArmRef.current = Date.now();
         setReplyText("PUSH IS ON — ONE NOTIFICATION PER TRADING DAY, THE SETTLE AND TOMORROW'S CALL. TAP THE BELL AGAIN TO TURN IT OFF.");
       }
@@ -334,7 +339,10 @@ export default function Home() {
       setReplyText("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
     } else if (r.reason === "denied") {
       setReplyText("PERMISSION DECLINED — THE BELL IS HERE WHENEVER YOU WANT THE CALL.");
-    } else if (r.reason === "config" || r.reason === "unsupported") {
+    } else if (r.reason === "config") {
+      // a deploy gap, not the visitor's browser — say so
+      setReplyText("PUSH ISN'T CONFIGURED ON THIS DEPLOY — VAPID KEYS MISSING.");
+    } else if (r.reason === "unsupported") {
       setReplyText("PUSH ISN'T AVAILABLE IN THIS BROWSER.");
     } else {
       setReplyText("COULDN'T ENABLE PUSH JUST NOW — TRY AGAIN IN A MOMENT.");

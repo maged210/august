@@ -13,7 +13,9 @@ import {
   dispatch,
   listAllSubscriptions,
   listSubscriptionsFor,
+  MAX_PUSH_SUBS,
   saveSubscription,
+  validatePushEndpoint,
   type PushKv,
   type PushSub,
   type StoredPushSub,
@@ -40,6 +42,9 @@ function fakePushKv(): PushKv & { data: Map<string, Record<string, unknown>> } {
     },
     async hgetall(key) {
       return data.get(key) ?? null;
+    },
+    async hlen(key) {
+      return Object.keys(data.get(key) ?? {}).length;
     },
   };
 }
@@ -113,6 +118,34 @@ test("subscribe/unsubscribe: principal-keyed upsert, endpoint delete, claim fold
   assert.equal((await listAllSubscriptions({ kv })).length, 1);
 });
 
+test("endpoints: known push services only — the server POSTs to these URLs", () => {
+  // real services pass
+  assert.ok(validatePushEndpoint("https://fcm.googleapis.com/fcm/send/abc123"));
+  assert.ok(validatePushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/x"));
+  assert.ok(validatePushEndpoint("https://web.push.apple.com/QOb2fF3Y"));
+  assert.ok(validatePushEndpoint("https://wns2-par02p.notify.windows.com/w/?token=x"));
+  // an attacker's collector / SSRF targets refuse
+  assert.equal(validatePushEndpoint("https://evil.example.com/collect"), false);
+  assert.equal(validatePushEndpoint("https://fcm.googleapis.com.evil.example/x"), false);
+  assert.equal(validatePushEndpoint("http://fcm.googleapis.com/x"), false);
+  assert.equal(validatePushEndpoint("https://internal:8443/admin"), false);
+  assert.equal(validatePushEndpoint("not a url"), false);
+  assert.equal(validatePushEndpoint("https://" + "a".repeat(1030) + ".push.apple.com/x"), false);
+});
+
+test("store cap: new endpoints refuse past MAX_PUSH_SUBS; re-subscribes always land", async () => {
+  const kv = fakePushKv();
+  const h: Record<string, unknown> = {};
+  for (let i = 0; i < MAX_PUSH_SUBS; i++) {
+    h[`https://push.example/${i}`] = { sub: sub(String(i)), principal: "v:x", at: 1 };
+  }
+  kv.data.set("august:push:subs:v2", h);
+  assert.equal(await saveSubscription("v:new", sub("overflow"), { kv }), "store_full");
+  // an EXISTING endpoint re-subscribing (the resync path) is never refused
+  const resub: PushSub = { endpoint: "https://push.example/0", keys: { p256dh: "p", auth: "a" } };
+  assert.equal(await saveSubscription("v:x", resub, { kv }), true);
+});
+
 test("dispatch: 404/410 prunes the dead subscription, other errors keep it", async () => {
   const kv = fakePushKv();
   await saveSubscription("u:o@x.com", sub("live"), { kv });
@@ -165,13 +198,10 @@ test("compose: flat push, dead-even tomorrow, weekend next-call, and silence", (
     }),
   )!;
   assert.equal(flat.body, "NQ CLOSED FLAT · PUSH · YOU 3–1 · AUGUST 2–2 · TOMORROW: NO CALL — the regime is dead even");
-  const friday = composeCallPush(
-    state({
-      settled: { ...SETTLED, forDate: "2026-09-04" },
-      noCall: { reason: "no_session", nextDate: "2026-09-07" },
-    }),
-  )!;
-  assert.ok(friday.body.endsWith("NEXT CALL MON"));
+  // Friday's REAL flush state: settled only — no active (nothing generates
+  // until Sunday), no noCall marker. The forward line derives from the date.
+  const friday = composeCallPush(state({ settled: { ...SETTLED, forDate: "2026-09-04" } }))!;
+  assert.ok(friday.body.endsWith("NEXT CALL MON"), friday.body);
   // silence: no settle today, and a NO_SESSION void
   assert.equal(composeCallPush(state({})), null);
   assert.equal(composeCallPush(state({ settled: { ...SETTLED, result: "NO_SESSION", closePct: null, augustWin: null, youWin: null } })), null);

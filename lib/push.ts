@@ -34,6 +34,38 @@ export type StoredPushSub = { sub: PushSub; principal: PushPrincipal; at: number
 
 const SUBS_V2 = "august:push:subs:v2";
 
+/** Hard bound on stored devices — an owner-scale product, and the daily send
+ *  fans out across ALL of these inside the cron budget. Anonymous flooding
+ *  past the cap gets a 429, never a bigger fan-out. */
+export const MAX_PUSH_SUBS = 500;
+export const MAX_P256DH_CHARS = 256; // real keys ≈ 88
+export const MAX_AUTH_CHARS = 128; // real secrets ≈ 24
+
+// The subscribe surface is ANONYMOUS (visitor principal), and the server later
+// POSTs encrypted payloads to whatever endpoint it stored — so the endpoint
+// must be a real push service, never an attacker's collector (blind SSRF /
+// outbound beacon). Exact hosts or registrable-suffix matches only.
+const PUSH_HOSTS = [
+  "fcm.googleapis.com", // Chrome/Chromium
+  "updates.push.services.mozilla.com", // Firefox
+  "push.apple.com", // Safari/iOS (web.push.apple.com and regional prefixes)
+  "notify.windows.com", // Edge/WNS (wns2-*.notify.windows.com)
+];
+
+/** PURE. Whether a subscription endpoint belongs to a known push service. */
+export function validatePushEndpoint(endpoint: string): boolean {
+  if (typeof endpoint !== "string" || endpoint.length > 1024) return false;
+  let host: string;
+  try {
+    const u = new URL(endpoint);
+    if (u.protocol !== "https:") return false;
+    host = u.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return PUSH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
 /** The minimal store surface — injectable so node:test drives every path
  *  without Redis (house pattern). */
 export type PushKv = {
@@ -41,6 +73,7 @@ export type PushKv = {
   hget(key: string, field: string): Promise<unknown>;
   hdel(key: string, field: string): Promise<unknown>;
   hgetall(key: string): Promise<unknown>;
+  hlen(key: string): Promise<unknown>;
 };
 
 let _redis: Redis | null | undefined;
@@ -91,13 +124,8 @@ export function pushConfigured(): boolean {
   );
 }
 
-/** email → descriptor for the legacy per-user callers (watchers, brief cron).
- *  null email = the single-user dev fallback, which subscribes as v:dev-local
- *  (pidFor's vocabulary); in production a null email stores nothing so this
- *  targets nothing — correct and harmless. */
-export function emailDescriptor(email: string | null): PushPrincipal {
-  return email ? `u:${email}` : "v:dev-local";
-}
+// (emailDescriptor removed — see sendToAll: a null email means the
+//  single-user fallback, whose devices are VISITOR principals.)
 
 function parseStored(raw: unknown): StoredPushSub | null {
   try {
@@ -119,10 +147,17 @@ export async function saveSubscription(
   cid: PushPrincipal,
   sub: PushSub,
   opts?: { kv?: PushKv | null },
-): Promise<boolean> {
+): Promise<boolean | "store_full"> {
   const kv = opts?.kv !== undefined ? opts.kv : getRedis();
   if (!kv || !cid) return false;
   try {
+    // the cap counts only NEW endpoints — re-subscribing an existing device
+    // (the resync path) must always succeed
+    const existing = await kv.hget(SUBS_V2, sub.endpoint);
+    if (!existing) {
+      const count = Number(await kv.hlen(SUBS_V2)) || 0;
+      if (count >= MAX_PUSH_SUBS) return "store_full";
+    }
     await kv.hset(SUBS_V2, {
       [sub.endpoint]: {
         sub: {
@@ -138,6 +173,20 @@ export async function saveSubscription(
   } catch (err) {
     console.error("[push] saveSubscription failed:", err instanceof Error ? err.message : err);
     return false;
+  }
+}
+
+/** One stored record by endpoint, or null. */
+export async function getSubscription(
+  endpoint: string,
+  opts?: { kv?: PushKv | null },
+): Promise<StoredPushSub | null> {
+  const kv = opts?.kv !== undefined ? opts.kv : getRedis();
+  if (!kv || !endpoint) return null;
+  try {
+    return parseStored(await kv.hget(SUBS_V2, endpoint));
+  } catch {
+    return null;
   }
 }
 
@@ -267,9 +316,18 @@ export async function sendToPrincipal(
   return dispatch(await listSubscriptionsFor(cid, opts), payload, opts);
 }
 
-/** Legacy per-user signature kept for lib/watchers + the brief cron. */
+/** Legacy per-user signature kept for lib/watchers + the brief cron.
+ *  A NULL email is the single-user fallback (auth unconfigured) — its callers
+ *  only pass null in that mode, where EVERY subscriber is that one user but
+ *  their devices ride VISITOR principals (v:<vid> in production, v:dev-local
+ *  in dev). Targeting a single descriptor would silently reach nothing
+ *  (review finding, 2026-09-02) — the honest equivalent of the old shared
+ *  legacy hash is all v:* devices. Configured deployments never pass null. */
 export async function sendToAll(email: string | null, payload: PushPayload): Promise<SendResult> {
-  return sendToPrincipal(emailDescriptor(email), payload);
+  if (email) return sendToPrincipal(`u:${email}`, payload);
+  if (!ensureVapid()) return { configured: false, total: 0, sent: 0, pruned: 0, failed: 0 };
+  const visitors = (await listAllSubscriptions()).filter((s) => s.principal.startsWith("v:"));
+  return dispatch(visitors, payload);
 }
 
 /** Every stored device (deduped by construction — one hash). Used by the
