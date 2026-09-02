@@ -922,18 +922,14 @@ body::after {
   right: var(--rail-w);
   left: 0;
 }
-.has-rail .dock-wrap {
-  right: var(--rail-w);
-  left: 0;
-}
+
 .has-rail .view-bar {
   left: calc(50% - var(--rail-w) / 2);
 }
 /* UX1 — the reflow is animated (desktop only; the vars can't
    transition, but the offsets they feed can) */
 @media (min-width: 1100px) {
-  .has-rail .view-panel,
-  .has-rail .dock-wrap {
+  .has-rail .view-panel {
     transition:
       right var(--dur-med) var(--ease),
       left var(--dur-med) var(--ease);
@@ -944,7 +940,6 @@ body::after {
 }
 @media (prefers-reduced-motion: reduce) {
   .has-rail .view-panel,
-  .has-rail .dock-wrap,
   .has-rail .view-bar {
     transition: none;
   }
@@ -1400,8 +1395,8 @@ body::after {
 .surface {
   position: absolute;
   inset: 0;
-  /* Bottom padding reserves space for the composer + the collapsed reply panel,
-     so no widget (e.g. the Intel GLOBE card) hides behind them. */
+  /* Bottom padding keeps the lowest widget (e.g. the Intel GLOBE card) clear
+     of the viewport edge and any docked chrome. */
   padding: 92px 48px clamp(160px, 22vh, 250px);
   display: flex;
   flex-direction: column;
@@ -2694,95 +2689,18 @@ body::after {
   }
 }
 
-/* reply dock — a contained, translucent strip for AUGUST's responses on every
-   surface. Short (<= 30vh), internally scrolling, older lines fading at the top.
-   Never covers the dashboard widgets the way the old centered text did. */
-.reply-dock {
-  width: 100%;
-  /* A contained card docked just above the composer — narrow enough that the
-     surface widgets either side stay visible, height-capped + scrollable so a
-     long reply never grows to blanket the dashboard. Click to expand into the
-     session transcript; ✕ / Esc / click-outside dismiss it. */
-  max-width: 680px;
-  max-height: 24vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--glass-strong);
-  border: 1px solid var(--line);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow-3), inset 0 1px 0 rgb(var(--wash-rgb) / 0.04);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 8px 18px 13px;
-  cursor: pointer;
-  /* The fixed wrapper above is pointer-events-none; the dock re-enables itself. */
-  pointer-events: auto;
-}
-.reply-dock.history {
-  max-height: 54vh;
-  cursor: default;
-}
-.dock-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 5px;
-  flex: none;
-}
-.dock-ctl {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: rgba(154, 154, 159, 0.75);
-  transition: color 0.15s;
-}
-.dock-ctl:hover {
-  color: var(--bone);
-}
-.dock-body {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  min-height: 0;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
-}
-.dock-line {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--bone);
-  opacity: 0.9;
-  margin: 4px 0;
-  white-space: pre-wrap;
-}
-.dock-line.you {
-  opacity: 0.55;
-}
-.dock-who {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: 0.2em;
-  color: var(--steel);
-  margin-right: 8px;
-}
-.composer-row {
-  display: flex;
-  width: 100%;
-  /* UX6 — was 770px: the composer must sit on the SAME column as the
-     transcript (the dock wrapper is already rail-aware via --rail-w) */
-  max-width: var(--chat-col, 720px);
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  /* The fixed wrapper above is pointer-events-none; the row re-enables itself. */
-  pointer-events: auto;
-}
-.composer-ctls {
-  display: flex;
-  gap: 8px;
-  flex: none;
-}
+
+
+
+
+
+
+
+
+
+
+
+
 .ctl-round {
   height: 38px;
   width: 38px;
@@ -2822,20 +2740,8 @@ body::after {
   background: rgb(var(--wash-rgb) / 0.03);
 }
 
-.reply-text {
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--bone);
-  opacity: 0.92;
-  white-space: pre-wrap;
-}
-.reply-status {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  font-size: 10px;
-  color: rgba(154, 154, 159, 0.45);
-}
+
+
 
 /* ---- World surface — live intelligence globe + intel wires ---- */
 .command-surface {
@@ -3451,27 +3357,6 @@ body::after {
 .panel:nth-child(7) { animation-delay: 240ms; }
 .panel:nth-child(8) { animation-delay: 280ms; }
 
-/* ---- reply dock: slides/fades up on open, eases out on dismiss ---- */
-@keyframes dock-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-}
-.reply-dock {
-  animation: dock-in var(--dur-med) var(--ease);
-}
-@keyframes dock-out {
-  to {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-.reply-dock.closing {
-  animation: dock-out var(--dur-fast) ease-in forwards;
-  pointer-events: none;
-}
-
 /* ---- shared widget states (loading shimmer lives on .skel-bar already) ---- */
 .widget-state {
   display: flex;
@@ -3510,20 +3395,9 @@ body::after {
   opacity: 0.45;
 }
 
-/* ---- safe areas (phone notches / home bars) ---- */
-.dock-wrap {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
-  /* G3 fix 1: --kb-inset is the on-screen keyboard's overlap with the layout
-     viewport (page.tsx visualViewport effect; 0 when closed / where the
-     browser resizes the layout itself) — the dock rides above the keyboard
-     instead of hiding behind it. */
-  bottom: var(--kb-inset, 0px);
-}
-@media (min-width: 640px) {
-  .dock-wrap {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
-  }
-}
+
+
+
 html,
 body {
   overflow-x: hidden;
@@ -3542,26 +3416,15 @@ body {
   .deck-dot {
     padding: 8px 4px; /* thumb-sized */
   }
-  .composer-row {
-    gap: 8px;
-  }
-  .composer-row form {
-    padding: 10px 18px;
-  }
-  .composer-row input {
-    font-size: 16px; /* 16px stops iOS focus-zoom */
-  }
+  
+  
+  
   .ctl-round {
     height: 44px;
     width: 44px;
   }
-  .reply-dock {
-    max-height: 32vh;
-    padding: 8px 14px 11px;
-  }
-  .reply-dock.history {
-    max-height: 50vh;
-  }
+  
+  
   .command-hud {
     top: calc(env(safe-area-inset-top, 0px) + 54px);
     flex-wrap: wrap;
@@ -3621,8 +3484,6 @@ body {
    ====================================================================== */
 
 /* Weighted press: controls dip on press and spring back. */
-.dock-ctl,
-.dock-x,
 .widget-retry,
 .comms-connect-btn,
 .command-reset,
@@ -3634,8 +3495,6 @@ body {
     background var(--dur-fast) var(--ease-snappy),
     transform var(--dur-fast) var(--ease-spring);
 }
-.dock-ctl:active,
-.dock-x:active,
 .widget-retry:active,
 .comms-connect-btn:active,
 .command-reset:active,
@@ -3647,8 +3506,6 @@ body {
 /* Focus-visible: one restrained accent ring (charcoal gap + steel), keyboard
    only — pointer clicks don't ring. */
 .ctl-round:focus-visible,
-.dock-ctl:focus-visible,
-.dock-x:focus-visible,
 .widget-retry:focus-visible,
 .comms-connect-btn:focus-visible,
 .command-reset:focus-visible,
@@ -3660,22 +3517,9 @@ body {
   border-radius: var(--r-sm);
 }
 
-/* Chat composer: a soft accent halo + faint lift when focused. */
-.composer-form {
-  /* Flex child of .composer-row: without this it keeps min-width:auto and
-     refuses to shrink below its content, so on a phone the pill bled off both
-     screen edges ("ay something to AUGUST"). min-width:0 lets it shrink to the
-     row; the input already carries min-w-0 flex-1. */
-  min-width: 0;
-  transition:
-    border-color var(--dur-med) var(--ease),
-    box-shadow var(--dur-med) var(--ease);
-}
-.composer-form:focus-within {
-  box-shadow:
-    0 0 0 1px rgb(var(--steel-rgb) / 0.4),
-    0 10px 34px rgb(var(--steel-rgb) / 0.07);
-}
+
+
+
 
 /* Panels: a barely-lit top edge for premium depth — glass without the blur cost
    on the dense, scrolling data surfaces (floating overlays keep true blur). */
@@ -4116,27 +3960,11 @@ button.pulse-line:focus-visible {
   }
 }
 
-/* Composer — theme-aware (was Tailwind white-alpha; now token-driven). */
-.composer-form {
-  border: 1px solid var(--line);
-  /* G3 fix 1: the input is a docked glass bar — heavy enough that the
-     code-rain and any transcript text beneath can't bleed through it.
-     (--panel was a 2% wash; the blur moved here from the JSX utility so
-     one place owns the treatment.) Theme-aware via --glass-strong. */
-  background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
-.composer-form:focus-within {
-  border-color: var(--accent-line);
-}
-.composer-input {
-  color: var(--bone);
-}
-.composer-input::placeholder {
-  color: var(--ash);
-  opacity: 0.6;
-}
+
+
+
+
+
 /* Mobile: tighten the centre type so it stays clear of the lattice. */
 @media (max-width: 760px) {
   .presence-center-t1 {
@@ -4664,6 +4492,152 @@ button.pulse-line:focus-visible {
   border-radius: 6px;
   padding: 4px 8px;
 }
+
+/* — THE COMMAND BAR (feature/command-bar) ---------------------------------- */
+/* wrapper: the suggestions dropUP + the bar + the one answer card, one
+   column. Rides the brief's column (.hb already sizes to --chat-col). */
+.cb-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.cb-wrap .hl-bar {
+  width: 100%;
+}
+/* the bar speaks command: mono caps placeholder (the command set, stated) */
+.cb-input::placeholder {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+/* suggestions render ABOVE the input so the mobile keyboard never covers them */
+.cb-sugs {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  box-shadow: var(--cardshadow);
+  overflow: hidden;
+}
+.cb-sug {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 9px 16px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  color: var(--body2);
+  cursor: pointer;
+}
+.cb-sug:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.cb-sug + .cb-sug {
+  border-top: 1px solid var(--hair);
+}
+/* the one answer card — replaced by the next input, dismissed by Esc/✕ */
+.cb-card {
+  margin-top: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-left: 2px solid var(--steel);
+  border-radius: 12px;
+  box-shadow: var(--cardshadow);
+  animation: cb-card-in 180ms var(--ease-snappy);
+}
+@keyframes cb-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cb-card.cb-error {
+  border-left-color: var(--down, #c0504d);
+}
+.cb-card.cb-info .cb-text,
+.cb-card.cb-error .cb-text {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.cb-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--body2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cb-caret {
+  display: inline-block;
+  margin-left: 2px;
+  animation: cb-blink 1s steps(2) infinite;
+}
+@keyframes cb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.cb-x {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.cb-x:hover {
+  color: var(--ink);
+}
+/* the quote card — price, day change, day range; all real or absent */
+.cb-quote {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.cb-quote-sym {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+.cb-quote-px {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.cb-quote-range {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+}
 .hl-chips {
   margin-top: 16px;
   display: flex;
@@ -4703,14 +4677,8 @@ button.pulse-line:focus-visible {
   justify-content: flex-start;
   padding: 6px 0 0;
 }
-/* conversation mode: the frame is exactly the leftover height (the
-   transcript owns scrolling inside it) and stacks from the top */
-.home-landing.convo .hl-main {
-  flex: 1 1 auto;
-  min-height: 0;
-  justify-content: flex-start;
-  padding: 0;
-}
+
+
 
 /* — UX2-T2 · THE DAILY BRIEF — the chat view's home state -------------------
    All colors ride the landing's theme tokens (day/dark/gotham/matrix). */
@@ -5004,11 +4972,8 @@ button.pulse-line:focus-visible {
    colors ride the landing's theme tokens, so day/dark/gotham/matrix work
    without another palette. ============================================== */
 
-/* The transcript is the scroll container — the landing itself stops
-   scrolling so the column's own follow-the-stream behavior owns it. */
-.home-landing.convo {
-  overflow: hidden;
-}
+
+
 
 /* The orb compacts to a quiet presence above the conversation. transform:
    scale keeps the WebGL canvas geometry true (the sphere fraction is sized
@@ -5019,34 +4984,20 @@ button.pulse-line:focus-visible {
     transform 0.45s var(--ease-snappy),
     margin-top 0.45s var(--ease-snappy),
     margin-bottom 0.45s var(--ease-snappy);
-}
-/* F8 — the idle orb compacts ~30%; the reclaimed height pulls the composer
-   and the brief up (the .convo rule further down still wins in conversation) */
-.home-landing:not(.convo) .hl-orb {
+  /* F8 — the front-page orb compacts ~30%; the reclaimed height pulls the
+     bar and the brief up. (Was the :not(.convo) rule — the conversation
+     layout is gone, so this is now the orb's one steady state; it outranks
+     .hl-orb-mini's 0.38 exactly as before.) */
   transform: scale(0.7);
   transform-origin: 50% 0;
   margin-bottom: -54px;
 }
-.home-landing.convo .hl-orb {
-  margin-top: 1.2vh;
-  margin-bottom: -110px;
-  transform: scale(0.42);
-  transform-origin: 50% 0;
-  /* the bled WebGL canvas must never eat clicks/scrolls meant for the
-     transcript that now sits inside its (invisible) bleed box */
-  pointer-events: none;
-}
 
-/* head row — the one transcript control, quiet and out of the flow */
-.hl-convo-head {
-  /* UX6 — % of the rail-aware panel, NOT vw: the column centers in the
-     available space at every rail state */
-  width: min(var(--chat-col, 720px), 92%);
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 0 0;
-  flex: none;
-}
+
+
+
+
+
 /* COMMAND CENTER R1 — data integrity tags + the regime apex */
 .dtag {
   display: inline-flex; align-items: center; gap: 4px;
@@ -5219,132 +5170,29 @@ button.pulse-line:focus-visible {
 .vixc-line { font-family: var(--font-mono); font-size: 11px; color: var(--body2, var(--dim)); font-style: italic; margin: 0; }
 .hb-nql .nql-bias { font-size: 9px; padding: 1px 6px; }
 
-/* AUTH-1a B2/B3 — chat error state, close */
-.hl-errline {
-  display: flex; align-items: center; gap: 10px; justify-content: center;
-  font-family: var(--font-mono); font-size: 11px; color: var(--amber);
-  padding: 6px 10px; margin: 4px auto; max-width: 90%;
-  border: 1px dashed rgb(var(--amber-rgb) / 0.45);
-}
-.hl-errline button {
-  font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
-  background: none; border: 1px solid var(--amber); color: var(--amber);
-  padding: 3px 10px; cursor: pointer;
-}
-.hl-convo-close {
-  font-family: var(--font-mono); font-size: 16px; line-height: 1;
-  background: none; border: 0; color: var(--steel); cursor: pointer;
-  padding: 4px 8px; margin-left: auto;
-}
-.hl-convo-close:hover { color: var(--fg); }
-.hl-newchat {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--hair);
-  background: transparent;
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  color: var(--body2);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    border-color var(--dur-fast) var(--ease-snappy);
-}
-.hl-newchat:hover {
-  color: var(--ink);
-  border-color: var(--chip-hover);
-}
-.hl-newchat:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
 
-.hl-convo {
-  width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  scrollbar-width: thin;
-  /* UX6 — reserve symmetric gutters so the scrollbar can't nudge the
-     centered column left of the (fixed, unaffected) composer */
-  scrollbar-gutter: stable both-edges;
-}
-.hl-convo-inner {
-  width: min(var(--chat-col, 720px), 92%);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  /* G3 fix 1: bottom clearance = the dock's MEASURED height (--dock-h,
-     ResizeObserver in page.tsx) + the keyboard inset + breathing room — the
-     last message can never sit under the input, at any dock composition
-     (stop controls) or keyboard state. */
-  padding: 16px 0
-    calc(var(--dock-h, 132px) + var(--kb-inset, 0px) + 18px);
-}
-.hl-msg {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--ink);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.hl-msg.you {
-  align-self: flex-end;
-  max-width: 82%;
-  background: var(--card);
-  border: 1px solid var(--hair);
-  border-radius: 16px 16px 4px 16px;
-  padding: 10px 16px;
-  box-shadow: var(--cardshadow);
-}
-.hl-msg.aug {
-  align-self: stretch;
-}
 
-/* streaming caret — blinks at the end of the in-flight reply */
-.hl-caret {
-  display: inline-block;
-  width: 7px;
-  height: 15px;
-  margin-left: 3px;
-  vertical-align: text-bottom;
-  background: var(--label);
-  opacity: 0.8;
-  animation: hl-caret-blink 1s steps(2, start) infinite;
-}
-@keyframes hl-caret-blink {
-  to {
-    visibility: hidden;
-  }
-}
 
-/* thinking — three quiet dots before the first token lands */
-.hl-thinking {
-  display: flex;
-  gap: 5px;
-  padding: 6px 0;
-}
-.hl-thinking span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--dim);
-  animation: hl-think 1.2s ease-in-out infinite;
-}
-.hl-thinking span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.hl-thinking span:nth-child(3) {
-  animation-delay: 0.3s;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @keyframes hl-think {
   0%,
   60%,
@@ -5358,23 +5206,14 @@ button.pulse-line:focus-visible {
   }
 }
 
-@media (max-width: 700px) {
-  .hl-newchat {
-    min-height: 40px;
-  }
-}
+
 
 @media (prefers-reduced-motion: reduce) {
   .home-landing .hl-orb {
     transition: none;
   }
-  .hl-caret {
-    animation: none;
-  }
-  .hl-thinking span {
-    animation: none;
-    opacity: 0.6;
-  }
+  
+  
 }
 
 /* ======================================================================
@@ -6809,11 +6648,8 @@ button.pulse-line:focus-visible {
     display: none;
   }
 
-  /* the composer dock and terminal surfaces clear the tab bar (max() keeps
-     the dock above the keyboard when it opens instead of stacking both) */
-  .dock-wrap {
-    bottom: max(var(--kb-inset, 0px), var(--tabbar-h));
-  }
+  
+  
   .view-panel {
     bottom: var(--tabbar-h);
   }
@@ -6861,8 +6697,9 @@ button.pulse-line:focus-visible {
   .hl-tape-label {
     display: none; /* the chips speak for themselves at this width */
   }
+
   /* the landing content clears the pinned strip + tab bar */
-  .home-landing:not(.convo) .hl-main {
+  .home-landing .hl-main {
     padding-bottom: calc(var(--tabbar-h) + 56px);
   }
 
@@ -6899,7 +6736,6 @@ button.pulse-line:focus-visible {
 
 /* — M3 · sheets: scroll-lock behind, slide + scrim everywhere <1100px — */
 html.sheet-open .home-landing,
-html.sheet-open .hl-convo,
 html.sheet-open .view-panel {
   overflow: hidden !important;
 }
