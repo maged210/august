@@ -102,6 +102,7 @@ const STATUS_LABEL: Record<IdeaStatus, string> = {
   live: "LIVE",
   closed: "CLOSED",
   invalidated: "INVALID",
+  denied: "DENIED", // DESK-INBOX — human-declined, terminal, reason chip attached
 };
 
 export default function AdminConsole() {
@@ -694,7 +695,9 @@ export default function AdminConsole() {
 
   const rows = ideas ?? [];
   const drafts = rows.filter((i) => i.status === "draft");
-  const book = rows.filter((i) => i.status !== "draft");
+  // denied rows LEAVE the book (and the rail) — they live only in the inbox's
+  // denied ledger below the queue
+  const book = rows.filter((i) => i.status !== "draft" && i.status !== "denied");
   const liveIdeas = rows.filter((i) => i.status === "live");
   const tapeDrafts = tape.filter((t) => t.status === "draft");
   const tapeLive = tape.filter((t) => t.status === "live");
@@ -708,7 +711,7 @@ export default function AdminConsole() {
     const sb = isStale(b) ? 0 : 1;
     if (sa !== sb) return sa - sb;
     // review sorts ahead of live — a conflicted row needs the human first
-    const order: Record<IdeaStatus, number> = { review: 0, live: 1, invalidated: 2, closed: 3, draft: 4 };
+    const order: Record<IdeaStatus, number> = { review: 0, live: 1, invalidated: 2, closed: 3, draft: 4, denied: 5 };
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
     return b.updatedAt - a.updatedAt;
   });

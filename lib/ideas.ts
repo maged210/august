@@ -17,8 +17,15 @@ import { Redis } from "@upstash/redis";
  *  book manager keeps the two apart so the desk's record stays honest.
  *  INTEGRITY-1: "review" — the stated side and the entry language disagree
  *  (or the entry is two-sided). A conflicted call never publishes as live;
- *  it waits in review until a human resolves the direction. */
-export type IdeaStatus = "draft" | "review" | "live" | "closed" | "invalidated";
+ *  it waits in review until a human resolves the direction.
+ *  DESK-INBOX: "denied" — a human rejected it from the inbox. TERMINAL, with
+ *  a stated reason, never a deletion: the record of what was declined is part
+ *  of the desk's honesty. Denied rows leave the book and the rail. */
+export type IdeaStatus = "draft" | "review" | "live" | "closed" | "invalidated" | "denied";
+
+/** DESK-INBOX — why a human denied it. Fixed vocabulary, shown as a chip. */
+export type DenyReason = "no_level" | "not_a_call" | "duplicate" | "stale";
+export const DENY_REASONS: readonly DenyReason[] = ["no_level", "not_a_call", "duplicate", "stale"];
 export type IdeaSource = "manual" | "extracted";
 export type IdeaRiskLevel = "low" | "medium" | "high";
 /** UX4 — the desk's stated direction. OPTIONAL and absent-by-default: the
@@ -37,8 +44,13 @@ export type IdeaSide = "long" | "short" | "watch";
  *  - STALE        parseable but uncrossed past the stale horizon (3d default —
  *                 STALE narrows to the untriggered book, house law 2026-08-16)
  *  - NEEDS_LEVEL  no crossable trigger in the entry text — the pass cannot
- *                 evaluate it, and the tile must say so instead of "LIVE" */
-export type IdeaEvalState = "ARMED" | "TRIGGERED" | "STALE" | "NEEDS_LEVEL";
+ *                 evaluate it, and the tile must say so instead of "LIVE"
+ *  - QUOTE_SUSPECT the resolved quote is more than 3× away from the stated
+ *                 level (split, delisting, or symbol mismatch — the NOW bug:
+ *                 a 5:1 split made $1,117.50 language grade against a ~$140
+ *                 quote). NOT evaluated — grading either way would fabricate;
+ *                 the inbox surfaces it for a human restatement */
+export type IdeaEvalState = "ARMED" | "TRIGGERED" | "STALE" | "NEEDS_LEVEL" | "QUOTE_SUSPECT";
 
 export type IdeaEvaluation = {
   state: IdeaEvalState;
@@ -78,6 +90,8 @@ export type Idea = {
   evaluation?: IdeaEvaluation;
   /** INTEGRITY-1 — why this row sits in review (side/trigger conflict detail) */
   reviewReason?: string;
+  /** DESK-INBOX — the human's stated reason, present only on denied rows */
+  denyReason?: DenyReason;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 };
@@ -106,7 +120,7 @@ export const MAX_THESIS_CHARS = 2000;
 export const MAX_LEVEL_CHARS = 120;
 export const MAX_IDEAS = 500;
 
-export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "review", "live", "closed", "invalidated"];
+export const IDEA_STATUSES: readonly IdeaStatus[] = ["draft", "review", "live", "closed", "invalidated", "denied"];
 export const MAX_THESIS_HISTORY = 10;
 export const IDEA_SOURCES: readonly IdeaSource[] = ["manual", "extracted"];
 export const IDEA_RISKS: readonly IdeaRiskLevel[] = ["low", "medium", "high"];
@@ -165,6 +179,8 @@ export type IdeaCreateInput = {
  *  thesis is pushed onto thesisHistory before the new one lands. */
 export type IdeaPatchInput = Partial<Omit<IdeaCreateInput, "source">> & {
   archiveThesis?: boolean;
+  /** DESK-INBOX — required with (and only with) status "denied" */
+  denyReason?: DenyReason;
 };
 
 type Ok<T> = { ok: true; value: T };
@@ -303,6 +319,16 @@ export function validateIdeaPatch(body: unknown): Ok<IdeaPatchInput> | Err {
       return { ok: false, error: "status_invalid" };
     patch.status = b.status as IdeaStatus;
   }
+  // DESK-INBOX — a denial must state its reason, and the reason travels only
+  // with a denial (never a free-floating field write)
+  if (b.denyReason !== undefined) {
+    if (!DENY_REASONS.includes(b.denyReason as DenyReason))
+      return { ok: false, error: "deny_reason_invalid" };
+    if (patch.status !== "denied") return { ok: false, error: "deny_reason_without_denied" };
+    patch.denyReason = b.denyReason as DenyReason;
+  }
+  if (patch.status === "denied" && patch.denyReason === undefined)
+    return { ok: false, error: "deny_reason_required" };
 
   if (Object.keys(patch).length === 0) return { ok: false, error: "empty_patch" };
   return { ok: true, value: patch };
@@ -438,6 +464,10 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
   // leaving review by human hand retires the conflict note with it
   if (fields.status !== undefined && fields.status !== "review" && existing.status === "review") {
     delete updated.reviewReason;
+  }
+  // symmetric for denials — the reason lives only on a denied row
+  if (fields.status !== undefined && fields.status !== "denied" && existing.status === "denied") {
+    delete updated.denyReason;
   }
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
@@ -644,6 +674,45 @@ export function entryConflict(side: IdeaSide | undefined, entry: string): EntryC
   return null;
 }
 
+// --- DESK-INBOX — the one queue of everything a human must resolve ----------
+
+export type InboxBuckets = {
+  /** drafts from ingest (or the manual form) awaiting APPROVE / DENY */
+  pending: Idea[];
+  /** live rows the pass can't evaluate: no crossable level, or a suspect quote */
+  needsLevel: Idea[];
+  /** side/entry-language conflicts awaiting KEEP SIDE / FLIP SIDE */
+  review: Idea[];
+};
+
+/** PURE. Membership in the inbox — the ONLY path into the lifecycle for
+ *  anything the extractor can't fully parse. Newest first inside each group.
+ *  NEEDS LEVEL includes fresh rows the pass hasn't seen yet (parse decides,
+ *  not the stored evaluation) and QUOTE_SUSPECT rows (a level exists but the
+ *  quote can't be trusted against it). */
+export function inboxBuckets(ideas: Idea[]): InboxBuckets {
+  const newest = (a: Idea, b: Idea) => b.createdAt - a.createdAt;
+  const pending = ideas.filter((i) => i.status === "draft").sort(newest);
+  const review = ideas.filter((i) => i.status === "review").sort(newest);
+  const needsLevel = ideas
+    .filter((i) => {
+      if (i.status !== "live") return false;
+      const ev = i.evaluation;
+      if (ev?.state === "NEEDS_LEVEL" || ev?.state === "QUOTE_SUSPECT") return true;
+      if (ev) return false; // the pass has a real read (ARMED/TRIGGERED/STALE)
+      const parsed = parseEntryTrigger(i.entry);
+      return parsed === null || parsed.kind === "two_sided";
+    })
+    .sort(newest);
+  return { pending, needsLevel, review };
+}
+
+/** PURE. The console header count: everything awaiting a human tap. */
+export function inboxCount(ideas: Idea[]): number {
+  const b = inboxBuckets(ideas);
+  return b.pending.length + b.needsLevel.length + b.review.length;
+}
+
 /** Stale horizon for the untriggered book — same dial as the tracker
  *  (TRACKER_STALE_DAYS overrides; finalized at 3, owner order 2026-08-16). */
 export const BOOK_STALE_DAYS = 3;
@@ -675,6 +744,22 @@ export function evaluateLiveIdea(
     };
   }
   const { dir, level } = parsed;
+  // QUOTE SUSPECT (DESK-INBOX, the NOW bug): a quote more than 3× away from
+  // the stated level means the two aren't measuring the same thing — a split
+  // (NOW 5:1, 2025-12-18: "$1,117.50" language vs a ~$140 quote), a delisting,
+  // or a symbol mismatch. Grading either way would fabricate (a "below" level
+  // would spuriously fire sticky TRIGGERED). Refuse to evaluate; the inbox
+  // surfaces it for a human restatement.
+  if (price != null && price > 0 && (price > level * 3 || price * 3 < level)) {
+    return {
+      state: "QUOTE_SUSPECT",
+      level,
+      dir,
+      price,
+      at: now,
+      reason: `quote ${price} is more than 3× away from the stated level ${level} — split, delisting, or symbol mismatch; not evaluated (restate the level in the inbox)`,
+    };
+  }
   if (price != null) {
     const crossed = dir === "above" ? price >= level : price <= level;
     if (crossed) {

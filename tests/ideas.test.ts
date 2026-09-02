@@ -497,3 +497,67 @@ test("book pass: refuses to evaluate before the session close, runs after", asyn
   const ran = await runBookPass(evening);
   assert.equal(ran.ran, true);
 });
+
+// ── DESK-INBOX (feature/desk-inbox) — deny, quote guard, inbox buckets ──────
+
+test("deny: a denial must state its reason; the reason travels only with a denial", async () => {
+  const { validateIdeaPatch } = await import("../lib/ideas");
+  const ok = validateIdeaPatch({ status: "denied", denyReason: "not_a_call" });
+  assert.ok(ok.ok);
+  assert.equal(validateIdeaPatch({ status: "denied" }).ok, false); // reason required
+  assert.equal((validateIdeaPatch({ status: "denied" }) as { error: string }).error, "deny_reason_required");
+  assert.equal(validateIdeaPatch({ status: "denied", denyReason: "meh" }).ok, false);
+  assert.equal(validateIdeaPatch({ denyReason: "stale" }).ok, false); // free-floating reason refused
+  assert.equal((validateIdeaPatch({ denyReason: "stale" }) as { error: string }).error, "deny_reason_without_denied");
+  // all four chips are valid
+  for (const r of ["no_level", "not_a_call", "duplicate", "stale"]) {
+    assert.ok(validateIdeaPatch({ status: "denied", denyReason: r }).ok, r);
+  }
+});
+
+test("quote guard: the NOW bug — a >3x quote/level gap refuses to evaluate", async () => {
+  const { evaluateLiveIdea } = await import("../lib/ideas");
+  const now = Date.now();
+  const idea = { entry: "below $1,117.50", updatedAt: now, evaluation: undefined };
+  // pre-guard this fired sticky TRIGGERED (137.11 <= 1117.50); now it refuses
+  const e = evaluateLiveIdea(idea, 137.11, now);
+  assert.equal(e.state, "QUOTE_SUSPECT");
+  assert.equal(e.level, 1117.5);
+  assert.equal(e.price, 137.11);
+  assert.match(e.reason, /3×|3x/);
+  // the other direction too (quote 3x ABOVE the level)
+  const hi = evaluateLiveIdea({ entry: "above $40", updatedAt: now, evaluation: undefined }, 137.11, now);
+  assert.equal(hi.state, "QUOTE_SUSPECT");
+  // exactly 3x is NOT suspect (strict >3x) — a volatile-but-real gap evaluates
+  const edge = evaluateLiveIdea({ entry: "above $300", updatedAt: now, evaluation: undefined }, 100, now);
+  assert.notEqual(edge.state, "QUOTE_SUSPECT");
+  // a sane gap still evaluates normally
+  const sane = evaluateLiveIdea({ entry: "above $223.50", updatedAt: now, evaluation: undefined }, 142.9, now);
+  assert.equal(sane.state, "ARMED");
+  // sticky TRIGGERED precedence is untouched (performance history never un-fires)
+  const prior = { state: "TRIGGERED", level: 100, dir: "above", price: 101, at: now - 1, reason: "x" } as const;
+  const kept = evaluateLiveIdea({ entry: "above $100", updatedAt: now, evaluation: prior as never }, 500, now);
+  assert.equal(kept.state, "TRIGGERED");
+});
+
+test("inbox buckets: pending / needs-level (incl. suspect + unparsed-fresh) / review", async () => {
+  const { inboxBuckets, inboxCount } = await import("../lib/ideas");
+  const base = { thesis: "t", target: "", riskLevel: "medium" as const, source: "extracted" as const, createdAt: 1, updatedAt: 1 };
+  const mk = (id: string, over: Record<string, unknown>) => ({ id, instrument: id.toUpperCase(), entry: "", status: "live", ...base, ...over }) as never;
+  const ideas = [
+    mk("d1", { status: "draft", createdAt: 5 }),
+    mk("d2", { status: "draft", createdAt: 9 }),
+    mk("r1", { status: "review", reviewReason: "side_mismatch" }),
+    mk("nl1", { entry: "watch the range", evaluation: { state: "NEEDS_LEVEL", level: null, dir: null, price: null, at: 1, reason: "x" } }),
+    mk("qs1", { entry: "below $1,117.50", evaluation: { state: "QUOTE_SUSPECT", level: 1117.5, dir: "below", price: 137, at: 1, reason: "x" } }),
+    mk("fresh", { entry: "no crossable words here" }), // no evaluation yet — parse decides
+    mk("armed", { entry: "above $100", evaluation: { state: "ARMED", level: 100, dir: "above", price: 90, at: 1, reason: "x" } }),
+    mk("closed", { status: "closed" }),
+    mk("denied", { status: "denied", denyReason: "stale" }),
+  ];
+  const b = inboxBuckets(ideas);
+  assert.deepEqual(b.pending.map((i: { id: string }) => i.id), ["d2", "d1"]); // newest first
+  assert.deepEqual(b.review.map((i: { id: string }) => i.id), ["r1"]);
+  assert.deepEqual(new Set(b.needsLevel.map((i: { id: string }) => i.id)), new Set(["nl1", "qs1", "fresh"]));
+  assert.equal(inboxCount(ideas), 6); // armed/closed/denied never queue
+});

@@ -98,6 +98,10 @@ function liveStatusChip(idea: PublicIdea): { label: string; cls: string; title?:
   if (ev.state === "TRIGGERED")
     return { label: "TRIGGERED", cls: "if-life if-life-trig", title: ev.reason };
   if (ev.state === "STALE") return { label: "STALE", cls: "if-life if-life-exp", title: ev.reason };
+  if (ev.state === "QUOTE_SUSPECT")
+    // DESK-INBOX — the quote can't be trusted against the stated level (split/
+    // symbol mismatch); saying NEEDS LEVEL would misname the problem
+    return { label: "QUOTE SUSPECT", cls: "if-life if-life-exp", title: ev.reason };
   return { label: "NEEDS LEVEL", cls: "if-life if-life-act", title: ev.reason };
 }
 
