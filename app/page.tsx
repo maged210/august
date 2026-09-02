@@ -91,7 +91,7 @@ export default function Home() {
   const themingTimerRef = useRef(0);
   // COMMAND BAR — the two-tap confirm for the owner verbs (arm/close): the
   // first submission arms; an identical submission inside 12s executes.
-  const pendingConfirmRef = useRef<{ key: string; at: number; run: () => Promise<void> } | null>(null);
+  const pendingConfirmRef = useRef<{ key: string; at: number; run: (gen: number) => Promise<void> } | null>(null);
   // known live tickers (for ticker→terminal routing) — refreshed lazily
   const liveIdeasRef = useRef<Array<{ id: string; instrument: string }> | null>(null);
   // Generation counter + abort: a new send (or the stop control) supersedes any
@@ -467,6 +467,11 @@ export default function Home() {
   }
 
   // --- THE COMMAND LANE's executors — deterministic, local, no model, ever --
+  // Every input owns ONE generation (runInput bumps genRef): an async
+  // executor's late result must never overwrite a newer input's card — the
+  // E2E caught a slow 'higher' resurrecting over a later 'clear'.
+
+  const stale = useCallback((gen: number) => genRef.current !== gen, []);
 
   const scrollFloorTo = useCallback(
     (selector: string) => {
@@ -494,8 +499,9 @@ export default function Home() {
   }, []);
 
   const runTicker = useCallback(
-    async (symbol: string) => {
+    async (symbol: string, gen: number) => {
       const ideas = await liveIdeas();
+      if (stale(gen)) return;
       const idea = ideas.find((i) => i.instrument.trim().toUpperCase() === symbol);
       if (idea) {
         // open in the terminal: chart + row via the existing ?idea= deep link
@@ -519,6 +525,7 @@ export default function Home() {
       try {
         const qr = await fetch(`/api/intel/quotes?symbols=${encodeURIComponent(ysym)}`, { cache: "no-store" });
         const qj = (await qr.json()) as { quotes?: Record<string, { price: number; chgPct: number }> };
+        if (stale(gen)) return;
         const q = qj.quotes?.[ysym];
         if (!q || !Number.isFinite(q.price) || q.price <= 0) {
           sayError(`NO SUCH SYMBOL — ${symbol}`);
@@ -537,23 +544,24 @@ export default function Home() {
         } catch {
           /* range omitted honestly */
         }
+        if (stale(gen)) return;
         setAnswer({ kind: "quote", symbol, price: q.price, chgPct: q.chgPct, dayLo, dayHi });
       } catch {
-        sayError(`QUOTES UNREACHABLE — TRY ${symbol} AGAIN`);
+        if (!stale(gen)) sayError(`QUOTES UNREACHABLE — TRY ${symbol} AGAIN`);
       }
     },
-    [liveIdeas, sayError, switchView],
+    [liveIdeas, sayError, switchView, stale],
   );
 
   // arm/close — owner only, write-gated server-side, two-tap in the bar:
   // the first submission arms, an identical submission inside 12s executes.
   const runOwnerVerb = useCallback(
-    async (verb: "arm" | "close", symbol: string) => {
+    async (verb: "arm" | "close", symbol: string, gen: number) => {
       const key = `${verb} ${symbol}`;
       const pending = pendingConfirmRef.current;
       if (pending && pending.key === key && Date.now() - pending.at < 12_000) {
         pendingConfirmRef.current = null;
-        await pending.run();
+        await pending.run(gen);
         return;
       }
       // resolve the target through the ADMIN list (arm needs closed rows too);
@@ -561,6 +569,7 @@ export default function Home() {
       let rows: Array<{ id: string; instrument: string; status: string }> = [];
       try {
         const r = await fetch("/api/admin/ideas", { cache: "no-store" });
+        if (stale(gen)) return;
         if (r.status === 401 || r.status === 403) {
           sayError("OWNER ONLY.");
           return;
@@ -568,9 +577,10 @@ export default function Home() {
         const j = (await r.json()) as { ideas?: Array<{ id: string; instrument: string; status: string }> };
         rows = Array.isArray(j.ideas) ? j.ideas : [];
       } catch {
-        sayError("THE BOOK IS UNREACHABLE — TRY AGAIN.");
+        if (!stale(gen)) sayError("THE BOOK IS UNREACHABLE — TRY AGAIN.");
         return;
       }
+      if (stale(gen)) return;
       const eligible = rows.filter(
         (i) =>
           i.instrument.trim().toUpperCase() === symbol &&
@@ -584,7 +594,7 @@ export default function Home() {
       pendingConfirmRef.current = {
         key,
         at: Date.now(),
-        run: async () => {
+        run: async (runGen: number) => {
           try {
             const res = await fetch(`/api/admin/ideas/${encodeURIComponent(target.id)}`, {
               method: "PATCH",
@@ -592,24 +602,24 @@ export default function Home() {
               body: JSON.stringify({ status: verb === "close" ? "closed" : "live" }),
             });
             if (!res.ok) {
-              sayError(res.status === 401 || res.status === 403 ? "OWNER ONLY." : `${verb.toUpperCase()} FAILED (${res.status}).`);
+              if (!stale(runGen)) sayError(res.status === 401 || res.status === 403 ? "OWNER ONLY." : `${verb.toUpperCase()} FAILED (${res.status}).`);
               return;
             }
             liveIdeasRef.current = null; // the book changed
             window.dispatchEvent(new CustomEvent("aug:ideas-changed"));
-            say(verb === "close" ? `${symbol} CLOSED — THE TERMINAL REFLECTS IT.` : `${symbol} RE-ARMED — LIVE ON THE BOOK.`);
+            if (!stale(runGen)) say(verb === "close" ? `${symbol} CLOSED — THE TERMINAL REFLECTS IT.` : `${symbol} RE-ARMED — LIVE ON THE BOOK.`);
           } catch {
-            sayError(`${verb.toUpperCase()} FAILED — TRY AGAIN.`);
+            if (!stale(runGen)) sayError(`${verb.toUpperCase()} FAILED — TRY AGAIN.`);
           }
         },
       };
       say(`${verb.toUpperCase()} ${symbol} — SUBMIT THE SAME COMMAND AGAIN TO CONFIRM.`);
     },
-    [say, sayError],
+    [say, sayError, stale],
   );
 
   const runCallSide = useCallback(
-    async (side: "HIGHER" | "LOWER") => {
+    async (side: "HIGHER" | "LOWER", gen: number) => {
       try {
         const res = await fetch("/api/call", {
           method: "POST",
@@ -617,6 +627,7 @@ export default function Home() {
           body: JSON.stringify({ side }),
         });
         const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (stale(gen)) return; // the take stands server-side; the card belongs to the newer input
         if (j.ok) {
           say(`TAKEN: ${side} — SETTLES AT THE CLOSE.`);
           scrollFloorTo(".callcard");
@@ -625,17 +636,16 @@ export default function Home() {
         else if (j.error === "no_active_call") sayError("NO ACTIVE CALL RIGHT NOW.");
         else sayError("THE CALL IS UNREACHABLE — TRY AGAIN.");
       } catch {
-        sayError("THE CALL IS UNREACHABLE — TRY AGAIN.");
+        if (!stale(gen)) sayError("THE CALL IS UNREACHABLE — TRY AGAIN.");
       }
     },
-    [say, sayError, scrollFloorTo],
+    [say, sayError, scrollFloorTo, stale],
   );
 
   // --- THE ASK LANE — the only path that ever touches the model -------------
-  async function runAsk(text: string, calendarAskId?: string) {
+  // gen comes from runInput (one generation per input, shared with commands).
+  async function runAsk(text: string, gen: number, calendarAskId?: string) {
     latReset();
-    abortRef.current?.abort(); // a new input supersedes any in-flight ask
-    const gen = ++genRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
     setAnswer({ kind: "ask", text: "", streaming: true });
@@ -688,22 +698,27 @@ export default function Home() {
     }
   }
 
-  // THE BAR's single entry point — every submission routes here.
+  // THE BAR's single entry point — every submission routes here. Each input
+  // claims a fresh generation and aborts any in-flight ask; async executors
+  // check the generation before painting, so a late result can never
+  // overwrite a newer input's card.
   async function runInput(raw: string, calendarAskId?: string) {
+    abortRef.current?.abort();
+    const gen = ++genRef.current;
     // a calendar-card ask button is an ASK by construction
-    if (calendarAskId) return runAsk(raw.trim(), calendarAskId);
+    if (calendarAskId) return runAsk(raw.trim(), gen, calendarAskId);
     const parsed = parseCommand(raw);
     if (!parsed) return;
     // any non-matching submission drops a stale arm/close confirm
     if (parsed.kind !== "arm" && parsed.kind !== "close") pendingConfirmRef.current = null;
     switch (parsed.kind) {
       case "ticker":
-        return runTicker(parsed.symbol);
+        return runTicker(parsed.symbol, gen);
       case "arm":
       case "close":
-        return runOwnerVerb(parsed.kind, parsed.symbol);
+        return runOwnerVerb(parsed.kind, parsed.symbol, gen);
       case "call-side":
-        return runCallSide(parsed.side);
+        return runCallSide(parsed.side, gen);
       case "nav":
         switch (parsed.target) {
           case "call":
@@ -734,7 +749,7 @@ export default function Home() {
       case "incomplete":
         return sayError(`${parsed.command.toUpperCase()} NEEDS A TICKER — ${parsed.command.toUpperCase()} <TICKER>.`);
       case "ask":
-        return runAsk(parsed.text);
+        return runAsk(parsed.text, gen);
     }
   }
 

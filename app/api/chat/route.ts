@@ -209,6 +209,12 @@ export async function POST(req: Request): Promise<Response> {
         }
       };
       let full = "";
+      // Cache on COMPLETION of the model stream, not on the consumer flag:
+      // the response plumbing can cancel our ReadableStream right after the
+      // last byte is flushed (measured in the E2E — the log showed a fully
+      // delivered answer marked aborted), and that post-completion cancel
+      // must not void the cache. Only a mid-stream abort (a partial) does.
+      let modelDone = false;
       try {
         const s = await client.messages.create({
           model: MODEL,
@@ -225,8 +231,9 @@ export async function POST(req: Request): Promise<Response> {
             send(encoder.encode(event.delta.text));
           }
         }
+        modelDone = !aborted;
         // caches + stats — only a COMPLETE answer is worth storing
-        if (!aborted && full.trim() && kv) {
+        if (modelDone && full.trim() && kv) {
           if (calAskKey) await kv.set(calAskKey, full, { ex: 86_400 }).catch(() => {});
           else if (cacheKey) await kv.set(cacheKey, full, { ex: ASK_CACHE_TTL_S }).catch(() => {});
           if (cid) void recordAskStat(kv, cid, "model");
@@ -238,7 +245,7 @@ export async function POST(req: Request): Promise<Response> {
         }
       } finally {
         console.log(
-          `[ask] model=${MODEL} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms chars=${full.length}${calAskKey ? " calask" : ""}${aborted ? " (aborted)" : ""}`,
+          `[ask] model=${MODEL} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms chars=${full.length}${calAskKey ? " calask" : ""}${modelDone ? "" : " (aborted mid-stream)"}`,
         );
         try {
           controller.close();
