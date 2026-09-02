@@ -4,6 +4,12 @@ Guidance for Claude Code working in this repo.
 
 ## Standing decisions
 
+- **Secrets are written to .env.local, never printed.** Generated keys, tokens,
+  and credentials go straight into the env file (and the owner mirrors them to
+  Vercel); terminal output gets confirmations only — a printed secret lives in
+  scrollback and logs forever. (Rule added after a VAPID private key was
+  printed on 2026-09-02; that pair was rotated.)
+
 - **Voice retired Aug 2026.** AUGUST does not speak or listen. Do not reintroduce
   TTS/STT (no ElevenLabs, no Deepgram, no Web Speech, no mic/waveform controls,
   no audio-reactive orb input).
@@ -26,6 +32,15 @@ Guidance for Claude Code working in this repo.
   disagreeing inputs instead).
 
 ## Decided
+
+- PWA + PUSH (feature/pwa-push) — installable PWA (existing manifest/orb
+  icons/minimal sw.js: push + notificationclick only, NO offline caching) and
+  Web Push with VAPID, no third-party push service. ONE notification per
+  trading day, from the daily pass via the lib/call-events settle seam:
+  today's settle + tomorrow's call, personalized per principal, NX-idempotent
+  per day. Subscriptions are principal-keyed (anonymous aug_vid devices
+  subscribe; claim folds them into the account). The header bell is the only
+  control. Watchers extend this same seam/store — separate branch.
 
 - THE DESK INBOX (feature/desk-inbox) — the /admin queue (PENDING · NEEDS
   LEVEL · REVIEW) is the ONLY path into the lifecycle for anything the

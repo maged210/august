@@ -8,7 +8,14 @@
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const isBrowser = typeof window !== "undefined";
 
-export type PushState = "unsupported" | "ios-install" | "default" | "denied" | "granted";
+// feature/pwa-push — the bell's states reflect the REAL subscription (checked
+// on load via pushManager.getSubscription), not merely the permission:
+//   on          this device holds a live push subscription
+//   off         supported, permission not blocked, no subscription
+//   denied      permission blocked in the browser
+//   ios-install iPhone/iPad in a browser tab — install to Home Screen first
+//   unsupported no service worker / Push API here
+export type PushState = "unsupported" | "ios-install" | "denied" | "off" | "on";
 
 export type EnableResult =
   | { ok: true }
@@ -76,15 +83,61 @@ export function registerServiceWorker(): void {
   else window.addEventListener("load", go, { once: true });
 }
 
-/** Current state for the enable-notifications control. */
-export function getPushState(): PushState {
+/** The bell's state — ASYNC because "on" means a real subscription exists on
+ *  this device, which only pushManager.getSubscription() can answer. */
+export async function getPushState(): Promise<PushState> {
   if (!isBrowser) return "unsupported";
   if (isIosTabNeedingInstall()) return "ios-install"; // guide to install before "unsupported"
   if (!pushSupported()) return "unsupported";
-  const p = Notification.permission;
-  if (p === "granted") return "granted";
-  if (p === "denied") return "denied";
-  return "default";
+  if (Notification.permission === "denied") return "denied";
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    return Notification.permission === "granted" && sub ? "on" : "off";
+  } catch {
+    return "off";
+  }
+}
+
+/** Silent v2 convergence, on load: a device already holding a browser-level
+ *  subscription re-POSTs it so the server store (rebuilt principal-keyed on
+ *  feature/pwa-push) always knows this device. Fire-and-forget. */
+export async function resyncPush(): Promise<void> {
+  if (!isBrowser || !pushSupported() || Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (!sub) return;
+    await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sub.toJSON()),
+    });
+  } catch {
+    /* convergence is best-effort — the next enable tap re-subscribes anyway */
+  }
+}
+
+/** The bell's OFF verb (second tap of the two-tap): drop the browser-level
+ *  subscription AND tell the server to forget the endpoint. */
+export async function disablePush(): Promise<boolean> {
+  if (!isBrowser || !pushSupported()) return false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (!sub) return true; // already off
+    const endpoint = sub.endpoint;
+    await sub.unsubscribe();
+    await fetch("/api/push/subscribe", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    }).catch(() => {}); // a dead endpoint also prunes itself on next send
+    return true;
+  } catch (e) {
+    console.warn("[push] disable failed:", e);
+    return false;
+  }
 }
 
 /** Gesture-triggered: request permission, subscribe (reusing an existing sub), and
@@ -108,6 +161,7 @@ export async function enablePush(): Promise<EnableResult> {
     const reg = await navigator.serviceWorker.ready;
     // Dedupe: reuse an existing subscription if present.
     let sub = await reg.pushManager.getSubscription();
+    const fresh = !sub;
     if (!sub) {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true, // mandatory on Chromium; harmless elsewhere
@@ -121,7 +175,12 @@ export async function enablePush(): Promise<EnableResult> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(sub.toJSON()), // { endpoint, expirationTime, keys:{p256dh,auth} }
     });
-    if (!res.ok) return { ok: false, reason: "error" };
+    if (!res.ok) {
+      // the server never learned about a FRESH subscription — roll it back so
+      // the bell can't read ON while no push will ever arrive
+      if (fresh) await sub.unsubscribe().catch(() => {});
+      return { ok: false, reason: "error" };
+    }
     return { ok: true };
   } catch (e) {
     console.warn("[push] enable failed:", e);

@@ -41,6 +41,8 @@ import {
 } from "@/lib/tape";
 // type-only: lib/transcripts is server code (Anthropic/Redis) — the type erases
 import type { TranscriptRecord } from "@/lib/transcripts";
+// type-only for the same reason (lib/call-push is the server-side sender)
+import type { CallPushLogEntry } from "@/lib/call-push";
 
 const TOKEN_KEY = "aug-admin-token";
 const STALE_DAYS_KEY = "aug-admin-stale-days";
@@ -119,6 +121,10 @@ export default function AdminConsole() {
   // DESK-INBOX — the panel's augmented count (incl. live-detected quote
   // suspects), so the strip chip never disagrees with the header below it
   const [inboxLive, setInboxLive] = useState<number | null>(null);
+  // PWA-PUSH — the daily-call wire: delivery log + the owner test send
+  const [pushLog, setPushLog] = useState<CallPushLogEntry[]>([]);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState("");
   const [form, setForm] = useState<Draft>(EMPTY_DRAFT);
   // transcript intake (P4 + AD-D)
   const [trText, setTrText] = useState("");
@@ -215,6 +221,50 @@ export default function AdminConsole() {
     }
   }, []);
 
+  const loadPushLog = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/push", { cache: "no-store", headers: authHeaders() });
+      if (!res.ok) return;
+      const j = (await res.json()) as { log?: CallPushLogEntry[] };
+      setPushLog(Array.isArray(j.log) ? j.log : []);
+    } catch {
+      /* the wire panel simply stays quiet */
+    }
+  }, []);
+
+  const sendTestPush = useCallback(async () => {
+    setPushBusy(true);
+    setPushMsg("");
+    try {
+      const res = await fetch("/api/admin/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "test" }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        result?: { devices: number; sent: number; pruned: number; failed: number };
+      };
+      if (j.ok && j.result) {
+        setPushMsg(`sent ${j.result.sent}/${j.result.devices} to your devices${j.result.failed ? ` · ${j.result.failed} failed` : ""}`);
+      } else {
+        setPushMsg(
+          j.error === "no_owner_subscriptions"
+            ? "no devices subscribed — tap the bell on the floor first"
+            : j.error === "push_not_configured"
+              ? "push isn't configured (VAPID keys missing)"
+              : `test failed: ${j.error ?? res.status}`,
+        );
+      }
+      await loadPushLog();
+    } catch {
+      setPushMsg("couldn't reach the push API");
+    } finally {
+      setPushBusy(false);
+    }
+  }, [loadPushLog]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -223,6 +273,7 @@ export default function AdminConsole() {
     if (gate === "open") {
       void loadTranscripts();
       void loadTape();
+      void loadPushLog();
       // status strip: the tracked pipeline's count (public feed, cheap)
       fetch("/api/intel/feed", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
@@ -231,7 +282,7 @@ export default function AdminConsole() {
         })
         .catch(() => {});
     }
-  }, [gate, loadTranscripts, loadTape]);
+  }, [gate, loadTranscripts, loadTape, loadPushLog]);
 
   // clear any pending-remove timers on unmount
   useEffect(() => {
@@ -1032,6 +1083,43 @@ export default function AdminConsole() {
                   </button>
                 </div>
               </form>
+            </section>
+
+            {/* PUSH (feature/pwa-push) — the daily-call wire: SEND TEST hits
+                the OWNER's own devices only; the log is the last 14 sends. */}
+            <section className="adm-panel">
+              <div className="adm-panel-h">
+                <span className="adm-panel-t">PUSH</span>
+                <span className="adm-panel-acts">
+                  <button
+                    type="button"
+                    className="adm-btn adm-btn-acc"
+                    disabled={pushBusy}
+                    onClick={() => void sendTestPush()}
+                  >
+                    {pushBusy ? "SENDING…" : "SEND TEST"}
+                  </button>
+                </span>
+              </div>
+              {pushMsg ? <p className="adm-hint" role="status">{pushMsg}</p> : null}
+              {pushLog.length > 0 ? (
+                <ul className="adm-pushlog">
+                  {pushLog.map((l, i) => (
+                    <li key={`${l.day}-${l.at}-${i}`} className="adm-pushlog-row">
+                      <span className="adm-pushlog-day">{l.day}</span>
+                      {l.test ? <span className="adm-reason-chip">TEST</span> : null}
+                      <span className="adm-pushlog-n">
+                        {l.recipients} recipient{l.recipients === 1 ? "" : "s"} · {l.sent} sent
+                        {l.pruned ? ` · ${l.pruned} pruned` : ""}
+                        {l.failed ? ` · ${l.failed} FAILED` : ""}
+                      </span>
+                      <span className="adm-when">{relativeTime(l.at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="adm-empty">no sends yet — the wire is quiet</p>
+              )}
             </section>
           </div>
 

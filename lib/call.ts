@@ -656,6 +656,9 @@ export async function readCallState(
     now?: number;
     thesisGen?: ThesisGen;
     readRegime?: () => Promise<RegimeRead>;
+    /** pure read — never bootstrap-generate (the push sender and the admin
+     *  test route must not write a day record from a stubbed regime) */
+    readonly?: boolean;
   },
 ): Promise<CallState> {
   const kv = opts?.kv !== undefined ? opts.kv : defaultKv();
@@ -671,10 +674,12 @@ export async function readCallState(
   if (!kv) return empty;
   const today = etDate(new Date(now));
 
-  try {
-    await ensureBootstrapped(kv, now, opts?.readRegime ?? readServerRegime);
-  } catch {
-    /* bootstrap is best-effort — reads must still serve */
+  if (!opts?.readonly) {
+    try {
+      await ensureBootstrapped(kv, now, opts?.readRegime ?? readServerRegime);
+    } catch {
+      /* bootstrap is best-effort — reads must still serve */
+    }
   }
 
   const state = { ...empty };
