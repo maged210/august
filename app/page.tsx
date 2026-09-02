@@ -581,7 +581,9 @@ export default function Home() {
     setReplyText("Done. I've let it go — we start clean.");
   }
 
-  async function handleSend(raw: string) {
+  // calendarAskId: set only by WHAT'S COMING ask buttons — rides to /api/chat
+  // so the server can serve one cached answer per event per day.
+  async function handleSend(raw: string, calendarAskId?: string) {
     const text = raw.trim();
     if (!text) return;
 
@@ -610,7 +612,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next, ...(calendarAskId ? { calendarAsk: calendarAskId } : {}) }),
         signal: controller.signal,
       });
       if (gen !== genRef.current) return; // superseded while connecting

@@ -104,7 +104,7 @@ function Spark({ closes, up }: { closes: number[]; up: boolean }) {
 
 const TICKER_WHITELIST = /(AAPL|MSFT|AMZN|GOOGL|NVDA|META|PLTR|CRM|AMD|AVGO|MU|SMCI|JPM|GS|BAC|WFC|XOM|CVX|OXY|SLB|WMT|MCD|NKE|SBUX|LLY|UNH|PFE|MRK|COIN|MSTR|HOOD|RIOT|TSLA|GME|AFRM|UPST|SPY|QQQ|BTC|ETH|NQ|ES|VIX)/g;
 
-export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode; onAsk?: (text: string) => void } = {}) {
+export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode; onAsk?: (text: string, calendarAskId?: string) => void } = {}) {
   const [now, setNow] = useState(() => sessionNow());
   const [quotes, setQuotes] = useState<Record<string, Quote> | null>(null);
   const [quotesErr, setQuotesErr] = useState(false);

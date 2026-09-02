@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { Redis } from "@upstash/redis";
+import { askCacheKey, getCalendarWeek, matchAskPrompt } from "@/lib/calendar-feed";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES, MOODS } from "@/lib/tools";
@@ -49,37 +51,47 @@ function getClient(apiKey: string): Anthropic {
   return _client;
 }
 
+// fix/whats-coming — the calendar-ask answer cache (one Anthropic spend per
+// event per day; repeat ASK AUGUST clicks serve the stored text). Lazy Redis,
+// same fail-open contract as every other lib: unconfigured/broken → no cache.
+let _askRedis: Redis | null | undefined;
+function getAskCache(): Redis | null {
+  if (_askRedis !== undefined) return _askRedis;
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  try {
+    _askRedis = url && token && url.startsWith("https://") ? new Redis({ url, token }) : null;
+  } catch {
+    _askRedis = null;
+  }
+  return _askRedis;
+}
+
 export async function POST(req: Request): Promise<Response> {
   // Per-visitor cap (per-IP sliding window, CHAT_RATE_PER_MIN/min) …
   const rl = await checkRateLimit("chat", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
-  // … AND the global daily budget (CHAT_DAILY_CAP/day across ALL visitors) —
-  // this route spends real Anthropic money on anonymous traffic (HOTFIX).
-  const daily = await checkChatDailyCap();
-  if (!daily.ok) return dailyCapResponse();
-
-  // HOTFIX (chat privacy): the memory this route injects into the prompt is
-  // now the CALLER's own namespace — signed-in user, or the per-visitor
-  // principal; never the legacy shared store in production.
-  const { principal } = await resolveChatPrincipal(req);
-  const userEmail = principal;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    // R1 A1 — generic body only; config detail belongs in server logs
-    console.error("[chat] ANTHROPIC_API_KEY missing — chat unconfigured");
-    return Response.json({ ok: false, error: "chat_unconfigured" }, { status: 503 });
-  }
 
   let messages: ChatMessage[] = [];
   let isVoice = false;
+  let calendarAsk: string | null = null;
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
     isVoice = body?.voice === true; // the hands-free loop sets this → Haiku for snap
+    // WHAT'S COMING ask buttons send the event id; bounded so a hostile
+    // client can't mint unbounded Redis keys.
+    calendarAsk =
+      typeof body?.calendarAsk === "string" && body.calendarAsk.length > 0 && body.calendarAsk.length <= 160
+        ? body.calendarAsk
+        : null;
   } catch {
     return new Response("Invalid request body.", { status: 400 });
   }
+  // The ask buttons never set voice (the voice loop is retired) — a hand-built
+  // voice+calendarAsk request must not seed the SHARED day cache with the
+  // Haiku tier, so it simply gets no cache at all.
+  if (isVoice) calendarAsk = null;
   const model = isVoice ? VOICE_MODEL : TEXT_MODEL;
 
   // Keep only well-formed turns before sending them on.
@@ -95,6 +107,63 @@ export async function POST(req: Request): Promise<Response> {
 
   if (cleaned.length === 0) {
     return new Response("No messages provided.", { status: 400 });
+  }
+
+  // Calendar ask (fix/whats-coming) — one spend per event per day. The id is
+  // honored ONLY when the single user turn EXACTLY matches the canonical
+  // prompt the server derives for that event, so nobody can seed the shared
+  // cache with arbitrary text. A hit streams the stored answer and spends
+  // nothing (it also skips the daily budget below — nothing was spent).
+  let calAskKey: string | null = null;
+  if (calendarAsk && cleaned.length === 1 && cleaned[0].role === "user") {
+    const ev = (await getCalendarWeek().catch(() => [])).find((e) => e.id === calendarAsk);
+    const kind = ev ? matchAskPrompt(ev, cleaned[0].content) : null;
+    // The prompt kind must also match the event's ACTUAL state right now: the
+    // "released" prompt asserts "just printed", and honoring it pre-print
+    // would let anyone seed the shared cache with an answer about a release
+    // that hasn't happened (timing-based poisoning, no text needed).
+    const stateOk = ev && kind ? (kind === "released" ? ev.ts <= Date.now() : ev.ts > Date.now()) : false;
+    if (ev && kind && stateOk) {
+      calAskKey = askCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind, cleaned[0].content);
+      const cache = getAskCache();
+      if (cache) {
+        try {
+          const hit = await cache.get<string>(calAskKey);
+          if (typeof hit === "string" && hit.trim()) {
+            console.log("[chat] calendar-ask cache hit");
+            return new Response(hit, {
+              headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store, no-transform" },
+            });
+          }
+        } catch {
+          /* fail open — a Redis blip means a normal spend, not a 500 */
+        }
+      }
+    } else {
+      // Visibility for the silent-miss mode: feed-snapshot skew (forecast
+      // revision mid-caches) or a state mismatch lands here — the request
+      // still answers, it just spends uncached.
+      console.log(`[chat] calendar-ask id present but not honored (${!ev ? "unknown event" : !kind ? "prompt mismatch" : "state mismatch"}) — uncached spend`);
+    }
+  }
+
+  // The global daily budget (CHAT_DAILY_CAP/day across ALL visitors) — this
+  // route spends real Anthropic money on anonymous traffic (HOTFIX). Checked
+  // AFTER the cache probe: a served cache hit costs nothing.
+  const daily = await checkChatDailyCap();
+  if (!daily.ok) return dailyCapResponse();
+
+  // HOTFIX (chat privacy): the memory this route injects into the prompt is
+  // now the CALLER's own namespace — signed-in user, or the per-visitor
+  // principal; never the legacy shared store in production.
+  const { principal } = await resolveChatPrincipal(req);
+  const userEmail = principal;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    // R1 A1 — generic body only; config detail belongs in server logs
+    console.error("[chat] ANTHROPIC_API_KEY missing — chat unconfigured");
+    return Response.json({ ok: false, error: "chat_unconfigured" }, { status: 503 });
   }
 
   // Prep everything the system prompt needs in PARALLEL — memory (Upstash) and the
@@ -126,7 +195,17 @@ export async function POST(req: Request): Promise<Response> {
   // re-prefilling it — that's the time-to-first-token win. Volatile context (what he
   // remembers + the live snapshots) rides in a second, uncached block after it.
   const stableSystem = SYSTEM_PROMPT + TOOL_GUIDANCE;
-  const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
+  // A cacheable calendar-ask answer is served to EVERY visitor who clicks the
+  // same card today, for up to 24h — so NOTHING volatile or personal may
+  // shape it: no caller memory (privacy) and no live market/desk snapshots
+  // (an hours-stale "NQ is at X right now" replayed as fresh would be a
+  // fabrication). The guidance block keeps the model from inventing numbers
+  // it doesn't have.
+  const CAL_ASK_GUIDANCE =
+    "\n\n---\nThis is a calendar-card question about a scheduled economic release. You have NO live tape, NO printed value, and no personal memory in context, and this answer may be replayed to other visitors later today. Explain the mechanics and the scenarios for this release plainly; do NOT state current prices or levels, and do NOT invent the printed value.";
+  const dynamicSystem = calAskKey
+    ? CAL_ASK_GUIDANCE
+    : buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: stableSystem, cache_control: { type: "ephemeral" } },
   ];
@@ -204,7 +283,16 @@ export async function POST(req: Request): Promise<Response> {
 
         // No tool call → it's a plain reply; we're done. Same if the client left —
         // don't pay for a narration turn nobody will see.
-        if (toolBlocks.size === 0 || aborted) return;
+        if (toolBlocks.size === 0 || aborted) {
+          // Store the day's calendar-ask answer: repeat clicks stream this
+          // text without an Anthropic call (24h TTL). Tool-call replies never
+          // cache — their narration depends on side effects.
+          if (!aborted && calAskKey && firstText.trim()) {
+            const cache = getAskCache();
+            if (cache) await cache.set(calAskKey, firstText, { ex: 86_400 }).catch(() => {});
+          }
+          return;
+        }
 
         // Emit each tool call now (the globe reacts immediately) and prepare a
         // tool_result turn so AUGUST narrates the place he just opened.

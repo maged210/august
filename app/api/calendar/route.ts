@@ -1,11 +1,12 @@
 // THE COUNTDOWN ROW's feed (R4 F2) — this week's high-impact USD calendar,
 // big-four classified, with an HONEST reaction line attached to released
-// events (NQ=F 5m bars; null when the bars don't cover the window — the
-// card omits the line rather than estimate). Vetted before shipping; the
-// free feed carries no `actual` — the client states that, never a beat/miss.
-import { getCalendarWeek, eventState, reactionAfter } from "@/lib/calendar-feed";
+// events (NQ=F 5m bars across the week — futures carry the full Globex
+// session, so pre-market prints are covered; when a window isn't covered the
+// card gets the REASON, never a fabricated 0). The free feed carries no
+// `actual` — the client states that, never a beat/miss.
+import { getCalendarWeek, eventState, reactionAfter, type ReactionResult, type ReactionWhy } from "@/lib/calendar-feed";
+import { backfillActuals } from "@/lib/calendar-actuals";
 import { getHistory } from "@/lib/markets";
-import { lastSession } from "@/lib/levels";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -23,18 +24,43 @@ export async function GET(req: Request): Promise<Response> {
       .filter((e) => e.state !== "past")
       .sort((a, b) => a.ts - b.ts);
 
-    // reaction lines for released prints — only when bars genuinely cover
-    const anyReleased = events.some((e) => e.state === "released");
-    let reactions: Record<number, number | null> = {};
-    if (anyReleased) {
-      const today = await getHistory("NQ=F", "yahoo", "1D").catch(() => []);
-      const bars = today.length >= 5 ? today : lastSession(await getHistory("NQ=F", "yahoo", "1W").catch(() => []));
-      reactions = Object.fromEntries(
-        events.filter((e) => e.state === "released").map((e) => [e.ts, reactionAfter(bars, e.ts, 15)]),
-      );
+    // reaction lines for released prints — 5m bars across the WEEK (Yahoo's
+    // 1d range starts at midnight ET, which silently dropped prior-evening
+    // prints); a window the bars don't cover ships its reason instead.
+    const WHY: Record<ReactionWhy, string> = {
+      no_bars: "no intraday bars",
+      no_preprint_bar: "bars don't cover the print",
+      window_incomplete: "bars don't cover the full 15m",
+    };
+    const released = events.filter((e) => e.state === "released");
+    let reactions: Record<string, ReactionResult> = {};
+    let actuals: Record<string, string> = {};
+    if (released.length > 0) {
+      // actuals for printed majors — the fixed FRED mapping, cache-first (the
+      // 21:05 pass warms it); timeboxed so a slow FRED never stalls the row.
+      const [bars, acts] = await Promise.all([
+        getHistory("NQ=F", "yahoo", "5D").catch(() => []),
+        Promise.race([
+          backfillActuals(released),
+          new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({}), 2500)),
+        ]).catch(() => ({}) as Record<string, string>),
+      ]);
+      actuals = acts;
+      reactions = Object.fromEntries(released.map((e) => [e.id, reactionAfter(bars, e.ts, 15)]));
     }
     return Response.json(
-      { ok: true, events: events.map((e) => ({ ...e, reaction15m: e.state === "released" ? (reactions[e.ts] ?? null) : null })) },
+      {
+        ok: true,
+        events: events.map((e) => {
+          const r = e.state === "released" ? reactions[e.id] : undefined;
+          return {
+            ...e,
+            reaction15m: r?.ok ? r.pct : null,
+            reactionWhy: r && !r.ok ? WHY[r.why] : null,
+            actual: e.state === "released" ? (actuals[e.id] ?? null) : null,
+          };
+        }),
+      },
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } },
     );
   } catch (err) {

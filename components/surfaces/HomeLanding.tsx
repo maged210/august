@@ -57,7 +57,9 @@ type HomeLandingProps = {
   /** A conversation is live — the bar + chips yield to the existing reply UI. */
   conversationActive: boolean;
   busy: boolean;
-  onSend: (text: string) => void;
+  /** calendarAskId (WHAT'S COMING cards only) lets /api/chat serve one
+      cached answer per event per day instead of spending per click */
+  onSend: (text: string, calendarAskId?: string) => void;
   /** CORE V2 P5 — the conversation column (ChatTranscript), rendered by the
       page so message state stays there. Shown while a conversation is active;
       the landing's heading/chips/activity yield to it and the orb compacts. */
@@ -455,7 +457,7 @@ export default function HomeLanding({
           conversation replaces all of it with the transcript column. */}
       {!conversationActive ? (
         <HomeBrief
-          onAsk={(t) => onSend(t)}
+          onAsk={(t, calendarAskId) => onSend(t, calendarAskId)}
           askBar={
             <form className="hl-bar" onSubmit={submit}>
               <input

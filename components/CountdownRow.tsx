@@ -3,8 +3,8 @@
 // WHAT'S COMING (R4 F2) — the state-aware countdown row. Three states per
 // card (F2-A): DISTANT = one slim muted line, never a hero; IMMINENT = the
 // full countdown card with expected/prior + impact; RELEASED = the print
-// flips live with the honest reaction line (omitted when the bars don't
-// cover it) and an explicit note that the free feed carries no actuals.
+// flips live with the honest reaction line ("—" plus the reason when the
+// bars don't cover it, "flat" under 0.05% — never a fabricated "-0.0%").
 // BRIDGE RULE (F2-B): every card carries ask-August; when the live book
 // holds an index call, the "desk is positioned" chip links the Terminal.
 // QUIET-DAY RULE (F2-C): with nothing inside 48h the whole row collapses
@@ -13,17 +13,21 @@
 import { useEffect, useState } from "react";
 import DataTag from "@/components/DataTag";
 import type { PublicIdea } from "@/lib/ideas";
-import type { CalEvent, EventState } from "@/lib/calendar-feed";
+import { askPrompts, fmtEt, type CalEvent, type EventState } from "@/lib/calendar-feed";
 
-type Row = CalEvent & { state: EventState; reaction15m: number | null };
+type Row = CalEvent & {
+  state: EventState;
+  reaction15m: number | null;
+  reactionWhy: string | null;
+  /** the printed value, backfilled from FRED for the mapped majors */
+  actual: string | null;
+};
+
+// Under this the 15m move is tape noise — say "flat", not a signed "-0.0%".
+const FLAT_PCT = 0.05;
 
 const INDEX_RE = /^(NQ|ES|SPY|QQQ|YM|RTY)\b/i;
 
-function fmtEt(ts: number): string {
-  return new Date(ts).toLocaleString("en-US", {
-    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
-  }) + " ET";
-}
 function countdown(ts: number, now: number): string {
   const s = Math.max(0, Math.floor((ts - now) / 1000));
   const d = Math.floor(s / 86400);
@@ -35,7 +39,9 @@ function countdown(ts: number, now: number): string {
 
 export default function CountdownRow({ liveIdeas, onAsk }: {
   liveIdeas: PublicIdea[] | null;
-  onAsk?: (text: string) => void;
+  /** calendarAskId rides along so the chat route can serve one cached answer
+   *  per event per day instead of spending on every click */
+  onAsk?: (text: string, calendarAskId?: string) => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [err, setErr] = useState(false);
@@ -90,7 +96,7 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
         <span className="hb-label">CALENDAR</span>
         {next ? (
           <span className="cdr-quietline">
-            next: {next.cls ?? next.title.toUpperCase()} · {fmtEt(next.ts)} · in {countdown(next.ts, now)}
+            next: {next.title.toUpperCase()} · {fmtEt(next.ts)} · in {countdown(next.ts, now)}
           </span>
         ) : (
           <span className="cdr-quietline">nothing high-impact on this week&apos;s tape</span>
@@ -108,8 +114,11 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
       </div>
       <div className="cdr-cards">
         {released.map((e) => (
-          <div key={e.ts} className="cdr-card cdr-released">
-            <span className="cdr-name">{e.cls ?? e.title.toUpperCase()}</span>
+          <div key={e.id} className="cdr-card cdr-released">
+            {/* the feed's FULL title, never the collapsed class — "Prelim GDP
+                q/q" and "Prelim GDP Price Index q/q" both classify as GDP, and
+                a "FOMC Member X Speaks" is not an FOMC decision */}
+            <span className="cdr-name">{e.title.toUpperCase()}</span>
             <span className="cdr-printed">PRINTED · {fmtEt(e.ts)}</span>
             <span className="cdr-exp">
               {e.forecast ? `expected ${e.forecast}` : null}
@@ -117,21 +126,38 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
               {e.previous ? `prior ${e.previous}` : null}
             </span>
             {e.reaction15m !== null ? (
-              <span className={`cdr-react ${e.reaction15m >= 0 ? "hl-up" : "hl-down"}`}>
-                NQ {e.reaction15m >= 0 ? "+" : ""}{e.reaction15m.toFixed(1)}% in the 15m after the print
+              Math.abs(e.reaction15m) < FLAT_PCT ? (
+                <span className="cdr-react">NQ flat in the 15m after the print</span>
+              ) : (
+                <span className={`cdr-react ${e.reaction15m >= 0 ? "hl-up" : "hl-down"}`}>
+                  NQ {e.reaction15m >= 0 ? "+" : ""}{e.reaction15m.toFixed(1)}% in the 15m after the print
+                </span>
+              )
+            ) : (
+              // reactionWhy is null only when the CLIENT flipped this card to
+              // released ahead of the next poll (the server payload still said
+              // imminent) — the truth is timing, not a data failure
+              <span className="cdr-react">
+                NQ 15m reaction — · {e.reactionWhy ?? (now - e.ts < 16 * 60_000 ? "the 15m window is still open" : "awaiting refresh")}
               </span>
-            ) : null}
-            <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
+            )}
+            {e.actual ? (
+              <span className="cdr-exp" title="backfilled from FRED — the value the source agency published">
+                actual {e.actual} · FRED
+              </span>
+            ) : (
+              <span className="cdr-noact">actuals aren&apos;t carried by the free feed</span>
+            )}
             {onAsk ? (
-              <button type="button" className="cdr-ask" onClick={() => onAsk(`The ${e.cls ?? e.title} just printed (${fmtEt(e.ts)}). What could it mean for the tape?`)}>
+              <button type="button" className="cdr-ask" onClick={() => onAsk(askPrompts(e).released, e.id)}>
                 ASK AUGUST →
               </button>
             ) : null}
           </div>
         ))}
         {imminent.map((e) => (
-          <div key={e.ts} className="cdr-card">
-            <span className="cdr-name">{e.cls ?? e.title.toUpperCase()}</span>
+          <div key={e.id} className="cdr-card">
+            <span className="cdr-name">{e.title.toUpperCase()}</span>
             <span className="cdr-count">{countdown(e.ts, now)}</span>
             <span className="cdr-when">{fmtEt(e.ts)}</span>
             <span className="cdr-exp">
@@ -142,7 +168,7 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
             <span className={`cdr-impact im-${String(e.impact).toLowerCase()}`}>{String(e.impact).toUpperCase()} IMPACT</span>
             <span className="cdr-acts">
               {onAsk ? (
-                <button type="button" className="cdr-ask" onClick={() => onAsk(`${e.title} prints ${fmtEt(e.ts)} (expected ${e.forecast ?? "n/a"}, prior ${e.previous ?? "n/a"}). What could this move?`)}>
+                <button type="button" className="cdr-ask" onClick={() => onAsk(askPrompts(e).imminent, e.id)}>
                   ASK AUGUST →
                 </button>
               ) : null}
@@ -158,8 +184,8 @@ export default function CountdownRow({ liveIdeas, onAsk }: {
       {distant.length > 0 ? (
         <div className="cdr-strip">
           {distant.slice(0, 4).map((e) => (
-            <span key={e.ts} className="cdr-stripitem">
-              {e.cls ?? e.title.toUpperCase()} · {fmtEt(e.ts)}
+            <span key={e.id} className="cdr-stripitem">
+              {e.title.toUpperCase()} · {fmtEt(e.ts)}
             </span>
           ))}
         </div>
