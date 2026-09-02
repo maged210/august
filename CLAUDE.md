@@ -13,8 +13,9 @@ Guidance for Claude Code working in this repo.
 - **Voice retired Aug 2026.** AUGUST does not speak or listen. Do not reintroduce
   TTS/STT (no ElevenLabs, no Deepgram, no Web Speech, no mic/waveform controls,
   no audio-reactive orb input).
-- **AUGUST is not a chatbot.** The input is headed toward a command bar: no thread
-  history, no conversation UI.
+- **AUGUST is not a chatbot.** The input IS a command bar (feature/command-bar,
+  shipped): no thread history, no conversation UI, and commands never touch
+  the model.
 - **AUGUST is intended to become a sellable product.** Nothing ships that the owner
   doesn't use weekly.
 
@@ -32,6 +33,19 @@ Guidance for Claude Code working in this repo.
   disagreeing inputs instead).
 
 ## Decided
+
+- THE COMMAND BAR (feature/command-bar) — the bar is the ONLY input, on the
+  floor and on mobile. Two lanes by law: COMMANDS (`<TICKER>`, `arm`/`close`,
+  `higher`/`lower`, `call coming why pit terminal ideas inbox clear`,
+  `/forget`) resolve deterministically and locally and NEVER hit the model —
+  a command-shaped parse failure hints locally, a ticker miss says NO SUCH
+  SYMBOL, neither ever falls through to /api/chat. ASKS are single-turn
+  (one message, no tools, small stated token budget), cached 10 minutes per
+  identity for identical normalized asks, and capped per identity per day
+  (anon 20 / signed-in 100, env-tunable); over the cap the desk says so and
+  commands keep working. The response is ONE answer card the next input
+  replaces. No conversation UI exists anywhere: no threads, no history, no
+  transcript, no "new chat".
 
 - PWA + PUSH (feature/pwa-push) — installable PWA (existing manifest/orb
   icons/minimal sw.js: push + notificationclick only, NO offline caching) and
