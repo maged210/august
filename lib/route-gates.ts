@@ -16,7 +16,8 @@ export const GATED: readonly string[] = [
   //  parked surfaces — rebuild from git when wanted. Voice retirement Aug 2026
   //  deleted /api/speak + /api/deepgram-token outright.)
   "/api/brief", // personal calendar+inbox brief (headlines are separate + public)
-  "/api/push/subscribe", // per-user device subscriptions
+  // (feature/pwa-push: /api/push/subscribe moved to the anonymous surface —
+  //  devices subscribe on the visitor principal and claim into the account)
 ];
 
 /** Anonymous-capable principal routes — the hotfix surface. Listed here ONLY
@@ -26,6 +27,7 @@ export const ANONYMOUS_SURFACE: readonly string[] = [
   "/api/memory",
   "/api/pit",
   "/api/call", // THE CALL — visitor-principal takes, claimed on sign-in
+  "/api/push/subscribe", // device subscriptions — visitor-principal, claimed on sign-in
   "/api/ideas",
   "/api/watchlist", // in-route guard decides; anonymous callers are tolerated
   "/api/feeds",

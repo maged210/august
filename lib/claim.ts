@@ -8,6 +8,7 @@ import { migrateThreads } from "./threads";
 import { migrateMemory } from "./memory";
 import { claimPitPlayer } from "./pit";
 import { claimCallRecord } from "./call";
+import { claimPushSubscriptions } from "./push";
 import { normalizeEmail } from "./user-scope";
 
 const MARKER = (vid: string) => `august:claim:v1:${vid}`;
@@ -43,6 +44,9 @@ export async function claimVisitor(emailRaw: string, visitorId: string): Promise
     await claimPitPlayer(`v:${visitorId}`, `u:${email}`);
     // THE CALL — the device's record + any live take follow the account
     await claimCallRecord(`v:${visitorId}`, `u:${email}`);
+    // PWA push — the device's subscriptions follow too (the daily-call push
+    // then personalizes with the account's record, not the orphaned visitor's)
+    await claimPushSubscriptions(`v:${visitorId}`, `u:${email}`);
     await redis.set(MARKER(visitorId), email);
     return { ok: true, already: false, threads };
   } catch {

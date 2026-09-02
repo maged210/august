@@ -12,9 +12,12 @@ test("B1: the anonymous principal surface is NEVER session-gated", () => {
     assert.ok(!GATED.some((g) => open === g || open.startsWith(g + "/")), `${open} shadowed by GATED`);
   }
   // the personal/spend surfaces stay gated
-  for (const g of ["/api/brief", "/api/push/subscribe"]) {
+  for (const g of ["/api/brief"]) {
     assert.equal(isGated(g), true, `${g} must stay gated`);
   }
+  // feature/pwa-push — device subscriptions ride the visitor principal and
+  // claim into the account; the middleware must NEVER 401 the subscribe verb
+  assert.equal(isGated("/api/push/subscribe"), false, "push subscribe is anonymous-capable now");
 });
 
 test("B1: configured auth + no session ⇒ anonymous visitor principal, minted never refused", () => {
