@@ -12,12 +12,14 @@
 // canvas is mounted in a larger square around the 190px circle so the corona
 // can breathe past the rim (ORB_GL_* below size the sphere to the circle).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import HomeBrief from "@/components/HomeBrief";
 import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
+import { suggestFor, type Suggestion } from "@/lib/command-bar";
+import type { AnswerCard } from "@/app/page";
 import type { PushState } from "@/lib/push-client";
 
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
@@ -54,16 +56,15 @@ type HomeLandingProps = {
   theme: Theme;
   /** The Presence panel is the deck's active surface (gates the ⌘K focus). */
   active: boolean;
-  /** A conversation is live — the bar + chips yield to the existing reply UI. */
-  conversationActive: boolean;
-  busy: boolean;
-  /** calendarAskId (WHAT'S COMING cards only) lets /api/chat serve one
-      cached answer per event per day instead of spending per click */
+  /** COMMAND-BAR era: every submission routes to the page's runInput — the
+      parser decides the lane there. calendarAskId (WHAT'S COMING cards only)
+      forces the ask lane and lets /api/chat serve one cached answer per event
+      per day instead of spending per click. */
   onSend: (text: string, calendarAskId?: string) => void;
-  /** CORE V2 P5 — the conversation column (ChatTranscript), rendered by the
-      page so message state stays there. Shown while a conversation is active;
-      the landing's heading/chips/activity yield to it and the orb compacts. */
-  transcript?: React.ReactNode;
+  /** THE ANSWER CARD — the one response surface. The next input replaces it;
+      nothing is stored. Rendered directly under the bar. */
+  answer: AnswerCard | null;
+  onClearAnswer: () => void;
   // Quiet top-bar cluster — everything the design omits but the app keeps.
   // "unknown" = the async subscription check hasn't resolved — no bell yet.
   pushState: PushState | "unknown";
@@ -86,10 +87,9 @@ export default function HomeLanding({
   state,
   theme,
   active,
-  conversationActive,
-  busy,
   onSend,
-  transcript,
+  answer,
+  onClearAnswer,
   pushState,
   onNotify,
   onSetTheme,
@@ -97,6 +97,9 @@ export default function HomeLanding({
   onSetRainPreset,
 }: HomeLandingProps) {
   const [draft, setDraft] = useState("");
+  // COMMAND-BAR suggestions — local, max 5, keywords + the live book's tickers
+  const [sugs, setSugs] = useState<Suggestion[]>([]);
+  const [bookTickers, setBookTickers] = useState<string[]>([]);
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [pills, setPills] = useState<Pill[]>([]);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -261,19 +264,67 @@ export default function HomeLanding({
     return () => document.removeEventListener("pointerdown", onDown);
   }, [rainMenuOpen]);
 
+  // The live book's tickers feed the suggestion list — one quiet fetch at
+  // mount, refreshed when an arm/close command changes the book (the page
+  // dispatches aug:ideas-changed after a confirmed PATCH). Local matching in
+  // between: the parser and suggestions never touch the network per input.
+  useEffect(() => {
+    let cancelled = false;
+    const pull = () => {
+      fetch("/api/ideas", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+        .then((j: { ideas?: Array<{ instrument?: string }> }) => {
+          if (cancelled || !Array.isArray(j.ideas)) return;
+          const seen = new Set<string>();
+          for (const i of j.ideas) {
+            if (typeof i.instrument === "string" && i.instrument.trim()) seen.add(i.instrument.trim().toUpperCase());
+          }
+          setBookTickers([...seen]);
+        })
+        .catch(() => {});
+    };
+    pull();
+    window.addEventListener("aug:ideas-changed", pull);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("aug:ideas-changed", pull);
+    };
+  }, []);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text) return; // a new input supersedes an in-flight ask — never gated
     onSend(text);
     setDraft("");
+    setSugs([]);
+  };
+
+  // Guard against pointerdown+click double-fire from one gesture: a repeated
+  // pick of the same insert inside 350ms is the same gesture, not a second
+  // intent (a double arm/close submission would silently CONFIRM the two-tap).
+  const lastPickRef = useRef<{ insert: string; at: number }>({ insert: "", at: 0 });
+  const pickSuggestion = (s: Suggestion) => {
+    const now = Date.now();
+    if (lastPickRef.current.insert === s.insert && now - lastPickRef.current.at < 350) return;
+    lastPickRef.current = { insert: s.insert, at: now };
+    if (s.insert.endsWith(" ")) {
+      // arm/close want their ticker — insert and keep typing
+      setDraft(s.insert);
+      setSugs(suggestFor(s.insert, bookTickers));
+      inputRef.current?.focus();
+    } else {
+      onSend(s.insert);
+      setDraft("");
+      setSugs([]);
+    }
   };
 
   // The real system state word — 'SYSTEMS STEADY' only when he actually is.
   const stateWord = state === "thinking" ? "THINKING" : "SYSTEMS STEADY";
 
   return (
-    <div className={`home-landing${conversationActive ? " convo" : ""}`}>
+    <div className="home-landing">
       {/* top bar — wordmark · live clock + live state · quiet control cluster */}
       <div className="hl-top">
         <div className="hl-brand">
@@ -443,9 +494,9 @@ export default function HomeLanding({
           (comfortable top padding on short viewports — flex 1 0 auto grows
           past the fold and the landing scrolls instead of clipping). */}
       <div className="hl-main">
-      {/* the orb — R4 F1: on the front page it is a small live-status mark,
-          not the centerpiece; a live conversation gets the full presence */}
-      <div className={`hl-orb${!conversationActive ? " hl-orb-mini" : ""}`}>
+      {/* the orb — a small live-status mark; "thinking" is wired to the ask
+          lane only (commands resolve locally, instantly) */}
+      <div className="hl-orb hl-orb-mini">
         <div className="hl-orb-halo" aria-hidden />
         <div className="hl-orb-ring" aria-hidden />
         <div className="hl-orb-core" aria-hidden />
@@ -456,42 +507,104 @@ export default function HomeLanding({
 
       {/* the heading yielded to the brief's own date + session line (UX2-T2) */}
 
-      {/* CORE V2 P5 — a live conversation replaces the landing's idle body:
-          the Claude-style transcript column owns the middle of the screen
-          (the fixed composer dock below it is the input, pinned bottom). */}
-      {conversationActive ? transcript : null}
-
-      {/* R4 F1 — the FRONT PAGE: the brief owns the layout; the ask bar rides
-          INSIDE it, directly under the regime apex (slot below). A live
-          conversation replaces all of it with the transcript column. */}
-      {!conversationActive ? (
-        <HomeBrief
-          onAsk={(t, calendarAskId) => onSend(t, calendarAskId)}
-          askBar={
+      {/* THE COMMAND BAR — the brief owns the layout; the bar rides INSIDE it
+          under the regime apex. No transcript, no conversation layout: the one
+          answer card renders under the bar and the next input replaces it. */}
+      <HomeBrief
+        onAsk={(t, calendarAskId) => onSend(t, calendarAskId)}
+        askBar={
+          <div className="cb-wrap">
+            {sugs.length > 0 ? (
+              <div className="cb-sugs" role="listbox" aria-label="Command suggestions">
+                {sugs.map((s) => (
+                  <button
+                    key={s.insert}
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    className="cb-sug"
+                    // pointerdown, not click — fires before the input loses
+                    // focus so the mobile keyboard stays up mid-completion.
+                    // onClick serves the KEYBOARD (Enter/Space synthesize a
+                    // click, never a pointerdown); pickSuggestion's 350ms
+                    // same-insert guard absorbs any double-fire.
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      pickSuggestion(s);
+                    }}
+                    onClick={() => pickSuggestion(s)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <form className="hl-bar" onSubmit={submit}>
               <input
                 ref={inputRef}
-                className="hl-input"
+                className="hl-input cb-input"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Ask about markets, the tape, or the world…"
-                aria-label="Ask AUGUST"
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setSugs(suggestFor(e.target.value, bookTickers));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && (draft || sugs.length > 0)) {
+                    // Esc clears the bar first; empty-bar Esc bubbles to the
+                    // page's stack (drawer, then the answer card)
+                    e.stopPropagation();
+                    setDraft("");
+                    setSugs([]);
+                  }
+                }}
+                placeholder="TICKER · ARM · CLOSE · HIGHER · LOWER · COMING · WHY · OR ASK"
+                aria-label="Command bar"
                 spellCheck={false}
                 autoComplete="off"
+                autoCapitalize="off"
+                enterKeyHint="go"
               />
               <span className="hl-kbd" aria-hidden>
                 ⌘K
               </span>
             </form>
-          }
-        />
-      ) : null}
+            {answer ? (
+              <div className={`cb-card cb-${answer.kind}`} role="status">
+                {answer.kind === "quote" ? (
+                  <div className="cb-quote">
+                    <span className="cb-quote-sym">{answer.symbol}</span>
+                    <span className="cb-quote-px">{fmtPrice(answer.price)}</span>
+                    <span className={answer.chgPct >= 0 ? "hl-up" : "hl-down"}>{fmtChg(answer.chgPct)}</span>
+                    {answer.dayLo !== null && answer.dayHi !== null ? (
+                      <span className="cb-quote-range">
+                        DAY {fmtPrice(answer.dayLo)} – {fmtPrice(answer.dayHi)}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="cb-text">
+                    {answer.text}
+                    {answer.kind === "ask" && answer.streaming ? (
+                      <span className="cb-caret" aria-hidden>
+                        ▌
+                      </span>
+                    ) : null}
+                  </p>
+                )}
+                <button type="button" className="cb-x" aria-label="Dismiss" onClick={onClearAnswer}>
+                  ✕
+                </button>
+              </div>
+            ) : null}
+          </div>
+        }
+      />
       </div>
 
       {/* R5 — WATCHING as a thin full-width bottom ticker strip: static chips
           (deliberately no drift — reduced-motion safe by construction), real
           quotes only, absent entirely when none resolve */}
-      {!conversationActive && pills.length > 0 ? (
+      {pills.length > 0 ? (
         <div className="hl-tape" aria-label="Watching — live quotes">
           <span className="hl-label hl-tape-label">WATCHING <span className="dtag dtag-delayed" title="Yahoo quotes · 60s poll">DELAYED</span></span>
           <div className="hl-tape-chips">

@@ -1,11 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Redis } from "@upstash/redis";
-import { askCacheKey, getCalendarWeek, matchAskPrompt } from "@/lib/calendar-feed";
+import { askCacheKey, askCapFor, recordAskStat, takeAskBudget, ASK_CACHE_TTL_S } from "@/lib/ask";
+import { askCacheKey as calAskCacheKey, getCalendarWeek, matchAskPrompt } from "@/lib/calendar-feed";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
-import { TOOLS, TOOL_GUIDANCE, SEP, WATCHER_TOOL_NAMES, MOODS } from "@/lib/tools";
-import { resolveView } from "@/lib/screens";
-import { runWatcherTool } from "@/lib/watchers";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
 import { getDeskSnapshot } from "@/lib/desk-snapshot";
@@ -17,32 +15,32 @@ import {
   rateLimitedResponse,
 } from "@/lib/ratelimit";
 import { resolveChatPrincipal } from "@/lib/user-scope";
+import { pidFor } from "@/lib/pit";
 
-// Claude proxy. The API key lives on the server and never reaches the client.
+// THE ASK LANE (feature/command-bar). The input is a command bar now: the
+// deterministic command lane never reaches this route, and there is NO
+// conversation — the body carries ONE message, the reply streams into ONE
+// answer card, and nothing is stored beyond the caches below. The old
+// two-turn tools flow (go_to_screen / set_mood / watcher ops) is gone: the
+// command lane does navigation deterministically, so the model gets no tools.
 //
-// Runtime: Node, deliberately — not Edge. Nothing in the deps blocks Edge
-// (@anthropic-ai/sdk and @upstash/redis are both fetch-based), but on today's
-// Vercel the Edge runtime is no longer recommended and runs on the same Fluid
-// Compute infrastructure as Node — no cold-start win — while it WOULD fragment
-// the in-memory markets/command snapshot caches per isolate. Locally (next dev)
-// there are no cold starts at all. The [chat] timing log below shows where the
-// time actually goes; fix from measurement, not folklore.
+// Budget: MAX_TOKENS = 300 — 1–4 sentences or a short structured block, per
+// the desk persona. Guards, in order: per-IP rate limit → per-identity
+// 10-minute cache (free repeats) → per-identity day cap (20 anonymous / 100
+// signed-in, env-tunable ASK_CAP_ANON/ASK_CAP_USER) → the global daily spend
+// backstop (CHAT_DAILY_CAP). The calendar-card ask cache (24h, shared,
+// memory-free by construction) rides on top, unchanged in spirit.
+//
+// Runtime: Node, deliberately — the in-memory markets/command snapshot caches
+// must not fragment per isolate (measured; see git history for the long note).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+const MODEL = "claude-sonnet-4-6";
+const MAX_TOKENS = 300;
+const MAX_ASK_CHARS = 2000;
 
-// Per-path model. The VOICE loop wants minimum time-to-first-token (speed beats max
-// IQ for a spoken companion), so it uses Haiku 4.5 — "Fastest" tier, ~3x cheaper,
-// near-frontier quality (verified: claude-haiku-4-5, platform.claude.com models
-// overview). The typed path keeps Sonnet 4.6 for the extra headroom. Both share the
-// same system/tools, so this is a one-field swap. Note: Haiku's min cacheable prefix
-// is 4096 tokens — the [chat] log prints cache_read to confirm the cache is hitting.
-const VOICE_MODEL = "claude-haiku-4-5";
-const TEXT_MODEL = "claude-sonnet-4-6";
-
-// One client for the process — reusing it keeps the HTTPS connection pool warm,
-// shaving the per-request TLS handshake off time-to-first-token.
+// One client for the process — keeps the HTTPS pool warm for time-to-first-token.
 let _client: Anthropic | null = null;
 function getClient(apiKey: string): Anthropic {
   if (!_client || (_client.apiKey as string | null) !== apiKey) {
@@ -51,183 +49,150 @@ function getClient(apiKey: string): Anthropic {
   return _client;
 }
 
-// fix/whats-coming — the calendar-ask answer cache (one Anthropic spend per
-// event per day; repeat ASK AUGUST clicks serve the stored text). Lazy Redis,
-// same fail-open contract as every other lib: unconfigured/broken → no cache.
-let _askRedis: Redis | null | undefined;
-function getAskCache(): Redis | null {
-  if (_askRedis !== undefined) return _askRedis;
+// Lazy route-local Redis (cache + caps + stats + the calendar ask cache) —
+// standard fail-open contract: unconfigured/broken → no cache, no caps.
+let _redis: Redis | null | undefined;
+function getKv(): Redis | null {
+  if (_redis !== undefined) return _redis;
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   try {
-    _askRedis = url && token && url.startsWith("https://") ? new Redis({ url, token }) : null;
+    _redis = url && token && url.startsWith("https://") ? new Redis({ url, token }) : null;
   } catch {
-    _askRedis = null;
+    _redis = null;
   }
-  return _askRedis;
+  return _redis;
 }
 
+const textStream = (body: string) =>
+  new Response(body, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store, no-transform" },
+  });
+
 export async function POST(req: Request): Promise<Response> {
-  // Per-visitor cap (per-IP sliding window, CHAT_RATE_PER_MIN/min) …
   const rl = await checkRateLimit("chat", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
-  let messages: ChatMessage[] = [];
-  let isVoice = false;
+  let message = "";
   let calendarAsk: string | null = null;
   try {
-    const body = await req.json();
-    messages = Array.isArray(body?.messages) ? body.messages : [];
-    isVoice = body?.voice === true; // the hands-free loop sets this → Haiku for snap
-    // WHAT'S COMING ask buttons send the event id; bounded so a hostile
-    // client can't mint unbounded Redis keys.
+    const body = (await req.json()) as { message?: unknown; calendarAsk?: unknown };
+    message = typeof body.message === "string" ? body.message.trim() : "";
     calendarAsk =
-      typeof body?.calendarAsk === "string" && body.calendarAsk.length > 0 && body.calendarAsk.length <= 160
+      typeof body.calendarAsk === "string" && body.calendarAsk.length > 0 && body.calendarAsk.length <= 160
         ? body.calendarAsk
         : null;
   } catch {
     return new Response("Invalid request body.", { status: 400 });
   }
-  // The ask buttons never set voice (the voice loop is retired) — a hand-built
-  // voice+calendarAsk request must not seed the SHARED day cache with the
-  // Haiku tier, so it simply gets no cache at all.
-  if (isVoice) calendarAsk = null;
-  const model = isVoice ? VOICE_MODEL : TEXT_MODEL;
-
-  // Keep only well-formed turns before sending them on.
-  const cleaned = messages
-    .filter(
-      (m) =>
-        m &&
-        (m.role === "user" || m.role === "assistant") &&
-        typeof m.content === "string" &&
-        m.content.trim().length > 0,
-    )
-    .map((m) => ({ role: m.role, content: m.content }));
-
-  if (cleaned.length === 0) {
-    return new Response("No messages provided.", { status: 400 });
+  if (!message || message.length > MAX_ASK_CHARS) {
+    return new Response("No message provided.", { status: 400 });
   }
 
-  // Calendar ask (fix/whats-coming) — one spend per event per day. The id is
-  // honored ONLY when the single user turn EXACTLY matches the canonical
-  // prompt the server derives for that event, so nobody can seed the shared
-  // cache with arbitrary text. A hit streams the stored answer and spends
-  // nothing (it also skips the daily budget below — nothing was spent).
+  const { principal, setCookie } = await resolveChatPrincipal(req);
+  const cid = pidFor(principal);
+  const kv = getKv();
+  const withCookie = (res: Response): Response => {
+    if (setCookie) res.headers.append("Set-Cookie", setCookie);
+    return res;
+  };
+
+  // Calendar-card ask (whats-coming) — one shared spend per event per day.
+  // Honored only for the exact canonical prompt + a state-consistent kind;
+  // shared across identities because its answers are memory- and
+  // snapshot-free by construction.
   let calAskKey: string | null = null;
-  if (calendarAsk && cleaned.length === 1 && cleaned[0].role === "user") {
+  if (calendarAsk && kv) {
     const ev = (await getCalendarWeek().catch(() => [])).find((e) => e.id === calendarAsk);
-    const kind = ev ? matchAskPrompt(ev, cleaned[0].content) : null;
-    // The prompt kind must also match the event's ACTUAL state right now: the
-    // "released" prompt asserts "just printed", and honoring it pre-print
-    // would let anyone seed the shared cache with an answer about a release
-    // that hasn't happened (timing-based poisoning, no text needed).
+    const kind = ev ? matchAskPrompt(ev, message) : null;
     const stateOk = ev && kind ? (kind === "released" ? ev.ts <= Date.now() : ev.ts > Date.now()) : false;
     if (ev && kind && stateOk) {
-      calAskKey = askCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind, cleaned[0].content);
-      const cache = getAskCache();
-      if (cache) {
-        try {
-          const hit = await cache.get<string>(calAskKey);
-          if (typeof hit === "string" && hit.trim()) {
-            console.log("[chat] calendar-ask cache hit");
-            return new Response(hit, {
-              headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store, no-transform" },
-            });
-          }
-        } catch {
-          /* fail open — a Redis blip means a normal spend, not a 500 */
+      calAskKey = calAskCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind, message);
+      try {
+        const hit = await kv.get<string>(calAskKey);
+        if (typeof hit === "string" && hit.trim()) {
+          console.log("[ask] calendar-ask cache hit");
+          if (cid) void recordAskStat(kv, cid, "cache");
+          return withCookie(textStream(hit));
         }
+      } catch {
+        /* fail open */
       }
-    } else {
-      // Visibility for the silent-miss mode: feed-snapshot skew (forecast
-      // revision mid-caches) or a state mismatch lands here — the request
-      // still answers, it just spends uncached.
-      console.log(`[chat] calendar-ask id present but not honored (${!ev ? "unknown event" : !kind ? "prompt mismatch" : "state mismatch"}) — uncached spend`);
     }
   }
 
-  // The global daily budget (CHAT_DAILY_CAP/day across ALL visitors) — this
-  // route spends real Anthropic money on anonymous traffic (HOTFIX). Checked
-  // AFTER the cache probe: a served cache hit costs nothing.
-  const daily = await checkChatDailyCap();
-  if (!daily.ok) return dailyCapResponse();
+  // Per-identity 10-minute cache — an identical normalized repeat is free and
+  // does not touch the cap. Per identity BY LAW: the grounding carries the
+  // caller's own memory, so entries never cross identities.
+  const cacheKey = cid && kv ? askCacheKey(cid, message) : null;
+  if (cacheKey && kv && cid) {
+    try {
+      const hit = await kv.get<string>(cacheKey);
+      if (typeof hit === "string" && hit.trim()) {
+        void recordAskStat(kv, cid, "cache");
+        return withCookie(textStream(hit));
+      }
+    } catch {
+      /* fail open */
+    }
+  }
 
-  // HOTFIX (chat privacy): the memory this route injects into the prompt is
-  // now the CALLER's own namespace — signed-in user, or the per-visitor
-  // principal; never the legacy shared store in production.
-  const { principal } = await resolveChatPrincipal(req);
-  const userEmail = principal;
+  // Per-identity day cap — over it, the bar says so; commands are unaffected
+  // (they never reach this route).
+  if (cid && kv) {
+    const budget = await takeAskBudget(kv, cid, askCapFor(cid));
+    if (!budget.allowed) {
+      return withCookie(
+        Response.json(
+          { error: "ask_capped", message: "THE DESK IS DONE ANSWERING FOR TODAY — COMMANDS STILL WORK." },
+          { status: 429 },
+        ),
+      );
+    }
+  }
+
+  // The global daily spend backstop, after everything free.
+  const daily = await checkChatDailyCap();
+  if (!daily.ok) return withCookie(dailyCapResponse());
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    // R1 A1 — generic body only; config detail belongs in server logs
-    console.error("[chat] ANTHROPIC_API_KEY missing — chat unconfigured");
-    return Response.json({ ok: false, error: "chat_unconfigured" }, { status: 503 });
+    console.error("[ask] ANTHROPIC_API_KEY missing — asks unconfigured");
+    return Response.json({ ok: false, error: "ask_unconfigured" }, { status: 503 });
   }
 
-  // Prep everything the system prompt needs in PARALLEL — memory (Upstash) and the
-  // live markets/command snapshots — so none of them serialize ahead of the model
-  // call. Everything is time-boxed: if Redis is slow we proceed WITHOUT memory
-  // (300ms cap) rather than stall the reply; snapshots get 1200ms.
+  // Grounding (docs/ASK-GROUNDING.md): the caller's memory + the desk's own
+  // displayed read, timeboxed so nothing stalls the answer. The shared
+  // calendar-ask path stays memory- and snapshot-free (its guidance block
+  // replaces them) so its cached answers can serve every identity.
   type Mem = Awaited<ReturnType<typeof loadMemory>>;
   const EMPTY_MEM: Mem = { profile: null, summaries: [] };
   const timeBox = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
-
   const t0 = Date.now();
-  let memMs = -1; // -1 = memory missed the 300ms window (reply went out without it)
-  const memTimed = loadMemory(userEmail)
-    .catch(() => EMPTY_MEM)
-    .then((r) => {
-      memMs = Date.now() - t0;
-      return r;
-    });
-  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = await Promise.all([
-    timeBox(memTimed, 300, EMPTY_MEM),
-    timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
-    timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
-    // R3 — the analyst grounding: the app AS DISPLAYED, unavailability stated
-    timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
-  ]);
+  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = calAskKey
+    ? [EMPTY_MEM, "", "", ""]
+    : await Promise.all([
+        timeBox(loadMemory(principal).catch(() => EMPTY_MEM), 300, EMPTY_MEM),
+        timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
+        timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
+        timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
+      ]);
   const prepMs = Date.now() - t0;
-  // Cache the frozen prefix (persona + tool guidance) so repeat turns skip
-  // re-prefilling it — that's the time-to-first-token win. Volatile context (what he
-  // remembers + the live snapshots) rides in a second, uncached block after it.
-  const stableSystem = SYSTEM_PROMPT + TOOL_GUIDANCE;
-  // A cacheable calendar-ask answer is served to EVERY visitor who clicks the
-  // same card today, for up to 24h — so NOTHING volatile or personal may
-  // shape it: no caller memory (privacy) and no live market/desk snapshots
-  // (an hours-stale "NQ is at X right now" replayed as fresh would be a
-  // fabrication). The guidance block keeps the model from inventing numbers
-  // it doesn't have.
+
   const CAL_ASK_GUIDANCE =
-    "\n\n---\nThis is a calendar-card question about a scheduled economic release. You have NO live tape, NO printed value, and no personal memory in context, and this answer may be replayed to other visitors later today. Explain the mechanics and the scenarios for this release plainly; do NOT state current prices or levels, and do NOT invent the printed value.";
+    "\n\n---\nThis is a calendar-card question about a scheduled economic release. You have NO live tape, NO printed value, and no personal memory in context, and this answer may be replayed to other visitors today. Explain the mechanics and the scenarios plainly; do NOT state current prices or levels, and do NOT invent the printed value.";
   const dynamicSystem = calAskKey
     ? CAL_ASK_GUIDANCE
     : buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
   const system: Anthropic.TextBlockParam[] = [
-    { type: "text", text: stableSystem, cache_control: { type: "ephemeral" } },
+    { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
   ];
   if (dynamicSystem.trim()) system.push({ type: "text", text: dynamicSystem });
 
   const client = getClient(apiKey);
   const encoder = new TextEncoder();
-
-  // Time-to-first-token: marked the first time ANY byte is enqueued to the client.
   let ttftMs = -1;
-  const mark = () => {
-    if (ttftMs === -1) ttftMs = Date.now() - t0;
-  };
-
-  // Cache telemetry — Haiku 4.5 needs a ≥4096-token prefix to cache; if this stays 0
-  // the cache silently isn't hitting and every voice turn pays full input price + TTFT.
-  let cacheRead = -1;
-  let cacheWrite = -1;
-
-  // Client aborts (the stop control, or a superseding send) cancel this stream —
-  // that's routine, not an error. Track it so we neither log fake "[chat] stream
-  // error"s nor throw on enqueue/close after cancellation.
   let aborted = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -243,160 +208,55 @@ export async function POST(req: Request): Promise<Response> {
           aborted = true;
         }
       };
+      let full = "";
+      // Cache on COMPLETION of the model stream, INDEPENDENT of the consumer
+      // flag: the response plumbing can cancel our ReadableStream in the
+      // window between the last text delta and the trailing SSE events
+      // (measured in the E2E — a fully delivered answer marked aborted), and
+      // a post-completion cancel must not void the cache. modelDone latches
+      // on message_stop; an abort-break at a closed block boundary with text
+      // in hand counts too. Only a genuine mid-block partial stays uncached.
+      let modelDone = false;
+      let blockOpen = false;
       try {
-        // Turn 1 — give AUGUST his tools. Stream any text live (as before).
-        const stream1 = await client.messages.create({
-          model,
-          max_tokens: 700,
+        const s = await client.messages.create({
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
           system,
-          messages: cleaned,
-          tools: TOOLS,
+          messages: [{ role: "user", content: message }],
           stream: true,
         });
-
-        const toolBlocks = new Map<number, { id: string; name: string; json: string }>();
-        let firstText = "";
-
-        for await (const event of stream1) {
+        // the spend is committed the moment the stream opens — the console's
+        // model-call stat counts DISPATCHES, not happy completions, so
+        // superseded/errored streams don't underreport spend
+        if (cid && kv) void recordAskStat(kv, cid, "model");
+        for await (const event of s) {
           if (aborted) break;
-          if (event.type === "message_start") {
-            const u = event.message.usage;
-            cacheRead = u.cache_read_input_tokens ?? 0;
-            cacheWrite = u.cache_creation_input_tokens ?? 0;
-          } else if (event.type === "content_block_start") {
-            const block = event.content_block;
-            if (block.type === "tool_use") {
-              toolBlocks.set(event.index, { id: block.id, name: block.name, json: "" });
-            }
-          } else if (event.type === "content_block_delta") {
-            const delta = event.delta;
-            if (delta.type === "text_delta") {
-              firstText += delta.text;
-              mark();
-              send(encoder.encode(delta.text));
-            } else if (delta.type === "input_json_delta") {
-              const tb = toolBlocks.get(event.index);
-              if (tb) tb.json += delta.partial_json;
-            }
-          }
-        }
-
-        // No tool call → it's a plain reply; we're done. Same if the client left —
-        // don't pay for a narration turn nobody will see.
-        if (toolBlocks.size === 0 || aborted) {
-          // Store the day's calendar-ask answer: repeat clicks stream this
-          // text without an Anthropic call (24h TTL). Tool-call replies never
-          // cache — their narration depends on side effects.
-          if (!aborted && calAskKey && firstText.trim()) {
-            const cache = getAskCache();
-            if (cache) await cache.set(calAskKey, firstText, { ex: 86_400 }).catch(() => {});
-          }
-          return;
-        }
-
-        // Emit each tool call now (the globe reacts immediately) and prepare a
-        // tool_result turn so AUGUST narrates the place he just opened.
-        const toolUseContent: unknown[] = [];
-        const toolResults: unknown[] = [];
-        for (const tb of toolBlocks.values()) {
-          let input: Record<string, unknown> = {};
-          const raw = tb.json.trim();
-          if (raw) {
-            try {
-              input = JSON.parse(raw) as Record<string, unknown>;
-            } catch {
-              input = {};
-            }
-          }
-          // Watcher tools are SERVER-side data ops (Upstash) — they need no client
-          // action, so they are NOT framed to the client; they're executed here and
-          // the REAL result is fed back so AUGUST confirms what actually happened.
-          // Nav/mood tools ARE framed so the client reacts immediately.
-          const isWatcher = WATCHER_TOOL_NAMES.has(tb.name);
-          if (!isWatcher) {
-            mark();
-            send(encoder.encode(SEP + JSON.stringify({ tool: tb.name, input }) + SEP));
-          }
-          toolUseContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
-          const screen = typeof input.screen === "string" ? input.screen : "presence";
-          let resultText: string;
-          if (tb.name === "go_to_screen") {
-            // Aliases (desk/markets/intel → terminal, presence/home → chat)
-            // resolve to one of the page's two views.
-            const view = resolveView(screen);
-            resultText = view
-              ? view === "terminal"
-                ? "The intel terminal is now on screen."
-                : "You're back on the chat view — the orb."
-              : "That view doesn't exist — the page stayed where it was.";
-          } else if (tb.name === "set_mood") {
-            // The client re-tints from the framed event; confirm the new accent.
-            const mood = typeof input.mood === "string" ? input.mood.toLowerCase() : "";
-            resultText = (MOODS as readonly string[]).includes(mood)
-              ? `The deck is re-lit — the accent is ${mood} now.`
-              : "No such mood — the lights stayed as they were.";
-          } else if (isWatcher) {
-            // HOTFIX (chat privacy): the watcher store has no per-visitor
-            // namespace — anonymous visitors must not write the shared one.
-            if (typeof userEmail === "object" && userEmail !== null) {
-              resultText = "Watchers need a signed-in session — not available for guests.";
-            } else {
-              try {
-                resultText = await runWatcherTool(userEmail, tb.name, input);
-              } catch (e) {
-                console.error("[chat] watcher tool failed:", e instanceof Error ? e.message : e);
-                resultText = "That watcher action hit an error on the server.";
-              }
-            }
-          } else {
-            resultText = "Done.";
-          }
-          toolResults.push({ type: "tool_result", tool_use_id: tb.id, content: resultText });
-        }
-
-        // Turn 2 — continue with no tools so he speaks about it, in character.
-        const assistantContent: unknown[] = [];
-        if (firstText.trim()) assistantContent.push({ type: "text", text: firstText });
-        assistantContent.push(...toolUseContent);
-
-        const stream2 = await client.messages.create({
-          model,
-          max_tokens: 400,
-          system,
-          messages: [
-            ...cleaned,
-            { role: "assistant", content: assistantContent },
-            { role: "user", content: toolResults },
-          ] as unknown as Anthropic.MessageParam[],
-          stream: true,
-        });
-
-        let needSpace = firstText.trim().length > 0;
-        for await (const event of stream2) {
-          if (aborted) break;
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            if (needSpace) {
-              send(encoder.encode(" "));
-              needSpace = false;
-            }
-            mark();
+          if (event.type === "content_block_start") blockOpen = true;
+          else if (event.type === "content_block_stop") blockOpen = false;
+          else if (event.type === "message_stop") modelDone = true;
+          else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            if (ttftMs === -1) ttftMs = Date.now() - t0;
+            full += event.delta.text;
             send(encoder.encode(event.delta.text));
           }
         }
+        if (!modelDone && !blockOpen && full.trim()) modelDone = true; // post-block cancel window
+        // caches — only a COMPLETE answer is worth storing. JSON.stringify on
+        // write so Upstash's get()-side auto-JSON-parse round-trips answers
+        // that happen to BE valid JSON (the "1"-sentinel lesson).
+        if (modelDone && full.trim() && kv) {
+          if (calAskKey) await kv.set(calAskKey, JSON.stringify(full), { ex: 86_400 }).catch(() => {});
+          else if (cacheKey) await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch(() => {});
+        }
       } catch (err) {
         if (!aborted) {
-          const msg = err instanceof Error ? err.message : "unknown error";
-          console.error("[chat] stream error:", msg);
-          // R1 A1 — vendor exception bodies never reach the transcript
-          send(encoder.encode(`\n[AUGUST is unreachable]`));
+          console.error("[ask] stream error:", err instanceof Error ? err.message : "unknown");
+          send(encoder.encode("\n[THE DESK IS UNREACHABLE]"));
         }
       } finally {
-        const mem =
-          memMs < 0 ? "miss(>300ms)" : memMs > 300 ? `${memMs}ms(missed window)` : `${memMs}ms`;
-        const cache =
-          cacheRead > 0 ? `cache=read:${cacheRead}` : cacheWrite > 0 ? `cache=write:${cacheWrite}` : "cache=miss";
         console.log(
-          `[chat] model=${model}${isVoice ? "(voice)" : ""} memory=${mem} prep=${prepMs}ms ${cache} ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms${aborted ? " (client aborted)" : ""}`,
+          `[ask] model=${MODEL} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms chars=${full.length}${calAskKey ? " calask" : ""}${modelDone ? "" : " (aborted mid-stream)"}`,
         );
         try {
           controller.close();
@@ -407,11 +267,13 @@ export async function POST(req: Request): Promise<Response> {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store, no-transform",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return withCookie(
+    new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    }),
+  );
 }

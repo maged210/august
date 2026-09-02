@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import ChatTranscript from "@/components/ChatTranscript";
-import Composer from "@/components/Composer";
 import IdeasRail from "@/components/IdeasRail";
 import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import HomeLanding from "@/components/surfaces/HomeLanding";
@@ -10,6 +8,8 @@ import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import PitSurface from "@/components/surfaces/PitSurface";
 import { resolveView, type ViewId } from "@/lib/screens";
 import { MOODS, type Mood } from "@/lib/tools";
+import { parseCommand } from "@/lib/command-bar";
+import { deskSymbolFor } from "@/lib/desk-symbols";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import { latMark, latReset } from "@/lib/latency";
 import {
@@ -27,42 +27,28 @@ import {
 // (Deck, WorldSurface/globe, CommsSurface) is parked, not deleted — the
 // components remain, unimported, per the house parking convention.
 
-// Tool calls are framed in the chat stream with this separator (0x1F). Split
-// AUGUST's spoken words from any tool events without disturbing the text path.
-const TOOL_SEP = String.fromCharCode(0x1f);
-type ToolEvent = { tool: string; input?: Record<string, unknown> };
-
-function splitToolStream(raw: string): { text: string; tools: ToolEvent[] } {
-  const tools: ToolEvent[] = [];
-  let text = "";
-  let i = 0;
-  while (i < raw.length) {
-    const start = raw.indexOf(TOOL_SEP, i);
-    if (start === -1) {
-      text += raw.slice(i);
-      break;
-    }
-    text += raw.slice(i, start);
-    const end = raw.indexOf(TOOL_SEP, start + 1);
-    if (end === -1) break; // incomplete trailer — completes by stream end
-    try {
-      tools.push(JSON.parse(raw.slice(start + 1, end)) as ToolEvent);
-    } catch {
-      /* ignore malformed */
-    }
-    i = end + 1;
-  }
-  return { text, tools };
-}
-
-type ChatMessage = { role: "user" | "assistant"; content: string };
+// THE COMMAND BAR (feature/command-bar) — the input is not a chat. Two lanes:
+// COMMANDS resolve deterministically and locally (never a model call, by
+// law); ASKS hit /api/chat once and render as ONE answer card that the next
+// input replaces. No threads, no history, no conversation UI anywhere.
+export type AnswerCard =
+  | { kind: "ask"; text: string; streaming: boolean }
+  | { kind: "info"; text: string }
+  | { kind: "error"; text: string }
+  | {
+      kind: "quote";
+      symbol: string;
+      price: number;
+      chgPct: number;
+      dayLo: number | null;
+      dayHi: number | null;
+    };
 
 export default function Home() {
   const [state, setState] = useState<AugustState>("boot");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [replyText, setReplyText] = useState("");
-  // B2 — failures are a styled system state, never an AUGUST message
-  const [chatError, setChatError] = useState<string | null>(null);
+  // THE ONE ANSWER CARD — the next command or ask replaces it; Esc/clear
+  // dismisses it; nothing is ever stored.
+  const [answer, setAnswer] = useState<AnswerCard | null>(null);
   const [booted, setBooted] = useState(false);
   // CORE V2 — the single page's two views: Chat (the Presence orb + reply dock)
   // and the Intel Terminal (the embedded desk / public ideas feed). Driven by
@@ -83,10 +69,6 @@ export default function Home() {
   const railSyncedRef = useRef(false);
   // (F9 removed the desktop IDEAS-tab behavior — the media-query effect below
   // now only clears stale drawer flags when crossing up past 1100px.)
-  // Reply panel controls: dismissible, expandable transcript.
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [dockClosing, setDockClosing] = useState(false);
   // Matrix / dark / light / gotham theme — persisted; the toggle flips the
   // whole token system. Matrix is the CORE V2 default stage.
   const [theme, setTheme] = useState<Theme>("matrix");
@@ -103,15 +85,15 @@ export default function Home() {
   // renders nothing rather than flashing a slashed UNSUPPORTED at first paint
   const [pushState, setPushState] = useState<PushState | "unknown">("unknown");
 
-  const messagesRef = useRef<ChatMessage[]>([]);
-  const sessionIdRef = useRef<string>("");
   // Mirror of `view` for callbacks that outlive a render (switchView reads it
   // to decide whether a switch actually changes anything).
   const viewRef = useRef<ViewId>("chat");
-  const replyDockRef = useRef<HTMLDivElement | null>(null);
-  const dockWrapRef = useRef<HTMLDivElement | null>(null);
-  const closeTimerRef = useRef(0);
   const themingTimerRef = useRef(0);
+  // COMMAND BAR — the two-tap confirm for the owner verbs (arm/close): the
+  // first submission arms; an identical submission inside 12s executes.
+  const pendingConfirmRef = useRef<{ key: string; at: number; run: (gen: number) => Promise<void> } | null>(null);
+  // known live tickers (for ticker→terminal routing) — refreshed lazily
+  const liveIdeasRef = useRef<Array<{ id: string; instrument: string }> | null>(null);
   // Generation counter + abort: a new send (or the stop control) supersedes any
   // in-flight stream, so a stale closure can never write over the new turn's UI.
   const genRef = useRef(0);
@@ -122,45 +104,33 @@ export default function Home() {
   const augNavRef = useRef(false);
   const augNavTimerRef = useRef(0);
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  // Keep the reply dock pinned to the newest line as the reply streams in.
-  useEffect(() => {
-    const el = replyDockRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [replyText, historyOpen, messages]);
-
-  // Open/close the reply panel with the dock-in/dock-out animations.
-  const openPanel = useCallback(() => {
-    window.clearTimeout(closeTimerRef.current);
-    setDockClosing(false);
-    setPanelOpen(true);
+  // Dismiss the answer card — Esc and the card's ✕ share this. It must also
+  // SUPERSEDE: an in-flight ask keeps streaming into the card otherwise (the
+  // next chunk would repaint what the user just dismissed), so it claims a
+  // fresh generation, aborts the stream, and stands the orb down.
+  const dismissAnswer = useCallback(() => {
+    abortRef.current?.abort();
+    genRef.current++;
+    // Esc/✕ on the SUBMIT AGAIN TO CONFIRM card must also disarm the pending
+    // arm/close — otherwise the next identical command inside 12s executes
+    // one-tap with no confirm on screen (adversarial-review finding).
+    pendingConfirmRef.current = null;
+    setAnswer(null);
+    setState((s) => (s === "thinking" ? "idle" : s));
   }, []);
 
-  const closePanel = useCallback(() => {
-    setDockClosing(true);
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = window.setTimeout(() => {
-      setPanelOpen(false);
-      setHistoryOpen(false);
-      setDockClosing(false);
-    }, 160); // just under --dur-fast + buffer; reduced-motion makes it instant anyway
-  }, []);
-
-  // ONE Esc stack, owned here: the ideas drawer closes first, then the reply
-  // panel dismisses. Works even while typing.
+  // ONE Esc stack, owned here: the ideas drawer closes first, then the answer
+  // card clears. Works even while typing (the bar's own Esc clears its draft
+  // before the event reaches here — see HomeLanding).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (railOpenRef.current) setRailOpen(false);
-      else closePanel();
+      else dismissAnswer();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closePanel]);
+  }, [dismissAnswer]);
 
   useEffect(() => {
     railOpenRef.current = railOpen;
@@ -210,25 +180,8 @@ export default function Home() {
     return () => document.documentElement.classList.remove("sheet-open");
   }, [railOpen]);
 
-  // Clicking anywhere outside the dock + composer cluster dismisses the panel.
-  useEffect(() => {
-    if (!panelOpen) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node | null;
-      if (t && dockWrapRef.current && !dockWrapRef.current.contains(t)) closePanel();
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [panelOpen, closePanel]);
-
   // Boot: resolve into idle.
   useEffect(() => {
-    if (!sessionIdRef.current) {
-      sessionIdRef.current =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `s_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    }
     const id = window.setTimeout(() => {
       setState("idle");
       setBooted(true);
@@ -254,42 +207,10 @@ export default function Home() {
     };
   }, []);
 
-  // G3 fix 1 — the transcript's bottom clearance follows the dock's REAL
-  // height (composer + stop controls change it turn to turn).
-  // A ResizeObserver writes --dock-h; .hl-convo-inner pads by it.
-  useEffect(() => {
-    const el = dockWrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      document.documentElement.style.setProperty("--dock-h", `${el.offsetHeight}px`);
-    });
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      document.documentElement.style.removeProperty("--dock-h");
-    };
-  }, []);
-
-  // G3 fix 1 — on-screen keyboard: where the browser overlays it instead of
-  // resizing the layout (iOS), --kb-inset lifts the dock above it and pads
-  // the transcript to match. 0 whenever the keyboard is closed or the layout
-  // viewport already resized (interactiveWidget: resizes-content).
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const apply = () => {
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      document.documentElement.style.setProperty("--kb-inset", `${Math.round(inset)}px`);
-    };
-    apply();
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
-    return () => {
-      vv.removeEventListener("resize", apply);
-      vv.removeEventListener("scroll", apply);
-      document.documentElement.style.removeProperty("--kb-inset");
-    };
-  }, []);
+  // (The old --kb-inset keyboard-lift effect retired with the fixed composer
+  // dock: the command bar lives in normal flow inside the brief, and its
+  // suggestions render ABOVE the input, so the on-screen keyboard can't cover
+  // either — the browser scrolls the focused input into view natively.)
 
   // The bell control (feature/pwa-push) — the ONLY push control. Deliberate,
   // never auto-prompted; feedback rides the reply panel, mono caps,
@@ -306,53 +227,43 @@ export default function Home() {
         bellArmRef.current = 0;
         const ok = await disablePush();
         setPushState(await getPushState());
-        setReplyText(ok ? "PUSH OFF — NO MORE DAILY CALLS ON THIS DEVICE." : "COULDN'T TURN PUSH OFF — TRY AGAIN.");
+        say(ok ? "PUSH OFF — NO MORE DAILY CALLS ON THIS DEVICE." : "COULDN'T TURN PUSH OFF — TRY AGAIN.");
       } else if (dt > 600) {
         bellArmRef.current = Date.now();
-        setReplyText("PUSH IS ON — ONE NOTIFICATION PER TRADING DAY, THE SETTLE AND TOMORROW'S CALL. TAP THE BELL AGAIN TO TURN IT OFF.");
+        say("PUSH IS ON — ONE NOTIFICATION PER TRADING DAY, THE SETTLE AND TOMORROW'S CALL. TAP THE BELL AGAIN TO TURN IT OFF.");
       }
-      openPanel();
       return;
     }
     bellArmRef.current = 0;
     if (s === "ios-install") {
-      setReplyText("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
-      openPanel();
+      say("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
       return;
     }
     if (s === "denied") {
-      setReplyText("PUSH IS BLOCKED FOR THIS SITE — RE-ENABLE NOTIFICATIONS IN THE BROWSER'S SITE SETTINGS, THEN TAP THE BELL AGAIN.");
-      openPanel();
+      say("PUSH IS BLOCKED FOR THIS SITE — RE-ENABLE NOTIFICATIONS IN THE BROWSER'S SITE SETTINGS, THEN TAP THE BELL AGAIN.");
       return;
     }
     if (s === "unsupported") {
-      setReplyText("PUSH ISN'T SUPPORTED IN THIS BROWSER.");
-      openPanel();
+      say("PUSH ISN'T SUPPORTED IN THIS BROWSER.");
       return;
     }
     // "off" — request permission + subscribe (this tap is the user gesture).
     const r = await enablePush();
     setPushState(await getPushState());
     if (r.ok) {
-      setReplyText("PUSH ON — ONE NOTIFICATION PER TRADING DAY: THE SETTLE AND TOMORROW'S CALL.");
+      say("PUSH ON — ONE NOTIFICATION PER TRADING DAY: THE SETTLE AND TOMORROW'S CALL.");
     } else if (r.reason === "ios-install") {
-      setReplyText("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
+      say("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
     } else if (r.reason === "denied") {
-      setReplyText("PERMISSION DECLINED — THE BELL IS HERE WHENEVER YOU WANT THE CALL.");
+      say("PERMISSION DECLINED — THE BELL IS HERE WHENEVER YOU WANT THE CALL.");
     } else if (r.reason === "config") {
       // a deploy gap, not the visitor's browser — say so
-      setReplyText("PUSH ISN'T CONFIGURED ON THIS DEPLOY — VAPID KEYS MISSING.");
+      say("PUSH ISN'T CONFIGURED ON THIS DEPLOY — VAPID KEYS MISSING.");
     } else if (r.reason === "unsupported") {
-      setReplyText("PUSH ISN'T AVAILABLE IN THIS BROWSER.");
+      say("PUSH ISN'T AVAILABLE IN THIS BROWSER.");
     } else {
-      setReplyText("COULDN'T ENABLE PUSH JUST NOW — TRY AGAIN IN A MOMENT.");
+      say("COULDN'T ENABLE PUSH JUST NOW — TRY AGAIN IN A MOMENT.");
     }
-    openPanel();
-  }
-
-  function stopGeneration() {
-    // Halts the in-flight stream; the partial text stays on screen.
-    abortRef.current?.abort();
   }
 
   // --- View routing (CORE V2) ------------------------------------------------
@@ -379,9 +290,9 @@ export default function Home() {
     return () => window.removeEventListener("popstate", apply);
   }, []);
 
-  // Switch views. USER switches dismiss the reply panel (the old user-swipe
-  // semantics); AUGUST-driven switches (tool nav, deep links) call markAugNav
-  // first, which keeps his narration on screen.
+  // Switch views. A USER-driven switch clears the answer card (the old
+  // panel-dismiss semantics); command-driven switches call markAugNav first,
+  // which keeps the card up (e.g. an info card that pointed somewhere).
   const switchView = useCallback(
     (v: ViewId, opts?: { replace?: boolean }) => {
       try {
@@ -394,10 +305,10 @@ export default function Home() {
       } catch {
         /* no-op */
       }
-      if (viewRef.current !== v && !augNavRef.current) closePanel();
+      if (viewRef.current !== v && !augNavRef.current) dismissAnswer();
       setView(v);
     },
-    [closePanel],
+    [dismissAnswer],
   );
 
   // Theme: load the persisted choice once, then keep <html data-theme> + storage
@@ -484,10 +395,10 @@ export default function Home() {
     setMood(m);
   }, []);
 
-  // The mood control cycles steel → ember → phosphor → graphite.
-  function cycleMood() {
-    applyMood(MOODS[(MOODS.indexOf(mood) + 1) % MOODS.length]);
-  }
+  // (The conversation cluster's mood-cycle button retired with the composer;
+  //  the persisted mood still applies via the storage adoption above, and
+  //  applyMood remains the one path for any future control.)
+  void applyMood;
 
   // A ?brief=1 push arrival just lands home (the home IS the brief now); the
   // param is stripped so a reload doesn't linger.
@@ -556,193 +467,346 @@ export default function Home() {
     }, 1600);
   }
 
-  function applyToolEvents(tools: ToolEvent[]) {
-    for (const t of tools) {
-      if (t.tool === "go_to_screen" && t.input) {
-        // Legacy names (desk/markets/intel, presence/home…) resolve to one of
-        // the two views. look_closer/close_map are retired with the globe —
-        // a stale stream framing one is simply ignored.
-        const v = resolveView(String(t.input.screen ?? ""));
-        if (v) {
-          markAugNav();
-          switchView(v);
-        }
-      } else if (t.tool === "set_mood" && t.input) {
-        // Same path as the mood control: re-tint the tokens.
-        const m = String(t.input.mood ?? "").toLowerCase();
-        if ((MOODS as readonly string[]).includes(m)) applyMood(m as Mood);
-      }
-    }
-  }
-
-  // CORE V2 P5 — the transcript's "+ NEW CHAT": reset the on-screen
-  // conversation only. Long-term memory is untouched (unlike /forget).
-  function startNewChat() {
-    genRef.current += 1; // supersede any in-flight stream
-    abortRef.current?.abort();
-    messagesRef.current = [];
-    setMessages([]);
-    setReplyText("");
-    setChatError(null);
-    setHistoryOpen(false);
-    closePanel();
-    setState((s) => (s === "boot" ? s : "idle"));
-  }
+  // One-line local cards — commands and system feedback, mono caps, local.
+  const say = useCallback((text: string) => setAnswer({ kind: "info", text }), []);
+  const sayError = useCallback((text: string) => setAnswer({ kind: "error", text }), []);
 
   function forgetMemory() {
-    // Wipe persistent memory (Upstash) and reset the on-screen conversation.
+    // Wipe persistent memory (Upstash). The one surviving slash command.
     void fetch("/api/memory", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "forget" }),
     }).catch(() => {});
-    messagesRef.current = [];
-    setMessages([]);
-    openPanel();
-    setHistoryOpen(false);
-    setReplyText("Done. I've let it go — we start clean.");
+    say("MEMORY CLEARED.");
   }
 
-  // calendarAskId: set only by WHAT'S COMING ask buttons — rides to /api/chat
-  // so the server can serve one cached answer per event per day.
-  async function handleSend(raw: string, calendarAskId?: string) {
-    const text = raw.trim();
-    if (!text) return;
+  // --- THE COMMAND LANE's executors — deterministic, local, no model, ever --
+  // Every input owns ONE generation (runInput bumps genRef): an async
+  // executor's late result must never overwrite a newer input's card — the
+  // E2E caught a slow 'higher' resurrecting over a later 'clear'.
 
-    if (text.toLowerCase() === "/forget") {
-      forgetMemory();
-      return;
+  const stale = useCallback((gen: number) => genRef.current !== gen, []);
+
+  const scrollFloorTo = useCallback(
+    (selector: string) => {
+      if (viewRef.current !== "chat") switchView("chat");
+      window.setTimeout(() => {
+        document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 60);
+    },
+    [switchView],
+  );
+
+  const liveIdeas = useCallback(async (): Promise<Array<{ id: string; instrument: string }>> => {
+    if (liveIdeasRef.current) return liveIdeasRef.current;
+    try {
+      const r = await fetch("/api/ideas", { cache: "no-store" });
+      const j = (await r.json()) as { ideas?: Array<{ id: string; instrument: string }> };
+      liveIdeasRef.current = Array.isArray(j.ideas) ? j.ideas : [];
+      window.setTimeout(() => {
+        liveIdeasRef.current = null; // 60s freshness, matching the rail's poll
+      }, 60_000);
+      return liveIdeasRef.current;
+    } catch {
+      return [];
     }
+  }, []);
 
-    latReset(); // t0 — turn start
-    abortRef.current?.abort(); // a new message supersedes any in-flight generation
-    const gen = ++genRef.current;
+  // Audience for the ticker→terminal jump — fetched once, remembered. The
+  // ?idea= deep link and aug:select-idea are consumed ONLY by the public
+  // IdeasFeed; the owner's desk (IntelDashboard) has no selection seam and is
+  // out of scope, so the owner gets the desk plus an honest card instead of
+  // a silent no-op selection (adversarial-review finding).
+  const isOwnerRef = useRef<boolean | null>(null);
+  const isOwner = useCallback(async (): Promise<boolean> => {
+    if (isOwnerRef.current !== null) return isOwnerRef.current;
+    try {
+      const r = await fetch("/api/intel/role", { cache: "no-store" });
+      const j = (await r.json()) as { owner?: boolean };
+      isOwnerRef.current = j.owner === true;
+    } catch {
+      return false; // unknown → treat as public, don't latch
+    }
+    return isOwnerRef.current;
+  }, []);
+
+  const runTicker = useCallback(
+    async (symbol: string, gen: number) => {
+      const [ideas, owner] = await Promise.all([liveIdeas(), isOwner()]);
+      if (stale(gen)) return;
+      const idea = ideas.find((i) => i.instrument.trim().toUpperCase() === symbol);
+      if (idea && !owner) {
+        // public: open the feed with that idea's chart + row selected via the
+        // existing ?idea= deep link + the re-selection event
+        try {
+          const u = new URL(window.location.href);
+          u.searchParams.set("view", "terminal");
+          u.searchParams.set("idea", `live:${idea.id}`);
+          window.history.pushState({}, "", u.toString());
+        } catch {
+          /* URL best-effort */
+        }
+        window.dispatchEvent(new CustomEvent("aug:select-idea", { detail: { key: `live:${idea.id}` } }));
+        markAugNav();
+        switchView("terminal");
+        setAnswer(null);
+        return;
+      }
+      if (idea && owner) {
+        // the owner's desk has no deep-select seam — open it and say what's
+        // true rather than claiming a selection that didn't happen
+        markAugNav();
+        switchView("terminal");
+        say(`${symbol} IS LIVE ON THE BOOK — THE DESK IS OPEN.`);
+        return;
+      }
+      // no idea → a quote card via the classified probe; a true miss is NO
+      // SUCH SYMBOL, never an ask (the law) — and never fabricated: a source
+      // failure says the source failed (adversarial-review finding).
+      const ysym = deskSymbolFor(symbol);
+      try {
+        const qr = await fetch(`/api/intel/probe?symbol=${encodeURIComponent(ysym)}`, { cache: "no-store" });
+        const q = (await qr.json()) as { state: string; price?: number; chgPct?: number };
+        if (stale(gen)) return;
+        if (q.state === "no-such-symbol") {
+          sayError(`NO SUCH SYMBOL — ${symbol}`);
+          return;
+        }
+        if (q.state !== "ok" || !Number.isFinite(q.price) || q.price! <= 0 || !Number.isFinite(q.chgPct)) {
+          sayError(`THE QUOTE SOURCE ISN'T ANSWERING — TRY ${symbol} AGAIN.`);
+          return;
+        }
+        let dayLo: number | null = null;
+        let dayHi: number | null = null;
+        try {
+          const br = await fetch(`/api/intel/bars?symbol=${encodeURIComponent(ysym)}`, { cache: "no-store" });
+          const bj = (await br.json()) as { bars?: Array<{ h: number; l: number }> };
+          const last = bj.bars?.[bj.bars.length - 1];
+          if (last && Number.isFinite(last.h) && Number.isFinite(last.l)) {
+            dayLo = last.l;
+            dayHi = last.h;
+          }
+        } catch {
+          /* range omitted honestly */
+        }
+        if (stale(gen)) return;
+        setAnswer({ kind: "quote", symbol, price: q.price!, chgPct: q.chgPct!, dayLo, dayHi });
+      } catch {
+        if (!stale(gen)) sayError(`QUOTES UNREACHABLE — TRY ${symbol} AGAIN`);
+      }
+    },
+    [liveIdeas, isOwner, say, sayError, switchView, stale],
+  );
+
+  // arm/close — owner only, write-gated server-side, two-tap in the bar:
+  // the first submission arms, an identical submission inside 12s executes.
+  const runOwnerVerb = useCallback(
+    async (verb: "arm" | "close", symbol: string, gen: number) => {
+      const key = `${verb} ${symbol}`;
+      const pending = pendingConfirmRef.current;
+      if (pending && pending.key === key && Date.now() - pending.at < 12_000) {
+        pendingConfirmRef.current = null;
+        await pending.run(gen);
+        return;
+      }
+      // resolve the target through the ADMIN list (arm needs closed rows too);
+      // non-owners get the gate's refusal and an honest card
+      let rows: Array<{ id: string; instrument: string; status: string }> = [];
+      try {
+        const r = await fetch("/api/admin/ideas", { cache: "no-store" });
+        if (stale(gen)) return;
+        if (r.status === 401 || r.status === 403) {
+          sayError("OWNER ONLY.");
+          return;
+        }
+        const j = (await r.json()) as { ideas?: Array<{ id: string; instrument: string; status: string }> };
+        rows = Array.isArray(j.ideas) ? j.ideas : [];
+      } catch {
+        if (!stale(gen)) sayError("THE BOOK IS UNREACHABLE — TRY AGAIN.");
+        return;
+      }
+      if (stale(gen)) return;
+      const eligible = rows.filter(
+        (i) =>
+          i.instrument.trim().toUpperCase() === symbol &&
+          (verb === "close" ? i.status === "live" || i.status === "review" : i.status !== "live" && i.status !== "draft" && i.status !== "denied"),
+      );
+      const target = eligible[0];
+      if (!target) {
+        sayError(verb === "close" ? `NOTHING LIVE ON ${symbol} TO CLOSE.` : `NOTHING ON ${symbol} TO ARM.`);
+        return;
+      }
+      pendingConfirmRef.current = {
+        key,
+        at: Date.now(),
+        run: async (runGen: number) => {
+          try {
+            const res = await fetch(`/api/admin/ideas/${encodeURIComponent(target.id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: verb === "close" ? "closed" : "live" }),
+            });
+            if (!res.ok) {
+              if (!stale(runGen)) sayError(res.status === 401 || res.status === 403 ? "OWNER ONLY." : `${verb.toUpperCase()} FAILED (${res.status}).`);
+              return;
+            }
+            liveIdeasRef.current = null; // the book changed
+            // HomeLanding refreshes its suggestion tickers off this; the
+            // rail/terminal catch up on their own ~60s polls — the copy
+            // says so instead of claiming an instant reflection.
+            window.dispatchEvent(new CustomEvent("aug:ideas-changed"));
+            if (!stale(runGen)) say(verb === "close" ? `${symbol} CLOSED — OFF THE BOARDS WITHIN THE MINUTE.` : `${symbol} ARMED LIVE — ON THE BOARDS WITHIN THE MINUTE.`);
+          } catch {
+            if (!stale(runGen)) sayError(`${verb.toUpperCase()} FAILED — TRY AGAIN.`);
+          }
+        },
+      };
+      say(`${verb.toUpperCase()} ${symbol} — SUBMIT THE SAME COMMAND AGAIN TO CONFIRM.`);
+    },
+    [say, sayError, stale],
+  );
+
+  const runCallSide = useCallback(
+    async (side: "HIGHER" | "LOWER", gen: number) => {
+      try {
+        const res = await fetch("/api/call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ side }),
+        });
+        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (stale(gen)) return; // the take stands server-side; the card belongs to the newer input
+        if (j.ok) {
+          say(`TAKEN: ${side} — SETTLES AT THE CLOSE.`);
+          scrollFloorTo(".callcard");
+        } else if (j.error === "locked") sayError("LOCKED — 09:30 ET HAS PASSED. TOMORROW'S CALL OPENS TONIGHT.");
+        else if (j.error === "already_taken") sayError("ALREADY TAKEN TODAY — ONE SIDE PER TRADING DAY.");
+        else if (j.error === "no_active_call") sayError("NO ACTIVE CALL RIGHT NOW.");
+        else sayError("THE CALL IS UNREACHABLE — TRY AGAIN.");
+      } catch {
+        if (!stale(gen)) sayError("THE CALL IS UNREACHABLE — TRY AGAIN.");
+      }
+    },
+    [say, sayError, scrollFloorTo, stale],
+  );
+
+  // --- THE ASK LANE — the only path that ever touches the model -------------
+  // gen comes from runInput (one generation per input, shared with commands).
+  async function runAsk(text: string, gen: number, calendarAskId?: string) {
+    latReset();
     const controller = new AbortController();
     abortRef.current = controller;
+    setAnswer({ kind: "ask", text: "", streaming: true });
+    setState("thinking"); // the orb's thinking state is wired to asks ONLY
 
-    const next = [...messagesRef.current, { role: "user" as const, content: text }];
-    messagesRef.current = next;
-    setMessages(next);
-    setReplyText("");
-    setChatError(null);
-    openPanel(); // a new reply (re)opens the panel
-    setState("thinking");
-
-    let full = "";
     try {
-      latMark("t1"); // chat request sent
+      latMark("t1");
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, ...(calendarAskId ? { calendarAsk: calendarAskId } : {}) }),
+        body: JSON.stringify({ message: text, ...(calendarAskId ? { calendarAsk: calendarAskId } : {}) }),
         signal: controller.signal,
       });
-      if (gen !== genRef.current) return; // superseded while connecting
+      if (gen !== genRef.current) return;
 
       if (res.status === 429) {
-        if (gen !== genRef.current) return;
-        setChatError("rate cap — give it a minute, then retry");
+        const j = (await res.json().catch(() => ({}))) as { message?: string };
+        sayError(j.message ?? "RATE CAP — GIVE IT A MINUTE.");
         setState("idle");
         return;
       }
-
       if (!res.ok || !res.body) {
-        // B2 — the raw error body NEVER reaches the transcript: classify and
-        // render the styled system state with a retry affordance instead.
-        if (gen !== genRef.current) return;
-        setChatError(res.status >= 500 ? "desk unreachable — retry" : `desk declined (${res.status}) — retry`);
+        sayError(res.status >= 500 ? "THE DESK IS UNREACHABLE — TRY AGAIN." : `THE DESK DECLINED (${res.status}).`);
         setState("idle");
         return;
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let appliedTools = 0;
-
+      let full = "";
       for (;;) {
         const { value, done } = await reader.read();
-        if (gen !== genRef.current) return; // superseded mid-stream — the new turn owns the UI
+        if (gen !== genRef.current) return; // superseded — the new input owns the card
         if (done) {
-          latMark("t2b"); // LLM full response done
+          latMark("t2b");
           break;
         }
-        latMark("t2"); // LLM first token (first-occurrence-only)
+        latMark("t2");
         full += decoder.decode(value, { stream: true });
-        const parsed = splitToolStream(full);
-        setReplyText(parsed.text);
-        // Fire tool calls (globe / navigation) the moment they arrive — before
-        // the narration streams in after them.
-        if (parsed.tools.length > appliedTools) {
-          applyToolEvents(parsed.tools.slice(appliedTools));
-          appliedTools = parsed.tools.length;
-        }
+        setAnswer({ kind: "ask", text: full, streaming: true });
       }
-
-      const { text: spoken, tools } = splitToolStream(full);
-      if (tools.length > appliedTools) applyToolEvents(tools.slice(appliedTools));
-      const reply = spoken.trim();
-
-      if (reply) {
-        const withAssistant = [...next, { role: "assistant" as const, content: reply }];
-        messagesRef.current = withAssistant;
-        setMessages(withAssistant);
-
-        // Background: update long-term memory. Fire-and-forget — never blocks the reply.
-        void fetch("/api/memory", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "update",
-            sessionId: sessionIdRef.current,
-            userText: text,
-            assistantText: reply,
-          }),
-        }).catch(() => {});
-      }
+      setAnswer(full.trim() ? { kind: "ask", text: full.trim(), streaming: false } : null);
       setState("idle");
     } catch (err) {
-      if (gen !== genRef.current) return; // superseded — stay silent
-      if ((err as Error)?.name === "AbortError") {
-        // Stop/supersede: intentional halt. The superseding turn owns the next step.
-        setState("idle");
-        return;
+      if (gen !== genRef.current) return;
+      if ((err as Error)?.name !== "AbortError") {
+        sayError("CONNECTION LOST — TRY AGAIN.");
       }
-      setChatError("connection lost — retry");
       setState("idle");
     }
   }
 
-  // B2 — retry re-sends the failed user turn through the normal pipeline
-  function retryLastTurn() {
-    const msgs = messagesRef.current;
-    const last = msgs[msgs.length - 1];
-    if (!last || last.role !== "user") { setChatError(null); return; }
-    messagesRef.current = msgs.slice(0, -1);
-    setMessages(msgs.slice(0, -1));
-    setChatError(null);
-    void handleSend(last.content);
+  // THE BAR's single entry point — every submission routes here. Each input
+  // claims a fresh generation and aborts any in-flight ask; async executors
+  // check the generation before painting, so a late result can never
+  // overwrite a newer input's card.
+  async function runInput(raw: string, calendarAskId?: string) {
+    abortRef.current?.abort();
+    const gen = ++genRef.current;
+    // a superseded ask can no longer stand the orb down — if THIS input is a
+    // command (which never owns the orb), reset thinking → idle here; runAsk
+    // re-raises it for the ask lane.
+    setState((s) => (s === "thinking" ? "idle" : s));
+    // a calendar-card ask button is an ASK by construction
+    if (calendarAskId) return runAsk(raw.trim(), gen, calendarAskId);
+    const parsed = parseCommand(raw);
+    if (!parsed) return;
+    // any non-matching submission drops a stale arm/close confirm
+    if (parsed.kind !== "arm" && parsed.kind !== "close") pendingConfirmRef.current = null;
+    switch (parsed.kind) {
+      case "ticker":
+        return runTicker(parsed.symbol, gen);
+      case "arm":
+      case "close":
+        return runOwnerVerb(parsed.kind, parsed.symbol, gen);
+      case "call-side":
+        return runCallSide(parsed.side, gen);
+      case "nav":
+        switch (parsed.target) {
+          case "call":
+            return scrollFloorTo(".callcard");
+          case "coming":
+            return scrollFloorTo(".cdr");
+          case "why":
+            if (viewRef.current !== "chat") switchView("chat");
+            window.dispatchEvent(new CustomEvent("aug:open-why"));
+            return;
+          case "pit":
+            return switchView("pit");
+          case "terminal":
+            return switchView("terminal");
+          case "ideas":
+            setRailOpen(true);
+            return;
+          case "inbox":
+            window.location.assign("/admin"); // the console gates itself
+            return;
+        }
+        return;
+      case "clear":
+        dismissAnswer();
+        return;
+      case "forget":
+        return forgetMemory();
+      case "incomplete":
+        return sayError(`${parsed.command.toUpperCase()} NEEDS A TICKER — ${parsed.command.toUpperCase()} <TICKER>.`);
+      case "unknown-slash":
+        return sayError(`NO SUCH COMMAND — /FORGET IS THE ONLY SLASH COMMAND.`);
+      case "ask":
+        return runAsk(parsed.text, gen);
+    }
   }
-
-  const statusLabel = state === "thinking" ? "THINKING" : null;
-
-  // The landing is the IDLE state of the Presence panel. Once a conversation is
-  // live (messages, a streamed/failed reply, him thinking), the existing reply
-  // panel + composer own the screen and the landing's ask bar and chips yield
-  // (showSuggestions semantics from the design).
-  const conversationActive =
-    messages.length > 0 || replyText !== "" || state === "thinking";
-  const landingIdle = view === "chat" && !conversationActive;
-  // One input per screen: the landing has its ask bar, the intel desk has its
-  // own contextual ASK AUGUST bar — the global composer dock renders on
-  // neither unless a conversation is live ON SCREEN. conversationActive is
-  // deliberately sticky (messages persist all session so the landing stays in
-  // its conversation layout); the desk instead keys off what is visibly live —
-  // an in-flight reply, or the reply card being open. A dismissed panel with
-  // old history must not summon the dock over the desk.
-  const conversationLive = state === "thinking" || (panelOpen && replyText !== "");
-  const intelPanelIdle = view === "terminal" && !conversationLive;
-  // GAME-2 — the PIT owns its surface; the dock composer stands down there
-  const pitIdle = view === "pit" && !conversationLive;
 
   return (
     <main
@@ -761,7 +825,7 @@ export default function Home() {
           type="button"
           className={`view-tab${view === "chat" ? " on" : ""}`}
           aria-pressed={view === "chat"}
-          onClick={() => { if (view === "chat") startNewChat(); else switchView("chat"); }}
+          onClick={() => switchView("chat")}
         >
           AUGUST
         </button>
@@ -802,7 +866,7 @@ export default function Home() {
           type="button"
           className={`tab-item${view === "chat" ? " on" : ""}`}
           aria-pressed={view === "chat"}
-          onClick={() => { if (view === "chat") startNewChat(); else switchView("chat"); }}
+          onClick={() => switchView("chat")}
         >
           AUGUST
         </button>
@@ -858,19 +922,9 @@ export default function Home() {
             state={state}
             theme={theme}
             active={view === "chat"}
-            conversationActive={conversationActive}
-            busy={state === "thinking"}
-            onSend={handleSend}
-            transcript={
-              <ChatTranscript
-                messages={messages}
-                replyText={replyText}
-                thinking={state === "thinking"}
-                onNewChat={startNewChat}
-                error={chatError}
-                onRetry={retryLastTurn}
-              />
-            }
+            onSend={runInput}
+            answer={answer}
+            onClearAnswer={dismissAnswer}
             pushState={pushState}
             onNotify={handleNotify}
             onSetTheme={applyTheme}
@@ -899,127 +953,9 @@ export default function Home() {
         <PitSurface active={view === "pit"} />
       </section>
 
-      {/* reply dock + composer — fixed. The composer serves every surface;
-          the overlay reply card is TERMINAL-ONLY now (CORE V2 P5): over the
-          desk it stays a contained, dismissible card that never covers the
-          widgets, while the chat view renders the conversation as a full
-          Claude-style transcript inside the landing instead. */}
-      {/* pointer-events-none is load-bearing: the transparent full-width wrapper must
-          never eat clicks meant for the surfaces beneath (globe reset, drag, click-
-          outside dismissal). The dock and composer row re-enable their own events. */}
-      <div
-        ref={dockWrapRef}
-        className="dock-wrap pointer-events-none fixed inset-x-0 z-20 flex flex-col items-center gap-3 px-4 pb-8 sm:pb-10"
-      >
-        {view === "terminal" &&
-        panelOpen &&
-        (replyText || (historyOpen && messages.length > 0)) ? (
-          <div
-            className={`reply-dock${historyOpen ? " history" : ""}${dockClosing ? " closing" : ""}`}
-            role="log"
-            onClick={() => {
-              // Don't expand when the user was selecting text to copy — the view
-              // swap would unmount the node and destroy the selection.
-              if (!historyOpen && !window.getSelection()?.toString()) setHistoryOpen(true);
-            }}
-          >
-            <div className="dock-head">
-              <button
-                type="button"
-                className="dock-ctl"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setHistoryOpen((v) => !v);
-                }}
-              >
-                {historyOpen ? "▾ reply" : "▸ conversation"}
-              </button>
-              <button
-                type="button"
-                className="dock-ctl dock-x"
-                aria-label="Dismiss"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closePanel();
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="dock-body" ref={replyDockRef}>
-              {historyOpen ? (
-                <>
-                  {messages.map((m, i) => (
-                    <p key={i} className={`dock-line${m.role === "user" ? " you" : ""}`}>
-                      <span className="dock-who">{m.role === "user" ? "YOU" : "AUGUST"}</span>
-                      {m.content}
-                    </p>
-                  ))}
-                  {/* Any reply text not yet finalized into messages — a streaming
-                      reply, a stopped partial, or the connection-lost line — must
-                      stay visible in the transcript view too. */}
-                  {(() => {
-                    const last = messages[messages.length - 1];
-                    const finalized =
-                      !!last && last.role === "assistant" && last.content === replyText;
-                    return replyText && !finalized ? (
-                      <p className="dock-line">
-                        <span className="dock-who">AUGUST</span>
-                        {replyText}
-                      </p>
-                    ) : null;
-                  })()}
-                </>
-              ) : (
-                <p className="reply-text">{replyText}</p>
-              )}
-            </div>
-          </div>
-        ) : view === "terminal" && statusLabel ? (
-          // Chat-view thinking cues live inside the transcript now.
-          <div className="reply-status">{statusLabel}</div>
-        ) : null}
-
-        {/* On the idle landing the design's ask bar IS the input, and the
-            intel desk carries its own contextual ASK AUGUST bar — the dock
-            composer stands down on both (one input per screen); it returns
-            the moment a conversation is live. */}
-        {!landingIdle && !intelPanelIdle && !pitIdle ? (
-        <div className="composer-row">
-          <Composer
-            onSend={handleSend}
-            busy={state === "thinking"}
-            autoFocus={booted}
-          />
-          <div className="composer-ctls">
-            {state === "thinking" ? (
-              <button
-                type="button"
-                className="ctl-round"
-                onClick={stopGeneration}
-                title="Stop generating"
-                aria-label="Stop generating"
-              >
-                <StopIcon />
-              </button>
-            ) : null}
-            {/* Bell and theme live in the landing's quiet top-bar cluster
-                (HomeLanding) — the conversation cluster keeps only the
-                in-conversation controls: stop and the mood switcher
-                (which has no home on the landing). */}
-            <button
-              type="button"
-              className="ctl-round ctl-mood"
-              onClick={cycleMood}
-              title={`Mood: ${mood} — tap to cycle`}
-              aria-label={`Accent mood: ${mood}. Tap to cycle moods.`}
-            >
-              <MoodIcon />
-            </button>
-          </div>
-        </div>
-        ) : null}
-      </div>
+      {/* COMMAND-BAR era: no fixed dock, no composer, no reply panel. The bar
+          on the floor (HomeLanding's ask bar) is the ONLY input; the desk's
+          contextual ASK AUGUST band (/api/intel/ask) is its own surface. */}
     </main>
   );
 }
@@ -1027,14 +963,6 @@ export default function Home() {
 // ---------------------------------------------------------------------------
 // Small control icons.
 // ---------------------------------------------------------------------------
-
-function StopIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden>
-      <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
 
 // Notification bell — outline by default, with a small "on" dot once enabled.
 function BellIcon({ on = false }: { on?: boolean }) {
@@ -1123,23 +1051,6 @@ function SignalIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
       <circle cx="12" cy="12" r="4" />
       <circle cx="12" cy="12" r="8.5" opacity="0.45" />
-    </svg>
-  );
-}
-
-// Mood control — an aperture ring around a live accent swatch: the centre dot is
-// painted with var(--steel), so the control always shows the current mood.
-function MoodIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <circle cx="12" cy="12" r="8.4" />
-      <circle
-        cx="12"
-        cy="12"
-        r="3.4"
-        stroke="none"
-        style={{ fill: "var(--steel)", transition: "fill 300ms ease" }}
-      />
     </svg>
   );
 }

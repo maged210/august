@@ -135,6 +135,19 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
     return () => window.clearInterval(id);
   }, []);
 
+  // COMMAND-BAR "why" — open the regime read and bring it on screen. The
+  // command lane dispatches this event; no model involved.
+  useEffect(() => {
+    const onWhy = () => {
+      setWhy(true);
+      window.setTimeout(() => {
+        document.querySelector(".hb-regime")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 60);
+    };
+    window.addEventListener("aug:open-why", onWhy);
+    return () => window.removeEventListener("aug:open-why", onWhy);
+  }, []);
+
   // pulse + desk + ingest — one 60s loop over the existing public routes
   useEffect(() => {
     let cancelled = false;

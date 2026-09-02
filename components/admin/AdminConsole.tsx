@@ -125,6 +125,12 @@ export default function AdminConsole() {
   const [pushLog, setPushLog] = useState<CallPushLogEntry[]>([]);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMsg, setPushMsg] = useState("");
+  // COMMAND-BAR — today's ask lane: asks · cache hits · top identities.
+  // null = still loading; "unconfigured" = no Redis; "error" = Redis is
+  // configured but unreachable — each STATED, never zeros posing as quiet.
+  const [askStats, setAskStats] = useState<
+    { asks: number; cacheHits: number; top: Array<{ cid: string; asks: number }> } | "unconfigured" | "error" | null
+  >(null);
   const [form, setForm] = useState<Draft>(EMPTY_DRAFT);
   // transcript intake (P4 + AD-D)
   const [trText, setTrText] = useState("");
@@ -232,6 +238,25 @@ export default function AdminConsole() {
     }
   }, []);
 
+  const loadAskStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/asks", { cache: "no-store", headers: authHeaders() });
+      if (res.status === 502) {
+        setAskStats("error"); // configured Redis, no answer — say so
+        return;
+      }
+      if (!res.ok) return; // gate/rate states — the shell surfaces those
+      const j = (await res.json()) as {
+        configured?: boolean;
+        stats?: { asks: number; cacheHits: number; top: Array<{ cid: string; asks: number }> };
+      };
+      if (j.configured === false) setAskStats("unconfigured");
+      else if (j.stats) setAskStats(j.stats);
+    } catch {
+      setAskStats("error");
+    }
+  }, []);
+
   const sendTestPush = useCallback(async () => {
     setPushBusy(true);
     setPushMsg("");
@@ -274,6 +299,7 @@ export default function AdminConsole() {
       void loadTranscripts();
       void loadTape();
       void loadPushLog();
+      void loadAskStats();
       // status strip: the tracked pipeline's count (public feed, cheap)
       fetch("/api/intel/feed", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
@@ -282,7 +308,7 @@ export default function AdminConsole() {
         })
         .catch(() => {});
     }
-  }, [gate, loadTranscripts, loadTape, loadPushLog]);
+  }, [gate, loadTranscripts, loadTape, loadPushLog, loadAskStats]);
 
   // clear any pending-remove timers on unmount
   useEffect(() => {
@@ -1119,6 +1145,49 @@ export default function AdminConsole() {
                 </ul>
               ) : (
                 <p className="adm-empty">no sends yet — the wire is quiet</p>
+              )}
+            </section>
+
+            {/* ASKS (feature/command-bar) — today's ask lane: model spends +
+                free cache hits, and the top identities. Read-only; the caps
+                themselves live in the chat route (ASK_CAP_ANON/ASK_CAP_USER). */}
+            <section className="adm-panel">
+              <div className="adm-panel-h">
+                <span className="adm-panel-t">ASKS · TODAY</span>
+              </div>
+              {askStats === null ? (
+                <p className="adm-empty">reading the day's counters…</p>
+              ) : askStats === "unconfigured" ? (
+                <p className="adm-empty">no Redis on this deploy — ask stats aren't collected</p>
+              ) : askStats === "error" ? (
+                <p className="adm-empty">counters unreachable — not a quiet day, a blind one</p>
+              ) : (
+                <>
+                  {/* model calls = dispatches (recorded at spend time), so
+                      superseded/errored streams still count — spend-honest */}
+                  <p className="adm-hint" role="status">
+                    {askStats.asks} ask{askStats.asks === 1 ? "" : "s"} · {askStats.cacheHits} cache hit
+                    {askStats.cacheHits === 1 ? "" : "s"} ·{" "}
+                    {askStats.asks - askStats.cacheHits} model call
+                    {askStats.asks - askStats.cacheHits === 1 ? "" : "s"}
+                  </p>
+                  {askStats.top.length > 0 ? (
+                    <ul className="adm-pushlog">
+                      {askStats.top.map((t) => (
+                        <li key={t.cid} className="adm-pushlog-row">
+                          <span className="adm-pushlog-n" title={t.cid}>
+                            {t.cid.startsWith("u:") ? t.cid.slice(2) : t.cid}
+                          </span>
+                          <span className="adm-when">
+                            {t.asks} ask{t.asks === 1 ? "" : "s"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="adm-empty">no asks yet today</p>
+                  )}
+                </>
               )}
             </section>
           </div>

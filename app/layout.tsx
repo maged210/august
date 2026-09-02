@@ -58,8 +58,8 @@ export const viewport: Viewport = {
   // so iOS won't auto-zoom on focus anyway.
   viewportFit: "cover", // draw under notches; safe-area insets handle the rest
   // Browsers that support it resize the layout viewport for the on-screen
-  // keyboard (Android Chrome) — the bottom-docked composer rides above it.
-  // iOS overlays instead; the visualViewport --kb-inset effect covers that.
+  // keyboard (Android Chrome) — in-flow inputs (the command bar) stay visible.
+  // iOS overlays instead and scrolls the focused input into view natively.
   interactiveWidget: "resizes-content",
 };
 

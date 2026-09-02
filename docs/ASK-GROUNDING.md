@@ -1,5 +1,12 @@
-# COMMAND CENTER — FINAL DELIVERABLE
+# ASK GROUNDING — the R1–R3 deliverable (formerly COMMAND-CENTER-FINAL.md)
 ### 2026-08-16 · R1–R3 complete on feature/command-center · companion to docs/AUDIT-R1-2026-08-15.md
+
+> **Renamed 2026-09-02 (feature/command-bar).** "Command center" in this
+> document means the ASK LANE'S GROUNDING — the regime computation, NQ levels,
+> VIX-in-context, and the analyst grounding (`getDeskSnapshot`) that every ask
+> is answered against. All of it stays in force for asks. The name "command
+> bar" is reserved for the input's deterministic command lane, which never
+> touches the model or this grounding.
 
 ## WHAT WAS WRONG (the audit's headline findings)
 Full detail in the audit report; the classes: **no regime computation existed** (the only "regime" was an unrendered LLM transcript label) · **no freshness labeling** outside two components, with a hardcoded LIVE chip contradicting the STALE indicator beside it · **silent failure everywhere** (`catch(() => {})` + last-good-persists; fabricated `LIVE 0/TRACKED 0` zeros) · **ten live-but-dead public routes** left over from parked surfaces, one backing a "Live aircraft" chat claim nothing populated · **raw vendor/config errors served to anonymous callers** (including env-var setup instructions) · **misnamed data** ("overnight H/L" that was a prior daily bar; server NQ silently QQQ×40) · mobile reachability bugs (IDEAS drawer unopenable on phones) · heavy duplication (two idea pipelines, two F&G indexes, 7 sparkline impls, 5 price formatters, 4 status vocabularies).

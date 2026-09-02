@@ -633,6 +633,20 @@ export default function IdeasFeed() {
     }
   }, []);
 
+  // COMMAND-BAR ticker jump — the initial-selection effect above runs ONCE, so
+  // a later `<TICKER>` command re-selects via this event (chart + row), same
+  // as a row click. Not a layout change: selection machinery already existed.
+  useEffect(() => {
+    const onSelect = (e: Event) => {
+      const key = (e as CustomEvent<{ key?: string }>).detail?.key;
+      if (typeof key !== "string" || !key.startsWith("live:")) return;
+      const i = liveIdeas.find((x) => `live:${x.id}` === key);
+      if (i) setSelection(selectionFromLive(i));
+    };
+    window.addEventListener("aug:select-idea", onSelect);
+    return () => window.removeEventListener("aug:select-idea", onSelect);
+  }, [liveIdeas]);
+
   // the wire — merged reverse-chron from the four public sources; null while
   // every source is still pending (skeleton)
   const wireEvents = useMemo(() => {

@@ -150,6 +150,33 @@ export async function getQuote(
   }
 }
 
+// Classified quote lookup for the COMMAND BAR's ticker lane: the card must
+// never say NO SUCH SYMBOL for a real symbol the source merely failed to
+// serve (display honesty). Yahoo 404s a nonexistent symbol; rate limits and
+// outages throw with other statuses — the distinction the null-returning
+// helpers above deliberately flatten.
+export async function probeSymbol(
+  symbol: string,
+): Promise<
+  | { state: "ok"; price: number; prevClose: number; chgPct: number }
+  | { state: "no-such-symbol" }
+  | { state: "unavailable" }
+> {
+  const sym = normalizeYahooSymbol(symbol);
+  if (!sym) return { state: "no-such-symbol" };
+  try {
+    const c = await yahooChart(sym); // rides the same 60s cache
+    if (!Number.isFinite(c.price) || c.price <= 0) return { state: "unavailable" };
+    return { state: "ok", price: c.price, prevClose: c.prevClose, chgPct: c.chgPct };
+  } catch (e) {
+    // getJson throws Error(String(status)); 404/400 = the symbol does not
+    // exist at the source. Anything else (429, 5xx, timeout, odd payload) is
+    // the source failing — say so, don't fabricate nonexistence.
+    const msg = e instanceof Error ? e.message : "";
+    return msg === "404" || msg === "400" ? { state: "no-such-symbol" } : { state: "unavailable" };
+  }
+}
+
 // Like getQuote but also returns the closes array for sparkline rendering.
 // Reuses the same 60s-cached yahooChart fetch — no extra network calls.
 export async function getQuoteWithSpark(
@@ -573,7 +600,9 @@ function buildSnapshot(
   const lines: string[] = [];
   lines.push("MARKETS — live, delayed free proxies (NOT the live CME tape):");
   lines.push(
-    "When he asks where something is trading, about his levels, or \"where's NQ vs my levels\", ANSWER directly from these numbers in your own voice — do not just send him to a screen. Only use go_to_screen when he explicitly asks to open or see a screen.",
+    // COMMAND-BAR era: the model has NO tools and cannot navigate — the bar's
+    // command lane does that. Never claim to open or switch anything.
+    "When the question is where something is trading, about levels, or \"where's NQ vs my levels\", ANSWER directly from these numbers in your own voice. You cannot open screens or navigate — if a screen is what's wanted, say which bar command shows it (terminal, pit, call, coming, why) instead of claiming to open it.",
   );
   lines.push(
     "CRITICAL: these are the CURRENT live numbers. Use ONLY them for any market price or level. IGNORE any specific market figures you may remember from past conversations — those are stale and wrong (markets move). Never say \"based on our last conversation\" for prices; quote the live values below.",
