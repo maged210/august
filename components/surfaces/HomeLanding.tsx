@@ -312,7 +312,10 @@ export default function HomeLanding({
             {pushState !== "unknown" && (
             <button
               type="button"
-              className={`hl-ctl${pushState === "on" ? " on" : ""}`}
+              // hl-ctl-bell: exempt from the M1 mobile fold-in — the bell (the
+              // ONLY push control) stays in the header row beside the moon at
+              // every width, same component, same states
+              className={`hl-ctl hl-ctl-bell${pushState === "on" ? " on" : ""}`}
               onClick={onNotify}
               title={
                 pushState === "on"

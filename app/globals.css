@@ -6819,12 +6819,14 @@ button.pulse-line:focus-visible {
   }
 
   /* — M1 · header simplifies: menu · wordmark · status/clock. The control
-     cluster folds into the moon menu (see .hl-menu-mobile rows). — */
+     cluster folds into the moon menu (see .hl-menu-mobile rows) — EXCEPT the
+     bell (feature/pwa-push): the only push control renders in the header row
+     beside the moon at every width, same component, same states. — */
   .hl-top {
     padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
     gap: 8px;
   }
-  .hl-ctls > .hl-ctl:not(.hl-menu-trigger),
+  .hl-ctls > .hl-ctl:not(.hl-menu-trigger):not(.hl-ctl-bell),
   .hl-ctls > a.hl-ctl {
     display: none;
   }
