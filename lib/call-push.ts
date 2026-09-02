@@ -23,6 +23,7 @@ import {
   type CallState,
 } from "@/lib/call";
 import { onCallSettled, type CallSettledEvent } from "@/lib/call-events";
+import { etDate } from "@/lib/pit";
 import {
   dispatch,
   listAllSubscriptions,
@@ -145,6 +146,12 @@ export async function flushCallPush(deps?: FlushDeps): Promise<CallPushLogEntry 
   const e = _pending;
   _pending = null;
   if (!e || e.result === "NO_SESSION") return null;
+  // ONE notification per trading day means THAT day's evening: a lag-healed
+  // settle (bars lag, holiday void scans) whose moment already passed stays
+  // silent — the card carried it. This also makes multi-day heal passes
+  // deterministic (only a same-day settle can push).
+  const today = etDate(new Date(deps?.now ?? Date.now()));
+  if (e.forDate !== today) return null;
 
   const kv = deps?.kv !== undefined ? deps.kv : getRedis();
   if (!kv) return null;

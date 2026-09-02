@@ -197,7 +197,7 @@ test("flush: one send per day (NX marker), personalized per principal, logged", 
         settled: cid === "v:me" ? SETTLED : { ...SETTLED, youSide: null, youWin: null },
         active: { forDate: "2026-09-03", side: "HIGHER", lockTs: 0, locked: false, youSide: null, thesis: null },
       }),
-    now: 123,
+    now: Date.parse("2026-09-02T22:10:00Z"), // the pass moment, same ET day as the settle
   };
 
   await emitCallSettled({ forDate: "2026-09-02", side: "HIGHER", result: "HIGHER", closePct: 0.42, augustWin: true });
@@ -219,6 +219,12 @@ test("flush: one send per day (NX marker), personalized per principal, logged", 
   assert.equal(await flushCallPush(deps), null);
   await emitCallSettled({ forDate: "2026-09-03", side: "HIGHER", result: "NO_SESSION", closePct: null, augustWin: null });
   assert.equal(await flushCallPush(deps), null);
+
+  // a LAG-HEALED settle (settled on a later day than its own) stays silent —
+  // its moment passed; the card carried it
+  await emitCallSettled({ forDate: "2026-09-01", side: "HIGHER", result: "HIGHER", closePct: 1, augustWin: true });
+  assert.equal(await flushCallPush(deps), null); // deps.now is Sep 2
+  assert.equal(bodies.length, 2);
 });
 
 test("flush: a dead device is pruned during the daily send", async () => {
@@ -233,6 +239,7 @@ test("flush: a dead device is pruned during the daily send", async () => {
       throw Object.assign(new Error("gone"), { statusCode: 410 });
     },
     readState: async () => state({ settled: SETTLED }),
+    now: Date.parse("2026-09-04T22:10:00Z"),
   };
   await emitCallSettled({ forDate: "2026-09-04", side: "HIGHER", result: "HIGHER", closePct: 0.42, augustWin: true });
   const entry = await flushCallPush(deps);
