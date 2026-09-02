@@ -24,8 +24,8 @@ import {
 // WebGL components load only in the browser, and each heavy view owns its own
 // laziness: HomeLanding carries the Presence orb's dynamic import and
 // IntelDeckSurface latches its desk/feed bodies on first visit. The old deck
-// (Deck, WorldSurface/globe, CommsSurface) is parked, not deleted — the
-// components remain, unimported, per the house parking convention.
+// (Deck, WorldSurface/globe, CommsSurface) is GONE — those files were deleted,
+// not parked; recover them from git history if that surface ever returns.
 
 // THE COMMAND BAR (feature/command-bar) — the input is not a chat. Two lanes:
 // COMMANDS resolve deterministically and locally (never a model call, by
@@ -50,10 +50,10 @@ export default function Home() {
   // dismisses it; nothing is ever stored.
   const [answer, setAnswer] = useState<AnswerCard | null>(null);
   const [booted, setBooted] = useState(false);
-  // CORE V2 — the single page's two views: Chat (the Presence orb + reply dock)
-  // and the Intel Terminal (the embedded desk / public ideas feed). Driven by
-  // the top-bar toggle, the go_to_screen tool, ?view=terminal deep links, and
-  // browser back/forward. Unlike ?screen/?brief, the ?view param persists.
+  // CORE V2 — the single page's views: the floor (the Presence orb + the
+  // command bar), the Intel Terminal (the embedded desk / public ideas feed),
+  // and the Pit. Driven by the top-bar toggle, the bar's nav commands,
+  // ?view= deep links, and browser back/forward. The ?view param persists.
   const [view, setView] = useState<ViewId>("chat");
   // Trade Ideas drawer (below 1100px; the desktop sidebar ignores this — see
   // .ideas-rail's media query). The ref mirrors it for the Esc handler, which
@@ -385,8 +385,9 @@ export default function Home() {
     }
   }, []);
 
-  // Set the accent mood — the switcher and the set_mood tool share this one
-  // path. The token swap rides the same transient cross-fade as the theme flip.
+  // Set the accent mood — the ONE path any mood control would use. The token
+  // swap rides the same transient cross-fade as the theme flip. (No control
+  // calls it today; see the note below applyMood.)
   const applyMood = useCallback((m: Mood) => {
     const root = document.documentElement;
     root.setAttribute("data-theming", "");
