@@ -236,6 +236,9 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
 
   const status = b.status === undefined ? "draft" : b.status;
   if (!IDEA_STATUSES.includes(status as IdeaStatus)) return { ok: false, error: "status_invalid" };
+  // DESK-INBOX — a row cannot be BORN denied: denial is a human resolution of
+  // an existing row (and the create shape carries no reason to state)
+  if (status === "denied") return { ok: false, error: "status_denied_at_create" };
 
   const source = b.source === undefined ? "manual" : b.source;
   if (!IDEA_SOURCES.includes(source as IdeaSource)) return { ok: false, error: "source_invalid" };
@@ -675,6 +678,22 @@ export function entryConflict(side: IdeaSide | undefined, entry: string): EntryC
 }
 
 // --- DESK-INBOX — the one queue of everything a human must resolve ----------
+
+/** PURE. The machine-crossable entry string SET LEVEL writes: direction +
+ *  $-and-comma formatted number, so the parser can never misread it (bare
+ *  four-digit integers read as YEARS by design — the $ is required, not
+ *  decoration). Precision is EXACT: as many fraction digits as the human
+ *  typed (capped at 8), never quantized — writing "above $0.09" for a stated
+ *  0.0945 would grade a level nobody stated. Callers must still round-trip
+ *  the result through parseEntryTrigger and refuse on mismatch. */
+export function buildLevelEntry(dir: "above" | "below", level: number): string {
+  const decimals = Math.min((String(level).split(".")[1] ?? "").length, 8);
+  const formatted = level.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return `${dir} $${formatted}`;
+}
 
 export type InboxBuckets = {
   /** drafts from ingest (or the manual form) awaiting APPROVE / DENY */

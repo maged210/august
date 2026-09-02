@@ -561,3 +561,28 @@ test("inbox buckets: pending / needs-level (incl. suspect + unparsed-fresh) / re
   assert.deepEqual(new Set(b.needsLevel.map((i: { id: string }) => i.id)), new Set(["nl1", "qs1", "fresh"]));
   assert.equal(inboxCount(ideas), 6); // armed/closed/denied never queue
 });
+
+test("buildLevelEntry: every written level round-trips through the parser EXACTLY", async () => {
+  const { buildLevelEntry, parseEntryTrigger } = await import("../lib/ideas");
+  // the review's finding: 2dp formatting fabricated levels nobody stated
+  const cases: Array<["above" | "below", number]> = [
+    ["below", 223.5], ["below", 1117.5], ["above", 310], ["above", 2024], // $-guard beats YEAR_LIKE
+    ["above", 0.0945], ["above", 0.004], ["below", 9.456], ["above", 21500],
+  ];
+  for (const [dir, level] of cases) {
+    const entry = buildLevelEntry(dir, level);
+    const back = parseEntryTrigger(entry);
+    assert.ok(back && back.kind === "level", `${entry} must parse`);
+    assert.equal(back.kind === "level" && back.dir, dir, entry);
+    assert.equal(back.kind === "level" && back.level, level, `${entry} must read back exactly ${level}`);
+  }
+  assert.equal(buildLevelEntry("below", 1117.5), "below $1,117.5");
+  assert.equal(buildLevelEntry("above", 0.0945), "above $0.0945");
+});
+
+test("deny: a row cannot be BORN denied — denial is a resolution, not a creation", async () => {
+  const { validateIdeaCreate } = await import("../lib/ideas");
+  const res = validateIdeaCreate({ instrument: "X", thesis: "t", riskLevel: "low", status: "denied" });
+  assert.equal(res.ok, false);
+  assert.equal((res as { error: string }).error, "status_denied_at_create");
+});

@@ -116,6 +116,9 @@ export default function AdminConsole() {
   const [gateError, setGateError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null); // idea id or "create"
   const [actionError, setActionError] = useState("");
+  // DESK-INBOX — the panel's augmented count (incl. live-detected quote
+  // suspects), so the strip chip never disagrees with the header below it
+  const [inboxLive, setInboxLive] = useState<number | null>(null);
   const [form, setForm] = useState<Draft>(EMPTY_DRAFT);
   // transcript intake (P4 + AD-D)
   const [trText, setTrText] = useState("");
@@ -756,7 +759,7 @@ export default function AdminConsole() {
   return (
     <main className="admin-page">
       <div className="adm-shell">
-        <AdminStrip ideas={rows} tape={tapeLive} tracked={trackedCount} transcripts={transcripts} />
+        <AdminStrip ideas={rows} tape={tapeLive} tracked={trackedCount} transcripts={transcripts} inboxLive={inboxLive} />
         {actionError ? (
           <p className="adm-err" role="alert">
             {actionError}
@@ -1044,6 +1047,7 @@ export default function AdminConsole() {
               busyId={busyId}
               onApprove={(d) => approveDraft(d, {})}
               onPatch={mutate}
+              onCount={setInboxLive}
             />
 
             <section className="adm-panel">
@@ -1138,16 +1142,21 @@ function AdminStrip({
   tape,
   tracked,
   transcripts,
+  inboxLive = null,
 }: {
   ideas: Idea[] | null;
   tape: TapeEntry[];
   tracked: number | null;
   transcripts: TranscriptRecord[];
+  /** the panel's augmented count (live-detected suspects included) */
+  inboxLive?: number | null;
 }) {
   const live = ideas?.filter((i) => i.status === "live").length ?? null;
   // DESK-INBOX — the header count that matters: everything awaiting a human
-  // tap (pending + needs-level + review), replacing the old DRAFTS chip
-  const inbox = ideas !== null ? inboxCount(ideas) : null;
+  // tap (pending + needs-level + review), replacing the old DRAFTS chip. The
+  // panel's augmented count wins when it has reported (it can see the
+  // live-quote suspect detection; the pure inboxCount cannot).
+  const inbox = inboxLive ?? (ideas !== null ? inboxCount(ideas) : null);
   const last = transcripts.length > 0 ? transcripts[0] : null;
   const chip = (k: string, v: React.ReactNode) => (
     <span className="adm-strip-chip">

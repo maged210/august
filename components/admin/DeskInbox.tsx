@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  buildLevelEntry,
   DENY_REASONS,
   entryConflict,
   parseEntryTrigger,
@@ -47,17 +48,6 @@ function sourceLine(idea: Idea, byIdeaId: Map<string, TranscriptRecord>): string
   return idea.source === "manual" ? "manual" : "pasted";
 }
 
-/** the machine-crossable entry string SET LEVEL writes: direction + $-and-
- *  comma formatted number, so the parser can never misread it (bare four-digit
- *  integers read as YEARS by design — the $ is required, not decoration) */
-export function buildLevelEntry(dir: "above" | "below", level: number): string {
-  const formatted = level.toLocaleString("en-US", {
-    minimumFractionDigits: level % 1 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  });
-  return `${dir} $${formatted}`;
-}
-
 /** >3× either way — the same rule as lib/ideas' QUOTE_SUSPECT guard */
 const suspectGap = (price: number, level: number) =>
   price > 0 && level > 0 && (price > level * 3 || price * 3 < level);
@@ -68,6 +58,7 @@ export default function DeskInbox({
   busyId,
   onApprove,
   onPatch,
+  onCount,
 }: {
   ideas: Idea[];
   transcripts: TranscriptRecord[];
@@ -76,16 +67,24 @@ export default function DeskInbox({
   onApprove: (draft: Idea) => void;
   /** everything else composes over the one admin PATCH verb */
   onPatch: (id: string, patch: Record<string, unknown>) => Promise<void> | void;
+  /** the AUGMENTED inbox count (incl. live-detected quote suspects) — the
+   *  strip chip must never disagree with the panel header */
+  onCount?: (n: number) => void;
 }) {
   const buckets = useMemo(() => inboxBuckets(ideas), [ideas]);
 
-  // live quotes for the inbox instruments — suspect detection + the >50%
-  // warning on SET LEVEL. Public quotes route, one deduped call.
+  // live quotes for the rows that actually consume them: NEEDS LEVEL rows
+  // (the >50% warn) and live rows with a parsed level (suspect detection).
+  // /api/intel/quotes serves AT MOST 20 symbols — request exactly what
+  // matters, in that priority order, so nothing silently loses its guard.
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const symbols = useMemo(() => {
-    const live = ideas.filter((i) => i.status === "live" || i.status === "review" || i.status === "draft");
-    return [...new Set(live.map((i) => deskSymbolFor(i.instrument.trim().toUpperCase())))].slice(0, 40);
-  }, [ideas]);
+    const prioritized = [
+      ...buckets.needsLevel,
+      ...ideas.filter((i) => i.status === "live" && parseEntryTrigger(i.entry)?.kind === "level"),
+    ];
+    return [...new Set(prioritized.map((i) => deskSymbolFor(i.instrument.trim().toUpperCase())))].slice(0, 20);
+  }, [ideas, buckets]);
   useEffect(() => {
     if (symbols.length === 0) return;
     let cancelled = false;
@@ -120,11 +119,19 @@ export default function DeskInbox({
   }, [ideas, quotes, buckets]);
 
   const needsLevel = useMemo(() => [...buckets.needsLevel, ...liveSuspects], [buckets, liveSuspects]);
-  const denied = useMemo(
-    () => ideas.filter((i) => i.status === "denied").sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8),
+  const deniedAll = useMemo(
+    () => ideas.filter((i) => i.status === "denied").sort((a, b) => b.updatedAt - a.updatedAt),
     [ideas],
   );
+  const denied = deniedAll.slice(0, 8);
   const count = buckets.pending.length + needsLevel.length + buckets.review.length;
+
+  // keep the strip's INBOX chip in lockstep with this header (the pure
+  // inboxCount can't see the live-quote suspect augmentation)
+  useEffect(() => {
+    onCount?.(count);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count]);
 
   const isSuspect = (idea: Idea): boolean => {
     if (idea.evaluation?.state === "QUOTE_SUSPECT") return true;
@@ -137,19 +144,33 @@ export default function DeskInbox({
   const [levelDir, setLevelDir] = useState<"above" | "below">("above");
   const [levelText, setLevelText] = useState("");
   const [levelWarnArmed, setLevelWarnArmed] = useState(false); // >50% two-tap
+  const [levelError, setLevelError] = useState<string | null>(null);
 
   const openSetLevel = (idea: Idea) => {
     setLevelOpen(idea.id);
     setDenyArm(null);
     setLevelText("");
     setLevelWarnArmed(false);
+    setLevelError(null);
     const side = idea.side ?? suggestSide(idea.entry);
     setLevelDir(side === "short" ? "below" : "above");
   };
 
   const saveLevel = (idea: Idea) => {
     const n = Number(levelText.replace(/[$,\s]/g, ""));
-    if (!Number.isFinite(n) || n <= 0) return;
+    if (!Number.isFinite(n) || n <= 0) {
+      setLevelError("a positive number, please");
+      return;
+    }
+    // the written entry must round-trip to EXACTLY the typed level — a
+    // formatted string the parser reads differently would grade a level
+    // nobody stated (the never-fabricate law)
+    const entry = buildLevelEntry(levelDir, n);
+    const back = parseEntryTrigger(entry);
+    if (!back || back.kind !== "level" || back.level !== n) {
+      setLevelError("that level doesn't survive formatting — not saved");
+      return;
+    }
     const price = quoteFor(idea);
     const farOff = price !== null && Math.abs(n - price) / price > 0.5;
     if (farOff && !levelWarnArmed) {
@@ -157,7 +178,7 @@ export default function DeskInbox({
       return;
     }
     setLevelOpen(null);
-    void onPatch(idea.id, { entry: buildLevelEntry(levelDir, n), status: "live" });
+    void onPatch(idea.id, { entry, status: "live" });
   };
 
   const deny = (idea: Idea, reason: DenyReason) => {
@@ -174,20 +195,19 @@ export default function DeskInbox({
     }
     const newSide: IdeaSide = keep ? side : side === "long" ? "short" : "long";
     const parsed = parseEntryTrigger(idea.entry);
-    // the entry stands ONLY if the parsed level agrees with the chosen side
-    // AND the full conflict check clears — otherwise the next book pass would
-    // re-demote and the row would ping-pong (e.g. keyword-two-sided language
-    // around a single parsed level)
-    const entryAgrees =
-      parsed?.kind === "level" &&
-      (parsed.dir === "above" ? "long" : "short") === newSide &&
-      entryConflict(newSide, idea.entry) === null;
-    // agreeing entry stands → LIVE; a conflicted/two-sided entry can't stand
-    // with the chosen side → cleared → the row lands in NEEDS LEVEL
+    // the verbatim entry STANDS unless it actively conflicts with the chosen
+    // side — the full entryConflict check must clear (else the next book pass
+    // re-demotes and the row ping-pongs), and a parsed level must agree with
+    // the side. Unparseable-but-agreeing language is PRESERVED: the row lands
+    // in NEEDS LEVEL with the human's words intact, not erased.
+    const conflictClear = entryConflict(newSide, idea.entry) === null;
+    const parsedAgrees =
+      parsed?.kind === "level" ? (parsed.dir === "above" ? "long" : "short") === newSide : true;
+    const entryStands = conflictClear && parsedAgrees;
     void onPatch(idea.id, {
       side: newSide,
       status: "live",
-      ...(entryAgrees ? {} : { entry: "" }),
+      ...(entryStands ? {} : { entry: "" }),
     });
   };
 
@@ -225,7 +245,9 @@ export default function DeskInbox({
   }, [transcripts]);
 
   const row = (idea: Idea, actions: React.ReactNode, chips?: React.ReactNode) => (
-    <li key={idea.id} className="adm-inbox-row">
+    // adm-idea-{id} keeps the ingest log's deep links landing (the anchor the
+    // old DraftCard carried)
+    <li key={idea.id} id={`adm-idea-${idea.id}`} className="adm-inbox-row">
       <div className="adm-inbox-main">
         <span className="adm-sym">{idea.instrument}</span>
         {idea.side ? <span className={`adm-inbox-side adm-side-${idea.side}`}>{idea.side.toUpperCase()}</span> : null}
@@ -303,6 +325,7 @@ export default function DeskInbox({
                       onChange={(e) => {
                         setLevelText(e.target.value);
                         setLevelWarnArmed(false);
+                        setLevelError(null);
                       }}
                       placeholder={quoteFor(i) !== null ? `quote ${quoteFor(i)!.toFixed(2)}` : "level"}
                       inputMode="decimal"
@@ -319,6 +342,11 @@ export default function DeskInbox({
                         more than 50% from the quote — save again to confirm
                       </span>
                     ) : null}
+                    {levelError ? (
+                      <span className="adm-level-warn" role="alert">
+                        {levelError}
+                      </span>
+                    ) : null}
                   </span>
                 ) : (
                   <>
@@ -331,7 +359,15 @@ export default function DeskInbox({
                 isSuspect(i) ? (
                   <span
                     className="adm-suspect-chip"
-                    title={i.evaluation?.reason ?? "the live quote is more than 3× away from the stated level — split, delisting, or symbol mismatch; not evaluated"}
+                    // a live-detected suspect still CARRIES its stale sticky
+                    // evaluation — that reason asserts the very verdict this
+                    // chip disputes, so only a stored QUOTE_SUSPECT reason
+                    // ever rides the tooltip
+                    title={
+                      i.evaluation?.state === "QUOTE_SUSPECT"
+                        ? i.evaluation.reason
+                        : "the live quote is more than 3× away from the stated level — split, delisting, or symbol mismatch; not evaluated"
+                    }
                   >
                     QUOTE SUSPECT
                   </span>
@@ -369,9 +405,12 @@ export default function DeskInbox({
       )}
       {denied.length > 0 ? (
         <div className="adm-denied">
-          <span className="adm-denied-t">DENIED</span>
+          <span className="adm-denied-t">
+            DENIED · {deniedAll.length}
+            {deniedAll.length > denied.length ? ` (last ${denied.length} shown — the store keeps them all)` : ""}
+          </span>
           {denied.map((i) => (
-            <span key={i.id} className="adm-denied-row">
+            <span key={i.id} id={`adm-idea-${i.id}`} className="adm-denied-row">
               {i.instrument}
               <span className="adm-reason-chip">{i.denyReason ? REASON_LABEL[i.denyReason] : "—"}</span>
               <span className="adm-when">{relativeTime(i.updatedAt)}</span>
