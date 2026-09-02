@@ -27,6 +27,14 @@ Guidance for Claude Code working in this repo.
 
 ## Decided
 
+- THE DESK INBOX (feature/desk-inbox) — the /admin queue (PENDING · NEEDS
+  LEVEL · REVIEW) is the ONLY path into the lifecycle for anything the
+  extractor can't fully parse; every resolution is a human tap, nothing
+  auto-resolves. DENY is terminal with a stated reason (never deletion);
+  QUOTE_SUSPECT refuses to grade a level against a quote >3× away (the NOW
+  5:1-split lesson — a stated pre-split level must never fire against a
+  post-split quote).
+
 - THE CALL shipped (feature/the-call). One card on the floor under the regime
   line: AUGUST's daily NQ call vs the owner, settled against Yahoo's daily bar
   in the daily pass (22:10 UTC — post-close in EST and EDT), running records
