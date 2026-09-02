@@ -65,6 +65,45 @@ test("ticker-shaped misses stay in the command lane — never an ask", () => {
   assert.deepEqual(parseCommand("close notatickerword"), { kind: "incomplete", command: "close" });
 });
 
+test("hardening: trailing punctuation, extra words, slash typos stay local", () => {
+  // trailing punctuation is noise, not prose — the server's normalizeAsk
+  // treats "why?" as "why"; the parser must route it the same way
+  assert.deepEqual(parseCommand("why?"), { kind: "nav", target: "why" });
+  assert.deepEqual(parseCommand("higher."), { kind: "call-side", side: "HIGHER" });
+  assert.deepEqual(parseCommand("clear!"), { kind: "clear" });
+  assert.deepEqual(parseCommand("nvda?"), { kind: "ticker", symbol: "NVDA" });
+  assert.deepEqual(parseCommand("close nvda."), { kind: "close", symbol: "NVDA" });
+  // a garbled owner verb with extra words is a COMMAND attempt — hint locally
+  assert.deepEqual(parseCommand("close nvda now"), { kind: "incomplete", command: "close" });
+  assert.deepEqual(parseCommand("arm nvda pls"), { kind: "incomplete", command: "arm" });
+  // slash-shaped input is command-shaped by intent — a typo never spends
+  assert.deepEqual(parseCommand("/forget."), { kind: "forget" });
+  assert.equal(parseCommand("/forgett")!.kind, "unknown-slash");
+  assert.equal(parseCommand("/f")!.kind, "unknown-slash");
+});
+
+test("$TICKER forces the ticker lane past keyword collisions", () => {
+  // ARM Holdings and AT&T are real symbols that resolve as commands bare —
+  // the $ prefix is the desk convention that reaches them
+  assert.deepEqual(parseCommand("$arm"), { kind: "ticker", symbol: "ARM" });
+  assert.deepEqual(parseCommand("$t"), { kind: "ticker", symbol: "T" });
+  assert.deepEqual(parseCommand("$nvda"), { kind: "ticker", symbol: "NVDA" });
+  assert.deepEqual(parseCommand("close $t"), { kind: "close", symbol: "T" });
+  // bare forms keep keyword precedence (documented desk behavior)
+  assert.deepEqual(parseCommand("t"), { kind: "nav", target: "terminal" });
+  assert.deepEqual(parseCommand("arm"), { kind: "incomplete", command: "arm" });
+  // a broken $ form is ticker-intent garbage, not prose — but "$" alone or
+  // $-plus-nonsense is not ticker-shaped and falls to ask like any typo
+  assert.equal(parseCommand("$not-a-real-long-one")!.kind, "ask");
+  // suggestions: colliding book tickers insert their $ form so the click
+  // does what the label says
+  const s = suggestFor("ar", ["ARM", "ARKK"]);
+  const armSug = s.find((x) => x.label.startsWith("ARM —"));
+  assert.equal(armSug?.insert, "$arm");
+  const arkk = s.find((x) => x.label.startsWith("ARKK"));
+  assert.equal(arkk?.insert, "arkk");
+});
+
 test("the ask lane gets only prose", () => {
   assert.deepEqual(parseCommand("what moved the tape today"), {
     kind: "ask",
@@ -82,12 +121,13 @@ test("the ask lane gets only prose", () => {
 test("THE LAW: the full command set never classifies as ask (zero /api/chat)", () => {
   const commandInputs = [
     "NVDA", "spy", "^VIX", "nq=f", "brk-b", "ZZZZ", // tickers, hit or miss
-    "arm NVDA", "a spy", "close UBER", "clo dkng", // owner verbs + prefixes
-    "arm", "close", "arm 123456789012", // incomplete — local hints
-    "higher", "hi", "lower", "lo", // call sides
-    "call", "ca", "coming", "com", "why", "w", // nav
+    "$arm", "$t", "nvda?", // forced tickers + punctuation noise
+    "arm NVDA", "a spy", "close UBER", "clo dkng", "close $t", // owner verbs
+    "arm", "close", "arm 123456789012", "close nvda now", // incomplete — local hints
+    "higher", "hi", "lower", "lo", "higher.", // call sides
+    "call", "ca", "coming", "com", "why", "w", "why?", // nav
     "pit", "p", "terminal", "t", "term", "ideas", "id", "inbox", "in",
-    "clear", "cle", "/forget",
+    "clear", "cle", "clear!", "/forget", "/forgett", "/f", // slash stays local
   ];
   for (const input of commandInputs) {
     const parsed = parseCommand(input);

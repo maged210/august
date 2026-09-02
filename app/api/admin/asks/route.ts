@@ -32,10 +32,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const kv = getKv();
   if (!kv) return Response.json({ ok: true, configured: false });
-  try {
-    const stats = await readAskStats(kv);
-    return Response.json({ ok: true, configured: true, stats });
-  } catch {
-    return Response.json({ ok: false, error: "stats_unreachable" }, { status: 502 });
-  }
+  const stats = await readAskStats(kv); // null = KV configured but unreachable
+  if (!stats) return Response.json({ ok: false, error: "stats_unreachable" }, { status: 502 });
+  return Response.json({ ok: true, configured: true, stats });
 }

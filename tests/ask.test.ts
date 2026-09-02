@@ -94,9 +94,24 @@ test("stats: asks, cache hits, per-identity top 5", async () => {
   await recordAskStat(kv, "v:a", "cache", now);
   await recordAskStat(kv, "v:a", "model", now);
   await recordAskStat(kv, "u:o@x.com", "model", now);
-  const s = await readAskStats(kv, now);
+  const s = (await readAskStats(kv, now))!;
+  assert.ok(s, "configured KV answers with stats");
   assert.equal(s.asks, 4);
   assert.equal(s.cacheHits, 1);
   assert.deepEqual(s.top[0], { cid: "v:a", asks: 3 });
   assert.deepEqual(s.top[1], { cid: "u:o@x.com", asks: 1 });
+});
+
+test("stats: an unreachable KV reads as NULL, never zeros posing as quiet", async () => {
+  const broken = {
+    async incr() { throw new Error("down"); },
+    async expire() { throw new Error("down"); },
+    async get() { throw new Error("down"); },
+    async set() { throw new Error("down"); },
+    async hincrby() { throw new Error("down"); },
+    async zincrby() { throw new Error("down"); },
+    async hgetall() { throw new Error("down"); },
+    async zrange() { throw new Error("down"); },
+  };
+  assert.equal(await readAskStats(broken, Date.parse("2026-09-02T15:00:00Z")), null);
 });

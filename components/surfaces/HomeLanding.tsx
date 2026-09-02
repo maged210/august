@@ -264,23 +264,30 @@ export default function HomeLanding({
     return () => document.removeEventListener("pointerdown", onDown);
   }, [rainMenuOpen]);
 
-  // The live book's tickers feed the suggestion list — one quiet fetch, local
-  // matching after that (the parser and suggestions never touch the network).
+  // The live book's tickers feed the suggestion list — one quiet fetch at
+  // mount, refreshed when an arm/close command changes the book (the page
+  // dispatches aug:ideas-changed after a confirmed PATCH). Local matching in
+  // between: the parser and suggestions never touch the network per input.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/ideas", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((j: { ideas?: Array<{ instrument?: string }> }) => {
-        if (cancelled || !Array.isArray(j.ideas)) return;
-        const seen = new Set<string>();
-        for (const i of j.ideas) {
-          if (typeof i.instrument === "string" && i.instrument.trim()) seen.add(i.instrument.trim().toUpperCase());
-        }
-        setBookTickers([...seen]);
-      })
-      .catch(() => {});
+    const pull = () => {
+      fetch("/api/ideas", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+        .then((j: { ideas?: Array<{ instrument?: string }> }) => {
+          if (cancelled || !Array.isArray(j.ideas)) return;
+          const seen = new Set<string>();
+          for (const i of j.ideas) {
+            if (typeof i.instrument === "string" && i.instrument.trim()) seen.add(i.instrument.trim().toUpperCase());
+          }
+          setBookTickers([...seen]);
+        })
+        .catch(() => {});
+    };
+    pull();
+    window.addEventListener("aug:ideas-changed", pull);
     return () => {
       cancelled = true;
+      window.removeEventListener("aug:ideas-changed", pull);
     };
   }, []);
 
@@ -293,7 +300,14 @@ export default function HomeLanding({
     setSugs([]);
   };
 
+  // Guard against pointerdown+click double-fire from one gesture: a repeated
+  // pick of the same insert inside 350ms is the same gesture, not a second
+  // intent (a double arm/close submission would silently CONFIRM the two-tap).
+  const lastPickRef = useRef<{ insert: string; at: number }>({ insert: "", at: 0 });
   const pickSuggestion = (s: Suggestion) => {
+    const now = Date.now();
+    if (lastPickRef.current.insert === s.insert && now - lastPickRef.current.at < 350) return;
+    lastPickRef.current = { insert: s.insert, at: now };
     if (s.insert.endsWith(" ")) {
       // arm/close want their ticker — insert and keep typing
       setDraft(s.insert);
@@ -510,11 +524,15 @@ export default function HomeLanding({
                     aria-selected={false}
                     className="cb-sug"
                     // pointerdown, not click — fires before the input loses
-                    // focus so the mobile keyboard stays up mid-completion
+                    // focus so the mobile keyboard stays up mid-completion.
+                    // onClick serves the KEYBOARD (Enter/Space synthesize a
+                    // click, never a pointerdown); pickSuggestion's 350ms
+                    // same-insert guard absorbs any double-fire.
                     onPointerDown={(e) => {
                       e.preventDefault();
                       pickSuggestion(s);
                     }}
+                    onClick={() => pickSuggestion(s)}
                   >
                     {s.label}
                   </button>

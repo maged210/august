@@ -126,9 +126,10 @@ export default function AdminConsole() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMsg, setPushMsg] = useState("");
   // COMMAND-BAR — today's ask lane: asks · cache hits · top identities.
-  // null = still loading; "unconfigured" = no Redis (stated, not zeros).
+  // null = still loading; "unconfigured" = no Redis; "error" = Redis is
+  // configured but unreachable — each STATED, never zeros posing as quiet.
   const [askStats, setAskStats] = useState<
-    { asks: number; cacheHits: number; top: Array<{ cid: string; asks: number }> } | "unconfigured" | null
+    { asks: number; cacheHits: number; top: Array<{ cid: string; asks: number }> } | "unconfigured" | "error" | null
   >(null);
   const [form, setForm] = useState<Draft>(EMPTY_DRAFT);
   // transcript intake (P4 + AD-D)
@@ -240,7 +241,11 @@ export default function AdminConsole() {
   const loadAskStats = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/asks", { cache: "no-store", headers: authHeaders() });
-      if (!res.ok) return;
+      if (res.status === 502) {
+        setAskStats("error"); // configured Redis, no answer — say so
+        return;
+      }
+      if (!res.ok) return; // gate/rate states — the shell surfaces those
       const j = (await res.json()) as {
         configured?: boolean;
         stats?: { asks: number; cacheHits: number; top: Array<{ cid: string; asks: number }> };
@@ -248,7 +253,7 @@ export default function AdminConsole() {
       if (j.configured === false) setAskStats("unconfigured");
       else if (j.stats) setAskStats(j.stats);
     } catch {
-      /* the panel stays in its loading state — never fabricated zeros */
+      setAskStats("error");
     }
   }, []);
 
@@ -1154,8 +1159,12 @@ export default function AdminConsole() {
                 <p className="adm-empty">reading the day's counters…</p>
               ) : askStats === "unconfigured" ? (
                 <p className="adm-empty">no Redis on this deploy — ask stats aren't collected</p>
+              ) : askStats === "error" ? (
+                <p className="adm-empty">counters unreachable — not a quiet day, a blind one</p>
               ) : (
                 <>
+                  {/* model calls = dispatches (recorded at spend time), so
+                      superseded/errored streams still count — spend-honest */}
                   <p className="adm-hint" role="status">
                     {askStats.asks} ask{askStats.asks === 1 ? "" : "s"} · {askStats.cacheHits} cache hit
                     {askStats.cacheHits === 1 ? "" : "s"} ·{" "}

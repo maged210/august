@@ -209,12 +209,15 @@ export async function POST(req: Request): Promise<Response> {
         }
       };
       let full = "";
-      // Cache on COMPLETION of the model stream, not on the consumer flag:
-      // the response plumbing can cancel our ReadableStream right after the
-      // last byte is flushed (measured in the E2E — the log showed a fully
-      // delivered answer marked aborted), and that post-completion cancel
-      // must not void the cache. Only a mid-stream abort (a partial) does.
+      // Cache on COMPLETION of the model stream, INDEPENDENT of the consumer
+      // flag: the response plumbing can cancel our ReadableStream in the
+      // window between the last text delta and the trailing SSE events
+      // (measured in the E2E — a fully delivered answer marked aborted), and
+      // a post-completion cancel must not void the cache. modelDone latches
+      // on message_stop; an abort-break at a closed block boundary with text
+      // in hand counts too. Only a genuine mid-block partial stays uncached.
       let modelDone = false;
+      let blockOpen = false;
       try {
         const s = await client.messages.create({
           model: MODEL,
@@ -223,20 +226,28 @@ export async function POST(req: Request): Promise<Response> {
           messages: [{ role: "user", content: message }],
           stream: true,
         });
+        // the spend is committed the moment the stream opens — the console's
+        // model-call stat counts DISPATCHES, not happy completions, so
+        // superseded/errored streams don't underreport spend
+        if (cid && kv) void recordAskStat(kv, cid, "model");
         for await (const event of s) {
           if (aborted) break;
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          if (event.type === "content_block_start") blockOpen = true;
+          else if (event.type === "content_block_stop") blockOpen = false;
+          else if (event.type === "message_stop") modelDone = true;
+          else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             if (ttftMs === -1) ttftMs = Date.now() - t0;
             full += event.delta.text;
             send(encoder.encode(event.delta.text));
           }
         }
-        modelDone = !aborted;
-        // caches + stats — only a COMPLETE answer is worth storing
+        if (!modelDone && !blockOpen && full.trim()) modelDone = true; // post-block cancel window
+        // caches — only a COMPLETE answer is worth storing. JSON.stringify on
+        // write so Upstash's get()-side auto-JSON-parse round-trips answers
+        // that happen to BE valid JSON (the "1"-sentinel lesson).
         if (modelDone && full.trim() && kv) {
-          if (calAskKey) await kv.set(calAskKey, full, { ex: 86_400 }).catch(() => {});
-          else if (cacheKey) await kv.set(cacheKey, full, { ex: ASK_CACHE_TTL_S }).catch(() => {});
-          if (cid) void recordAskStat(kv, cid, "model");
+          if (calAskKey) await kv.set(calAskKey, JSON.stringify(full), { ex: 86_400 }).catch(() => {});
+          else if (cacheKey) await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch(() => {});
         }
       } catch (err) {
         if (!aborted) {

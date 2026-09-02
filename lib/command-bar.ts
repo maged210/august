@@ -23,6 +23,9 @@ export type ParsedCommand =
   /** a recognized command missing/garbling its argument — resolved LOCALLY
    *  with a usage hint, never sent to the model */
   | { kind: "incomplete"; command: "arm" | "close" }
+  /** a slash-shaped input that isn't /forget — command-shaped by intent, so
+   *  it gets a local refusal, never a model call */
+  | { kind: "unknown-slash"; raw: string }
   | { kind: "ask"; text: string };
 
 // keyword → command factory. One flat table so prefix resolution is honest.
@@ -63,18 +66,41 @@ export function tickerShaped(word: string): boolean {
   return TICKER_RE.test(word);
 }
 
+// A word with the $TICKER prefix forces the ticker lane past keyword
+// resolution — the desk convention for symbols that collide with commands
+// ("$t" is AT&T; bare "t" is the terminal). Suggestions use it for exactly
+// those collisions.
+function forcedTicker(word: string): string | null {
+  if (!word.startsWith("$")) return null;
+  const rest = word.slice(1);
+  return tickerShaped(rest) ? rest.toUpperCase() : null;
+}
+
+// Strip terminal punctuation for COMMAND detection only ("why?" is the why
+// command; the server's normalizeAsk strips the same trailing [?!.] for
+// caching, so routing "why?" to the model while caching it as "why" would be
+// the same input taking two lanes). The ask lane always gets the raw text.
+const stripPunct = (w: string) => w.replace(/[?!.,;:]+$/, "");
+
 /** PURE. Classify one input line. Empty input returns null (nothing to do). */
 export function parseCommand(raw: string): ParsedCommand | null {
   const text = raw.replace(/\s+/g, " ").trim();
   if (!text) return null;
 
-  // /forget stays — the one slash command (memory wipe, confirmed server-side)
-  if (text.toLowerCase() === "/forget") return { kind: "forget" };
+  // /forget stays — the one slash command (memory wipe, confirmed server-side).
+  // Any OTHER slash-shaped input is a command attempt by intent: refuse it
+  // locally ("/forgett" must not spend a model ask).
+  if (text.startsWith("/")) {
+    return stripPunct(text.toLowerCase()) === "/forget" ? { kind: "forget" } : { kind: "unknown-slash", raw: text };
+  }
 
   const words = text.split(" ");
 
   if (words.length === 1) {
-    const kw = resolveKeyword(words[0]);
+    const forced = forcedTicker(stripPunct(words[0]));
+    if (forced) return { kind: "ticker", symbol: forced };
+    const bare = stripPunct(words[0]);
+    const kw = resolveKeyword(bare);
     if (kw === "higher" || kw === "lower") {
       return { kind: "call-side", side: kw.toUpperCase() as CallSideWord };
     }
@@ -86,19 +112,23 @@ export function parseCommand(raw: string): ParsedCommand | null {
     // usage hint, never a model call (command-shaped input stays local)
     if (kw === "arm" || kw === "close") return { kind: "incomplete", command: kw };
     // one ticker-shaped word → the ticker lane (validity decided at
-    // execution: NO SUCH SYMBOL on a miss, never an ask)
-    if (tickerShaped(words[0])) return { kind: "ticker", symbol: words[0].toUpperCase() };
+    // execution: NO SUCH SYMBOL on a miss, never an ask). Trailing
+    // punctuation is noise here too — "nvda?" wants the quote.
+    if (tickerShaped(bare)) return { kind: "ticker", symbol: bare.toUpperCase() };
     return { kind: "ask", text };
   }
 
-  if (words.length === 2) {
-    const kw = resolveKeyword(words[0]);
-    if (kw === "arm" || kw === "close") {
-      // a garbage argument is still a COMMAND attempt — hint locally
-      return tickerShaped(words[1])
-        ? { kind: kw, symbol: words[1].toUpperCase() }
-        : { kind: "incomplete", command: kw };
+  // Owner verbs stay in the command lane for ANY word count once the first
+  // word resolves — "close nvda now" is a garbled command, not prose for the
+  // model. Two clean words execute; anything else hints locally.
+  const kw0 = resolveKeyword(stripPunct(words[0]));
+  if (kw0 === "arm" || kw0 === "close") {
+    if (words.length === 2) {
+      const arg = stripPunct(words[1]);
+      const sym = forcedTicker(arg) ?? (tickerShaped(arg) ? arg.toUpperCase() : null);
+      return sym ? { kind: kw0, symbol: sym } : { kind: "incomplete", command: kw0 };
     }
+    return { kind: "incomplete", command: kw0 };
   }
 
   return { kind: "ask", text };
@@ -143,8 +173,13 @@ export function suggestFor(raw: string, knownTickers: string[] = []): Suggestion
     for (const t of knownTickers) {
       if (out.length >= 5) break;
       const T = t.trim().toUpperCase();
-      if (T.startsWith(frag) && !out.some((s) => s.insert === T.toLowerCase())) {
-        out.push({ insert: T.toLowerCase(), label: `${T} — open in the terminal` });
+      if (!T.startsWith(frag)) continue;
+      // a symbol that resolves as a keyword ("ARM", "T") would execute as the
+      // COMMAND if inserted bare — the $ prefix forces the ticker lane, so
+      // the suggestion does what its label says
+      const insert = resolveKeyword(T.toLowerCase()) ? `$${T.toLowerCase()}` : T.toLowerCase();
+      if (!out.some((s) => s.insert === insert)) {
+        out.push({ insert, label: `${T} — open in the terminal` });
       }
     }
     return out.slice(0, 5);

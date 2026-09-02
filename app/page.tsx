@@ -111,6 +111,10 @@ export default function Home() {
   const dismissAnswer = useCallback(() => {
     abortRef.current?.abort();
     genRef.current++;
+    // Esc/✕ on the SUBMIT AGAIN TO CONFIRM card must also disarm the pending
+    // arm/close — otherwise the next identical command inside 12s executes
+    // one-tap with no confirm on screen (adversarial-review finding).
+    pendingConfirmRef.current = null;
     setAnswer(null);
     setState((s) => (s === "thinking" ? "idle" : s));
   }, []);
@@ -509,13 +513,32 @@ export default function Home() {
     }
   }, []);
 
+  // Audience for the ticker→terminal jump — fetched once, remembered. The
+  // ?idea= deep link and aug:select-idea are consumed ONLY by the public
+  // IdeasFeed; the owner's desk (IntelDashboard) has no selection seam and is
+  // out of scope, so the owner gets the desk plus an honest card instead of
+  // a silent no-op selection (adversarial-review finding).
+  const isOwnerRef = useRef<boolean | null>(null);
+  const isOwner = useCallback(async (): Promise<boolean> => {
+    if (isOwnerRef.current !== null) return isOwnerRef.current;
+    try {
+      const r = await fetch("/api/intel/role", { cache: "no-store" });
+      const j = (await r.json()) as { owner?: boolean };
+      isOwnerRef.current = j.owner === true;
+    } catch {
+      return false; // unknown → treat as public, don't latch
+    }
+    return isOwnerRef.current;
+  }, []);
+
   const runTicker = useCallback(
     async (symbol: string, gen: number) => {
-      const ideas = await liveIdeas();
+      const [ideas, owner] = await Promise.all([liveIdeas(), isOwner()]);
       if (stale(gen)) return;
       const idea = ideas.find((i) => i.instrument.trim().toUpperCase() === symbol);
-      if (idea) {
-        // open in the terminal: chart + row via the existing ?idea= deep link
+      if (idea && !owner) {
+        // public: open the feed with that idea's chart + row selected via the
+        // existing ?idea= deep link + the re-selection event
         try {
           const u = new URL(window.location.href);
           u.searchParams.set("view", "terminal");
@@ -530,16 +553,28 @@ export default function Home() {
         setAnswer(null);
         return;
       }
-      // no idea → a quote card from the existing sources; a miss is NO SUCH
-      // SYMBOL, never an ask (the law)
+      if (idea && owner) {
+        // the owner's desk has no deep-select seam — open it and say what's
+        // true rather than claiming a selection that didn't happen
+        markAugNav();
+        switchView("terminal");
+        say(`${symbol} IS LIVE ON THE BOOK — THE DESK IS OPEN.`);
+        return;
+      }
+      // no idea → a quote card via the classified probe; a true miss is NO
+      // SUCH SYMBOL, never an ask (the law) — and never fabricated: a source
+      // failure says the source failed (adversarial-review finding).
       const ysym = deskSymbolFor(symbol);
       try {
-        const qr = await fetch(`/api/intel/quotes?symbols=${encodeURIComponent(ysym)}`, { cache: "no-store" });
-        const qj = (await qr.json()) as { quotes?: Record<string, { price: number; chgPct: number }> };
+        const qr = await fetch(`/api/intel/probe?symbol=${encodeURIComponent(ysym)}`, { cache: "no-store" });
+        const q = (await qr.json()) as { state: string; price?: number; chgPct?: number };
         if (stale(gen)) return;
-        const q = qj.quotes?.[ysym];
-        if (!q || !Number.isFinite(q.price) || q.price <= 0) {
+        if (q.state === "no-such-symbol") {
           sayError(`NO SUCH SYMBOL — ${symbol}`);
+          return;
+        }
+        if (q.state !== "ok" || !Number.isFinite(q.price) || q.price! <= 0 || !Number.isFinite(q.chgPct)) {
+          sayError(`THE QUOTE SOURCE ISN'T ANSWERING — TRY ${symbol} AGAIN.`);
           return;
         }
         let dayLo: number | null = null;
@@ -556,12 +591,12 @@ export default function Home() {
           /* range omitted honestly */
         }
         if (stale(gen)) return;
-        setAnswer({ kind: "quote", symbol, price: q.price, chgPct: q.chgPct, dayLo, dayHi });
+        setAnswer({ kind: "quote", symbol, price: q.price!, chgPct: q.chgPct!, dayLo, dayHi });
       } catch {
         if (!stale(gen)) sayError(`QUOTES UNREACHABLE — TRY ${symbol} AGAIN`);
       }
     },
-    [liveIdeas, sayError, switchView, stale],
+    [liveIdeas, isOwner, say, sayError, switchView, stale],
   );
 
   // arm/close — owner only, write-gated server-side, two-tap in the bar:
@@ -617,8 +652,11 @@ export default function Home() {
               return;
             }
             liveIdeasRef.current = null; // the book changed
+            // HomeLanding refreshes its suggestion tickers off this; the
+            // rail/terminal catch up on their own ~60s polls — the copy
+            // says so instead of claiming an instant reflection.
             window.dispatchEvent(new CustomEvent("aug:ideas-changed"));
-            if (!stale(runGen)) say(verb === "close" ? `${symbol} CLOSED — THE TERMINAL REFLECTS IT.` : `${symbol} RE-ARMED — LIVE ON THE BOOK.`);
+            if (!stale(runGen)) say(verb === "close" ? `${symbol} CLOSED — OFF THE BOARDS WITHIN THE MINUTE.` : `${symbol} ARMED LIVE — ON THE BOARDS WITHIN THE MINUTE.`);
           } catch {
             if (!stale(runGen)) sayError(`${verb.toUpperCase()} FAILED — TRY AGAIN.`);
           }
@@ -763,6 +801,8 @@ export default function Home() {
         return forgetMemory();
       case "incomplete":
         return sayError(`${parsed.command.toUpperCase()} NEEDS A TICKER — ${parsed.command.toUpperCase()} <TICKER>.`);
+      case "unknown-slash":
+        return sayError(`NO SUCH COMMAND — /FORGET IS THE ONLY SLASH COMMAND.`);
       case "ask":
         return runAsk(parsed.text, gen);
     }

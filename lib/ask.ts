@@ -80,7 +80,16 @@ export async function takeAskBudget(
   try {
     const key = CAP_KEY(utcDay(now), cid);
     const used = Number(await kv.incr(key)) || 0;
-    if (used === 1) await kv.expire(key, 90_000); // ~25h, outlives the bucket
+    if (used === 1) {
+      // best-effort TTL: a thrown expire must not mask the incr's verdict as
+      // allowed:true/used:0 (the day is in the key, so a stranded key is one
+      // orphan, never a wrong cap)
+      try {
+        await kv.expire(key, 90_000); // ~25h, outlives the bucket
+      } catch {
+        /* orphaned key, correct count */
+      }
+    }
     return { allowed: used <= cap, used };
   } catch {
     return { allowed: true, used: 0 };
@@ -112,9 +121,10 @@ export type AskStats = {
   top: Array<{ cid: string; asks: number }>;
 };
 
-/** Today's numbers for the owner console: asks · cache hits · top 5. */
-export async function readAskStats(kv: AskKv, now: number = Date.now()): Promise<AskStats> {
-  const empty: AskStats = { asks: 0, cacheHits: 0, top: [] };
+/** Today's numbers for the owner console: asks · cache hits · top 5.
+ *  Returns NULL when the KV can't answer — the console must show "counters
+ *  unreachable", never zeros pretending to be a quiet day (display honesty). */
+export async function readAskStats(kv: AskKv, now: number = Date.now()): Promise<AskStats | null> {
   try {
     const day = utcDay(now);
     const h = (await kv.hgetall(STATS_KEY(day))) as Record<string, unknown> | null;
@@ -129,6 +139,6 @@ export async function readAskStats(kv: AskKv, now: number = Date.now()): Promise
       top,
     };
   } catch {
-    return empty;
+    return null;
   }
 }
