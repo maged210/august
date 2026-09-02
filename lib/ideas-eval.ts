@@ -52,7 +52,7 @@ export type BookPassResult = {
  *  17:00 ET the pass declines (ran:false); the 22:10 UTC cron clears the gate
  *  in both EST and EDT. */
 export async function runBookPass(now: number = Date.now()): Promise<BookPassResult> {
-  const counts: Record<IdeaEvalState, number> = { ARMED: 0, TRIGGERED: 0, STALE: 0, NEEDS_LEVEL: 0 };
+  const counts: Record<IdeaEvalState, number> = { ARMED: 0, TRIGGERED: 0, STALE: 0, NEEDS_LEVEL: 0, QUOTE_SUSPECT: 0 };
   if (now < sessionCloseTs(etDate(new Date(now)))) {
     return { ran: false, live: 0, demotedToReview: 0, counts };
   }
