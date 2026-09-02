@@ -2,7 +2,7 @@
 // (lib/ideas.ts, august:ideas:v1) had no evaluator: rows went live and sat
 // "LIVE" forever, because /api/cron/intel-track only ever evaluated the
 // SEPARATE video-brief tracker (lib/intel/trackerStore). This pass closes
-// that gap: once a day, after the US close (the 21:05 UTC cron), every LIVE
+// that gap: once a day, after the US close (the 22:10 UTC cron), every LIVE
 // idea's entry language is read for a crossable trigger and judged against
 // the daily close:
 //   - conflicted rows (side vs entry language, or two-sided entries) demote
@@ -15,8 +15,10 @@
 // in lib/ideas.ts with the other pure helpers; this file owns orchestration
 // and I/O, mirroring the tracker.ts / trackerStore.ts split.
 
+import { sessionCloseTs } from "@/lib/call";
 import { deskSymbolFor } from "@/lib/desk-symbols";
 import { getQuote } from "@/lib/markets";
+import { etDate } from "@/lib/pit";
 import {
   BOOK_STALE_DAYS,
   demoteIdeaToReview,
@@ -41,9 +43,19 @@ export type BookPassResult = {
 };
 
 /** Evaluate the whole live book against today's close. Idempotent — a second
- *  run on the same closes reaches the same conclusions. */
+ *  run on the same closes reaches the same conclusions.
+ *
+ *  BAR-FINALITY GATE (same as THE CALL's settle, lib/call.ts): the route this
+ *  rides is also pinged every ~10–15 min during market hours, and getQuote's
+ *  price is LIVE until the session ends — a mid-session spike must never mark
+ *  a sticky TRIGGERED "at a daily close" that hasn't printed yet. Before
+ *  17:00 ET the pass declines (ran:false); the 22:10 UTC cron clears the gate
+ *  in both EST and EDT. */
 export async function runBookPass(now: number = Date.now()): Promise<BookPassResult> {
   const counts: Record<IdeaEvalState, number> = { ARMED: 0, TRIGGERED: 0, STALE: 0, NEEDS_LEVEL: 0 };
+  if (now < sessionCloseTs(etDate(new Date(now)))) {
+    return { ran: false, live: 0, demotedToReview: 0, counts };
+  }
   const live = (await listIdeas("live"));
   if (live.length === 0) return { ran: true, live: 0, demotedToReview: 0, counts };
 

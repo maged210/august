@@ -37,7 +37,7 @@ export async function GET(req: Request): Promise<Response> {
     let actuals: Record<string, string> = {};
     if (released.length > 0) {
       // actuals for printed majors — the fixed FRED mapping, cache-first (the
-      // 21:05 pass warms it); timeboxed so a slow FRED never stalls the row.
+      // 22:10 UTC pass warms it); timeboxed so a slow FRED never stalls the row.
       const [bars, acts] = await Promise.all([
         getHistory("NQ=F", "yahoo", "5D").catch(() => []),
         Promise.race([

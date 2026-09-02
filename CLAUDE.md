@@ -29,7 +29,8 @@ Guidance for Claude Code working in this repo.
 
 - THE CALL shipped (feature/the-call). One card on the floor under the regime
   line: AUGUST's daily NQ call vs the owner, settled against Yahoo's daily bar
-  in the 21:05 pass, running records for both sides from 0–0. Direction is
+  in the daily pass (22:10 UTC — post-close in EST and EDT), running records
+  for both sides from 0–0. Direction is
   DETERMINISTIC from the regime model — the sign of its vote sum (RISK ON →
   higher, RISK OFF → lower, NEUTRAL follows its lean; dead even or unavailable
   = no call that day). The thesis line is the feature's ONLY model use and is

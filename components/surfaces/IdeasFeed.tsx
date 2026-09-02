@@ -771,8 +771,8 @@ export default function IdeasFeed() {
           ) : (
             <div className="if-mcards">
               {liveIdeas.length > 0 ? (
-                <div className="if-mgroup" title="evaluated daily at close · next pass 21:05 UTC">
-                  LIVE — EVALUATED DAILY AT CLOSE · 21:05 UTC
+                <div className="if-mgroup" title="evaluated daily at close · next pass 22:10 UTC">
+                  LIVE — EVALUATED DAILY AT CLOSE · 22:10 UTC
                 </div>
               ) : null}
               {liveIdeas.map((idea) => (
@@ -894,7 +894,7 @@ export default function IdeasFeed() {
                       <span className="if-bgroup-label">LIVE</span>
                       {/* the honest Hobby cadence — one evaluation pass, post-close */}
                       <span className="if-bgroup-sub">
-                        DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS 21:05 UTC
+                        DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS 22:10 UTC
                       </span>
                       <span className="if-bgroup-hair" aria-hidden="true" />
                       <span className="if-bgroup-count">

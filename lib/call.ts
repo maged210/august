@@ -10,9 +10,10 @@
 //              −1 → LOWER). THE NEUTRAL RULE: a dead-even sum (0) or an
 //              UNAVAILABLE regime means NO CALL that day — AUGUST does not
 //              manufacture conviction. No model call ever decides direction.
-//   GENERATE   at the 21:05 UTC pass, only when the next weekday is literally
-//              tomorrow: Fri/Sat passes generate nothing (the weekend card
-//              says NO SESSION), Sunday's pass opens Monday's call.
+//   GENERATE   at the daily pass (22:10 UTC — post-close in EST and EDT),
+//              only when the next weekday is literally tomorrow: Fri/Sat
+//              passes generate nothing (the weekend card says NO SESSION),
+//              Sunday's pass opens Monday's call.
 //   LOCK       a side can be taken until 09:30 ET on the call's date; the
 //              server refuses after.
 //   SETTLE     at the pass, against Yahoo's NQ=F daily bar for the call's
@@ -136,10 +137,10 @@ export function sessionCloseTs(forDate: string): number {
 }
 
 /** PURE. 16:00 ET — the earliest moment a pass may GENERATE tomorrow's call.
- *  The cron route is also pinged every ~10–15 min during market hours; without
+ *  BACKSTOP: the cron itself runs 22:10 UTC (post-close both seasons), but
+ *  the route is also pinged every ~10–15 min during market hours; without
  *  this gate the first morning ping would generate tomorrow's call from the
- *  morning regime instead of "the regime state at the pass". (16:00, not
- *  17:00, so the winter 21:05 UTC cron — 16:05 ET — still generates.) */
+ *  morning regime instead of "the regime state at the pass". */
 export function generateGateTs(date: string): number {
   return etTs(date, "16:00");
 }
@@ -162,9 +163,9 @@ const barEtDate = (sec: number): string =>
  *  BAR FINALITY: Yahoo's daily feed includes the CURRENT day's in-progress
  *  bar with a live close, all session long — so a bar for forDate is only
  *  trusted once the session has provably ended: nowMs past 17:00 ET on
- *  forDate, or a later-dated bar exists. Without this, any market-hours
- *  invocation (the route's external pinger) — or the 21:05 UTC cron itself in
- *  EST months (16:05 ET) — would permanently grade a mid-session price. */
+ *  forDate, or a later-dated bar exists. The 22:10 UTC cron clears this in
+ *  both EST and EDT; the gate stays as the BACKSTOP against the market-hours
+ *  pinger (and any mis-set cron hour) permanently grading a live price. */
 export function settleAgainstBars(
   forDate: string,
   side: CallSide,
@@ -477,7 +478,7 @@ export type CallPassResult = {
   generated: CallSide | "no_call" | null;
 };
 
-/** The 21:05 pass. SETTLE first (today's call against today's bar), then
+/** The daily pass (22:10 UTC). SETTLE first (today's call against today's bar), then
  *  GENERATE tomorrow's call from the regime state at this moment. Idempotent:
  *  double-runs settle nothing twice (settle is guarded on the stored record)
  *  and generation is SET NX. */

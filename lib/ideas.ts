@@ -685,7 +685,7 @@ export function evaluateLiveIdea(
         price,
         at: now,
         // "close-pass price", not "daily close" — for 24/7 instruments (BTC)
-        // the 21:05 UTC snapshot is a pass price, not an exchange close
+        // the 22:10 UTC snapshot is a pass price, not an exchange close
         reason: `close-pass price ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)`,
       };
     }

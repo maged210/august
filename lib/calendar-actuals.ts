@@ -245,7 +245,7 @@ export async function backfillActuals(
   return out;
 }
 
-/** The daily 21:05 pass — warm the cache for everything printed this week so
+/** The daily 22:10 UTC pass — warm the cache for everything printed this week so
  *  released cards (and any later read) carry the actual without waiting on
  *  FRED at request time. Returns how many actuals are resolved. */
 export async function backfillPrintedWeek(): Promise<number> {

@@ -89,7 +89,7 @@ const WED = "2026-09-02";
 const FRI = "2026-09-04";
 const SAT = "2026-09-05";
 const SUN = "2026-09-06";
-const passAt = (date: string) => Date.parse(`${date}T21:05:00Z`); // the cron moment
+const passAt = (date: string) => Date.parse(`${date}T22:10:00Z`); // the cron moment — post-close in EST and EDT
 
 // --- direction --------------------------------------------------------------
 
@@ -174,7 +174,8 @@ test("settle: a still-trading bar is NEVER graded — session end or a later bar
   assert.ok(settleAgainstBars(TUE, "HIGHER", bars, passAt(TUE)));
   // a LATER bar proves finality even when now is somehow earlier
   assert.ok(settleAgainstBars(TUE, "HIGHER", [...bars, bar(WED, 102)], intraday));
-  // EST months: the 21:05 UTC cron is 16:05 ET — before the 17:00 ET close
+  // EST months: a 21:05 UTC invocation is 16:05 ET — pre-close (the reason
+  // the cron moved to 22:10 UTC; the gate stays as the backstop)
   const D14 = "2026-12-14";
   const D15 = "2026-12-15";
   const barW = (date: string, close: number) => ({
@@ -182,7 +183,7 @@ test("settle: a still-trading bar is NEVER graded — session end or a later bar
   });
   const winterBars = [barW(D14, 100), barW(D15, 101)];
   assert.equal(settleAgainstBars(D15, "HIGHER", winterBars, Date.parse(`${D15}T21:05:00Z`)), null); // 16:05 EST — live bar
-  assert.ok(settleAgainstBars(D15, "HIGHER", winterBars, Date.parse(`${D15}T22:05:00Z`))); // 17:05 EST — final
+  assert.ok(settleAgainstBars(D15, "HIGHER", winterBars, Date.parse(`${D15}T22:10:00Z`))); // 17:10 EST — final
 });
 
 test("settle: non-trading days and thin data refuse honestly", () => {
@@ -294,7 +295,7 @@ test("loop: open → take → POST refused after lock → settle → both record
   const riskOn = () => Promise.resolve(read("RISK ON", [["INDEX TREND (1mo)", 1], ["VIX LEVEL", 1]]));
   const gen = async () => "the tape leans on.";
 
-  // Monday's 21:05 pass — nothing to settle, generates Tuesday's call
+  // Monday's daily pass — nothing to settle, generates Tuesday's call
   const p1 = await runCallPass({ kv, now: passAt(MON), readRegime: riskOn, thesisGen: gen, bars: [] });
   assert.deepEqual(p1, { configured: true, settled: null, generated: "HIGHER" });
 
@@ -329,7 +330,7 @@ test("loop: open → take → POST refused after lock → settle → both record
   assert.equal(locked.active?.locked, true);
   assert.equal(locked.active?.youSide, null);
 
-  // Tuesday's 21:05 pass: NQ closed +1% → AUGUST ✓, owner ✗; Wednesday generates
+  // Tuesday's daily pass: NQ closed +1% → AUGUST ✓, owner ✗; Wednesday generates
   const p2 = await runCallPass({
     kv,
     now: passAt(TUE),

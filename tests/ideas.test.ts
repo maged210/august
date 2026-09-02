@@ -479,3 +479,21 @@ test("parseEntryTrigger: inline stop language is a stop, not a second entry dire
     level: 15.37,
   });
 });
+
+// INTEGRITY follow-up (2026-09-01) — the book pass carries THE CALL's
+// bar-finality gate: getQuote prices are LIVE until the session ends, and the
+// cron route is pinged all day; a mid-session spike must never mark a sticky
+// TRIGGERED "at a daily close" that has not printed yet.
+test("book pass: refuses to evaluate before the session close, runs after", async () => {
+  const { runBookPass } = await import("../lib/ideas-eval");
+  // 14:00 ET on a weekday — the market is live, quotes are moving
+  const intraday = Date.parse("2026-09-01T14:00:00-04:00");
+  const gated = await runBookPass(intraday);
+  assert.equal(gated.ran, false);
+  assert.equal(gated.live, 0);
+  // 18:10 ET (the 22:10 UTC cron in EDT) — session over, the pass runs
+  // (no Redis here, so it evaluates an empty book — ran:true is the point)
+  const evening = Date.parse("2026-09-01T18:10:00-04:00");
+  const ran = await runBookPass(evening);
+  assert.equal(ran.ran, true);
+});

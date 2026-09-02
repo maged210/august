@@ -2,7 +2,7 @@
 // the next branch subscribes its sender here (register in the cron route,
 // where settles actually run) and gets the settle payload with zero changes
 // to the engine. In-process by design — settles only ever happen inside the
-// 21:05 pass invocation, so a process-local registry is sufficient.
+// daily-pass invocation, so a process-local registry is sufficient.
 
 export type CallSettledEvent = {
   forDate: string;

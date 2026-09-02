@@ -54,9 +54,10 @@ async function handle(req: Request): Promise<Response> {
     } catch (err) {
       console.warn("[cron/intel-track] actuals backfill skipped:", err instanceof Error ? err.message : err);
     }
-    // THE CALL (feature/the-call) — the same 21:05 pass settles today's call
-    // against today's close, then generates tomorrow's from the regime state
-    // at this moment. Non-fatal: a call failure never breaks the tracker.
+    // THE CALL (feature/the-call) — the same daily pass (22:10 UTC, after
+    // Yahoo's bar is final in both EST and EDT) settles today's call against
+    // today's close, then generates tomorrow's from the regime state at this
+    // moment. Non-fatal: a call failure never breaks the tracker.
     let call: Awaited<ReturnType<typeof runCallPass>> | { configured: false; settled: null; generated: null } = {
       configured: false,
       settled: null,
