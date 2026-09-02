@@ -27,6 +27,15 @@ Guidance for Claude Code working in this repo.
 
 ## Decided
 
+- PWA + PUSH (feature/pwa-push) — installable PWA (existing manifest/orb
+  icons/minimal sw.js: push + notificationclick only, NO offline caching) and
+  Web Push with VAPID, no third-party push service. ONE notification per
+  trading day, from the daily pass via the lib/call-events settle seam:
+  today's settle + tomorrow's call, personalized per principal, NX-idempotent
+  per day. Subscriptions are principal-keyed (anonymous aug_vid devices
+  subscribe; claim folds them into the account). The header bell is the only
+  control. Watchers extend this same seam/store — separate branch.
+
 - THE DESK INBOX (feature/desk-inbox) — the /admin queue (PENDING · NEEDS
   LEVEL · REVIEW) is the ONLY path into the lifecycle for anything the
   extractor can't fully parse; every resolution is a human tap, nothing
