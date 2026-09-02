@@ -6183,6 +6183,12 @@ button.pulse-line:focus-visible {
 .adm-denied-t { font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: var(--track-label); color: var(--ink-mute); }
 .adm-denied-row { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--ink-mute); }
 
+/* ── PUSH (feature/pwa-push) — the daily-call wire panel ── */
+.adm-pushlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.adm-pushlog-row { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--bone); }
+.adm-pushlog-day { font-weight: 700; letter-spacing: 0.08em; }
+.adm-pushlog-n { color: var(--ink-mute); }
+
 .adm-thesis {
   margin: 0;
   font-size: var(--fs-body);
