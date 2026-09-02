@@ -5,22 +5,26 @@
 // approved → clean public board in under two minutes, fully doable on a phone.
 //
 // Anatomy:
-//   STATUS STRIP  live · tracked · drafts · tape · last ingest age
+//   STATUS STRIP  live · inbox · tracked · tape · last ingest age
 //   LEFT column   intake (transcript drag-drop) · ingest log · new idea ·
 //                 tape quick-add (sentiment inferred from the note)
-//   RIGHT column  draft review v2 (inline edits, UPDATE-to dedupe, approve/
-//                 reject all) · LIVE BOOK MANAGER (inline side/entry/target/
-//                 stop/risk, close/invalidate/re-arm/demote/delete, STALE
-//                 surfacing) · tape drafts · live tape (undo on remove)
+//   RIGHT column  THE DESK INBOX (feature/desk-inbox — the one queue: PENDING
+//                 approve/deny, NEEDS LEVEL set-level, REVIEW keep/flip side,
+//                 two-tap deny w/ reason chips, denied ledger) · LIVE BOOK
+//                 MANAGER (inline side/entry/target/stop/risk, close/
+//                 invalidate/re-arm/demote/delete, STALE surfacing) · tape
+//                 drafts · live tape (undo on remove)
 //
 // Credentials unchanged (CORE V2): owner session cookie or ADMIN_TOKEN kept
 // tab-scoped in sessionStorage. House rules: real states only, no mock rows.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import WidgetState from "@/components/WidgetState";
+import DeskInbox from "@/components/admin/DeskInbox";
 import {
   IDEA_RISKS,
   IDEA_SIDES,
+  inboxCount,
   relativeTime,
   suggestSide,
   type Idea,
@@ -583,26 +587,6 @@ export default function AdminConsole() {
     }
   };
 
-  // AD-C — batch actions run the UNEDITED per-card logic sequentially (cards
-  // with pending inline edits should be approved individually).
-  const [batchBusy, setBatchBusy] = useState<null | "approve" | "reject">(null);
-  const approveAll = async (drafts: Idea[]) => {
-    setBatchBusy("approve");
-    for (const d of drafts) {
-      // eslint-disable-next-line no-await-in-loop
-      await approveDraft(d, {});
-    }
-    setBatchBusy(null);
-  };
-  const rejectAll = async (drafts: Idea[]) => {
-    setBatchBusy("reject");
-    for (const d of drafts) {
-      // eslint-disable-next-line no-await-in-loop
-      await mutate(d.id, { status: "closed" });
-    }
-    setBatchBusy(null);
-  };
-
   // ---- render ----------------------------------------------------------------
 
   if (gate === "checking") {
@@ -694,14 +678,12 @@ export default function AdminConsole() {
   }
 
   const rows = ideas ?? [];
-  const drafts = rows.filter((i) => i.status === "draft");
   // denied rows LEAVE the book (and the rail) — they live only in the inbox's
   // denied ledger below the queue
   const book = rows.filter((i) => i.status !== "draft" && i.status !== "denied");
   const liveIdeas = rows.filter((i) => i.status === "live");
   const tapeDrafts = tape.filter((t) => t.status === "draft");
   const tapeLive = tape.filter((t) => t.status === "live");
-  const liveTickers = new Set(liveIdeas.map((i) => i.instrument.trim().toUpperCase()));
 
   // AD-B — STALE = live, past the threshold with no touch; stale floats first
   const staleMs = staleDays * 86_400_000;
@@ -1050,49 +1032,19 @@ export default function AdminConsole() {
             </section>
           </div>
 
-          {/* ── RIGHT — queues + the live book ─────────────────────────── */}
+          {/* ── RIGHT — the inbox + the live book ──────────────────────── */}
           <div className="adm-col">
-            <section className="adm-panel">
-              <div className="adm-panel-h">
-                <span className="adm-panel-t">
-                  DRAFT QUEUE{drafts.length ? ` · ${drafts.length}` : ""}
-                </span>
-                {drafts.length > 1 ? (
-                  <span className="adm-panel-acts">
-                    <button
-                      type="button"
-                      className="adm-btn adm-btn-acc"
-                      disabled={batchBusy !== null}
-                      onClick={() => approveAll(drafts)}
-                    >
-                      {batchBusy === "approve" ? "APPROVING…" : "APPROVE ALL"}
-                    </button>
-                    <button
-                      type="button"
-                      className="adm-btn adm-btn-warn"
-                      disabled={batchBusy !== null}
-                      onClick={() => rejectAll(drafts)}
-                    >
-                      {batchBusy === "reject" ? "REJECTING…" : "REJECT ALL"}
-                    </button>
-                  </span>
-                ) : null}
-              </div>
-              {drafts.length ? (
-                drafts.map((d) => (
-                  <DraftCard
-                    key={d.id}
-                    draft={d}
-                    updateTo={liveTickers.has(d.instrument.trim().toUpperCase())}
-                    busy={busyId === d.id || batchBusy !== null}
-                    onApprove={(edits) => approveDraft(d, edits)}
-                    onReject={() => mutate(d.id, { status: "closed" })}
-                  />
-                ))
-              ) : (
-                <p className="adm-empty">no drafts waiting</p>
-              )}
-            </section>
+            {/* DESK-INBOX — the one queue (PENDING · NEEDS LEVEL · REVIEW);
+                replaces the old draft-review column: the inbox is the only
+                path into the lifecycle for anything the extractor can't
+                fully parse. */}
+            <DeskInbox
+              ideas={rows}
+              transcripts={transcripts}
+              busyId={busyId}
+              onApprove={(d) => approveDraft(d, {})}
+              onPatch={mutate}
+            />
 
             <section className="adm-panel">
               <div className="adm-panel-h">
@@ -1193,10 +1145,9 @@ function AdminStrip({
   transcripts: TranscriptRecord[];
 }) {
   const live = ideas?.filter((i) => i.status === "live").length ?? null;
-  const drafts = ideas?.filter((i) => i.status === "draft").length ?? null;
-  // INTEGRITY-1 — conflicted rows awaiting a human are the count that most
-  // needs visibility; the chip renders only when there are any
-  const review = ideas?.filter((i) => i.status === "review").length ?? null;
+  // DESK-INBOX — the header count that matters: everything awaiting a human
+  // tap (pending + needs-level + review), replacing the old DRAFTS chip
+  const inbox = ideas !== null ? inboxCount(ideas) : null;
   const last = transcripts.length > 0 ? transcripts[0] : null;
   const chip = (k: string, v: React.ReactNode) => (
     <span className="adm-strip-chip">
@@ -1211,9 +1162,8 @@ function AdminStrip({
       </span>
       <span className="adm-strip-mid">
         {live !== null ? chip("LIVE", live) : null}
-        {review !== null && review > 0 ? chip("REVIEW", review) : null}
+        {inbox !== null ? chip("INBOX", inbox) : null}
         {tracked !== null ? chip("TRACKED", tracked) : null}
-        {drafts !== null ? chip("DRAFTS", drafts) : null}
         {ideas !== null ? chip("TAPE", tape.length) : null}
         {last ? chip("LAST INGEST", relativeTime(last.receivedAt)) : null}
       </span>
@@ -1235,126 +1185,6 @@ type DraftEdits = {
   side?: IdeaSide;
 };
 
-function DraftCard({
-  draft,
-  updateTo,
-  busy,
-  onApprove,
-  onReject,
-}: {
-  draft: Idea;
-  updateTo: boolean;
-  busy: boolean;
-  onApprove: (edits: DraftEdits) => void;
-  onReject: () => void;
-}) {
-  // inline-editable BEFORE approval — the edits ride the approving PATCH
-  const [thesis, setThesis] = useState(draft.thesis);
-  const [entry, setEntry] = useState(draft.entry);
-  const [target, setTarget] = useState(draft.target);
-  const [stop, setStop] = useState(draft.stop ?? "");
-  const [risk, setRisk] = useState<IdeaRiskLevel>(draft.riskLevel);
-  const [side, setSide] = useState<IdeaSide | null>(draft.side ?? null);
-  const suggested = !side ? suggestSide(entry) : null;
-
-  return (
-    <article id={`adm-idea-${draft.id}`} className="adm-card adm-draft">
-      <div className="adm-card-top">
-        <span className="adm-sym">{draft.instrument}</span>
-        {updateTo ? (
-          <span
-            className="adm-update-chip"
-            title="a LIVE idea already carries this ticker — approving REFRESHES it (levels update, thesis joins its history, age resets) instead of duplicating"
-          >
-            UPDATE to {draft.instrument.toUpperCase()}
-          </span>
-        ) : null}
-        <span className="adm-src">{draft.source.toUpperCase()}</span>
-        <span className="adm-when">{relativeTime(draft.createdAt)}</span>
-      </div>
-      <textarea
-        className="adm-input adm-textarea"
-        value={thesis}
-        onChange={(e) => setThesis(e.target.value)}
-        aria-label={`Thesis for ${draft.instrument}`}
-        rows={3}
-      />
-      <div className="adm-form-row adm-levels-row">
-        <input
-          className="adm-input"
-          value={entry}
-          onChange={(e) => setEntry(e.target.value)}
-          aria-label="Entry"
-          placeholder="entry"
-        />
-        <input
-          className="adm-input"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          aria-label="Target"
-          placeholder="target"
-        />
-        <input
-          className="adm-input"
-          value={stop}
-          onChange={(e) => setStop(e.target.value)}
-          aria-label="Stop"
-          placeholder="stop"
-        />
-        <RiskSelect value={risk} onChange={setRisk} />
-      </div>
-      <div className="adm-sides" role="group" aria-label="Side">
-        <span className="adm-k adm-sides-k">SIDE</span>
-        {IDEA_SIDES.map((s) => {
-          const active = side === s;
-          const isSuggested = !side && suggested === s;
-          return (
-            <button
-              key={s}
-              type="button"
-              className={`adm-side adm-side-${s}${active ? " on" : ""}${isSuggested ? " suggested" : ""}`}
-              disabled={busy}
-              aria-pressed={active}
-              title={
-                isSuggested
-                  ? "suggested from the entry language — click to confirm, or pick another"
-                  : active
-                    ? "click again to clear"
-                    : `mark ${s}`
-              }
-              onClick={() => setSide(active ? null : s)}
-            >
-              {s === "long" ? "▲ LONG" : s === "short" ? "▼ SHORT" : "◆ WATCH"}
-              {isSuggested ? "?" : ""}
-            </button>
-          );
-        })}
-      </div>
-      <div className="adm-actions">
-        <button
-          type="button"
-          className="adm-btn adm-btn-acc"
-          disabled={busy || !thesis.trim()}
-          onClick={() =>
-            onApprove({
-              thesis,
-              entry,
-              target,
-              stop,
-              riskLevel: risk,
-              ...(side ? { side } : {}),
-            })
-          }
-        >
-          {updateTo ? "APPROVE — UPDATE" : "APPROVE"}
-        </button>
-        <button type="button" className="adm-btn adm-btn-warn" disabled={busy} onClick={onReject}>
-          REJECT
-        </button>
-      </div>
-    </article>
-  );
-}
 
 // ── AD-B · the live book manager row ────────────────────────────────────────
 
