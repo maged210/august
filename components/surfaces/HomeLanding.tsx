@@ -303,28 +303,30 @@ export default function HomeLanding({
           ) : null}
           <div className="hl-ctls">
             {/* the brief control retired (UX2-T2) — the brief IS the home state */}
-            {pushState !== "unsupported" && (
-              <button
-                type="button"
-                className={`hl-ctl${pushState === "granted" ? " on" : ""}`}
-                onClick={onNotify}
-                title={
-                  pushState === "granted"
-                    ? "Notifications on"
-                    : pushState === "ios-install"
-                      ? "Install AUGUST to enable notifications"
-                      : pushState === "denied"
-                        ? "Notifications blocked — tap for help"
-                        : "Enable notifications"
-                }
-                aria-pressed={pushState === "granted"}
-                aria-label={
-                  pushState === "granted" ? "Notifications enabled" : "Enable notifications"
-                }
-              >
-                <BellGlyph off={pushState === "denied"} on={pushState === "granted"} />
-              </button>
-            )}
+            {/* THE BELL (feature/pwa-push) — the only push control. Mono-caps
+                titles per state; the tap flow (incl. two-tap OFF) lives in the
+                page's handleNotify. Unsupported still renders (slashed) so the
+                state is stated, never silently absent. */}
+            <button
+              type="button"
+              className={`hl-ctl${pushState === "on" ? " on" : ""}`}
+              onClick={onNotify}
+              title={
+                pushState === "on"
+                  ? "THE CALL · DAILY PUSH ON — TAP TWICE TO TURN OFF"
+                  : pushState === "ios-install"
+                    ? "ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL"
+                    : pushState === "denied"
+                      ? "PUSH BLOCKED — RE-ENABLE IN SITE SETTINGS"
+                      : pushState === "unsupported"
+                        ? "PUSH UNSUPPORTED IN THIS BROWSER"
+                        : "GET THE CALL · ONE PUSH PER TRADING DAY"
+              }
+              aria-pressed={pushState === "on"}
+              aria-label={pushState === "on" ? "Daily push on" : "Get the daily call push"}
+            >
+              <BellGlyph off={pushState === "denied" || pushState === "unsupported"} on={pushState === "on"} />
+            </button>
             {/* F7 — THE moon menu: theme selection + (matrix only) the ticker
                 rain intensity dial, one quiet dropdown styled to the theme */}
             <div className="hl-rainwrap" ref={rainWrapRef}>
@@ -388,7 +390,7 @@ export default function HomeLanding({
                     <span className="hl-menu-k">CONTROLS</span>
                     {pushState !== "unsupported" ? (
                       <button type="button" className="hl-rainopt" onClick={onNotify}>
-                        NOTIFICATIONS{pushState === "granted" ? " · ON" : ""}
+                        THE CALL PUSH{pushState === "on" ? " · ON" : ""}
                       </button>
                     ) : null}
                     {account ? (

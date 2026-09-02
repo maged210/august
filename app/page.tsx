@@ -13,9 +13,11 @@ import { MOODS, type Mood } from "@/lib/tools";
 import type { AugustState, Theme } from "@/components/Presence3D";
 import { latMark, latReset } from "@/lib/latency";
 import {
+  disablePush,
   enablePush,
   getPushState,
   registerServiceWorker,
+  resyncPush,
   type PushState,
 } from "@/lib/push-client";
 
@@ -232,13 +234,16 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, []);
 
-  // PWA: register the (minimal) service worker and resolve the push-control state.
-  // Re-check on focus/visibility so installing to the home screen then reopening
-  // (the iOS path) flips the bell from "install" to "enable" without a hard reload.
+  // PWA: register the (minimal) service worker, converge an already-subscribed
+  // device into the principal-keyed store (silent re-sync), and resolve the
+  // bell's REAL state (an actual subscription, not just permission). Re-check
+  // on focus/visibility so installing to the home screen then reopening (the
+  // iOS path) flips the bell from "install" to "off" without a hard reload.
   useEffect(() => {
     registerServiceWorker();
-    setPushState(getPushState());
-    const refresh = () => setPushState(getPushState());
+    void resyncPush();
+    const refresh = () => void getPushState().then(setPushState);
+    refresh();
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
     return () => {
@@ -284,46 +289,55 @@ export default function Home() {
     };
   }, []);
 
-  // The bell control. Deliberate, never auto-prompted. On a fresh browser it requests
-  // permission + subscribes; otherwise it explains the current state (iOS needs the
-  // app installed first; a blocked permission must be re-enabled in site settings).
-  // Feedback rides the existing reply panel — no new UI surface.
+  // The bell control (feature/pwa-push) — the ONLY push control. Deliberate,
+  // never auto-prompted; feedback rides the reply panel, mono caps,
+  // in-character. OFF: tap → permission (the gesture) → subscribe. ON:
+  // TWO-tap unsubscribe (first tap arms for 10s). iOS tab: install first.
+  const bellArmRef = useRef(0);
   async function handleNotify() {
-    const s = getPushState();
-    if (s === "granted") {
-      setReplyText("Notifications are on — I can reach you even when AUGUST is closed.");
+    const s = await getPushState();
+    if (s === "on") {
+      if (Date.now() - bellArmRef.current < 10_000) {
+        bellArmRef.current = 0;
+        const ok = await disablePush();
+        setPushState(await getPushState());
+        setReplyText(ok ? "PUSH OFF — NO MORE DAILY CALLS ON THIS DEVICE." : "COULDN'T TURN PUSH OFF — TRY AGAIN.");
+      } else {
+        bellArmRef.current = Date.now();
+        setReplyText("PUSH IS ON — ONE NOTIFICATION PER TRADING DAY, THE SETTLE AND TOMORROW'S CALL. TAP THE BELL AGAIN TO TURN IT OFF.");
+      }
       openPanel();
       return;
     }
+    bellArmRef.current = 0;
     if (s === "ios-install") {
-      setReplyText(
-        "To get notifications on iPhone, install AUGUST first: tap the Share button, then “Add to Home Screen.” Open AUGUST from the home screen and tap the bell again.",
-      );
+      setReplyText("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
       openPanel();
       return;
     }
     if (s === "denied") {
-      setReplyText(
-        "Notifications are blocked for this site. Re-enable them in your browser’s settings for this page, then tap the bell again.",
-      );
+      setReplyText("PUSH IS BLOCKED FOR THIS SITE — RE-ENABLE NOTIFICATIONS IN THE BROWSER'S SITE SETTINGS, THEN TAP THE BELL AGAIN.");
       openPanel();
       return;
     }
-    // "default" — request permission + subscribe (this call is the user gesture).
+    if (s === "unsupported") {
+      setReplyText("PUSH ISN'T SUPPORTED IN THIS BROWSER.");
+      openPanel();
+      return;
+    }
+    // "off" — request permission + subscribe (this tap is the user gesture).
     const r = await enablePush();
-    setPushState(getPushState());
+    setPushState(await getPushState());
     if (r.ok) {
-      setReplyText("Notifications enabled. I’ll be able to reach you off-screen.");
+      setReplyText("PUSH ON — ONE NOTIFICATION PER TRADING DAY: THE SETTLE AND TOMORROW'S CALL.");
     } else if (r.reason === "ios-install") {
-      setReplyText(
-        "On iPhone, install AUGUST to the home screen first (Share → Add to Home Screen), then enable notifications from the installed app.",
-      );
+      setReplyText("ADD AUGUST TO YOUR HOME SCREEN TO GET THE CALL — SHARE → ADD TO HOME SCREEN, THEN TAP THE BELL FROM THE INSTALLED APP.");
     } else if (r.reason === "denied") {
-      setReplyText("Notification permission was declined. You can enable it anytime from the bell.");
+      setReplyText("PERMISSION DECLINED — THE BELL IS HERE WHENEVER YOU WANT THE CALL.");
     } else if (r.reason === "config" || r.reason === "unsupported") {
-      setReplyText("Notifications aren’t available in this browser.");
+      setReplyText("PUSH ISN'T AVAILABLE IN THIS BROWSER.");
     } else {
-      setReplyText("Couldn’t enable notifications just now — try again in a moment.");
+      setReplyText("COULDN'T ENABLE PUSH JUST NOW — TRY AGAIN IN A MOMENT.");
     }
     openPanel();
   }
