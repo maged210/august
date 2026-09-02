@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   DENY_REASONS,
+  entryConflict,
   parseEntryTrigger,
   inboxBuckets,
   relativeTime,
@@ -173,8 +174,14 @@ export default function DeskInbox({
     }
     const newSide: IdeaSide = keep ? side : side === "long" ? "short" : "long";
     const parsed = parseEntryTrigger(idea.entry);
+    // the entry stands ONLY if the parsed level agrees with the chosen side
+    // AND the full conflict check clears — otherwise the next book pass would
+    // re-demote and the row would ping-pong (e.g. keyword-two-sided language
+    // around a single parsed level)
     const entryAgrees =
-      parsed?.kind === "level" && (parsed.dir === "above" ? "long" : "short") === newSide;
+      parsed?.kind === "level" &&
+      (parsed.dir === "above" ? "long" : "short") === newSide &&
+      entryConflict(newSide, idea.entry) === null;
     // agreeing entry stands → LIVE; a conflicted/two-sided entry can't stand
     // with the chosen side → cleared → the row lands in NEEDS LEVEL
     void onPatch(idea.id, {
