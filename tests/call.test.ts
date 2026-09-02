@@ -75,6 +75,9 @@ function fakeKv(): CallKv & { data: Map<string, unknown>; sets: Map<string, Set<
     async smembers(k) {
       return [...(sets.get(k) ?? [])];
     },
+    async scard(k) {
+      return (sets.get(k) ?? new Set()).size;
+    },
     async expire() {},
   };
 }
@@ -148,29 +151,51 @@ test("lock: 09:30 ET on the call's date, DST-correct; takes refuse after", () =>
 // --- settle math ------------------------------------------------------------
 
 test("settle: up, down, unchanged — close vs prior close, tie is a push", () => {
+  const after = passAt(TUE); // 17:05 ET — session over
   const bars = [bar(MON, 100), bar(TUE, 101)];
-  const up = settleAgainstBars(TUE, "HIGHER", bars)!;
+  const up = settleAgainstBars(TUE, "HIGHER", bars, after)!;
   assert.equal(up.result, "HIGHER");
   assert.equal(up.augustWin, true);
   assert.ok(Math.abs(up.closePct! - 1) < 1e-9);
-  const down = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(TUE, 99)])!;
+  const down = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(TUE, 99)], after)!;
   assert.equal(down.result, "LOWER");
   assert.equal(down.augustWin, false);
-  const flat = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(TUE, 100)])!;
+  const flat = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(TUE, 100)], after)!;
   assert.equal(flat.result, "FLAT");
   assert.equal(flat.augustWin, null); // push — counted for neither side
 });
 
+test("settle: a still-trading bar is NEVER graded — session end or a later bar required", () => {
+  const bars = [bar(MON, 100), bar(TUE, 101)];
+  // mid-session (14:00 ET): Yahoo already serves today's in-progress bar — refuse
+  const intraday = Date.parse(`${TUE}T14:00:00-04:00`);
+  assert.equal(settleAgainstBars(TUE, "HIGHER", bars, intraday), null);
+  // 17:05 ET same day: final — settles
+  assert.ok(settleAgainstBars(TUE, "HIGHER", bars, passAt(TUE)));
+  // a LATER bar proves finality even when now is somehow earlier
+  assert.ok(settleAgainstBars(TUE, "HIGHER", [...bars, bar(WED, 102)], intraday));
+  // EST months: the 21:05 UTC cron is 16:05 ET — before the 17:00 ET close
+  const D14 = "2026-12-14";
+  const D15 = "2026-12-15";
+  const barW = (date: string, close: number) => ({
+    t: Date.parse(`${date}T16:00:00-05:00`) / 1000, o: close, h: close, l: close, c: close,
+  });
+  const winterBars = [barW(D14, 100), barW(D15, 101)];
+  assert.equal(settleAgainstBars(D15, "HIGHER", winterBars, Date.parse(`${D15}T21:05:00Z`)), null); // 16:05 EST — live bar
+  assert.ok(settleAgainstBars(D15, "HIGHER", winterBars, Date.parse(`${D15}T22:05:00Z`))); // 17:05 EST — final
+});
+
 test("settle: non-trading days and thin data refuse honestly", () => {
+  const after = passAt(TUE);
   // no bar for the date, no later bar → not determinable yet (feed lag / future)
-  assert.equal(settleAgainstBars(TUE, "HIGHER", [bar(MON, 100)]), null);
+  assert.equal(settleAgainstBars(TUE, "HIGHER", [bar(MON, 100)], after), null);
   // no bar for the date but a LATER bar → the date never traded → NO_SESSION
-  const voided = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(WED, 102)])!;
+  const voided = settleAgainstBars(TUE, "HIGHER", [bar(MON, 100), bar(WED, 102)], after)!;
   assert.equal(voided.result, "NO_SESSION");
   assert.equal(voided.augustWin, null);
   // first bar in the window (no prior close held) → refuse rather than guess
-  assert.equal(settleAgainstBars(MON, "HIGHER", [bar(MON, 100), bar(TUE, 101)]), null);
-  assert.equal(settleAgainstBars(TUE, "HIGHER", []), null);
+  assert.equal(settleAgainstBars(MON, "HIGHER", [bar(MON, 100), bar(TUE, 101)], passAt(MON)), null);
+  assert.equal(settleAgainstBars(TUE, "HIGHER", [], after), null);
 });
 
 // --- records ----------------------------------------------------------------
@@ -193,6 +218,9 @@ test("close line: never a fabricated flat", () => {
   assert.equal(fmtClosePct(-0.42), "-0.4%");
   assert.equal(fmtClosePct(0.04), "+0.04%"); // 1dp would lie "0.0"
   assert.equal(fmtClosePct(-0.04), "-0.04%");
+  // a one-tick NQ close (~0.001%) — 2dp would still lie "0.00" beside a ✓
+  assert.equal(fmtClosePct(0.0009), "+0.0009%");
+  assert.equal(fmtClosePct(-0.0009), "-0.0009%");
   assert.equal(fmtClosePct(0), "0.0%");
 });
 
@@ -227,15 +255,20 @@ test("thesis: ONE model call per regime flip — cached, never per view", async 
   assert.equal(await getThesis(riskOn, { kv, gen, now: 3 }), "thesis 1"); // view 3: cache
   assert.equal(calls, 1);
   const riskOff = read("RISK OFF", [["VIX LEVEL", -1], ["INDEX TREND (1mo)", -1]]);
-  assert.equal(await getThesis(riskOff, { kv, gen, now: 4 }), "thesis 2"); // flip → one call
+  // a flip INSIDE the 5-minute window serves nothing rather than spend —
+  // per-instance cache flapping must not degenerate to one call per view
+  assert.equal(await getThesis(riskOff, { kv, gen, now: 4 }), null);
+  assert.equal(calls, 1);
+  kv.data.delete("august:call:v1:thesis:lock"); // window expired
+  assert.equal(await getThesis(riskOff, { kv, gen, now: 5 }), "thesis 2"); // flip → one call
   assert.equal(calls, 2);
   // value drift with identical votes is NOT a flip
   const drifted = read("RISK OFF", [["VIX LEVEL", -1], ["INDEX TREND (1mo)", -1]]);
   drifted.because[0].value = "VIX 31.2 instead of 28.9";
-  assert.equal(await getThesis(drifted, { kv, gen, now: 5 }), "thesis 2");
+  assert.equal(await getThesis(drifted, { kv, gen, now: 6 }), "thesis 2");
   assert.equal(calls, 2);
   // unavailable regime carries no thesis and spends nothing
-  assert.equal(await getThesis(read("UNAVAILABLE", []), { kv, gen, now: 6 }), null);
+  assert.equal(await getThesis(read("UNAVAILABLE", []), { kv, gen, now: 7 }), null);
   assert.equal(calls, 2);
   assert.equal(shouldRegenerateThesis(null, "x"), true);
   assert.equal(shouldRegenerateThesis({ fingerprint: "x" }, "x"), false);
@@ -395,6 +428,82 @@ test("loop: a bars-lag day settles on the NEXT pass instead of orphaning", async
   const s = await readCallState(null, { kv, now: passAt(WED) + 1000, readRegime: riskOn, thesisGen: async () => null });
   // Tuesday was a LOWER close (loss) + Wednesday a HIGHER close (win)
   assert.deepEqual(s.record.august, { wins: 1, losses: 1, pushes: 0 });
+});
+
+test("pass gates: a market-hours ping neither settles today nor generates tomorrow", async () => {
+  const kv = fakeKv();
+  const riskOn = () => Promise.resolve(read("RISK ON", [["INDEX TREND (1mo)", 1], ["VIX LEVEL", 1]]));
+  await runCallPass({ kv, now: passAt(MON), readRegime: riskOn, thesisGen: async () => null, bars: [] });
+  // 10:00 ET Tuesday: today's Yahoo bar is LIVE — a ping must not grade it,
+  // and must not generate Wednesday's call from the morning regime
+  const at1000 = Date.parse(`${TUE}T10:00:00-04:00`);
+  const ping = await runCallPass({
+    kv,
+    now: at1000,
+    readRegime: riskOn,
+    thesisGen: async () => null,
+    bars: [bar(MON, 100), bar(TUE, 101)], // includes the in-progress bar
+  });
+  assert.equal(ping.settled, null);
+  assert.equal(ping.generated, null);
+  // the real pass (17:05 ET) settles and generates
+  const evening = await runCallPass({
+    kv,
+    now: passAt(TUE),
+    readRegime: riskOn,
+    thesisGen: async () => null,
+    bars: [bar(MON, 100), bar(TUE, 101)],
+  });
+  assert.equal(evening.settled, "HIGHER");
+  assert.equal(evening.generated, "HIGHER");
+});
+
+test("records fold exactly once even if the settle marker write never landed", async () => {
+  const kv = fakeKv();
+  const riskOn = () => Promise.resolve(read("RISK ON", [["INDEX TREND (1mo)", 1], ["VIX LEVEL", 1]]));
+  const bars = [bar(MON, 100), bar(TUE, 101)];
+  await runCallPass({ kv, now: passAt(MON), readRegime: riskOn, thesisGen: async () => null, bars: [] });
+  await takeSide("v:me", "LOWER", { kv, now: lockTs(TUE) - 1000 });
+  await runCallPass({ kv, now: passAt(TUE), readRegime: riskOn, thesisGen: async () => null, bars });
+  // simulate a crash AFTER the folds but BEFORE day.settle persisted: wipe the
+  // settle + claim, keep the fold markers — the retry must not double-count
+  const day = (await kv.get(`august:call:v1:day:${TUE}`)) as { settle: unknown };
+  day.settle = null;
+  await kv.set(`august:call:v1:day:${TUE}`, day);
+  kv.data.delete(`august:call:v1:settling:${TUE}`);
+  await runCallPass({ kv, now: passAt(TUE) + 60_000, readRegime: riskOn, thesisGen: async () => null, bars });
+  const s = await readCallState("v:me", { kv, now: passAt(TUE) + 120_000, readRegime: riskOn, thesisGen: async () => null });
+  assert.deepEqual(s.record.august, { wins: 1, losses: 0, pushes: 0 }); // ONCE
+  assert.deepEqual(s.record.you, { wins: 0, losses: 1, pushes: 0 }); // ONCE
+  assert.equal(s.settled?.forDate, TUE); // and the settle marker healed
+});
+
+test("takers are capped — minted identities can't blow up the settle loop", async () => {
+  const kv = fakeKv();
+  const riskOn = () => Promise.resolve(read("RISK ON", [["INDEX TREND (1mo)", 1], ["VIX LEVEL", 1]]));
+  await runCallPass({ kv, now: passAt(MON), readRegime: riskOn, thesisGen: async () => null, bars: [] });
+  const takers = new Set<string>();
+  for (let i = 0; i < 1000; i++) takers.add(`v:minted-${i}`);
+  kv.sets.set(`august:call:v1:takers:${TUE}`, takers);
+  assert.deepEqual(await takeSide("v:late", "HIGHER", { kv, now: lockTs(TUE) - 1000 }), {
+    ok: false,
+    error: "call_full",
+  });
+});
+
+test("gap honesty: a weekday without a call never claims NO SESSION", async () => {
+  const kv = fakeKv();
+  const riskOn = () => Promise.resolve(read("RISK ON", [["INDEX TREND (1mo)", 1], ["VIX LEVEL", 1]]));
+  // the pass has run before (Monday settled), but Tuesday's generation failed →
+  // Wednesday morning has no active call. The card must say the CALL is
+  // missing, not that the market is closed.
+  await runCallPass({ kv, now: passAt(MON), readRegime: riskOn, thesisGen: async () => null, bars: [] });
+  await runCallPass({ kv, now: passAt(TUE), readRegime: riskOn, thesisGen: async () => null, bars: [bar(MON, 100), bar(TUE, 101)] });
+  // wipe Wednesday's generated call to simulate the failed generation
+  kv.data.delete(`august:call:v1:day:${WED}`);
+  const s = await readCallState(null, { kv, now: Date.parse(`${WED}T15:00:00-04:00`), readRegime: riskOn, thesisGen: async () => null });
+  assert.equal(s.active, null);
+  assert.deepEqual(s.noCall, { reason: "not_generated", nextDate: "2026-09-03" });
 });
 
 test("pass is idempotent: a double run settles and generates nothing twice", async () => {

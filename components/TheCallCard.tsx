@@ -8,7 +8,7 @@
 // italic register; every data line is mono caps. Records start 0–0 and show
 // from day one — never seeded, shown even when AUGUST is losing.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DataTag from "@/components/DataTag";
 
 type Tally = { wins: number; losses: number; pushes: number };
@@ -25,7 +25,7 @@ type CallResp = {
     youSide: Side | null;
     thesis: string | null;
   } | null;
-  noCall: { reason: "no_session" | "dead_even" | "unavailable"; nextDate: string } | null;
+  noCall: { reason: "no_session" | "dead_even" | "unavailable" | "not_generated"; nextDate: string } | null;
   settled: {
     forDate: string;
     side: Side;
@@ -41,9 +41,12 @@ type CallResp = {
 // display copies of the engine's pure formatters (lib/call is server-only)
 const fmtRec = (t: Tally) => `${t.wins}–${t.losses}`;
 function fmtPct(pct: number): string {
-  const one = pct.toFixed(1);
-  if ((one === "0.0" || one === "-0.0") && pct !== 0) return `${pct > 0 ? "+" : ""}${pct.toFixed(2)}%`;
-  return `${pct > 0 ? "+" : ""}${one === "-0.0" ? "0.0" : one}%`;
+  if (pct === 0) return "0.0%";
+  for (const dp of [1, 2, 4]) {
+    const s = pct.toFixed(dp);
+    if (Number(s) !== 0) return `${pct > 0 ? "+" : ""}${s}%`;
+  }
+  return `${pct > 0 ? "+" : "-"}0.0001%`; // sub-tick dust — never a fake flat
 }
 const weekdayShort = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
@@ -52,16 +55,28 @@ const etToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Americ
 export default function TheCallCard() {
   const [st, setSt] = useState<CallResp | null>(null);
   const [busy, setBusy] = useState(false);
+  // consecutive failed reads — two misses flag the card STALE (R1 honesty)
+  const [misses, setMisses] = useState(0);
+  // monotonic request generation: an older in-flight GET must never overwrite
+  // the state a just-resolved take rendered
+  const genRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     const pull = () => {
+      const gen = ++genRef.current;
       fetch("/api/call", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then((j: CallResp) => {
-          if (!cancelled && j.ok) setSt(j);
+          if (cancelled || gen !== genRef.current) return;
+          if (j.ok) {
+            setSt(j);
+            setMisses(0);
+          } else setMisses((n) => n + 1);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) setMisses((n) => n + 1);
+        });
     };
     pull();
     const id = window.setInterval(() => {
@@ -75,9 +90,23 @@ export default function TheCallCard() {
 
   if (!st) return null; // loading or unreachable — the floor simply doesn't show it
 
+  const refetch = () => {
+    const gen = ++genRef.current;
+    fetch("/api/call", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((k: CallResp) => {
+        if (gen === genRef.current && k.ok) {
+          setSt(k);
+          setMisses(0);
+        }
+      })
+      .catch(() => setMisses((n) => n + 1));
+  };
+
   const take = (side: Side) => {
     if (busy) return;
     setBusy(true);
+    const gen = ++genRef.current;
     fetch("/api/call", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -85,17 +114,31 @@ export default function TheCallCard() {
     })
       .then((r) => r.json())
       .then((j: CallResp) => {
-        if (j.ok) setSt(j);
-        else return fetch("/api/call", { cache: "no-store" }).then((r) => r.json()).then((k: CallResp) => k.ok && setSt(k));
+        if (gen !== genRef.current) return;
+        if (j.ok) {
+          setSt(j);
+          setMisses(0);
+        } else refetch(); // rejected (locked/taken/full) — show the truth
       })
-      .catch(() => {})
+      .catch(() => refetch())
       .finally(() => setBusy(false));
   };
 
   const a = st.active;
   const s = st.settled;
   const other: Side | null = a ? (a.side === "HIGHER" ? "LOWER" : "HIGHER") : null;
-  const dayWord = a ? (a.forDate > etToday() ? "TOMORROW" : "TODAY") : "";
+  // an unsettled call whose date already passed (settle lag) is named by its
+  // day, never mislabeled "TODAY"
+  const dayWord = a
+    ? a.forDate > etToday()
+      ? "TOMORROW"
+      : a.forDate === etToday()
+        ? "TODAY"
+        : weekdayShort(a.forDate).toUpperCase()
+    : "";
+  // a lag-settled result carries its date — yesterday's close must never read
+  // as today's
+  const settledDay = s && s.forDate !== etToday() ? ` (${weekdayShort(s.forDate)})` : "";
 
   return (
     <div className="callcard" aria-label="THE CALL — AUGUST's daily NQ call">
@@ -104,10 +147,11 @@ export default function TheCallCard() {
         <div className="call-block">
           <span className="call-line">
             {s.result === "FLAT" ? (
-              <>NQ CLOSED FLAT · PUSH — counted for neither side</>
+              <>NQ CLOSED FLAT{settledDay} · PUSH — counted for neither side</>
             ) : (
               <>
-                NQ CLOSED {s.closePct !== null ? fmtPct(s.closePct) : s.result} · AUGUST {s.augustWin ? "✓" : "✗"}
+                NQ CLOSED {s.closePct !== null ? fmtPct(s.closePct) : s.result}
+                {settledDay} · AUGUST {s.augustWin ? "✓" : "✗"}
                 {s.youWin !== null ? <> · YOU {s.youWin ? "✓" : "✗"}</> : null}
               </>
             )}
@@ -127,8 +171,9 @@ export default function TheCallCard() {
             THE CALL · NQ {dayWord}
             <DataTag
               kind="calc"
-              title="direction is deterministic from the regime model — the sign of its vote sum; dead even = no call. Not advice."
+              title="direction was derived deterministically from the regime model at the pass that opened this call — the sign of its vote sum; dead even = no call. The thesis above is AUGUST's current read. Not advice."
             />
+            {misses >= 2 ? <DataTag kind="stale" title="the card can't reach the server — showing the last good state" /> : null}
           </span>
           {a.youSide ? (
             <span className="call-line">
@@ -160,7 +205,9 @@ export default function TheCallCard() {
               ? `NO SESSION · next call ${weekdayShort(st.noCall.nextDate)}`
               : st.noCall.reason === "dead_even"
                 ? `NO CALL · the regime is dead even · next call ${weekdayShort(st.noCall.nextDate)}`
-                : `NO CALL · the regime is unavailable · next call ${weekdayShort(st.noCall.nextDate)}`}
+                : st.noCall.reason === "unavailable"
+                  ? `NO CALL · the regime is unavailable · next call ${weekdayShort(st.noCall.nextDate)}`
+                  : `NO CALL ON THE BOARD · next call ${weekdayShort(st.noCall.nextDate)}`}
           </span>
         </div>
       ) : null}

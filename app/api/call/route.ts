@@ -54,7 +54,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const status =
       res.error === "bad_side" ? 400 :
       res.error === "no_active_call" ? 404 :
-      res.error === "locked" || res.error === "already_taken" ? 409 : 500;
+      res.error === "locked" || res.error === "already_taken" ? 409 :
+      res.error === "call_full" ? 429 : 500;
     return withCookie(Response.json({ ok: false, error: res.error }, { status }), setCookie);
   }
   const state = await readCallState(cid);

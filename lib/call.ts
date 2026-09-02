@@ -107,20 +107,41 @@ export function passTarget(todayEt: string): string | null {
   return next === d.toISOString().slice(0, 10) ? next : null;
 }
 
-/** PURE. 09:30 ET on the call's date, as epoch ms — DST-correct by checking
- *  the round-trip instead of hardcoding an offset. */
-export function lockTs(forDate: string): number {
+/** PURE. An ET wall-clock moment on a date as epoch ms — DST-correct by
+ *  checking the round-trip instead of hardcoding an offset. */
+function etTs(date: string, hhmm: string): number {
   for (const off of ["-04:00", "-05:00"]) {
-    const t = Date.parse(`${forDate}T09:30:00.000${off}`);
+    const t = Date.parse(`${date}T${hhmm}:00.000${off}`);
     const back = new Date(t).toLocaleTimeString("en-US", {
       timeZone: "America/New_York",
       hour12: false,
       hour: "2-digit",
       minute: "2-digit",
     });
-    if (back === "09:30") return t;
+    if (back === hhmm) return t;
   }
-  return Date.parse(`${forDate}T09:30:00.000-05:00`);
+  return Date.parse(`${date}T${hhmm}:00.000-05:00`);
+}
+
+/** PURE. 09:30 ET on the call's date — the take lock. */
+export function lockTs(forDate: string): number {
+  return etTs(forDate, "09:30");
+}
+
+/** PURE. 17:00 ET — the NQ=F Globex session end: the moment the date's daily
+ *  bar is FINAL. Yahoo serves the day's in-progress bar all session, so
+ *  settling before this against today's bar would grade a live price. */
+export function sessionCloseTs(forDate: string): number {
+  return etTs(forDate, "17:00");
+}
+
+/** PURE. 16:00 ET — the earliest moment a pass may GENERATE tomorrow's call.
+ *  The cron route is also pinged every ~10–15 min during market hours; without
+ *  this gate the first morning ping would generate tomorrow's call from the
+ *  morning regime instead of "the regime state at the pass". (16:00, not
+ *  17:00, so the winter 21:05 UTC cron — 16:05 ET — still generates.) */
+export function generateGateTs(date: string): number {
+  return etTs(date, "16:00");
 }
 
 /** PURE. May a side still be taken? */
@@ -134,23 +155,33 @@ const barEtDate = (sec: number): string =>
   new Date(sec * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 /** PURE. Settle a call against daily bars (see SETTLE in the header).
- *  null = not determinable yet (no bar, no later bar, or thin data) — the
- *  call stays unsettled and the next pass retries. settledAt is stamped by
- *  the caller. */
+ *  null = not determinable yet (no bar, session not ended, no later bar, or
+ *  thin data) — the call stays unsettled and the next pass retries.
+ *  settledAt is stamped by the caller.
+ *
+ *  BAR FINALITY: Yahoo's daily feed includes the CURRENT day's in-progress
+ *  bar with a live close, all session long — so a bar for forDate is only
+ *  trusted once the session has provably ended: nowMs past 17:00 ET on
+ *  forDate, or a later-dated bar exists. Without this, any market-hours
+ *  invocation (the route's external pinger) — or the 21:05 UTC cron itself in
+ *  EST months (16:05 ET) — would permanently grade a mid-session price. */
 export function settleAgainstBars(
   forDate: string,
   side: CallSide,
   bars: DailyBar[],
+  nowMs: number,
 ): Omit<CallSettle, "settledAt"> | null {
   if (bars.length === 0) return null;
   const idx = bars.findIndex((b) => barEtDate(b.t) === forDate);
+  const laterBar = bars.some((b) => barEtDate(b.t) > forDate);
   if (idx === -1) {
     // the date never printed a bar; only conclude "no session" once the
     // exchange demonstrably traded PAST it (rules out feed lag)
-    return bars.some((b) => barEtDate(b.t) > forDate)
+    return laterBar
       ? { result: "NO_SESSION", close: null, prevClose: null, closePct: null, augustWin: null }
       : null;
   }
+  if (nowMs < sessionCloseTs(forDate) && !laterBar) return null; // bar still trading
   if (idx === 0) return null; // no prior close held — refuse rather than guess
   const close = bars[idx].c;
   const prevClose = bars[idx - 1].c;
@@ -191,14 +222,16 @@ export function fmtRecord(t: CallTally): string {
   return `${t.wins}–${t.losses}`;
 }
 
-/** PURE. "+0.4%" — upgraded to 2dp when 1dp would round a real move to 0.0
- *  (a fabricated "flat" is exactly what this product forbids). */
+/** PURE. "+0.4%" — precision grows until a real move stops rounding to zero
+ *  (a fabricated "flat" beside a graded ✓/✗ is exactly what this product
+ *  forbids; a one-tick NQ close is ~0.001%, which 2dp would still hide). */
 export function fmtClosePct(pct: number): string {
-  const one = pct.toFixed(1);
-  if ((one === "0.0" || one === "-0.0") && pct !== 0) {
-    return `${pct > 0 ? "+" : ""}${pct.toFixed(2)}%`;
+  if (pct === 0) return "0.0%";
+  for (const dp of [1, 2, 4]) {
+    const s = pct.toFixed(dp);
+    if (Number(s) !== 0) return `${pct > 0 ? "+" : ""}${s}%`;
   }
-  return `${pct > 0 ? "+" : ""}${one === "-0.0" ? "0.0" : one}%`;
+  return `${pct > 0 ? "+" : "-"}0.0001%`; // sub-tick dust — never a fake flat
 }
 
 const SHORT_INPUT: Record<string, string> = {
@@ -237,6 +270,7 @@ export type CallKv = {
   sadd(key: string, member: string): Promise<unknown>;
   srem(key: string, member: string): Promise<unknown>;
   smembers(key: string): Promise<unknown>;
+  scard(key: string): Promise<unknown>;
   expire(key: string, seconds: number): Promise<unknown>;
 };
 
@@ -248,11 +282,17 @@ const K = {
   take: (d: string, cid: string) => `${NS}:take:${d}:${cid}`,
   takers: (d: string) => `${NS}:takers:${d}`,
   rec: (id: string) => `${NS}:rec:${id}`, // cid, or the literal "august"
+  settleClaim: (d: string) => `${NS}:settling:${d}`, // NX — one invocation settles
+  folded: (d: string, id: string) => `${NS}:folded:${d}:${id}`, // NX — exactly-once folds
+  claimed: (cid: string) => `${NS}:claimed:${cid}`, // NX — one account claim per device
   thesis: `${NS}:thesis`,
   thesisLock: `${NS}:thesis:lock`,
 };
 const DAY_TTL_S = 45 * 86_400;
 const TAKE_TTL_S = 7 * 86_400;
+/** Hard bound on takers per day — keeps the settle fold loop inside the cron
+ *  budget even against minted visitor ids (the cookie is client-supplied). */
+export const TAKERS_CAP = 1000;
 
 let _redis: Redis | null | undefined;
 function getRedis(): Redis | null {
@@ -404,12 +444,17 @@ export async function getThesis(
   try {
     const stored = asThesis(await kv.get(K.thesis));
     if (stored && !shouldRegenerateThesis(stored, fp)) return stored.text;
-    const lock = await kv.set(K.thesisLock, "x", { nx: true, ex: 90 });
-    if (lock === null) return null; // another request is already generating
+    // ONE generation attempt per 5 minutes, success or failure — the lock is
+    // NOT released on success: per-instance quote caches can straddle a vote
+    // threshold and alternate the fingerprint per request, and without a
+    // standing window that degenerates to one model call per view. A genuine
+    // flip inside the window serves no line briefly; the next attempt after
+    // expiry regenerates.
+    const lock = await kv.set(K.thesisLock, "x", { nx: true, ex: 300 });
+    if (lock === null) return null; // inside the window — no spend
     const text = await (opts?.gen ?? anthropicThesis)(read);
-    if (!text) return null; // lock stays (ex 90) — throttles retries against a down model
+    if (!text) return null;
     await kv.set(K.thesis, { text, fingerprint: fp, at: opts?.now ?? Date.now() });
-    await kv.del(K.thesisLock); // success — the next flip must not wait out the lock
     return text;
   } catch {
     return null;
@@ -445,44 +490,57 @@ export async function runCallPass(deps?: CallPassDeps): Promise<CallPassResult> 
   let generated: CallSide | "no_call" | null = null;
 
   // 1 — SETTLE every unsettled call in the recent window (not just the active
-  // pointer: a bars-lag day must not orphan once the pointer advances).
+  // pointer: a bars-lag day must not orphan once the pointer advances; a dead
+  // cron week must not orphan either — hence 14 days plus the pointer).
   // Oldest first so records fold in order.
   try {
     const candidates: string[] = [];
     const d = new Date(`${today}T12:00:00Z`);
-    for (let i = 5; i >= 0; i--) {
+    for (let i = 13; i >= 0; i--) {
       const dd = new Date(d);
       dd.setUTCDate(dd.getUTCDate() - i);
       candidates.push(dd.toISOString().slice(0, 10));
+    }
+    const activeRaw = await kv.get(K.active);
+    if (typeof activeRaw === "string" && !candidates.includes(activeRaw)) {
+      candidates.unshift(activeRaw);
     }
     let bars: DailyBar[] | null = null;
     for (const date of candidates) {
       const day = asDayCall(await kv.get(K.day(date)));
       if (!day || !day.side || day.settle) continue;
       if (bars === null) bars = deps?.bars ?? (await getDailyBars("NQ=F").catch(() => []));
-      const s = settleAgainstBars(day.forDate, day.side, bars ?? []);
+      const s = settleAgainstBars(day.forDate, day.side, bars ?? [], now);
       if (!s) continue;
-      day.settle = { ...s, settledAt: now };
-      await kv.set(K.day(day.forDate), day, { ex: DAY_TTL_S });
-      await kv.set(K.lastSettled, day.forDate, { ex: DAY_TTL_S });
-      settled = s.result;
+      // one invocation settles a day (the route is also externally pinged);
+      // the claim expires so a crash mid-settle retries next pass
+      const claim = await kv.set(K.settleClaim(date), "x", { nx: true, ex: 300 });
+      if (claim === null) continue;
 
       if (s.result !== "NO_SESSION") {
-        // AUGUST's record (FLAT folds as a push)
-        const aug = asTally(await kv.get(K.rec("august")));
-        await kv.set(K.rec("august"), foldTally(aug, s.augustWin));
-        // every taker's record
+        // EXACTLY-ONCE folds (NX markers), BEFORE the settle marker lands: a
+        // crash here retries next pass — the settle recomputes identically
+        // from the same final bars and the markers skip what already folded.
+        if ((await kv.set(K.folded(date, "august"), "x", { nx: true, ex: DAY_TTL_S })) !== null) {
+          const aug = asTally(await kv.get(K.rec("august")));
+          await kv.set(K.rec("august"), foldTally(aug, s.augustWin)); // FLAT folds as a push
+        }
         const members = (await kv.smembers(K.takers(day.forDate)).catch(() => [])) as unknown;
         const cids = Array.isArray(members) ? members.filter((m): m is string => typeof m === "string") : [];
         for (const cid of cids) {
           const take = (await kv.get(K.take(day.forDate, cid))) as { side?: unknown } | null;
           const side = take?.side === "HIGHER" || take?.side === "LOWER" ? (take.side as CallSide) : null;
           if (!side) continue;
+          if ((await kv.set(K.folded(date, cid), "x", { nx: true, ex: DAY_TTL_S })) === null) continue;
           const win = s.result === "FLAT" ? null : side === s.result;
           const rec = asTally(await kv.get(K.rec(cid)));
           await kv.set(K.rec(cid), foldTally(rec, win));
         }
       }
+      day.settle = { ...s, settledAt: now };
+      await kv.set(K.day(day.forDate), day, { ex: DAY_TTL_S });
+      await kv.set(K.lastSettled, day.forDate, { ex: DAY_TTL_S });
+      settled = s.result;
       // the push branch subscribes here (lib/call-events) — nothing else
       await emitCallSettled({
         forDate: day.forDate,
@@ -496,10 +554,12 @@ export async function runCallPass(deps?: CallPassDeps): Promise<CallPassResult> 
     console.warn("[call] settle step failed:", err instanceof Error ? err.message : err);
   }
 
-  // 2 — GENERATE tomorrow's call (only when tomorrow is a weekday)
+  // 2 — GENERATE tomorrow's call — only when tomorrow is a weekday AND the
+  // session is over (post-16:00 ET): the route's market-hours pinger must not
+  // generate tomorrow's call at 10am from the morning regime.
   try {
     const target = passTarget(today);
-    if (target) {
+    if (target && now >= generateGateTs(today)) {
       const existing = asDayCall(await kv.get(K.day(target)));
       if (!existing) {
         const read = await (deps?.readRegime ?? readServerRegime)();
@@ -543,7 +603,7 @@ export type CallState = {
     youSide: CallSide | null;
     thesis: string | null;
   } | null;
-  noCall: { reason: "no_session" | "dead_even" | "unavailable"; nextDate: string } | null;
+  noCall: { reason: "no_session" | "dead_even" | "unavailable" | "not_generated"; nextDate: string } | null;
   settled: {
     forDate: string;
     side: CallSide;
@@ -678,11 +738,15 @@ export async function readCallState(
       };
     }
 
-    // nothing active, nothing declined → the honest gap state
+    // nothing active, nothing declined → the honest gap state. "NO SESSION"
+    // is ONLY ever asserted on a weekend — a weekday gap (missed pass, failed
+    // generation) says the CALL is absent, never that the market is closed.
     if (!state.active && !state.noCall) {
       const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
-      if (dow === 0 || dow === 6 || !state.settled) {
+      if (dow === 0 || dow === 6) {
         state.noCall = { reason: "no_session", nextDate: nextWeekday(today) };
+      } else if (!state.settled) {
+        state.noCall = { reason: "not_generated", nextDate: nextWeekday(today) };
       }
     }
   } catch (err) {
@@ -693,7 +757,10 @@ export async function readCallState(
 
 export type TakeResult =
   | { ok: true }
-  | { ok: false; error: "not_configured" | "no_active_call" | "locked" | "already_taken" | "bad_side" };
+  | {
+      ok: false;
+      error: "not_configured" | "no_active_call" | "locked" | "already_taken" | "bad_side" | "call_full";
+    };
 
 /** POST core — one take per identity per trading day, refused after lock. */
 export async function takeSide(
@@ -710,6 +777,10 @@ export async function takeSide(
   const day = activeDate ? asDayCall(await kv.get(K.day(activeDate))) : null;
   if (!day || day.settle || !day.side) return { ok: false, error: "no_active_call" };
   if (!canTake(day.forDate, now)) return { ok: false, error: "locked" };
+  // bound the day's takers — minted visitor cookies must not grow the settle
+  // fold loop past the cron budget
+  const count = Number(await kv.scard(K.takers(day.forDate)).catch(() => 0)) || 0;
+  if (count >= TAKERS_CAP) return { ok: false, error: "call_full" };
   const took = await kv.set(K.take(day.forDate, cid), { side, at: now }, { nx: true, ex: TAKE_TTL_S });
   if (took === null) return { ok: false, error: "already_taken" };
   await kv.sadd(K.takers(day.forDate), cid);
@@ -719,13 +790,18 @@ export async function takeSide(
 
 // --- AUTH-1a claim (wired into lib/claim.ts beside claimPitPlayer) ----------
 
-/** Fold a visitor's call identity into the account's: records sum, and an
- *  unsettled take moves (the account's own take wins a conflict). One-way,
- *  best-effort — mirrors claimPitPlayer's contract. */
+/** Fold a visitor's call identity into the account's: records sum, and every
+ *  RECENT UNSETTLED take moves (not just the active date — a bars-lag day's
+ *  take must follow the account too, or its outcome folds into a dead
+ *  visitor tally). NX-guarded so concurrent/repeat claims can never
+ *  double-add (the summing merge, unlike the Pit's best-of, is farmable
+ *  without it). One-way, best-effort — mirrors claimPitPlayer's contract. */
 export async function claimCallRecord(fromCid: string, toCid: string): Promise<boolean> {
   const kv = defaultKv();
   if (!kv || fromCid === toCid) return false;
   try {
+    const marker = await kv.set(K.claimed(fromCid), toCid, { nx: true });
+    if (marker === null) return true; // this device already claimed — never re-add
     const from = asTally(await kv.get(K.rec(fromCid)));
     if (from.wins || from.losses || from.pushes) {
       const to = asTally(await kv.get(K.rec(toCid)));
@@ -736,19 +812,28 @@ export async function claimCallRecord(fromCid: string, toCid: string): Promise<b
       });
     }
     await kv.del(K.rec(fromCid));
-    const activeRaw = await kv.get(K.active);
-    const activeDate = typeof activeRaw === "string" ? activeRaw : null;
-    if (activeDate) {
-      const fromTake = await kv.get(K.take(activeDate, fromCid));
-      if (fromTake) {
-        const took = await kv.set(K.take(activeDate, toCid), fromTake, { nx: true, ex: TAKE_TTL_S });
-        if (took !== null) {
-          await kv.sadd(K.takers(activeDate), toCid);
-          await kv.expire(K.takers(activeDate), TAKE_TTL_S);
-        }
-        await kv.del(K.take(activeDate, fromCid));
-        await kv.srem(K.takers(activeDate), fromCid);
+
+    // move takes on every recent day that hasn't settled yet — the window is
+    // tomorrow (the active call's latest possible date) back 14 days
+    const dates: string[] = [];
+    const base = new Date(`${etDate()}T12:00:00Z`);
+    base.setUTCDate(base.getUTCDate() + 1);
+    for (let i = 0; i < 15; i++) {
+      dates.push(base.toISOString().slice(0, 10));
+      base.setUTCDate(base.getUTCDate() - 1);
+    }
+    for (const date of dates) {
+      const day = asDayCall(await kv.get(K.day(date)));
+      if (!day || !day.side || day.settle) continue;
+      const fromTake = await kv.get(K.take(date, fromCid));
+      if (!fromTake) continue;
+      const took = await kv.set(K.take(date, toCid), fromTake, { nx: true, ex: TAKE_TTL_S });
+      if (took !== null) {
+        await kv.sadd(K.takers(date), toCid);
+        await kv.expire(K.takers(date), TAKE_TTL_S);
       }
+      await kv.del(K.take(date, fromCid));
+      await kv.srem(K.takers(date), fromCid);
     }
     return true;
   } catch {
