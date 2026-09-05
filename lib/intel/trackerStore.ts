@@ -23,7 +23,7 @@ import {
   upsertIdeas,
   type TrackedIdea,
 } from "./tracker";
-import type { BriefIdea } from "./types";
+import type { BriefIdea, DailyBrief } from "./types";
 import { etDateKey } from "./session";
 
 const KEY = "august:intel:tracked:v1";
@@ -36,6 +36,12 @@ const LASTRUN_KEY = "august:intel:tracked:lastrun";
 // pending tombstones in after loading, and a tombstone is deleted only once
 // the saved blob durably shows the idea CLOSED.
 const CLOSED_KEY = "august:intel:tracked:closed:v1";
+
+// fix/p0-live-trust — how many recent brief dates the ingest fallback scans for
+// the newest brief that actually carries ideas. Empty briefs are now storable
+// (an idle day compiles nothing rather than substituting a stale video pool),
+// so the walk-back must be able to step over a run of them.
+const BRIEF_FALLBACK_SCAN = 10;
 
 type CloseTombstone = { at: number; reason: string };
 
@@ -180,10 +186,24 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
   // ── ingest: fold the latest brief's ideas into the tracked set ─────────────
   // Today's brief when it exists, else the most recent stored brief (weekend /
   // early-morning case). Ingestion is idempotent — contributed idea ids dedupe.
+  // fix/p0-live-trust — an EMPTY brief counts as no brief here. Now that
+  // generateBrief no longer substitutes a stale video pool, an idle day can
+  // store a brief carrying zero ideas; without this guard that empty record
+  // would suppress the weekend/early-morning fallback below and the pass would
+  // ingest nothing. Ingestion is idempotent, so falling back is always safe.
+  const briefHasIdeas = (b: DailyBrief | null): boolean =>
+    !!b && ((b.creatorFavorites?.length ?? 0) > 0 || (b.topIdeas?.length ?? 0) > 0);
   let brief = await getBrief(etDateKey(new Date(now)));
-  if (!brief) {
-    const dates = await listBriefDates(1);
-    if (dates[0]) brief = await getBrief(dates[0]);
+  if (!briefHasIdeas(brief)) {
+    // walk back over the recent dates for the newest brief that actually holds
+    // ideas — today's empty record must not shadow a real prior desk run
+    for (const d of await listBriefDates(BRIEF_FALLBACK_SCAN)) {
+      const prior = await getBrief(d);
+      if (briefHasIdeas(prior)) {
+        brief = prior;
+        break;
+      }
+    }
   }
   let ingested: TrackerPassResult["ingested"];
   if (brief) {

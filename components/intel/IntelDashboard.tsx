@@ -4753,7 +4753,15 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
           <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
         </div>
         {brief.read60 && read60 && <p className="rd-read60">{brief.read60}</p>}
-        {!brief.grounded && <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>}
+        {/* fix/p0-live-trust — an empty compile is not a failed narrator. A
+            brief with no source videos never called the model at all, so the
+            "narrative offline" warning would be a false diagnosis; say what
+            actually happened instead. */}
+        {brief.sourceVideoIds.length === 0 && brief.topIdeas.length === 0 && brief.creatorFavorites.length === 0 ? (
+          <div className="rd-note">No videos carry this market date — the desk ran and compiled nothing.</div>
+        ) : !brief.grounded ? (
+          <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>
+        ) : null}
         {/* the five narrative fields are the tab's longest prose — one clamp
             over the whole dl (not five), 300px ≈ 10 rows of the wider tab
             measure. read60 is already a digest, so it is never clamped. */}
