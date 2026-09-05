@@ -589,7 +589,16 @@ export default function IdeasFeed() {
 
   const loading = feed === null && !feedErr && live === null && !liveErr;
   const unreachable = feed === null && feedErr && live === null && liveErr;
-  const empty = !loading && !unreachable && liveIdeas.length === 0 && tracked.length === 0;
+  // fix/p0-live-trust — EMPTY requires that BOTH sources actually answered.
+  // `empty` used to be computed from row counts alone, so a failed
+  // /api/intel/feed alongside a successful /api/ideas with zero live calls
+  // rendered "NO IDEAS ON THE BOARD" — a factual claim about the product made
+  // from a failed request. Worse, that branch short-circuits before the
+  // blotter, so the honest per-source "TRACKED FEED UNREACHABLE" strip below
+  // could never be reached. Requiring both to have answered lets the existing
+  // partial-failure strips render instead.
+  const empty =
+    !loading && !unreachable && !feedErr && !liveErr && liveIdeas.length === 0 && tracked.length === 0;
 
   // Initial selection (G3 r5): honor a shared ?idea= deep link first — waiting
   // for the store that owns the key if it hasn't answered yet — then default
@@ -674,16 +683,29 @@ export default function IdeasFeed() {
           <span className="if-brand-dot" aria-hidden="true" />
           <span className="if-wordmark">IDEAS TERMINAL</span>
           <span className="if-head-right">
+            {/* fix/p0-live-trust — a count only prints once its source has
+                actually answered. `tracked` falls back to [] whenever `feed`
+                is null, which is BOTH the pre-first-response state and the
+                permanent hard-failure state, so this chrome used to state as
+                fact that the desk carries zero tracked ideas and zero
+                triggered calls while /api/intel/feed was down. HomeBrief
+                already renders DataTag "unavailable" for the same payload. */}
             <span className="if-statline" role="status">
               {clock ? `${clock} · ` : ""}
-              {liveIdeas.length} LIVE · {tracked.length} TRACKED
+              {live !== null ? `${liveIdeas.length} LIVE` : "— LIVE"} ·{" "}
+              {feed !== null ? `${tracked.length} TRACKED` : "— TRACKED"}
             </span>
             {/* zero-count chips dim but stay mounted — no CLS when counts land */}
-            <span className={`if-count if-count-trig${trig === 0 ? " if-count-zero" : ""}`}>
-              {trig > 0 && <span className="if-count-dot" aria-hidden="true" />}
-              {trig} TRIG
+            <span
+              className={`if-count if-count-trig${feed === null || trig === 0 ? " if-count-zero" : ""}`}
+              title={feed === null ? "the tracked feed hasn't answered yet" : undefined}
+            >
+              {feed !== null && trig > 0 && <span className="if-count-dot" aria-hidden="true" />}
+              {feed !== null ? trig : "—"} TRIG
             </span>
-            <span className={`if-count if-count-arm${arm === 0 ? " if-count-zero" : ""}`}>{arm} ARM</span>
+            <span className={`if-count if-count-arm${feed === null || arm === 0 ? " if-count-zero" : ""}`}>
+              {feed !== null ? arm : "—"} ARM
+            </span>
             {/* tablets only — phones get the segmented strip instead (M2) */}
             {!phone ? (
               <button
@@ -750,6 +772,7 @@ export default function IdeasFeed() {
               <BookHeatmapModule
                 cards={tracked}
                 liveIdeas={liveIdeas}
+                sourcesAnswered={feed !== null && live !== null}
                 selection={selection}
                 onSelect={applySelect}
               />
@@ -854,6 +877,7 @@ export default function IdeasFeed() {
             onSelect={applySelect}
             cards={tracked}
             liveIdeas={liveIdeas}
+            sourcesAnswered={feed !== null && live !== null}
             tape={tapeRows}
             tapeFailed={tapeErr}
             onTapeRetry={load}

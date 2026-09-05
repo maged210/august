@@ -1782,9 +1782,12 @@ function PastDayGroup({ date, open, fetchState, quotes, trackedByIdeaId, filter,
  * align with TODAY's board above). Load discipline lives in the parent: the
  * newest EAGER_PAST_DAYS fetch on stack mount, the rest load on expand, and
  * LOAD OLDER only reveals more collapsed headers (zero fetches). */
-function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLoadOlder, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onSelect, publishedIds }: {
+function PastBoard({ days, older, indexErr, onRetryIndex, fetches, isOpen, onToggleDay, onRetryDay, onLoadOlder, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onSelect, publishedIds }: {
   days: PastDayPlan[];
   older: number;
+  /** the briefs INDEX failed — not the same as an empty index */
+  indexErr: boolean;
+  onRetryIndex: () => void;
   fetches: Map<string, DayFetch>;
   isOpen: (date: string, eager: boolean) => boolean;
   onToggleDay: (date: string, eager: boolean) => void;
@@ -1808,7 +1811,16 @@ function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLo
             : "PRIOR DESK DAYS"}
         </span>
       </div>
-      {days.length === 0 ? (
+      {indexErr ? (
+        <div className="rd-board-empty" role="alert">
+          <div className="rd-empty-glyph" aria-hidden="true">△</div>
+          <div className="rd-empty-title">BRIEFS INDEX UNREACHABLE</div>
+          <p className="rd-empty-copy">Couldn&apos;t load the list of prior desk days. This is a failed request, not an empty archive.</p>
+          <div className="rd-empty-btns">
+            <button type="button" className="rd-btn-lg" onClick={onRetryIndex}>RETRY</button>
+          </div>
+        </div>
+      ) : days.length === 0 ? (
         <div className="rd-board-empty">
           <div className="rd-empty-glyph" aria-hidden="true">∅</div>
           <div className="rd-empty-title">NO PRIOR DESK RUNS</div>
@@ -2127,6 +2139,9 @@ type MobileDayScope = {
 type MobilePast = {
   days: PastDayPlan[];
   older: number;
+  /** the briefs INDEX failed — not the same as an empty index */
+  indexErr: boolean;
+  onRetryIndex: () => void;
   fetches: Map<string, DayFetch>;
   isOpen: (date: string, eager: boolean) => boolean;
   onToggleDay: (date: string, eager: boolean) => void;
@@ -2459,7 +2474,12 @@ function MobileBoard({
                 : ""}
             </span>
           </div>
-          {past.days.length === 0 ? (
+          {past.indexErr ? (
+            <div className="rd-mabs-line" role="alert">
+              <span className="rd-abs-g" aria-hidden="true">△</span> Couldn&apos;t load the briefs index.{" "}
+              <button type="button" className="rd-btn rd-btn-sm" onClick={past.onRetryIndex}>Retry</button>
+            </div>
+          ) : past.days.length === 0 ? (
             <div className="rd-mabs-line">
               <span className="rd-abs-g" aria-hidden="true">∅</span> No prior desk runs stored yet.
             </div>
@@ -4922,6 +4942,10 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
   const [inspectorMode, setInspectorMode] = useState<"idea" | "option">("idea");
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [historyDates, setHistoryDates] = useState<string[]>([]);
+  /** fix/p0-live-trust — the briefs INDEX failed to load (distinct from "the
+   *  index is empty"); every consumer offers a retry instead of asserting
+   *  that no prior desk runs exist */
+  const [briefsErr, setBriefsErr] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -5136,21 +5160,35 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
     } catch { setTrackerOk(false); /* keep the last tracked list */ }
   }, []);
 
+  // fix/p0-live-trust — the briefs index distinguishes FAILED from EMPTY.
+  // This fetch used to have no r.ok check and an empty catch, so a 500 or a
+  // dropped connection left historyDates/allBriefDates at [] — the identical
+  // state to "the desk genuinely has no prior briefs". All three consumers
+  // then asserted absence as fact ("No prior briefs stored.", "NO PRIOR DESK
+  // RUNS", "No prior desk runs stored yet."), with no retry and no re-run, so
+  // the claim persisted for the life of the mount. Every other fetch on this
+  // desk already keeps the two apart (histErr, DayFetch status "error").
+  const loadBriefIndex = useCallback(async () => {
+    setBriefsErr(false);
+    try {
+      const r = await fetch("/api/intel/briefs", { cache: "no-store" });
+      if (!r.ok) throw new Error(`briefs_index_${r.status}`);
+      const j = await r.json();
+      if (!Array.isArray(j.dates)) throw new Error("briefs_index_shape");
+      setHistoryDates(j.dates.slice(0, 14)); // BRIEF-tab pills + the rail (unchanged cap)
+      setAllBriefDates(j.dates); // full index — the PAST stack's LOAD OLDER reserve
+    } catch {
+      setBriefsErr(true);
+    }
+  }, []);
+
   // initial parallel fetch
   useEffect(() => {
     load();
     fetchMacroTape();
     fetchTracker();
-    fetch("/api/intel/briefs", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (Array.isArray(j.dates)) {
-          setHistoryDates(j.dates.slice(0, 14)); // BRIEF-tab pills + the rail (unchanged cap)
-          setAllBriefDates(j.dates); // full index — the PAST stack's LOAD OLDER reserve
-        }
-      })
-      .catch(() => {});
-  }, [load, fetchMacroTape, fetchTracker]);
+    loadBriefIndex();
+  }, [load, fetchMacroTape, fetchTracker, loadBriefIndex]);
 
   // role, once at dashboard load — then the owner's publish listing (curated
   // feed membership). A failed role fetch keeps the optimistic owner default;
@@ -5686,6 +5724,8 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                 past={isStack ? {
                   days: pastPlan.days,
                   older: pastPlan.older,
+                  indexErr: briefsErr,
+                  onRetryIndex: loadBriefIndex,
                   fetches: dayFetches,
                   isOpen: (date, eager) => dayOpen.get(date) ?? eager,
                   onToggleDay: toggleDay,
@@ -5768,6 +5808,8 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                   <PastBoard
                     days={pastPlan.days}
                     older={pastPlan.older}
+                    indexErr={briefsErr}
+                    onRetryIndex={loadBriefIndex}
                     fetches={dayFetches}
                     isOpen={(date, eager) => dayOpen.get(date) ?? eager}
                     onToggleDay={toggleDay}
@@ -5838,7 +5880,14 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
               )}
               <span className="rd-hist-label">BRIEF HISTORY</span>
               <div className="rd-hist-pills">
-                {historyDates.length === 0
+                {briefsErr
+                  ? (
+                    <span className="rd-hist-empty" role="alert">
+                      <span className="rd-abs-g" aria-hidden="true">△</span> Couldn&apos;t load the briefs index.{" "}
+                      <button type="button" className="rd-btn rd-btn-sm" onClick={loadBriefIndex}>Retry</button>
+                    </span>
+                  )
+                  : historyDates.length === 0
                   ? <span className="rd-hist-empty">No prior briefs stored.</span>
                   : historyDates.map((d) => (
                     <button key={d} type="button" className={`rd-datepill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>

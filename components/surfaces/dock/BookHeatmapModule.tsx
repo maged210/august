@@ -45,11 +45,17 @@ type Tile = {
 export default function BookHeatmapModule({
   cards,
   liveIdeas,
+  sourcesAnswered = true,
   selection,
   onSelect,
 }: {
   cards: FeedCard[];
   liveIdeas: PublicIdea[];
+  /** fix/p0-live-trust — false while either source is still loading or has
+   *  failed. `cards`/`liveIdeas` both default to [] in the parent, so without
+   *  this the module cannot tell an empty book from an unread one and states
+   *  "0 LONG · 0 SHORT · 0 UNSET" and "nothing on the book yet" as fact. */
+  sourcesAnswered?: boolean;
   selection: ChartSelection | null;
   onSelect: (sel: ChartSelection) => void;
 }) {
@@ -172,10 +178,19 @@ export default function BookHeatmapModule({
       <div className="ifm-h">
         <span className="ifm-title">BOOK</span>
         <span className="ifm-sub">
-          {longs} LONG · {shorts} SHORT · {unset} UNSET
+          {sourcesAnswered ? `${longs} LONG · ${shorts} SHORT · ${unset} UNSET` : "— LONG · — SHORT · — UNSET"}
         </span>
       </div>
-      {tiles.length === 0 ? (
+      {!sourcesAnswered ? (
+        <div className="ifm-body">
+          <span className="if-abs">
+            <span className="if-abs-g" aria-hidden="true">
+              ·
+            </span>{" "}
+            the book hasn&apos;t loaded
+          </span>
+        </div>
+      ) : tiles.length === 0 ? (
         <div className="ifm-body">
           <span className="if-abs">
             <span className="if-abs-g" aria-hidden="true">
