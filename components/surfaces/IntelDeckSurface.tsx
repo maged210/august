@@ -104,7 +104,12 @@ export default function IntelDeckSurface({
         </div>
       ) : (
         <div className={`intel-root cinematic intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
-          {mode === "desk" ? <IntelDashboard onExitToChat={onExitToChat} /> : <IdleStage />}
+          {/* fix/p0-live-trust — `active` reaches the desk so its 30s quote
+              poll and 5-min desk poll stop while the Terminal view is hidden.
+              The latch above deliberately keeps the desk MOUNTED across view
+              switches (tab/selection/quote state survives), which is exactly
+              why the pollers need to be told the view is off screen. */}
+          {mode === "desk" ? <IntelDashboard onExitToChat={onExitToChat} active={active} /> : <IdleStage />}
         </div>
       )}
     </div>

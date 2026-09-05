@@ -4888,7 +4888,23 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
 
 // ── IntelDashboard (main) ────────────────────────────────────────────────────
 
-export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => void } = {}) {
+export default function IntelDashboard({
+  onExitToChat,
+  active = true,
+}: {
+  onExitToChat?: () => void;
+  /** fix/p0-live-trust — is the TERMINAL view actually on screen? The desk
+   *  stays MOUNTED once visited (IntelDeckSurface's latch) and app/page.tsx
+   *  only display:none's the panel, so without this its pollers ran forever
+   *  behind CHAT and PIT. Defaults true so a standalone mount is unchanged. */
+  active?: boolean;
+} = {}) {
+  // read inside intervals without re-arming them on every view switch
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
   const [data, setData] = useState<Overview | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [busy, setBusy] = useState<string | null>(null);
@@ -5289,9 +5305,14 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       setDesk(j);
     } catch { /* keep the last desk payload */ }
   }, []);
+  // fix/p0-live-trust — gated on BOTH the hidden tab and the hidden view. See
+  // the 30s poll below for why this desk needs both.
   useEffect(() => {
     fetchDesk();
-    const t = setInterval(fetchDesk, 5 * 60_000);
+    const t = setInterval(() => {
+      if (document.hidden || !activeRef.current) return;
+      fetchDesk();
+    }, 5 * 60_000);
     return () => clearInterval(t);
   }, [fetchDesk]);
 
@@ -5310,10 +5331,21 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
 
   // auto-refresh quotes every 30s (tracker piggybacks — its server pass is
   // throttled to ~2 min, so most polls just return the stored set)
+  //
+  // fix/p0-live-trust — TWO gates, and this desk needs both:
+  //   document.hidden  — the tab is backgrounded (every other poller in the
+  //                      repo already checks this; the desk was the exception);
+  //   activeRef        — the TERMINAL view is hidden. IntelDeckSurface latches
+  //                      the dashboard MOUNTED after the first visit and
+  //                      app/page.tsx only display:none's the panel, so
+  //                      switching to CHAT or PIT left this running forever.
+  // Together those meant one visit to TERMINAL cost ~8,640 quote/tracker
+  // requests per day per tab, invisibly, against Yahoo-backed routes.
   useEffect(() => {
     if (!data?.brief) return;
     const brief = data.brief;
     const t = setInterval(() => {
+      if (document.hidden || !activeRef.current) return;
       fetchMacroTape();
       fetchBlotterQuotes(brief);
       fetchTracker();

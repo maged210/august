@@ -551,7 +551,16 @@ export default function IdeasFeed() {
 
   useEffect(() => {
     load();
-    const id = window.setInterval(load, REFRESH_MS);
+    // fix/p0-live-trust — this fired unconditionally every 60s, and `load()`
+    // issues FOUR fetches (/api/intel/feed, /api/ideas, /api/tape, /api/wire).
+    // IdeasFeed is the non-owner body of IntelDeckSurface, which latches
+    // mounted after the first TERMINAL visit and is only display:none'd after,
+    // so every visitor tab that ever touched TERMINAL kept issuing 4
+    // requests/minute forever — including minimized, and including against an
+    // endpoint returning 500s, 1,440 times a day with no backoff.
+    const id = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, REFRESH_MS);
     return () => window.clearInterval(id);
   }, [load]);
 
