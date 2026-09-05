@@ -58,7 +58,12 @@ type Overview = {
 };
 
 type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: number; closes: number[] }>;
-type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
+// fix/p0-live-trust — the ASK tab is GONE along with the AskBar. CLAUDE.md:
+// "THE COMMAND BAR — the bar is the ONLY input, on the floor and on mobile"
+// and "No conversation UI exists anywhere". The desk carried a second
+// free-text model input with its own rules, its own answer surface, and no
+// ask cache or per-identity cap; questions go to the one bar on the floor.
+type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS";
 type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
 
@@ -511,7 +516,6 @@ function PageHeader({
     { key: "BRIEF", label: "BRIEF", fkey: "F2" },
     { key: "SOURCES", label: "SOURCES", fkey: "F3" },
     { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
-    { key: "ASK", label: "ASK", fkey: "F5" },
   ];
   const tabs = allTabs.filter((t) => owner || t.key !== "SOURCES");
 
@@ -4159,78 +4163,6 @@ function LeftPanel({
   );
 }
 
-// ── AskBar ───────────────────────────────────────────────────────────────────
-
-function AskBar({ ai }: { ai: boolean }) {
-  const [q, setQ] = useState("");
-  const [res, setRes] = useState<{
-    answer: string;
-    citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
-  } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [askErr, setAskErr] = useState(false);
-
-  const ask = async () => {
-    if (q.trim().length < 3) return;
-    setBusy(true);
-    setAskErr(false);
-    try {
-      const r = await fetch("/api/intel/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
-      });
-      const j = await r.json();
-      // a 500 error payload has no answer string — never render an empty popover
-      if (r.ok && typeof j.answer === "string") { setRes(j); }
-      else { setAskErr(true); }
-    } catch { setAskErr(true); }
-    finally { setBusy(false); }
-  };
-
-  // design ASK AUGUST band (SPEC-desktop §2.7) on the existing pinned bar:
-  // label + › prompt + accent-hairline input shell + accent Ask button. Error
-  // state + dismiss + the ANTHROPIC_API_KEY gating are unchanged; the design's
-  // fake block caret is not shipped (a real input has a real caret).
-  return (
-    <div className="rd-askbar">
-      {askErr && !res && (
-        <div className="rd-askbar-ans">
-          <span className="rd-state rd-state-err">ASK failed — try again.</span>
-          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginLeft: 10 }} onClick={() => setAskErr(false)}>Dismiss</button>
-        </div>
-      )}
-      {res && (
-        <div className="rd-askbar-ans">
-          <div style={{ marginBottom: 8 }}>{res.answer}</div>
-          {res.citations.map((c, i) => (
-            <a key={i} className="rd-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
-              ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
-            </a>
-          ))}
-          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginTop: 8 }} onClick={() => setRes(null)}>Dismiss</button>
-        </div>
-      )}
-      <label className="rd-askbar-label" htmlFor="rd-ask-input">ASK AUGUST</label>
-      <div className="rd-askbar-shell">
-        <span className="rd-askbar-prompt" aria-hidden="true">›</span>
-        <input
-          id="rd-ask-input"
-          className="rd-askbar-input"
-          placeholder={ai ? "what did the source say about QQQ, and which ideas have no stated invalidation?" : "ask AUGUST (needs ANTHROPIC_API_KEY)"}
-          value={q}
-          disabled={!ai}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-        />
-      </div>
-      <button type="button" className="rd-ask-btn" disabled={busy || !ai || q.trim().length < 3} onClick={ask}>
-        {busy ? "…" : "ASK"}
-      </button>
-    </div>
-  );
-}
-
 // ── preserved sub-components ─────────────────────────────────────────────────
 
 function IdeaCard({ idea, favorite, onOpenVideo }: { idea: BriefIdea | TradeIdea; favorite?: boolean; onOpenVideo?: (id: string) => void }) {
@@ -6002,32 +5934,17 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           </div>
         )}
 
-        {/* ── ASK ── */}
-        {tab === "ASK" && (
-          <div className="rd-tabview" style={{ paddingBottom: 120 }}>
-            <div className="rd-card">
-              <div className="rd-card-h">Ask AUGUST</div>
-              <p className="rd-note" style={{ margin: 0 }}>Use the bar below — AUGUST answers from your processed video transcripts.</p>
-              {!config.ai && <div className="rd-state rd-warn">Needs ANTHROPIC_API_KEY.</div>}
-            </div>
-          </div>
-        )}
-
         {/* quiet owner hint on the signed-out visitor desk (board footer area)
             — honest text only; the SIGN IN action lives in the header */}
         {signedOut && (
           <div className="rd-owner-hint">Owner? Sign in to manage sources and publish.</div>
         )}
-        {/* bottom reserve clears the fixed ASK bar. On a phone that bar is now
-            ~10 + 44(shell) + (34 home-indicator inset + 10) ≈ 99px tall, so the
-            old flat 64 hid the last row behind it. Reserve = inset + 88px keeps
-            the disclaimer + last idea row visible above the bar on-device, and
-            is inert extra clearance on desktop (env() = 0, bar ≈ 54px). */}
-        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)" }}>
+        {/* The bottom reserve used to clear the fixed ASK bar (~99px on a
+            phone). That bar is gone, so the reserve is back to the home dock's
+            own inset — the disclaimer is the last thing in the scroll. */}
+        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}>
           AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>
-
-        <AskBar ai={config.ai} />
 
         {openVideo && (
           <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} owner={owner} />

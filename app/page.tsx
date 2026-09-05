@@ -955,8 +955,11 @@ export default function Home() {
       </section>
 
       {/* COMMAND-BAR era: no fixed dock, no composer, no reply panel. The bar
-          on the floor (HomeLanding's ask bar) is the ONLY input; the desk's
-          contextual ASK AUGUST band (/api/intel/ask) is its own surface. */}
+          on the floor (HomeLanding's ask bar) is the ONLY input — with no
+          exceptions. The carve-out that used to sit here ("the desk's
+          contextual ASK AUGUST band is its own surface") described a second
+          model input inside IntelDashboard that bypassed the ask cache and the
+          per-identity daily cap; fix/p0-live-trust deleted it. */}
     </main>
   );
 }
