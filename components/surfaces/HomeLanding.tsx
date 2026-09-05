@@ -102,6 +102,9 @@ export default function HomeLanding({
   const [bookTickers, setBookTickers] = useState<string[]>([]);
   const [clock, setClock] = useState(""); // filled client-side (SSR-safe)
   const [pills, setPills] = useState<Pill[]>([]);
+  /** fix/p0-live-trust — the last WATCHING poll failed or carried no quote, so
+   *  the prices on screen are the previous tick's and must say so */
+  const [watchStale, setWatchStale] = useState(false);
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
   const [isOwner, setIsOwner] = useState(false);
   // R1-REDO — the rain dial's little menu (matrix only); closes on outside tap
@@ -240,8 +243,19 @@ export default function HomeLanding({
             }
           }
           setPills(out);
+          // fix/p0-live-trust — a poll only counts as landed when it actually
+          // carried a usable quote; an empty 200 must not clear the stale mark
+          if (out.length > 0) setWatchStale(false);
+          else setWatchStale(true);
         })
-        .catch(() => {});
+        // the strip used to swallow every failure and keep painting the last
+        // prices forever, beside a static DELAYED tag advertising a live 60s
+        // poll — hour-old NQ/ES/BTC/VIX presented as current. HomeBrief's
+        // pulse row already solved this with a STALE tag; this is the same
+        // treatment.
+        .catch(() => {
+          if (!cancelled) setWatchStale(true);
+        });
     };
     pull();
     const id = window.setInterval(() => {
@@ -606,7 +620,14 @@ export default function HomeLanding({
           quotes only, absent entirely when none resolve */}
       {pills.length > 0 ? (
         <div className="hl-tape" aria-label="Watching — live quotes">
-          <span className="hl-label hl-tape-label">WATCHING <span className="dtag dtag-delayed" title="Yahoo quotes · 60s poll">DELAYED</span></span>
+          <span className="hl-label hl-tape-label">
+            WATCHING{" "}
+            {watchStale ? (
+              <span className="dtag dtag-stale" title="the last quote poll didn't land — these prices are the previous tick">STALE</span>
+            ) : (
+              <span className="dtag dtag-delayed" title="Yahoo quotes · 60s poll">DELAYED</span>
+            )}
+          </span>
           <div className="hl-tape-chips">
             {pills.map((p) => (
               <span key={p.label} className="hl-pill">

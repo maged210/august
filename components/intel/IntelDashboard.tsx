@@ -632,23 +632,30 @@ function PageHeader({
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
 function StatusBar({
-  data, clock, latencyMs, lastQuoteOkAt, trackerOk,
+  data, clock, latencyMs, lastQuoteOkAt, trackerOk, polling,
 }: {
   data: Overview;
   clock: string;
   latencyMs: number | null;
   lastQuoteOkAt: number | null;
   trackerOk: boolean | null;
+  /** fix/p0-live-trust — is the 30s interval actually armed? It is gated on
+   *  today's brief existing, so FEED must not claim a cadence on days it
+   *  never starts. */
+  polling: boolean;
 }) {
   const { lastSync, lastBriefAt } = data;
   // Honest chrome (SPEC-wiring §2.10): quotes arrive via 30s HTTP polling —
   // no websocket exists, so FEED says POLL 30s, never WS. DATA degrades to
-  // STALE when two consecutive polls fail to land (75s), LATENCY is the
-  // measured last roundtrip, KEY is the real YOUTUBE_API_KEY flag, TRACKER
-  // reports the engine's reachability (retained — the design dropped it, but
-  // rows silently fall back to derived statuses when the tracker is down and
-  // the chrome must say so). Ages are human (30h, never 1821m). Volatile
-  // values sit in fixed ch-slots so neighbors never shift between polls.
+  // STALE when two consecutive polls fail to land (75s) — and, since
+  // fix/p0-live-trust, a poll only counts as "landed" when the response was ok
+  // AND carried at least one quote, because /api/intel/quotes answers 200 with
+  // an empty map on a total upstream outage. LATENCY is the measured last
+  // roundtrip, KEY is the real YOUTUBE_API_KEY flag, TRACKER reports the
+  // engine's reachability (retained — the design dropped it, but rows silently
+  // fall back to derived statuses when the tracker is down and the chrome must
+  // say so). Ages are human (30h, never 1821m). Volatile values sit in fixed
+  // ch-slots so neighbors never shift between polls.
   const dataState =
     lastQuoteOkAt === null ? "WAITING" : Date.now() - lastQuoteOkAt < 75_000 ? "LIVE" : "STALE";
   const slowLat = latencyMs !== null && latencyMs > 2000;
@@ -659,7 +666,16 @@ function StatusBar({
       dot: dataState === "LIVE" ? "rd-dot-ok rd-dot-glow" : dataState === "STALE" ? "rd-dot-amber" : "rd-dot-idle",
       valCls: `${dataState === "LIVE" ? "rd-sb-ok" : dataState === "STALE" ? "rd-sb-amber" : "rd-sb-plain"} rd-slot7`,
     },
-    { label: "FEED", val: "POLL 30s", dot: dataState === "LIVE" ? "rd-dot-ok" : "rd-dot-idle", valCls: "rd-sb-plain" },
+    // fix/p0-live-trust — FEED describes the poll, so it must be bound to
+    // whether the poll is actually running. "POLL 30s" was a hardcoded string
+    // literal while the 30s interval bails out entirely without today's brief
+    // (`if (!data?.brief) return;`), so on a no-brief day quotes were fetched
+    // exactly once on mount and the chrome kept claiming a 30-second cadence.
+    {
+      label: "FEED", val: polling ? "POLL 30s" : "IDLE",
+      dot: polling && dataState === "LIVE" ? "rd-dot-ok" : "rd-dot-idle",
+      valCls: `${polling ? "rd-sb-plain" : "rd-sb-amber"} rd-slot7`,
+    },
     {
       label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—",
       dot: latencyMs === null ? "rd-dot-idle" : slowLat ? "rd-dot-amber" : "rd-dot-ok",
@@ -3622,7 +3638,10 @@ function FngChip({ fng }: { fng: DeskFng | null }) {
     <span
       className="rd-fng-chip"
       style={{ color: band.c, borderColor: band.bd, background: band.bg }}
-      title={`CNN Fear & Greed (equities) — ${v} · ${band.label}`}
+      /* fix/p0-live-trust — the payload has always carried asOf and never
+         rendered it, so a reading served from the (previously TTL-less) Redis
+         fallback looked identical to a fresh one */
+      title={`CNN Fear & Greed (equities) — ${v} · ${band.label} · as of ${ago(fng.asOf)}`}
     >
       {/* inner span so the chip can SHRINK (ellipsis) instead of colliding
           with bar2's count pills at narrow desktop widths */}
@@ -3641,13 +3660,23 @@ function SentimentGauge({ fng }: { fng: DeskFng | null }) {
   const a = ((180 - 1.8 * v) * Math.PI) / 180;
   const nx = 100 + 74 * Math.cos(a); // needle at r−8 = 74
   const ny = 104 - 74 * Math.sin(a);
+  // the server refreshes on a 30-min TTL; past two of those the reading is
+  // being served from cache or a failed fetch and the note says so
+  const stale = Date.now() - fng.asOf > 60 * 60_000;
   return (
     <section className="rd-lsec">
       <div className="rd-ts-card">
+        {/* fix/p0-live-trust — the reading's own asOf, rendered. fetchDesk
+            swallows failures and keeps the last payload forever, and the
+            server may serve a cached reading, so an unlabelled gauge could be
+            hours or days old while looking identical to a live one. The
+            existing null-case rule (no reading → no gauge) is unchanged. */}
         <div className="rd-ts-head">
           <span className="rd-ts-title">MARKET SENTIMENT</span>
           <span className="rd-ts-hair" aria-hidden="true" />
-          <span className="rd-ts-note">CNN F&amp;G</span>
+          <span className={`rd-ts-note${stale ? " rd-sb-amber" : ""}`} title={`CNN equity Fear & Greed, read ${ago(fng.asOf)}`}>
+            CNN F&amp;G · {ago(fng.asOf)}
+          </span>
         </div>
         <svg
           className="rd-gauge-svg"
@@ -5052,8 +5081,15 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
-      setLastQuoteOkAt(Date.now());
       const q: QuoteMap = j.quotes ?? {};
+      // fix/p0-live-trust — stamp the freshness clock only on EVIDENCE that a
+      // quote arrived. /api/intel/quotes wraps every upstream lookup in
+      // Promise.allSettled and always answers 200 with `{ quotes: {} }`, so a
+      // total Yahoo outage used to stamp a fresh "ok" and DATA read LIVE with
+      // a green glow while the tape said AWAITING FIRST QUOTE and every row
+      // read "—". The STALE degradation the StatusBar comment promises was
+      // only reachable if fetch() itself threw.
+      if (r.ok && Object.keys(q).length > 0) setLastQuoteOkAt(Date.now());
       setTape((prev) => {
         const watch = prev.filter((t) => t.kind === "watch");
         const macro: TapeItem[] = TAPE_MACRO.filter((s) => q[s]).map((s) => ({
@@ -5083,8 +5119,16 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       const r = await fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
-      setLastQuoteOkAt(Date.now());
-      setQuotes(j.quotes ?? {});
+      const q: QuoteMap = j.quotes ?? {};
+      // fix/p0-live-trust — same evidence rule as fetchMacroTape, plus: an
+      // empty tick must not BLANK a populated board. The wholesale
+      // `setQuotes(j.quotes ?? {})` replacement meant one 200-with-no-quotes
+      // wiped every price on the board and stamped the clock LIVE in the same
+      // breath.
+      if (r.ok && Object.keys(q).length > 0) {
+        setLastQuoteOkAt(Date.now());
+        setQuotes(q);
+      }
     } catch { /* keep */ }
   }, []);
 
@@ -5649,7 +5693,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           signedOut={signedOut}
           onExitToChat={onExitToChat}
         />
-        <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
+        <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} polling={!!data.brief} />
         <LiveTape tape={fullTape} />
 
         {msg && (

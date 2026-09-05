@@ -1,9 +1,14 @@
 // AUGUST Market Intel — Idea Tracker persistence + the snapshot pass. SERVER ONLY.
 // The pure engine lives in tracker.ts; this file owns Redis I/O and orchestration:
 // load tracked set → ingest today's brief ideas → batch quotes → evaluate →
-// housekeeping → enforce caps → save. Idempotent and cheap: designed for an
-// external ~10–15 min pinger during market hours (see /api/cron/intel-track)
-// AND an opportunistic throttled pass on page load (see /api/intel/tracker).
+// housekeeping → enforce caps → save. Idempotent and cheap.
+//
+// ACTUAL CADENCE (fix/p0-live-trust): ONE scheduled run per day at 22:10 UTC
+// (vercel.json → /api/cron/intel-track), plus an opportunistic throttled pass
+// on page load (see /api/intel/tracker) that only fires while the owner has
+// the desk open. The "external ~10–15 min pinger during market hours" this
+// file used to describe was never configured — see the route header for what
+// the daily-only cadence costs.
 //
 // Storage: ONE JSON blob under the tracked namespace (single GET/SET per pass —
 // atomic enough for the single-writer cron; the page-load pass is throttled by

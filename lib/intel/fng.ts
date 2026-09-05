@@ -59,12 +59,21 @@ async function fetchCnnFng(): Promise<FngReading> {
   return { value: Math.round(raw), rating, asOf: Number.isFinite(ts) ? ts : Date.now() };
 }
 
+/** fix/p0-live-trust — the fallback key EXPIRES. It was written with no TTL,
+ *  so on a sustained CNN outage getEquityFng would serve the same reading
+ *  indefinitely and the gauge would show a needle, a number and a FEAR/GREED
+ *  band that could be weeks old, rendered identically to a fresh one. A week
+ *  is generous for a daily-ish index and still bounds the lie; past it the
+ *  read returns null and the callers hide the chip + gauge, which is the
+ *  behavior they already implement for "no reading". */
+const STALE_KEY_TTL_S = 7 * 24 * 60 * 60;
+
 /** best-effort — a Redis outage must never fail the fng read */
 async function writeStale(data: FngReading): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(REDIS_KEY, JSON.stringify(data));
+    await redis.set(REDIS_KEY, JSON.stringify(data), { ex: STALE_KEY_TTL_S });
   } catch {
     /* best-effort */
   }
