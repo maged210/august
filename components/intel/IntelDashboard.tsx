@@ -481,13 +481,16 @@ function InspChart({ closes, live, trigger, tone }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner, signedOut, onExitToChat,
+  data, clock, tab, onTab, blotter, trackedByIdeaId, busy, onSync, onGenerateBrief, fng, owner, signedOut, onExitToChat,
 }: {
   data: Overview;
   clock: string;
   tab: Tab;
   onTab: (t: Tab) => void;
   blotter: BlotterIdea[];
+  /** fix/p0-live-trust — the count pills are tracker-first, like the rows and
+   *  the filter below them (see boardCounts) */
+  trackedByIdeaId: Map<string, TrackedIdea>;
   busy: string | null;
   onSync: () => void;
   onGenerateBrief: () => void;
@@ -501,13 +504,7 @@ function PageHeader({
    *  client-side (a plain href="/" would full-reload and drop the chat state) */
   onExitToChat?: () => void;
 }) {
-  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
-  for (const idea of blotter) {
-    const s = deriveStatus(idea);
-    if (s === "TRIG") counts.TRIG++;
-    else if (s === "ARMED") counts.ARMED++;
-    else if (s === "ACTIVE") counts.ACTIVE++;
-  }
+  const counts = boardCounts(blotter, trackedByIdeaId);
 
   const allTabs: { key: Tab; label: string; fkey: string }[] = [
     { key: "BOARD", label: "BOARD", fkey: "F1" },
@@ -565,7 +562,12 @@ function PageHeader({
             {/* shrink order at narrow desktop widths: this text ellipsizes
                 first (it is echoed by the status bar + board header), then
                 the F&G chip — the meta never collides with the count pills */}
-            <span className="rd-meta-t">DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED</span>
+            {/* fix/p0-live-trust — this counts TODAY'S BRIEF IDEAS, not the
+                tracked set (which this component fetches separately into
+                trackedList and which can hold rows on a day with no brief).
+                Four things in this app were labelled TRACKED; this one is the
+                board. */}
+            <span className="rd-meta-t">DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} ON THE BOARD</span>
             {/* stage-5: F&G band chip appended LAST so its async arrival never
                 shifts the date/desk text (absent while the fng part is null) */}
             <FngChip fng={fng} />
@@ -574,12 +576,21 @@ function PageHeader({
         <div className="rd-bar2-right">
           {/* pills always mount (zero counts dim on mobile, hide on desktop) so
               the wrapped mobile geometry never shifts when counts land */}
-          <span className={`rd-count rd-count-trig${counts.TRIG ? "" : " rd-count-zero"}`}>
+          {/* an em-dash when the counts are not knowable — never a stated zero
+              for an unread board (fix/p0-live-trust) */}
+          <span
+            className={`rd-count rd-count-trig${counts.known && counts.TRIG ? "" : " rd-count-zero"}`}
+            title={counts.known ? undefined : "no quotes or tracker records for this board yet"}
+          >
             <span className="rd-count-dot" aria-hidden="true" />
-            {counts.TRIG} TRIGGERED
+            {counts.known ? counts.TRIG : "—"} TRIGGERED
           </span>
-          <span className={`rd-count rd-count-arm${counts.ARMED ? "" : " rd-count-zero"}`}>{counts.ARMED} ARMED</span>
-          <span className={`rd-count rd-count-act${counts.ACTIVE ? "" : " rd-count-zero"}`}>{counts.ACTIVE} ACTIVE</span>
+          <span className={`rd-count rd-count-arm${counts.known && counts.ARMED ? "" : " rd-count-zero"}`}>
+            {counts.known ? counts.ARMED : "—"} ARMED
+          </span>
+          <span className={`rd-count rd-count-act${counts.known && counts.ACTIVE ? "" : " rd-count-zero"}`}>
+            {counts.known ? counts.ACTIVE : "—"} ACTIVE
+          </span>
           <span className="rd-bar2-div" aria-hidden="true" />
           {owner && (
             <button type="button" className="rd-btn" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
@@ -1119,6 +1130,47 @@ function effectiveStatus(idea: BlotterIdea, tracked: TrackedIdea | null): Tracke
   if (tracked) return tracked.status;
   const s = deriveStatus(idea);
   return s === "TRIG" ? "TRIGGERED" : s === "INVLD" ? "INVALIDATED" : s === "WATCH" ? "ACTIVE" : s;
+}
+
+/** fix/p0-live-trust — ONE count for every summary pill on this desk.
+ *
+ *  The header pills and the mobile stat tiles used to loop `deriveStatus`,
+ *  which is a stateless price-vs-entry comparison that never consults the
+ *  tracker. Two consequences, both visible on one screen: a call the tracker
+ *  has permanently marked TRIGGERED (the transition is one-way — see
+ *  lib/intel/tracker.ts) dropped out of the count the moment price slipped
+ *  back under its entry, while the row beneath still wore the green TRIG
+ *  badge; and a CLOSED/INVALIDATED record still incremented the pills.
+ *  Counting through `effectiveStatus` — the same vocabulary the TRIGGERED
+ *  filter uses — makes pill, row and filter agree by construction.
+ *
+ *  `known` is the second half of the fix. A pill may only print a number when
+ *  it has something to count from: at least one board idea AND, for those
+ *  ideas, either a live quote or a tracker record. With a board but no
+ *  evidence (quotes have not landed, or the fetch failed and left the map
+ *  empty) every idea derives to WATCH and the pills used to assert
+ *  "0 TRIGGERED · 0 ARMED · 0 ACTIVE" for a fully populated board — 0 stated
+ *  for unknown. Callers render an em-dash instead. */
+function boardCounts(ideas: BlotterIdea[], trackedByIdeaId: Map<string, TrackedIdea>) {
+  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0, known: false };
+  if (ideas.length === 0) return counts;
+  counts.known = ideas.some((i) => i.quote || trackedByIdeaId.has(i.id));
+  if (!counts.known) return counts;
+  for (const idea of ideas) {
+    switch (effectiveStatus(idea, trackedByIdeaId.get(idea.id) ?? null)) {
+      case "TRIGGERED":
+      case "TARGET_HIT":
+        counts.TRIG++;
+        break;
+      case "ARMED":
+        counts.ARMED++;
+        break;
+      case "ACTIVE":
+        counts.ACTIVE++;
+        break;
+    }
+  }
+  return counts;
 }
 
 /** the rows the current filter admits — single source of truth shared by the
@@ -2150,14 +2202,11 @@ function MobileBoard({
   const hCount = (g: string | null) =>
     g === null ? blotter.length : blotter.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g).length;
 
-  // brief-card stat tiles — same derivation as the header count pills
-  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
-  for (const idea of blotter) {
-    const s = deriveStatus(idea);
-    if (s === "TRIG") counts.TRIG++;
-    else if (s === "ARMED") counts.ARMED++;
-    else if (s === "ACTIVE") counts.ACTIVE++;
-  }
+  // brief-card stat tiles — the SAME tracker-first count as the header pills.
+  // These tiles sit one swipe from carousel card 2, which lists the tracker's
+  // real statusHistory transitions; the old derived loop let the tile read
+  // "0 TRIGGERED" beside an ALERTS card listing fired triggers.
+  const counts = boardCounts(blotter, trackedByIdeaId);
 
   // ALERTS — REAL tracker lifecycle transitions only (statusHistory), newest
   // first; the initial ACTIVE/ARMED entry is not an alert. System rows carry
@@ -2217,17 +2266,17 @@ function MobileBoard({
                   <span className="rd-abs-g" aria-hidden="true">∅</span> No posture line in tonight&apos;s brief.
                 </p>
               )}
-              <div className="rd-mtiles">
+              <div className="rd-mtiles" title={counts.known ? undefined : "no quotes or tracker records for this board yet"}>
                 <div className="rd-mtile rd-mtile-trig">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.TRIG}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.TRIG : "—"}</span>
                   <span className="rd-mtile-l">TRIGGERED</span>
                 </div>
                 <div className="rd-mtile rd-mtile-arm">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ARMED}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.ARMED : "—"}</span>
                   <span className="rd-mtile-l">ARMED</span>
                 </div>
                 <div className="rd-mtile rd-mtile-act">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ACTIVE}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.ACTIVE : "—"}</span>
                   <span className="rd-mtile-l">ACTIVE</span>
                 </div>
               </div>
@@ -5553,6 +5602,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           tab={tab}
           onTab={setTab}
           blotter={blotter}
+          trackedByIdeaId={trackedByIdeaId}
           busy={busy}
           onSync={sync}
           onGenerateBrief={generateBrief}

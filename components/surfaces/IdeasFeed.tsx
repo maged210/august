@@ -29,7 +29,7 @@
 // - no demo/sample rows; an empty board shows the empty state.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FeedCard } from "@/lib/intel/publish";
+import { isTriggered, type FeedCard } from "@/lib/intel/publish";
 import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
 import type { Direction } from "@/lib/intel/types";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
@@ -113,8 +113,9 @@ function matchesFilter(f: Filter, status: TrackedStatus): boolean {
     case "ALL":
       return true;
     case "TRIGGERED":
-      // TARGET_HIT is a triggered call that reached its stated target
-      return status === "TRIGGERED" || status === "TARGET_HIT";
+      // TARGET_HIT is a triggered call that reached its stated target —
+      // shared with the header pill and HomeBrief via lib/intel/publish
+      return isTriggered(status);
     case "ARMED":
       return status === "ARMED";
     case "ACTIVE":
@@ -577,11 +578,12 @@ export default function IdeasFeed() {
 
   const tracked = feed?.ideas ?? [];
   const liveIdeas = live ?? [];
-  // INTEGRITY-1 — the header counts cover the whole board: tracked lifecycles
-  // PLUS live desk calls whose daily evaluation concluded TRIGGERED
-  const trig =
-    tracked.filter((i) => i.status === "TRIGGERED").length +
-    liveIdeas.filter((i) => i.evaluation?.state === "TRIGGERED").length;
+  // fix/p0-live-trust — the TRIG pill counts EXACTLY what tapping TRIGGERED
+  // shows: the same predicate over the same `tracked` array the filter reads.
+  // It used to count TRIGGERED-only and then add live desk ideas the filter
+  // ignores entirely, so the pill and its own filter could never agree. Live
+  // calls keep their own representation in the "N LIVE" statline.
+  const trig = tracked.filter((i) => isTriggered(i.status)).length;
   const arm = tracked.filter((i) => i.status === "ARMED").length;
   const visible = tracked.filter((i) => matchesFilter(filter, i.status));
 
