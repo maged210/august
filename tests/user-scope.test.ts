@@ -190,6 +190,28 @@ test("deriveIntelMutateGate: unconfigured auth in dev/test stays OPEN (single-us
   });
 });
 
+test("STRICT gate contract: forcing production:true removes the single-user fallback everywhere", () => {
+  // feature/ingest-transcripts — checkIntelMutateAllowedStrict is exactly
+  // checkIntelMutateAllowed with `production: true` hardcoded, so that a route
+  // which SPENDS MONEY (the transcript fetcher burns paid provider credits per
+  // call) never inherits "no auth env → you are the owner". This asserts the
+  // property that makes it strict: the unconfigured branch is refused on the
+  // same inputs that the normal gate lets through in dev.
+  const unconfiguredInDev = { configured: false, email: null, production: false };
+  assert.deepEqual(deriveIntelMutateGate(unconfiguredInDev), { ok: true }, "normal gate: open in dev");
+  assert.deepEqual(
+    deriveIntelMutateGate({ ...unconfiguredInDev, production: true }),
+    { ok: false, status: 403 },
+    "strict gate: the SAME inputs are refused once production is forced",
+  );
+  // and the two credentials a real owner uses are unaffected by the forcing
+  assert.deepEqual(
+    deriveIntelMutateGate({ configured: true, email: OWNER_EMAIL, production: true }),
+    { ok: true },
+    "a signed-in owner still passes the strict gate",
+  );
+});
+
 test("deriveIntelMutateGate: unconfigured auth in PRODUCTION → denied (FAILS CLOSED)", () => {
   // The core of this change on the write side: a secretless production deploy
   // must NOT accept open writes to the shared desk. 403 → gateIntelMutationOrRespond

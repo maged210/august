@@ -265,6 +265,24 @@ export async function checkIntelMutateAllowed(): Promise<IntelGate> {
   });
 }
 
+/**
+ * The WRITE gate with the single-user fallback REMOVED — identical to
+ * checkIntelMutateAllowed except that the unconfigured-auth branch fails
+ * closed in EVERY environment, not only production. It does that by feeding
+ * the same pure derivation `production: true`, so there is still exactly one
+ * decision table and the two gates cannot drift.
+ *
+ * For routes whose side effects COST MONEY. The single-user fallback is right
+ * for the desk (a local dev instance should just work), but the transcript
+ * fetcher spends paid provider credits on every call: an unauthenticated
+ * caller reaching it in an environment that happens to lack AUTH_SECRET could
+ * drain a metered quota. Losing the desk locally is a visible annoyance;
+ * having someone else spend your credits is neither visible nor recoverable.
+ */
+export async function checkIntelMutateAllowedStrict(): Promise<IntelGate> {
+  return deriveIntelMutateGate({ ...(await readSession()), production: true });
+}
+
 /** Route helper mirroring resolveUserOr401 for the intel mutation gate. */
 export async function gateIntelMutationOrRespond(): Promise<Response | null> {
   const gate = await checkIntelMutateAllowed();

@@ -1,4 +1,4 @@
-import { gateAdminOrRespond } from "@/lib/admin";
+import { gateAdminStrictOrRespond } from "@/lib/admin";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { fetchTranscript, parseVideoRef, transcriptProviderConfigured } from "@/lib/transcript-fetch";
 import { findTranscriptsForVideo, transcriptsConfigured } from "@/lib/transcripts";
@@ -13,6 +13,13 @@ import { findTranscriptsForVideo, transcriptsConfigured } from "@/lib/transcript
 // The provider key lives in the environment and is used inside
 // lib/transcript-fetch on the server. It is never returned in a body, never
 // put in an error message, and never logged — see the scrubKey guard there.
+//
+// AUTH: gateAdminStrictOrRespond, not the usual gateAdminOrRespond. Every
+// other /admin route inherits the single-user fallback ("no auth env → you are
+// the owner", dev/test only). That is fine for routes that move local data and
+// wrong for this one: it spends metered provider credits on every call, so an
+// environment that merely happens to lack AUTH_SECRET must not hand an
+// anonymous caller the ability to drain the quota.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // The provider can queue large videos as async jobs; lib/transcript-fetch
@@ -25,7 +32,10 @@ export async function POST(req: Request): Promise<Response> {
   // sibling of the intake it feeds.
   const rl = await checkRateLimit("transcripts", getIp(req));
   if (!rl.ok) return rateLimitedResponse(rl.reset);
-  const denied = await gateAdminOrRespond(req);
+  // STRICT gate: this route spends paid provider credits per call, so it takes
+  // no single-user fallback. An ADMIN_TOKEN bearer or a signed-in owner session
+  // is required in every environment, including local dev.
+  const denied = await gateAdminStrictOrRespond(req);
   if (denied) return denied;
 
   if (!transcriptProviderConfigured()) {
