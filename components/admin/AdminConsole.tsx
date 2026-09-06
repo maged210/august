@@ -137,6 +137,31 @@ export default function AdminConsole() {
   const [trSource, setTrSource] = useState("");
   const [trBusy, setTrBusy] = useState(false);
   const [trResult, setTrResult] = useState("");
+  // feature/ingest-transcripts — link → transcript, an ADDITIONAL input beside
+  // the paste box. The fetch only fills the box; PROCESS is still the one door
+  // into extraction.
+  const [trUrl, setTrUrl] = useState("");
+  const [fetchBusy, setFetchBusy] = useState(false);
+  /** the fetch's own state line — never a spinner that resolves to silence */
+  const [fetchState, setFetchState] = useState<
+    | { kind: "idle" }
+    | { kind: "fetching" }
+    | { kind: "ok"; text: string }
+    | { kind: "warn"; text: string }
+    | { kind: "error"; text: string }
+  >({ kind: "idle" });
+  const [fetchMeta, setFetchMeta] = useState<{
+    title: string;
+    channel: string;
+    publishedAt: string | null;
+    durationSeconds: number | null;
+  } | null>(null);
+  /** set when the guard reports a prior intake — the button re-arms as "FETCH
+   *  ANYWAY" for that exact URL, and nothing is spent until it's pressed */
+  const [dupUrl, setDupUrl] = useState<string | null>(null);
+  /** the video the current box text came from, threaded into PROCESS so the
+   *  duplicate check can see this intake next time */
+  const [trVideoId, setTrVideoId] = useState("");
   const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([]);
   const [openIngest, setOpenIngest] = useState<string | null>(null);
   // desk tape (G3 r4 + AD-E)
@@ -416,6 +441,77 @@ export default function AdminConsole() {
     });
   };
 
+  // feature/ingest-transcripts — resolve a YouTube link to transcript text and
+  // drop it in the SAME box the manual paste fills. Nothing is stored or
+  // extracted here. `force` is only ever true when the owner has already been
+  // shown a duplicate warning for this exact URL and pressed again.
+  const fetchTranscriptFromUrl = async (force: boolean) => {
+    const url = trUrl.trim();
+    if (!url || fetchBusy) return;
+    setFetchBusy(true);
+    setFetchState({ kind: "fetching" });
+    setActionError("");
+    if (!force) {
+      setFetchMeta(null);
+      setDupUrl(null);
+    }
+    try {
+      const res = await fetch("/api/admin/transcript-fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ url, force }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        kind?: string;
+        message?: string;
+        text?: string;
+        chars?: number;
+        overCap?: boolean;
+        credits?: number;
+        videoId?: string;
+        meta?: { title: string; channel: string; publishedAt: string | null; durationSeconds: number | null } | null;
+        metaNote?: string | null;
+      };
+
+      if (j.kind === "duplicate") {
+        setDupUrl(url);
+        setFetchState({ kind: "warn", text: j.message ?? "This video has been ingested before." });
+        return;
+      }
+      if (!res.ok || !j.ok) {
+        // every failure carries the provider's specific reason, plus what the
+        // attempt cost when it cost anything
+        const spent = j.credits ? ` · ${j.credits} credit${j.credits === 1 ? "" : "s"} spent` : "";
+        setFetchState({ kind: "error", text: `${j.message ?? `Fetch failed (${res.status}).`}${spent}` });
+        return;
+      }
+
+      setTrText(j.text ?? "");
+      setTrVideoId(j.videoId ?? "");
+      setFetchMeta(j.meta ?? null);
+      setDupUrl(null);
+      // auto-title the source box from the real metadata, without clobbering a
+      // label the owner already typed
+      if (!trSource.trim()) {
+        const title = j.meta?.title?.trim();
+        setTrSource((title || j.videoId || "").slice(0, 80));
+      }
+      const chars = j.chars ?? 0;
+      const cost = `${j.credits ?? 0} credit${(j.credits ?? 0) === 1 ? "" : "s"}`;
+      const line = `Fetched ${(chars / 1000).toFixed(1)}k chars · ${cost}${j.metaNote ? ` · ${j.metaNote}` : ""}`;
+      setFetchState(
+        j.overCap
+          ? { kind: "warn", text: `${line} — over the 120k intake cap; trim it before PROCESS.` }
+          : { kind: "ok", text: line },
+      );
+    } catch (err) {
+      setFetchState({ kind: "error", text: `Fetch failed: ${(err as Error).message}` });
+    } finally {
+      setFetchBusy(false);
+    }
+  };
+
   const processTranscript = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = trText.trim();
@@ -430,7 +526,9 @@ export default function AdminConsole() {
       const res = await fetch("/api/admin/transcripts", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ text, source }),
+        // videoId is provenance for the duplicate check and is "" for a
+        // hand-pasted transcript (feature/ingest-transcripts)
+        body: JSON.stringify({ text, source, videoId: trVideoId }),
       });
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -446,6 +544,11 @@ export default function AdminConsole() {
       }
       setTrText("");
       setTrSource("");
+      setTrUrl("");
+      setTrVideoId("");
+      setFetchMeta(null);
+      setDupUrl(null);
+      setFetchState({ kind: "idle" });
       setTrResult(
         j.drafts === 0
           ? "Processed — no trade ideas or tape callouts found in that transcript."
@@ -849,8 +952,67 @@ export default function AdminConsole() {
             <section className="adm-panel">
               <div className="adm-panel-h">
                 <span className="adm-panel-t">TRANSCRIPT INTAKE</span>
-                <span className="adm-panel-sub">paste or drop a .txt</span>
+                <span className="adm-panel-sub">fetch a link, or paste / drop a .txt</span>
               </div>
+              {/* feature/ingest-transcripts — link → transcript. Fills the same
+                  box the manual paste fills; PROCESS below is unchanged and is
+                  still the only path into extraction. */}
+              <div className="adm-fetchrow">
+                <input
+                  className="adm-input"
+                  value={trUrl}
+                  onChange={(e) => {
+                    setTrUrl(e.target.value);
+                    if (dupUrl && e.target.value.trim() !== dupUrl) {
+                      setDupUrl(null);
+                      setFetchState({ kind: "idle" });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void fetchTranscriptFromUrl(dupUrl === trUrl.trim());
+                    }
+                  }}
+                  aria-label="YouTube link or video ID"
+                  placeholder="https://youtube.com/watch?v=… or an 11-char video ID"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="adm-btn"
+                  disabled={fetchBusy || !trUrl.trim()}
+                  aria-busy={fetchBusy}
+                  onClick={() => void fetchTranscriptFromUrl(dupUrl === trUrl.trim())}
+                >
+                  {fetchBusy ? "FETCHING…" : dupUrl === trUrl.trim() ? "FETCH ANYWAY" : "FETCH"}
+                </button>
+              </div>
+              {fetchState.kind !== "idle" ? (
+                <p
+                  className={
+                    fetchState.kind === "error"
+                      ? "adm-err"
+                      : fetchState.kind === "warn"
+                        ? "adm-warn"
+                        : "adm-ok"
+                  }
+                  role={fetchState.kind === "error" ? "alert" : "status"}
+                >
+                  {fetchState.kind === "fetching" ? "Fetching transcript…" : fetchState.text}
+                </p>
+              ) : null}
+              {fetchMeta ? (
+                <p className="adm-fetchmeta">
+                  {fetchMeta.title || "(untitled)"}
+                  {fetchMeta.channel ? ` · ${fetchMeta.channel}` : ""}
+                  {fetchMeta.publishedAt ? ` · ${fetchMeta.publishedAt.slice(0, 10)}` : ""}
+                  {fetchMeta.durationSeconds != null
+                    ? ` · ${Math.floor(fetchMeta.durationSeconds / 60)}m${String(fetchMeta.durationSeconds % 60).padStart(2, "0")}s`
+                    : ""}
+                </p>
+              ) : null}
               <form className="adm-form" onSubmit={processTranscript}>
                 <input
                   className="adm-input"
@@ -863,7 +1025,17 @@ export default function AdminConsole() {
                 <textarea
                   className="adm-input adm-textarea adm-transcript"
                   value={trText}
-                  onChange={(e) => setTrText(e.target.value)}
+                  onChange={(e) => {
+                    setTrText(e.target.value);
+                    // hand-editing the box breaks the link to the fetched
+                    // video — don't tag the record with a video this text may
+                    // no longer be (feature/ingest-transcripts)
+                    if (trVideoId) {
+                      setTrVideoId("");
+                      setFetchMeta(null);
+                      setFetchState({ kind: "idle" });
+                    }
+                  }}
                   onDrop={onDropTranscript}
                   onDragOver={(e) => e.preventDefault()}
                   aria-label="Transcript text"

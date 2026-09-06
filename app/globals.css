@@ -5839,6 +5839,37 @@ button.pulse-line:focus-visible {
   max-width: 380px;
 }
 
+/* feature/ingest-transcripts — the link → transcript row above the paste box.
+   The input flexes, the FETCH button keeps its intrinsic width. */
+.adm-fetchrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+.adm-fetchrow .adm-input {
+  flex: 1;
+  min-width: 0;
+}
+.adm-fetchrow .adm-btn {
+  flex-shrink: 0;
+}
+/* the fetch's non-fatal states: over-cap, duplicate warning */
+.adm-warn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--amber);
+  margin: 0 0 8px;
+}
+/* real metadata for the fetched video, so the owner sees what they got */
+.adm-fetchmeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--ink-mute);
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
 /* lock screen */
 .adm-lock {
   max-width: 420px;
