@@ -36,6 +36,11 @@ export const MAX_IDEAS_PER_TRANSCRIPT = 12;
 export const MAX_TAPE_PER_TRANSCRIPT = 12;
 export const MAX_SOURCE_CHARS = 200;
 
+/** feature/ingest-transcripts — a YouTube video id, for the intake's
+ *  duplicate check. Deliberately strict: the guard is only as trustworthy as
+ *  the ids it stores. */
+export const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
 const EXTRACT_MODEL = "claude-sonnet-4-6";
 
 export type TranscriptStatus = "processed" | "failed";
@@ -52,6 +57,11 @@ export type TranscriptRecord = {
   /** draft tape entries created from this transcript (G3 round 4; absent on older records) */
   tapeIds?: string[];
   error?: string;
+  /** feature/ingest-transcripts — the YouTube video this transcript came from,
+   *  set when the text arrived via the link fetcher. Absent on hand-pasted
+   *  records and on everything stored before this branch, which is why the
+   *  duplicate check below also scans `source`. */
+  videoId?: string;
 };
 
 // --- pure helpers -----------------------------------------------------------
@@ -62,7 +72,7 @@ type Err = { ok: false; error: string };
 /** PURE. Validate the intake body: non-empty transcript under the cap. */
 export function validateTranscriptBody(
   body: unknown,
-): Ok<{ text: string; source: string }> | Err {
+): Ok<{ text: string; source: string; videoId: string }> | Err {
   if (typeof body !== "object" || body === null) return { ok: false, error: "body_not_object" };
   const b = body as Record<string, unknown>;
   const text = typeof b.text === "string" ? b.text.trim() : "";
@@ -71,7 +81,12 @@ export function validateTranscriptBody(
     return { ok: false, error: `text_over_${MAX_TRANSCRIPT_CHARS}_chars` };
   const source =
     typeof b.source === "string" ? b.source.replace(/\s+/g, " ").trim().slice(0, MAX_SOURCE_CHARS) : "";
-  return { ok: true, value: { text, source } };
+  // feature/ingest-transcripts — optional provenance. Only a well-formed
+  // YouTube id is accepted; anything else is dropped rather than stored as
+  // junk that the duplicate check would then trust.
+  const rawVideoId = typeof b.videoId === "string" ? b.videoId.trim() : "";
+  const videoId = YOUTUBE_ID_RE.test(rawVideoId) ? rawVideoId : "";
+  return { ok: true, value: { text, source, videoId } };
 }
 
 /**
@@ -347,6 +362,7 @@ function parseRecord(raw: unknown): TranscriptRecord | null {
 export async function storeTranscript(
   text: string,
   source: string,
+  videoId = "",
 ): Promise<TranscriptRecord | null> {
   const redis = getRedis();
   if (!redis) return null;
@@ -358,6 +374,7 @@ export async function storeTranscript(
     status: "failed", // pessimistic until extraction lands
     ideaIds: [],
     error: "pending",
+    ...(videoId ? { videoId } : {}),
   };
   try {
     await redis.set(K.transcript(rec.id), JSON.stringify(rec));
@@ -411,6 +428,29 @@ export async function listPublicIngests(limit = 12): Promise<PublicIngest[]> {
       ideaDrafts: r.ideaIds.length,
       tapeDrafts: r.tapeIds?.length ?? 0,
     }));
+}
+
+/**
+ * PURE. Does this stored record refer to the given video? Matches the explicit
+ * `videoId` first, then falls back to scanning `source` — records written
+ * before feature/ingest-transcripts (and hand-pasted ones where the owner put
+ * the URL in the source box) carry the id only in that label.
+ */
+export function recordMatchesVideo(rec: TranscriptRecord, videoId: string): boolean {
+  if (!YOUTUBE_ID_RE.test(videoId)) return false;
+  if (rec.videoId === videoId) return true;
+  return typeof rec.source === "string" && rec.source.includes(videoId);
+}
+
+/**
+ * feature/ingest-transcripts — prior intakes of this video, newest first.
+ * Scans the whole retained index (MAX_TRANSCRIPTS), not just the recent page,
+ * so the duplicate warning doesn't go quiet once a video scrolls off the log.
+ */
+export async function findTranscriptsForVideo(videoId: string): Promise<TranscriptRecord[]> {
+  if (!YOUTUBE_ID_RE.test(videoId)) return [];
+  const rows = await listTranscripts(MAX_TRANSCRIPTS);
+  return rows.filter((r) => recordMatchesVideo(r, videoId));
 }
 
 /** Newest first. Records only — raw text stays server-side unless asked for. */

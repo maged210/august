@@ -55,10 +55,13 @@ export async function POST(req: Request): Promise<Response> {
   }
   const parsed = validateTranscriptBody(body);
   if (!parsed.ok) return Response.json({ ok: false, error: parsed.error }, { status: 400 });
-  const { text, source } = parsed.value;
+  const { text, source, videoId } = parsed.value;
 
   // 1. The raw transcript is on disk before any model call — never lost.
-  const rec = await storeTranscript(text, source);
+  //    feature/ingest-transcripts: videoId is optional provenance, recorded so
+  //    the link fetcher's duplicate check can see this intake later. It is "" for
+  //    a hand-pasted transcript, which is unchanged behaviour.
+  const rec = await storeTranscript(text, source, videoId);
   if (!rec) return Response.json({ ok: false, error: "store_write_failed" }, { status: 502 });
 
   // 2. Extract (ideas + tape callouts, one model pass). A failure is recorded
