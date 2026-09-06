@@ -58,7 +58,12 @@ type Overview = {
 };
 
 type QuoteMap = Record<string, { price: number; prevClose: number; chgPct: number; closes: number[] }>;
-type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS" | "ASK";
+// fix/p0-live-trust — the ASK tab is GONE along with the AskBar. CLAUDE.md:
+// "THE COMMAND BAR — the bar is the ONLY input, on the floor and on mobile"
+// and "No conversation UI exists anywhere". The desk carried a second
+// free-text model input with its own rules, its own answer surface, and no
+// ask cache or per-identity cap; questions go to the one bar on the floor.
+type Tab = "BOARD" | "BRIEF" | "SOURCES" | "OPTIONS";
 type IdeaStatus = "WATCH" | "TRIG" | "ARMED" | "ACTIVE" | "INVLD";
 type BlotterIdea = BriefIdea & { __fav?: boolean; quote: QuoteMap[string] | null };
 
@@ -481,13 +486,16 @@ function InspChart({ closes, live, trigger, tone }: {
 // ── PageHeader ───────────────────────────────────────────────────────────────
 
 function PageHeader({
-  data, clock, tab, onTab, blotter, busy, onSync, onGenerateBrief, fng, owner, signedOut, onExitToChat,
+  data, clock, tab, onTab, blotter, trackedByIdeaId, busy, onSync, onGenerateBrief, fng, owner, signedOut, onExitToChat,
 }: {
   data: Overview;
   clock: string;
   tab: Tab;
   onTab: (t: Tab) => void;
   blotter: BlotterIdea[];
+  /** fix/p0-live-trust — the count pills are tracker-first, like the rows and
+   *  the filter below them (see boardCounts) */
+  trackedByIdeaId: Map<string, TrackedIdea>;
   busy: string | null;
   onSync: () => void;
   onGenerateBrief: () => void;
@@ -501,20 +509,13 @@ function PageHeader({
    *  client-side (a plain href="/" would full-reload and drop the chat state) */
   onExitToChat?: () => void;
 }) {
-  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
-  for (const idea of blotter) {
-    const s = deriveStatus(idea);
-    if (s === "TRIG") counts.TRIG++;
-    else if (s === "ARMED") counts.ARMED++;
-    else if (s === "ACTIVE") counts.ACTIVE++;
-  }
+  const counts = boardCounts(blotter, trackedByIdeaId);
 
   const allTabs: { key: Tab; label: string; fkey: string }[] = [
     { key: "BOARD", label: "BOARD", fkey: "F1" },
     { key: "BRIEF", label: "BRIEF", fkey: "F2" },
     { key: "SOURCES", label: "SOURCES", fkey: "F3" },
     { key: "OPTIONS", label: "OPTIONS", fkey: "F4" },
-    { key: "ASK", label: "ASK", fkey: "F5" },
   ];
   const tabs = allTabs.filter((t) => owner || t.key !== "SOURCES");
 
@@ -565,7 +566,12 @@ function PageHeader({
             {/* shrink order at narrow desktop widths: this text ellipsizes
                 first (it is echoed by the status bar + board header), then
                 the F&G chip — the meta never collides with the count pills */}
-            <span className="rd-meta-t">DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} TRACKED</span>
+            {/* fix/p0-live-trust — this counts TODAY'S BRIEF IDEAS, not the
+                tracked set (which this component fetches separately into
+                trackedList and which can hold rows on a day with no brief).
+                Four things in this app were labelled TRACKED; this one is the
+                board. */}
+            <span className="rd-meta-t">DESK: {data.clock.sessionLabel.toUpperCase()} · {blotter.length} ON THE BOARD</span>
             {/* stage-5: F&G band chip appended LAST so its async arrival never
                 shifts the date/desk text (absent while the fng part is null) */}
             <FngChip fng={fng} />
@@ -574,12 +580,21 @@ function PageHeader({
         <div className="rd-bar2-right">
           {/* pills always mount (zero counts dim on mobile, hide on desktop) so
               the wrapped mobile geometry never shifts when counts land */}
-          <span className={`rd-count rd-count-trig${counts.TRIG ? "" : " rd-count-zero"}`}>
+          {/* an em-dash when the counts are not knowable — never a stated zero
+              for an unread board (fix/p0-live-trust) */}
+          <span
+            className={`rd-count rd-count-trig${counts.known && counts.TRIG ? "" : " rd-count-zero"}`}
+            title={counts.known ? undefined : "no quotes or tracker records for this board yet"}
+          >
             <span className="rd-count-dot" aria-hidden="true" />
-            {counts.TRIG} TRIGGERED
+            {counts.known ? counts.TRIG : "—"} TRIGGERED
           </span>
-          <span className={`rd-count rd-count-arm${counts.ARMED ? "" : " rd-count-zero"}`}>{counts.ARMED} ARMED</span>
-          <span className={`rd-count rd-count-act${counts.ACTIVE ? "" : " rd-count-zero"}`}>{counts.ACTIVE} ACTIVE</span>
+          <span className={`rd-count rd-count-arm${counts.known && counts.ARMED ? "" : " rd-count-zero"}`}>
+            {counts.known ? counts.ARMED : "—"} ARMED
+          </span>
+          <span className={`rd-count rd-count-act${counts.known && counts.ACTIVE ? "" : " rd-count-zero"}`}>
+            {counts.known ? counts.ACTIVE : "—"} ACTIVE
+          </span>
           <span className="rd-bar2-div" aria-hidden="true" />
           {owner && (
             <button type="button" className="rd-btn" disabled={busy === "sync"} aria-busy={busy === "sync"} onClick={onSync}>
@@ -621,23 +636,30 @@ function PageHeader({
 // ── StatusBar ────────────────────────────────────────────────────────────────
 
 function StatusBar({
-  data, clock, latencyMs, lastQuoteOkAt, trackerOk,
+  data, clock, latencyMs, lastQuoteOkAt, trackerOk, polling,
 }: {
   data: Overview;
   clock: string;
   latencyMs: number | null;
   lastQuoteOkAt: number | null;
   trackerOk: boolean | null;
+  /** fix/p0-live-trust — is the 30s interval actually armed? It is gated on
+   *  today's brief existing, so FEED must not claim a cadence on days it
+   *  never starts. */
+  polling: boolean;
 }) {
   const { lastSync, lastBriefAt } = data;
   // Honest chrome (SPEC-wiring §2.10): quotes arrive via 30s HTTP polling —
   // no websocket exists, so FEED says POLL 30s, never WS. DATA degrades to
-  // STALE when two consecutive polls fail to land (75s), LATENCY is the
-  // measured last roundtrip, KEY is the real YOUTUBE_API_KEY flag, TRACKER
-  // reports the engine's reachability (retained — the design dropped it, but
-  // rows silently fall back to derived statuses when the tracker is down and
-  // the chrome must say so). Ages are human (30h, never 1821m). Volatile
-  // values sit in fixed ch-slots so neighbors never shift between polls.
+  // STALE when two consecutive polls fail to land (75s) — and, since
+  // fix/p0-live-trust, a poll only counts as "landed" when the response was ok
+  // AND carried at least one quote, because /api/intel/quotes answers 200 with
+  // an empty map on a total upstream outage. LATENCY is the measured last
+  // roundtrip, KEY is the real YOUTUBE_API_KEY flag, TRACKER reports the
+  // engine's reachability (retained — the design dropped it, but rows silently
+  // fall back to derived statuses when the tracker is down and the chrome must
+  // say so). Ages are human (30h, never 1821m). Volatile values sit in fixed
+  // ch-slots so neighbors never shift between polls.
   const dataState =
     lastQuoteOkAt === null ? "WAITING" : Date.now() - lastQuoteOkAt < 75_000 ? "LIVE" : "STALE";
   const slowLat = latencyMs !== null && latencyMs > 2000;
@@ -648,7 +670,16 @@ function StatusBar({
       dot: dataState === "LIVE" ? "rd-dot-ok rd-dot-glow" : dataState === "STALE" ? "rd-dot-amber" : "rd-dot-idle",
       valCls: `${dataState === "LIVE" ? "rd-sb-ok" : dataState === "STALE" ? "rd-sb-amber" : "rd-sb-plain"} rd-slot7`,
     },
-    { label: "FEED", val: "POLL 30s", dot: dataState === "LIVE" ? "rd-dot-ok" : "rd-dot-idle", valCls: "rd-sb-plain" },
+    // fix/p0-live-trust — FEED describes the poll, so it must be bound to
+    // whether the poll is actually running. "POLL 30s" was a hardcoded string
+    // literal while the 30s interval bails out entirely without today's brief
+    // (`if (!data?.brief) return;`), so on a no-brief day quotes were fetched
+    // exactly once on mount and the chrome kept claiming a 30-second cadence.
+    {
+      label: "FEED", val: polling ? "POLL 30s" : "IDLE",
+      dot: polling && dataState === "LIVE" ? "rd-dot-ok" : "rd-dot-idle",
+      valCls: `${polling ? "rd-sb-plain" : "rd-sb-amber"} rd-slot7`,
+    },
     {
       label: "LATENCY", val: latencyMs !== null ? `${latencyMs}ms` : "—",
       dot: latencyMs === null ? "rd-dot-idle" : slowLat ? "rd-dot-amber" : "rd-dot-ok",
@@ -1119,6 +1150,47 @@ function effectiveStatus(idea: BlotterIdea, tracked: TrackedIdea | null): Tracke
   if (tracked) return tracked.status;
   const s = deriveStatus(idea);
   return s === "TRIG" ? "TRIGGERED" : s === "INVLD" ? "INVALIDATED" : s === "WATCH" ? "ACTIVE" : s;
+}
+
+/** fix/p0-live-trust — ONE count for every summary pill on this desk.
+ *
+ *  The header pills and the mobile stat tiles used to loop `deriveStatus`,
+ *  which is a stateless price-vs-entry comparison that never consults the
+ *  tracker. Two consequences, both visible on one screen: a call the tracker
+ *  has permanently marked TRIGGERED (the transition is one-way — see
+ *  lib/intel/tracker.ts) dropped out of the count the moment price slipped
+ *  back under its entry, while the row beneath still wore the green TRIG
+ *  badge; and a CLOSED/INVALIDATED record still incremented the pills.
+ *  Counting through `effectiveStatus` — the same vocabulary the TRIGGERED
+ *  filter uses — makes pill, row and filter agree by construction.
+ *
+ *  `known` is the second half of the fix. A pill may only print a number when
+ *  it has something to count from: at least one board idea AND, for those
+ *  ideas, either a live quote or a tracker record. With a board but no
+ *  evidence (quotes have not landed, or the fetch failed and left the map
+ *  empty) every idea derives to WATCH and the pills used to assert
+ *  "0 TRIGGERED · 0 ARMED · 0 ACTIVE" for a fully populated board — 0 stated
+ *  for unknown. Callers render an em-dash instead. */
+function boardCounts(ideas: BlotterIdea[], trackedByIdeaId: Map<string, TrackedIdea>) {
+  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0, known: false };
+  if (ideas.length === 0) return counts;
+  counts.known = ideas.some((i) => i.quote || trackedByIdeaId.has(i.id));
+  if (!counts.known) return counts;
+  for (const idea of ideas) {
+    switch (effectiveStatus(idea, trackedByIdeaId.get(idea.id) ?? null)) {
+      case "TRIGGERED":
+      case "TARGET_HIT":
+        counts.TRIG++;
+        break;
+      case "ARMED":
+        counts.ARMED++;
+        break;
+      case "ACTIVE":
+        counts.ACTIVE++;
+        break;
+    }
+  }
+  return counts;
 }
 
 /** the rows the current filter admits — single source of truth shared by the
@@ -1730,9 +1802,12 @@ function PastDayGroup({ date, open, fetchState, quotes, trackedByIdeaId, filter,
  * align with TODAY's board above). Load discipline lives in the parent: the
  * newest EAGER_PAST_DAYS fetch on stack mount, the rest load on expand, and
  * LOAD OLDER only reveals more collapsed headers (zero fetches). */
-function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLoadOlder, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onSelect, publishedIds }: {
+function PastBoard({ days, older, indexErr, onRetryIndex, fetches, isOpen, onToggleDay, onRetryDay, onLoadOlder, quotes, trackedByIdeaId, filter, selectedDayKey, selectedId, onSelect, publishedIds }: {
   days: PastDayPlan[];
   older: number;
+  /** the briefs INDEX failed — not the same as an empty index */
+  indexErr: boolean;
+  onRetryIndex: () => void;
   fetches: Map<string, DayFetch>;
   isOpen: (date: string, eager: boolean) => boolean;
   onToggleDay: (date: string, eager: boolean) => void;
@@ -1756,7 +1831,16 @@ function PastBoard({ days, older, fetches, isOpen, onToggleDay, onRetryDay, onLo
             : "PRIOR DESK DAYS"}
         </span>
       </div>
-      {days.length === 0 ? (
+      {indexErr ? (
+        <div className="rd-board-empty" role="alert">
+          <div className="rd-empty-glyph" aria-hidden="true">△</div>
+          <div className="rd-empty-title">BRIEFS INDEX UNREACHABLE</div>
+          <p className="rd-empty-copy">Couldn&apos;t load the list of prior desk days. This is a failed request, not an empty archive.</p>
+          <div className="rd-empty-btns">
+            <button type="button" className="rd-btn-lg" onClick={onRetryIndex}>RETRY</button>
+          </div>
+        </div>
+      ) : days.length === 0 ? (
         <div className="rd-board-empty">
           <div className="rd-empty-glyph" aria-hidden="true">∅</div>
           <div className="rd-empty-title">NO PRIOR DESK RUNS</div>
@@ -2075,6 +2159,9 @@ type MobileDayScope = {
 type MobilePast = {
   days: PastDayPlan[];
   older: number;
+  /** the briefs INDEX failed — not the same as an empty index */
+  indexErr: boolean;
+  onRetryIndex: () => void;
   fetches: Map<string, DayFetch>;
   isOpen: (date: string, eager: boolean) => boolean;
   onToggleDay: (date: string, eager: boolean) => void;
@@ -2150,14 +2237,11 @@ function MobileBoard({
   const hCount = (g: string | null) =>
     g === null ? blotter.length : blotter.filter((i) => (TF_GROUP[i.timeHorizon] ?? "LONG-TERM") === g).length;
 
-  // brief-card stat tiles — same derivation as the header count pills
-  const counts = { TRIG: 0, ARMED: 0, ACTIVE: 0 };
-  for (const idea of blotter) {
-    const s = deriveStatus(idea);
-    if (s === "TRIG") counts.TRIG++;
-    else if (s === "ARMED") counts.ARMED++;
-    else if (s === "ACTIVE") counts.ACTIVE++;
-  }
+  // brief-card stat tiles — the SAME tracker-first count as the header pills.
+  // These tiles sit one swipe from carousel card 2, which lists the tracker's
+  // real statusHistory transitions; the old derived loop let the tile read
+  // "0 TRIGGERED" beside an ALERTS card listing fired triggers.
+  const counts = boardCounts(blotter, trackedByIdeaId);
 
   // ALERTS — REAL tracker lifecycle transitions only (statusHistory), newest
   // first; the initial ACTIVE/ARMED entry is not an alert. System rows carry
@@ -2217,17 +2301,17 @@ function MobileBoard({
                   <span className="rd-abs-g" aria-hidden="true">∅</span> No posture line in tonight&apos;s brief.
                 </p>
               )}
-              <div className="rd-mtiles">
+              <div className="rd-mtiles" title={counts.known ? undefined : "no quotes or tracker records for this board yet"}>
                 <div className="rd-mtile rd-mtile-trig">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.TRIG}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.TRIG : "—"}</span>
                   <span className="rd-mtile-l">TRIGGERED</span>
                 </div>
                 <div className="rd-mtile rd-mtile-arm">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ARMED}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.ARMED : "—"}</span>
                   <span className="rd-mtile-l">ARMED</span>
                 </div>
                 <div className="rd-mtile rd-mtile-act">
-                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.ACTIVE}</span>
+                  <span className="rd-mtile-v"><span className="rd-mtile-dot" aria-hidden="true" />{counts.known ? counts.ACTIVE : "—"}</span>
                   <span className="rd-mtile-l">ACTIVE</span>
                 </div>
               </div>
@@ -2410,7 +2494,12 @@ function MobileBoard({
                 : ""}
             </span>
           </div>
-          {past.days.length === 0 ? (
+          {past.indexErr ? (
+            <div className="rd-mabs-line" role="alert">
+              <span className="rd-abs-g" aria-hidden="true">△</span> Couldn&apos;t load the briefs index.{" "}
+              <button type="button" className="rd-btn rd-btn-sm" onClick={past.onRetryIndex}>Retry</button>
+            </div>
+          ) : past.days.length === 0 ? (
             <div className="rd-mabs-line">
               <span className="rd-abs-g" aria-hidden="true">∅</span> No prior desk runs stored yet.
             </div>
@@ -3553,7 +3642,10 @@ function FngChip({ fng }: { fng: DeskFng | null }) {
     <span
       className="rd-fng-chip"
       style={{ color: band.c, borderColor: band.bd, background: band.bg }}
-      title={`CNN Fear & Greed (equities) — ${v} · ${band.label}`}
+      /* fix/p0-live-trust — the payload has always carried asOf and never
+         rendered it, so a reading served from the (previously TTL-less) Redis
+         fallback looked identical to a fresh one */
+      title={`CNN Fear & Greed (equities) — ${v} · ${band.label} · as of ${ago(fng.asOf)}`}
     >
       {/* inner span so the chip can SHRINK (ellipsis) instead of colliding
           with bar2's count pills at narrow desktop widths */}
@@ -3572,13 +3664,23 @@ function SentimentGauge({ fng }: { fng: DeskFng | null }) {
   const a = ((180 - 1.8 * v) * Math.PI) / 180;
   const nx = 100 + 74 * Math.cos(a); // needle at r−8 = 74
   const ny = 104 - 74 * Math.sin(a);
+  // the server refreshes on a 30-min TTL; past two of those the reading is
+  // being served from cache or a failed fetch and the note says so
+  const stale = Date.now() - fng.asOf > 60 * 60_000;
   return (
     <section className="rd-lsec">
       <div className="rd-ts-card">
+        {/* fix/p0-live-trust — the reading's own asOf, rendered. fetchDesk
+            swallows failures and keeps the last payload forever, and the
+            server may serve a cached reading, so an unlabelled gauge could be
+            hours or days old while looking identical to a live one. The
+            existing null-case rule (no reading → no gauge) is unchanged. */}
         <div className="rd-ts-head">
           <span className="rd-ts-title">MARKET SENTIMENT</span>
           <span className="rd-ts-hair" aria-hidden="true" />
-          <span className="rd-ts-note">CNN F&amp;G</span>
+          <span className={`rd-ts-note${stale ? " rd-sb-amber" : ""}`} title={`CNN equity Fear & Greed, read ${ago(fng.asOf)}`}>
+            CNN F&amp;G · {ago(fng.asOf)}
+          </span>
         </div>
         <svg
           className="rd-gauge-svg"
@@ -4057,78 +4159,6 @@ function LeftPanel({
           </button>
         </section>
       )}
-    </div>
-  );
-}
-
-// ── AskBar ───────────────────────────────────────────────────────────────────
-
-function AskBar({ ai }: { ai: boolean }) {
-  const [q, setQ] = useState("");
-  const [res, setRes] = useState<{
-    answer: string;
-    citations: { videoId: string; videoTitle: string; channelTitle: string; startSeconds: number; note: string }[];
-  } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [askErr, setAskErr] = useState(false);
-
-  const ask = async () => {
-    if (q.trim().length < 3) return;
-    setBusy(true);
-    setAskErr(false);
-    try {
-      const r = await fetch("/api/intel/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
-      });
-      const j = await r.json();
-      // a 500 error payload has no answer string — never render an empty popover
-      if (r.ok && typeof j.answer === "string") { setRes(j); }
-      else { setAskErr(true); }
-    } catch { setAskErr(true); }
-    finally { setBusy(false); }
-  };
-
-  // design ASK AUGUST band (SPEC-desktop §2.7) on the existing pinned bar:
-  // label + › prompt + accent-hairline input shell + accent Ask button. Error
-  // state + dismiss + the ANTHROPIC_API_KEY gating are unchanged; the design's
-  // fake block caret is not shipped (a real input has a real caret).
-  return (
-    <div className="rd-askbar">
-      {askErr && !res && (
-        <div className="rd-askbar-ans">
-          <span className="rd-state rd-state-err">ASK failed — try again.</span>
-          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginLeft: 10 }} onClick={() => setAskErr(false)}>Dismiss</button>
-        </div>
-      )}
-      {res && (
-        <div className="rd-askbar-ans">
-          <div style={{ marginBottom: 8 }}>{res.answer}</div>
-          {res.citations.map((c, i) => (
-            <a key={i} className="rd-cite" style={{ display: "block" }} href={watchUrl(c.videoId, c.startSeconds)} target="_blank" rel="noreferrer">
-              ▸ {c.channelTitle || c.videoTitle} @ {mmss(c.startSeconds)} — {c.note}
-            </a>
-          ))}
-          <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" style={{ marginTop: 8 }} onClick={() => setRes(null)}>Dismiss</button>
-        </div>
-      )}
-      <label className="rd-askbar-label" htmlFor="rd-ask-input">ASK AUGUST</label>
-      <div className="rd-askbar-shell">
-        <span className="rd-askbar-prompt" aria-hidden="true">›</span>
-        <input
-          id="rd-ask-input"
-          className="rd-askbar-input"
-          placeholder={ai ? "what did the source say about QQQ, and which ideas have no stated invalidation?" : "ask AUGUST (needs ANTHROPIC_API_KEY)"}
-          value={q}
-          disabled={!ai}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-        />
-      </div>
-      <button type="button" className="rd-ask-btn" disabled={busy || !ai || q.trim().length < 3} onClick={ask}>
-        {busy ? "…" : "ASK"}
-      </button>
     </div>
   );
 }
@@ -4753,7 +4783,15 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
           <button type="button" className="rd-btn rd-btn-sm rd-btn-ghost" onClick={() => setRead60((r) => !r)}>{read60 ? "Full" : "Read in 60s"}</button>
         </div>
         {brief.read60 && read60 && <p className="rd-read60">{brief.read60}</p>}
-        {!brief.grounded && <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>}
+        {/* fix/p0-live-trust — an empty compile is not a failed narrator. A
+            brief with no source videos never called the model at all, so the
+            "narrative offline" warning would be a false diagnosis; say what
+            actually happened instead. */}
+        {brief.sourceVideoIds.length === 0 && brief.topIdeas.length === 0 && brief.creatorFavorites.length === 0 ? (
+          <div className="rd-note">No videos carry this market date — the desk ran and compiled nothing.</div>
+        ) : !brief.grounded ? (
+          <div className="rd-note rd-warn">AI narrative offline — structured intel only.</div>
+        ) : null}
         {/* the five narrative fields are the tab's longest prose — one clamp
             over the whole dl (not five), 300px ≈ 10 rows of the wider tab
             measure. read60 is already a digest, so it is never clamped. */}
@@ -4850,7 +4888,23 @@ function BriefCard({ brief, ai, onOpenVideo, historical }: { brief: DailyBrief |
 
 // ── IntelDashboard (main) ────────────────────────────────────────────────────
 
-export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => void } = {}) {
+export default function IntelDashboard({
+  onExitToChat,
+  active = true,
+}: {
+  onExitToChat?: () => void;
+  /** fix/p0-live-trust — is the TERMINAL view actually on screen? The desk
+   *  stays MOUNTED once visited (IntelDeckSurface's latch) and app/page.tsx
+   *  only display:none's the panel, so without this its pollers ran forever
+   *  behind CHAT and PIT. Defaults true so a standalone mount is unchanged. */
+  active?: boolean;
+} = {}) {
+  // read inside intervals without re-arming them on every view switch
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
   const [data, setData] = useState<Overview | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [busy, setBusy] = useState<string | null>(null);
@@ -4865,6 +4919,10 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
   const [inspectorMode, setInspectorMode] = useState<"idea" | "option">("idea");
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [historyDates, setHistoryDates] = useState<string[]>([]);
+  /** fix/p0-live-trust — the briefs INDEX failed to load (distinct from "the
+   *  index is empty"); every consumer offers a retry instead of asserting
+   *  that no prior desk runs exist */
+  const [briefsErr, setBriefsErr] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [historyBrief, setHistoryBrief] = useState<DailyBrief | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -4971,8 +5029,15 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       const r = await fetch(`/api/intel/quotes?symbols=${TAPE_MACRO.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
-      setLastQuoteOkAt(Date.now());
       const q: QuoteMap = j.quotes ?? {};
+      // fix/p0-live-trust — stamp the freshness clock only on EVIDENCE that a
+      // quote arrived. /api/intel/quotes wraps every upstream lookup in
+      // Promise.allSettled and always answers 200 with `{ quotes: {} }`, so a
+      // total Yahoo outage used to stamp a fresh "ok" and DATA read LIVE with
+      // a green glow while the tape said AWAITING FIRST QUOTE and every row
+      // read "—". The STALE degradation the StatusBar comment promises was
+      // only reachable if fetch() itself threw.
+      if (r.ok && Object.keys(q).length > 0) setLastQuoteOkAt(Date.now());
       setTape((prev) => {
         const watch = prev.filter((t) => t.kind === "watch");
         const macro: TapeItem[] = TAPE_MACRO.filter((s) => q[s]).map((s) => ({
@@ -5002,8 +5067,16 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       const r = await fetch(`/api/intel/quotes?symbols=${syms.join(",")}`, { cache: "no-store" });
       const j = await r.json();
       setLatencyMs(Math.round(performance.now() - t0));
-      setLastQuoteOkAt(Date.now());
-      setQuotes(j.quotes ?? {});
+      const q: QuoteMap = j.quotes ?? {};
+      // fix/p0-live-trust — same evidence rule as fetchMacroTape, plus: an
+      // empty tick must not BLANK a populated board. The wholesale
+      // `setQuotes(j.quotes ?? {})` replacement meant one 200-with-no-quotes
+      // wiped every price on the board and stamped the clock LIVE in the same
+      // breath.
+      if (r.ok && Object.keys(q).length > 0) {
+        setLastQuoteOkAt(Date.now());
+        setQuotes(q);
+      }
     } catch { /* keep */ }
   }, []);
 
@@ -5079,21 +5152,35 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
     } catch { setTrackerOk(false); /* keep the last tracked list */ }
   }, []);
 
+  // fix/p0-live-trust — the briefs index distinguishes FAILED from EMPTY.
+  // This fetch used to have no r.ok check and an empty catch, so a 500 or a
+  // dropped connection left historyDates/allBriefDates at [] — the identical
+  // state to "the desk genuinely has no prior briefs". All three consumers
+  // then asserted absence as fact ("No prior briefs stored.", "NO PRIOR DESK
+  // RUNS", "No prior desk runs stored yet."), with no retry and no re-run, so
+  // the claim persisted for the life of the mount. Every other fetch on this
+  // desk already keeps the two apart (histErr, DayFetch status "error").
+  const loadBriefIndex = useCallback(async () => {
+    setBriefsErr(false);
+    try {
+      const r = await fetch("/api/intel/briefs", { cache: "no-store" });
+      if (!r.ok) throw new Error(`briefs_index_${r.status}`);
+      const j = await r.json();
+      if (!Array.isArray(j.dates)) throw new Error("briefs_index_shape");
+      setHistoryDates(j.dates.slice(0, 14)); // BRIEF-tab pills + the rail (unchanged cap)
+      setAllBriefDates(j.dates); // full index — the PAST stack's LOAD OLDER reserve
+    } catch {
+      setBriefsErr(true);
+    }
+  }, []);
+
   // initial parallel fetch
   useEffect(() => {
     load();
     fetchMacroTape();
     fetchTracker();
-    fetch("/api/intel/briefs", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (Array.isArray(j.dates)) {
-          setHistoryDates(j.dates.slice(0, 14)); // BRIEF-tab pills + the rail (unchanged cap)
-          setAllBriefDates(j.dates); // full index — the PAST stack's LOAD OLDER reserve
-        }
-      })
-      .catch(() => {});
-  }, [load, fetchMacroTape, fetchTracker]);
+    loadBriefIndex();
+  }, [load, fetchMacroTape, fetchTracker, loadBriefIndex]);
 
   // role, once at dashboard load — then the owner's publish listing (curated
   // feed membership). A failed role fetch keeps the optimistic owner default;
@@ -5218,9 +5305,14 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
       setDesk(j);
     } catch { /* keep the last desk payload */ }
   }, []);
+  // fix/p0-live-trust — gated on BOTH the hidden tab and the hidden view. See
+  // the 30s poll below for why this desk needs both.
   useEffect(() => {
     fetchDesk();
-    const t = setInterval(fetchDesk, 5 * 60_000);
+    const t = setInterval(() => {
+      if (document.hidden || !activeRef.current) return;
+      fetchDesk();
+    }, 5 * 60_000);
     return () => clearInterval(t);
   }, [fetchDesk]);
 
@@ -5239,10 +5331,21 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
 
   // auto-refresh quotes every 30s (tracker piggybacks — its server pass is
   // throttled to ~2 min, so most polls just return the stored set)
+  //
+  // fix/p0-live-trust — TWO gates, and this desk needs both:
+  //   document.hidden  — the tab is backgrounded (every other poller in the
+  //                      repo already checks this; the desk was the exception);
+  //   activeRef        — the TERMINAL view is hidden. IntelDeckSurface latches
+  //                      the dashboard MOUNTED after the first visit and
+  //                      app/page.tsx only display:none's the panel, so
+  //                      switching to CHAT or PIT left this running forever.
+  // Together those meant one visit to TERMINAL cost ~8,640 quote/tracker
+  // requests per day per tab, invisibly, against Yahoo-backed routes.
   useEffect(() => {
     if (!data?.brief) return;
     const brief = data.brief;
     const t = setInterval(() => {
+      if (document.hidden || !activeRef.current) return;
       fetchMacroTape();
       fetchBlotterQuotes(brief);
       fetchTracker();
@@ -5545,6 +5648,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           tab={tab}
           onTab={setTab}
           blotter={blotter}
+          trackedByIdeaId={trackedByIdeaId}
           busy={busy}
           onSync={sync}
           onGenerateBrief={generateBrief}
@@ -5553,7 +5657,7 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           signedOut={signedOut}
           onExitToChat={onExitToChat}
         />
-        <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} />
+        <StatusBar data={data} clock={clock} latencyMs={latencyMs} lastQuoteOkAt={lastQuoteOkAt} trackerOk={trackerOk} polling={!!data.brief} />
         <LiveTape tape={fullTape} />
 
         {msg && (
@@ -5628,6 +5732,8 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                 past={isStack ? {
                   days: pastPlan.days,
                   older: pastPlan.older,
+                  indexErr: briefsErr,
+                  onRetryIndex: loadBriefIndex,
                   fetches: dayFetches,
                   isOpen: (date, eager) => dayOpen.get(date) ?? eager,
                   onToggleDay: toggleDay,
@@ -5710,6 +5816,8 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
                   <PastBoard
                     days={pastPlan.days}
                     older={pastPlan.older}
+                    indexErr={briefsErr}
+                    onRetryIndex={loadBriefIndex}
                     fetches={dayFetches}
                     isOpen={(date, eager) => dayOpen.get(date) ?? eager}
                     onToggleDay={toggleDay}
@@ -5780,7 +5888,14 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
               )}
               <span className="rd-hist-label">BRIEF HISTORY</span>
               <div className="rd-hist-pills">
-                {historyDates.length === 0
+                {briefsErr
+                  ? (
+                    <span className="rd-hist-empty" role="alert">
+                      <span className="rd-abs-g" aria-hidden="true">△</span> Couldn&apos;t load the briefs index.{" "}
+                      <button type="button" className="rd-btn rd-btn-sm" onClick={loadBriefIndex}>Retry</button>
+                    </span>
+                  )
+                  : historyDates.length === 0
                   ? <span className="rd-hist-empty">No prior briefs stored.</span>
                   : historyDates.map((d) => (
                     <button key={d} type="button" className={`rd-datepill${selectedDate === d ? " on" : ""}`} onClick={() => loadDate(d)}>{d}</button>
@@ -5851,32 +5966,17 @@ export default function IntelDashboard({ onExitToChat }: { onExitToChat?: () => 
           </div>
         )}
 
-        {/* ── ASK ── */}
-        {tab === "ASK" && (
-          <div className="rd-tabview" style={{ paddingBottom: 120 }}>
-            <div className="rd-card">
-              <div className="rd-card-h">Ask AUGUST</div>
-              <p className="rd-note" style={{ margin: 0 }}>Use the bar below — AUGUST answers from your processed video transcripts.</p>
-              {!config.ai && <div className="rd-state rd-warn">Needs ANTHROPIC_API_KEY.</div>}
-            </div>
-          </div>
-        )}
-
         {/* quiet owner hint on the signed-out visitor desk (board footer area)
             — honest text only; the SIGN IN action lives in the header */}
         {signedOut && (
           <div className="rd-owner-hint">Owner? Sign in to manage sources and publish.</div>
         )}
-        {/* bottom reserve clears the fixed ASK bar. On a phone that bar is now
-            ~10 + 44(shell) + (34 home-indicator inset + 10) ≈ 99px tall, so the
-            old flat 64 hid the last row behind it. Reserve = inset + 88px keeps
-            the disclaimer + last idea row visible above the bar on-device, and
-            is inert extra clearance on desktop (env() = 0, bar ≈ 54px). */}
-        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)" }}>
+        {/* The bottom reserve used to clear the fixed ASK bar (~99px on a
+            phone). That bar is gone, so the reserve is back to the home dock's
+            own inset — the disclaimer is the last thing in the scroll. */}
+        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}>
           AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
         </div>
-
-        <AskBar ai={config.ai} />
 
         {openVideo && (
           <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} owner={owner} />

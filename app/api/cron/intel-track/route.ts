@@ -1,9 +1,26 @@
-// Idea Tracker — the scheduled snapshot pass. PROTECTED. An external pinger
-// (QStash / cron-job.org / Vercel Cron) hits this every ~10–15 min during
-// market hours: it ingests the latest brief's ideas into the tracked set,
-// batches quotes, evaluates honest lifecycle transitions (ARMED → TRIGGERED →
-// TARGET_HIT/INVALIDATED), appends bounded snapshots, and updates MFE/MAE.
-// Idempotent and cheap — snapshot dedupe + throttling make double-pings no-ops.
+// Idea Tracker — the daily settle pass. PROTECTED. It ingests the latest
+// brief's ideas into the tracked set, batches quotes, evaluates honest
+// lifecycle transitions (ARMED → TRIGGERED → TARGET_HIT/INVALIDATED), appends
+// bounded snapshots, and updates MFE/MAE. Idempotent and cheap — snapshot
+// dedupe + throttling make double-pings no-ops.
+//
+// CADENCE, HONESTLY (fix/p0-live-trust): this is the ONLY scheduled job in the
+// app — vercel.json, `"10 22 * * *"`, ONE run per day at 22:10 UTC, after the
+// close in both EST and EDT. The previous comment claimed "an external pinger
+// hits this every ~10–15 min during market hours"; no such pinger exists
+// (confirmed with the owner 2026-09-04). The only other writer is the
+// opportunistic throttled pass behind GET /api/intel/tracker, which runs only
+// while the owner has the desk open.
+//
+// What that costs, so it is not rediscovered later: the tracker records only
+// what it OBSERVES. With one post-close observation per day, an ARMED call
+// whose stated trigger is touched intraday and unwound before the close is
+// never transitioned — it stays ARMED, and every downstream TRIGGERED count
+// under-reports the desk's own record. The PRICE_HISTORY_CAP ring, sized in
+// lib/intel/tracker.ts for a ~15-min cadence, holds one point per day instead,
+// so feed sparklines are daily lines, not intraday shape. Adding market-hours
+// entries to vercel.json is the fix if that matters; until then this is the
+// real cadence.
 //
 // AUTH: identical model to /api/cron/watchers — `Authorization: Bearer
 // <CRON_SECRET>`, timing-safe compare, refuses in production when unset.

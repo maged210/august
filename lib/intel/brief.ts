@@ -246,7 +246,15 @@ async function buildOptions(
 export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
   const videos = (await listVideos()).filter((v) => v.status === "analyzed" || v.status === "preliminary");
   const relevant = videos.filter((v) => (v.marketDate ?? etDateKey(new Date(v.publishedAt))) === date);
-  const pool = relevant.length ? relevant : videos.slice(0, 8); // fall back to most recent if none match today
+  // fix/p0-live-trust — the pool is the videos that actually carry this market
+  // date. NO FALLBACK. The previous `videos.slice(0, 8)` substituted the eight
+  // NEWEST videos whenever nothing matched, which is date-independent: every
+  // compile on an idle day produced the same ideas and stored them under a new
+  // date, so the archive asserted desk runs that never happened (07-16, 07-23
+  // and 08-15 all held one identical 8-video pool). An empty pool now compiles
+  // an empty brief, which the board already renders honestly as
+  // "desk ran — no board ideas".
+  const pool = relevant;
 
   const analyses = (await Promise.all(pool.map((v) => getAnalysis(v.videoId)))).filter(Boolean) as VideoAnalysis[];
   const vById = new Map<string, IntelVideo>(pool.map((v) => [v.videoId, v]));
@@ -299,7 +307,12 @@ export async function generateBrief(date = etDateKey()): Promise<DailyBrief> {
     sourceVideoIds: pool.map((v) => v.videoId),
     ...(options ? { options } : {}),
   };
-  const narrative = await narrate(partial as Parameters<typeof narrate>[0]);
+  // An empty pool has nothing to narrate — skip the model call entirely rather
+  // than asking it to write "what changed" about no inputs (the old fallback's
+  // worst effect: model-written forward-looking prose dated to a day whose
+  // inputs it never saw). grounded stays false; BriefCard renders the honest
+  // "no videos carry this market date" line instead of the offline warning.
+  const narrative = pool.length ? await narrate(partial as Parameters<typeof narrate>[0]) : {};
 
   const brief: DailyBrief = {
     ...partial,

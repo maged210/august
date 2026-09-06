@@ -6,10 +6,15 @@ import { sendToAll } from "@/lib/push";
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { listKnownUsers } from "@/lib/user-scope";
 
-// Morning Brief — Vercel Cron endpoint. Hit once daily (~6 AM ET, see vercel.json)
-// to pre-compile the brief with overnight context so it's waiting on app open.
-// Force-recompiles (the whole point is fresh overnight synthesis) and writes to
-// the Upstash day-cache.
+// Morning Brief — a CRON_SECRET-protected compile endpoint. Force-recompiles
+// (the whole point is fresh overnight synthesis) and writes to the Upstash
+// day-cache.
+//
+// NOT SCHEDULED. The previous comment here said "Hit once daily (~6 AM ET, see
+// vercel.json)" — vercel.json has never contained an entry for this path, and
+// no external pinger exists (confirmed with the owner 2026-09-04). Nothing
+// calls this route: it has no UI consumer either. Treat it as dormant, not as
+// a running job. (fix/p0-live-trust)
 //
 // MULTI-USER (stage 2): with auth unconfigured this compiles the ONE legacy
 // brief exactly as before. With auth configured it iterates the known users

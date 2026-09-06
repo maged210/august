@@ -1148,7 +1148,9 @@ const ATTRIBUTION_READ_ROUTES = [
   { file: "app/api/intel/sources/route.ts", why: "the source roster IS the watched-channel list" },
   { file: "app/api/intel/videos/route.ts", why: "video rows carry channel/title attribution" },
   { file: "app/api/intel/videos/[id]/route.ts", why: "the bundle is pure source material" },
-  { file: "app/api/intel/ask/route.ts", why: "cited answers name channels in prose" },
+  // app/api/intel/ask/route.ts was here until fix/p0-live-trust deleted it —
+  // the desk's second model input violated the command-bar law. The invariant
+  // is unchanged for every route that remains.
   { file: "app/api/intel/tracker/route.ts", why: "tracked rows carry sourceRefs + conflictKey" },
   // serve a redacted view instead — gated via intelOwnerView
   { file: "app/api/intel/overview/route.ts", why: "sources/videos/brief attribution" },

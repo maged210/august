@@ -186,6 +186,21 @@ export type FeedCard = {
   quote: FeedQuote | null;
 };
 
+/** fix/p0-live-trust — THE definition of "triggered" for every surface that
+ *  counts or filters published cards. TARGET_HIT is a triggered call that went
+ *  on to reach its stated target, so it counts; the tracker's TRIGGERED
+ *  transition is one-way and never reverts.
+ *
+ *  Before this, three readers of the SAME /api/intel/feed payload disagreed:
+ *  HomeBrief counted TRIGGERED + TARGET_HIT, IdeasFeed's header pill counted
+ *  TRIGGERED only and then added live desk ideas, and IdeasFeed's own
+ *  TRIGGERED filter counted TRIGGERED + TARGET_HIT over tracked rows alone —
+ *  so switching views changed the number, and tapping the filter returned a
+ *  row count that disagreed with the pill above it. */
+export function isTriggered(status: TrackedStatus): boolean {
+  return status === "TRIGGERED" || status === "TARGET_HIT";
+}
+
 const STATUS_RANK: Record<TrackedStatus, number> = {
   TRIGGERED: 0,
   ARMED: 1,

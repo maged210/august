@@ -1,7 +1,20 @@
-// Market Intel scheduled tick — PROTECTED by CRON_SECRET (same pattern as
-// /api/cron/brief). Wired by an external pinger / Vercel Cron after deploy. Discovers
-// new uploads (needs YOUTUBE_API_KEY), auto-tries transcripts, and regenerates today's
-// brief. Cheap + idempotent; safe to call repeatedly.
+// Market Intel tick — PROTECTED by CRON_SECRET (same pattern as
+// /api/cron/brief). Discovers new uploads (needs YOUTUBE_API_KEY), auto-tries
+// transcripts, and regenerates today's brief. Cheap + idempotent; safe to call
+// repeatedly.
+//
+// NOT SCHEDULED. vercel.json declares exactly one cron — /api/cron/intel-track
+// at 22:10 UTC — and no external pinger drives this route (confirmed with the
+// owner 2026-09-04: the cron-job.org account has zero jobs and no execution
+// history). This route has therefore never run on a schedule; the intel brief
+// pipeline is MANUAL-ONLY and has been since 2026-07-15, which is why the
+// newest stored video and the newest brief are months apart.
+//
+// The route stays because the desk's SYNC and GENERATE BRIEF buttons exercise
+// the same lib functions and this is the one place they run together. If
+// automatic ingest is wanted, adding a crons entry here is the change — but
+// nothing in this repository schedules it today, so no comment may claim it
+// does. (fix/p0-live-trust)
 import { timingSafeEqual } from "node:crypto";
 import { syncSources, tryAutoTranscript } from "@/lib/intel/pipeline";
 import { generateBrief } from "@/lib/intel/brief";

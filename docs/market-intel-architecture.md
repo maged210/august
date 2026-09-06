@@ -129,7 +129,10 @@ POST             /api/intel/videos/[id]/reprocess    re-run extraction (new vers
 POST             /api/intel/sync               discover new videos (needs YOUTUBE_API_KEY)
 GET              /api/intel/briefs             list dates
 GET/POST         /api/intel/briefs/[date]      get / generate dated brief
-POST             /api/intel/ask                retrieval Q&A over processed videos (cited)
+(deleted)        /api/intel/ask                retrieval Q&A over processed videos — REMOVED in
+                                               fix/p0-live-trust: a second model input inside the
+                                               desk, uncached and uncapped, against CLAUDE.md's
+                                               command-bar law ("the bar is the ONLY input")
 GET              /api/intel/export/[date]      markdown export
 GET/POST         /api/intel/settings          read / update settings
 GET (cron)       /api/cron/intel               scheduled discovery + nightly brief (CRON_SECRET)

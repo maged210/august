@@ -12,7 +12,7 @@
 // Empty/failed blocks render honest ∅ lines or nothing — never mock rows.
 
 import { useEffect, useMemo, useState } from "react";
-import type { FeedCard } from "@/lib/intel/publish";
+import { isTriggered, type FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicIngest } from "@/lib/transcripts";
 import type { PublicTapeEntry } from "@/lib/tape";
@@ -248,7 +248,10 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
 
   // — derived desk line (DeskStats semantics, folded here per T3) —
   const tracked = cards ?? [];
-  const triggered = tracked.filter((c) => c.status === "TRIGGERED" || c.status === "TARGET_HIT").length;
+  // shared predicate — the terminal's TRIG pill and filter read the same one
+  // (lib/intel/publish), so the two surfaces can no longer disagree about the
+  // same /api/intel/feed payload
+  const triggered = tracked.filter((c) => isTriggered(c.status)).length;
   const called = tracked.filter(
     (c): c is FeedCard & { pnl: { kind: "since_called"; pct: number } } =>
       !!c.pnl && c.pnl.kind === "since_called",

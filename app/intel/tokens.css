@@ -115,7 +115,6 @@
 
   /* ---- stage / surfaces / shadows ---- */
   --rd-panel-grad: linear-gradient(180deg, #0c0f13, #0a0c0f);  /* bar2 · mobile idea card */
-  --rd-askbar-bg: rgba(7, 8, 9, 0.92);
   --rd-thumb-grad: linear-gradient(135deg, #16202b, #0c1116);  /* source-row thumb placeholder */
   --rd-scrim: rgba(0, 0, 0, 0.55);                             /* video + contract drawer scrims */
   --rd-mbar1-bg: rgba(7, 8, 10, 0.86);                         /* mobile sticky bar1 blur tint */
@@ -1913,52 +1912,8 @@ a.rd-cite:hover { text-decoration: underline; }
 }
 .rd-chap-filter b { color: var(--rd-t-primary); font-weight: 500; }
 
-/* ---- ASK AUGUST band (§2.7 treatments on the pinned bar) ---- */
-.rd-askbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
-  /* clear the home indicator: bottom pad = inset + the base 10px; left/right
-     inset for landscape. env() is 0 off-device so desktop is unchanged. The
-     embedded (deck-panel) variant resets this below — the home shell owns its
-     own bottom inset there. */
-  padding: 10px calc(var(--rd-safe-right) + 16px) calc(var(--rd-safe-bottom) + 10px) calc(var(--rd-safe-left) + 16px);
-  background: var(--rd-askbar-bg);
-  border-top: 1px solid var(--rd-hair-08);
-  backdrop-filter: blur(8px);
-  display: flex; gap: 13px; align-items: center;
-}
-.rd-askbar-label {
-  font-family: var(--rd-mono); font-size: 9.5px; font-weight: 500;
-  letter-spacing: 0.16em; color: var(--rd-t-muted); flex-shrink: 0;
-}
-.rd-askbar-shell {
-  flex: 1; display: flex; align-items: center; gap: 9px; min-width: 0;
-  border: 1px solid var(--rd-acc-soft25); border-radius: 2px;
-  background: var(--rd-inset); padding: 0 12px;
-}
-.rd-askbar-shell:focus-within { border-color: var(--rd-acc-soft40); }
-.rd-askbar-prompt { font-family: var(--rd-mono); font-size: 13px; color: var(--rd-acc); flex-shrink: 0; }
-.rd-askbar-input {
-  flex: 1; min-width: 0; background: none; border: none; outline: none;
-  font-family: var(--rd-mono); font-size: 11.5px; color: var(--rd-t-body);
-  padding: 9px 0;
-}
-.rd-askbar-input::placeholder { color: var(--rd-t-ghost); }
-.rd-askbar-input:disabled { color: var(--rd-t-faint); }
-.rd-ask-btn {
-  font-family: var(--rd-mono); font-size: 10.5px; letter-spacing: 0.06em;
-  color: var(--rd-accbtn-text); background: var(--rd-acc-soft12);
-  border: 1px solid var(--rd-acc-soft40); border-radius: 2px;
-  padding: 8px 17px; cursor: pointer; flex-shrink: 0;
-}
-.rd-ask-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.rd-askbar-ans {
-  position: absolute; bottom: calc(100% + 4px); left: 16px; right: 16px;
-  background: var(--rd-frame); border: 1px solid var(--rd-hair-12);
-  border-radius: 2px; padding: 14px 16px;
-  font-family: var(--rd-sans); font-size: 13px; line-height: 1.6;
-  color: var(--rd-t-body); max-height: 280px; overflow-y: auto;
-}
-.rd-askbar-ans .rd-state { padding: 0; }
+/* The ASK AUGUST band's styles lived here. fix/p0-live-trust deleted the bar
+   and its route — the command bar on the floor is the only input. */
 
 /* ---- disclaimer (§2.8 treatment; honest copy kept from the old skin) ---- */
 .rd-disc {
@@ -2116,14 +2071,6 @@ a.rd-cite:hover { text-decoration: underline; }
   .rd-hist-pills .rd-datepill, .rd-hist-today { min-height: 44px; }
   .rd-drawer-x { min-width: 44px; min-height: 44px; }
 
-  .rd-askbar { gap: 8px; }
-  /* keep the accessible name; reclaim the row for the input on phones */
-  .rd-askbar-label {
-    position: absolute; width: 1px; height: 1px; overflow: hidden;
-    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
-  }
-  .rd-askbar-shell { min-height: 44px; }
-  .rd-ask-btn { min-height: 44px; }
 }
 
 /* ==========================================================================
@@ -2674,10 +2621,10 @@ a.rd-cite:hover { text-decoration: underline; }
 /* the embedded root scrolls internally; the deck page's body stays locked
    (see the :not(.intel-embedded) guard on the scroll fix in intel.css) */
 .intel-root.intel-embedded {
-  /* the home shell's composer dock no longer renders on the intel panel
-     (one input per screen — the desk's ASK bar is the input here), so the
-     sticky askbar pins to the true bottom edge; no reserved band, no rail
-     content peeking out beneath it */
+  /* no dock band is reserved at the bottom of the embedded desk. This used to
+     be sized around the desk's own ASK bar; fix/p0-live-trust deleted that bar
+     (the command bar on the floor is the only input), so the desk simply
+     scrolls to its true bottom edge. */
   --rd-embed-dock: 0px;
   height: 100%;
   min-height: 0;
@@ -2698,22 +2645,6 @@ a.rd-cite:hover { text-decoration: underline; }
   letter-spacing: 0.34em;
   text-indent: 0.34em;
   color: var(--rd-t-faint);
-}
-
-/* ASK band: fixed → sticky inside the panel scroller. It stays pinned while
-   the desk scrolls but lifts clear of the home dock; the matching
-   margin-bottom makes its end-of-scroll resting spot coincide with the pin
-   line, so it never covers the disclaimer. left/right offsets are inert on
-   sticky; the flex column stretches it full-width. */
-.intel-embedded .rd-askbar {
-  position: sticky;
-  bottom: var(--rd-embed-dock);
-  margin-bottom: var(--rd-embed-dock);
-  /* CORE V2: the embed is now the owner's ONLY desk on phones (the standalone
-     /intel route is retired), and the home dock no longer reserves the home
-     indicator on the terminal view — so the bottom inset comes back here.
-     env() is 0 off-device; desktop keeps the original 10px band. */
-  padding: 10px 16px calc(var(--rd-safe-bottom) + 10px);
 }
 
 /* ==========================================================================
@@ -2821,7 +2752,6 @@ a.rd-cite:hover { text-decoration: underline; }
 
   /* ---- stage / surfaces / shadows ---- */
   --rd-panel-grad: linear-gradient(180deg, #f7f6f1, #f0efea);
-  --rd-askbar-bg: rgba(242, 241, 236, 0.92);
   --rd-thumb-grad: linear-gradient(135deg, #d9dee2, #e8e7e1);
   --rd-scrim: rgba(32, 30, 26, 0.35);
   --rd-mbar1-bg: rgba(242, 241, 236, 0.88);

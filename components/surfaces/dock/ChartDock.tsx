@@ -25,6 +25,7 @@ export default function ChartDock({
   onSelect,
   cards,
   liveIdeas,
+  sourcesAnswered = true,
   tape,
   tapeFailed,
   onTapeRetry,
@@ -34,6 +35,9 @@ export default function ChartDock({
   onSelect: (sel: ChartSelection) => void;
   cards: FeedCard[];
   liveIdeas: PublicIdea[];
+  /** fix/p0-live-trust — false while either feed source is unread, so the
+   *  heatmap can say so instead of asserting an empty book */
+  sourcesAnswered?: boolean;
   tape: PublicTapeEntry[] | null;
   tapeFailed: boolean;
   onTapeRetry: () => void;
@@ -44,6 +48,7 @@ export default function ChartDock({
       <BookHeatmapModule
         cards={cards}
         liveIdeas={liveIdeas}
+        sourcesAnswered={sourcesAnswered}
         selection={selection}
         onSelect={onSelect}
       />
