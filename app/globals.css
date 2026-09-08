@@ -4918,13 +4918,40 @@ button.pulse-line:focus-visible {
       calc(env(safe-area-inset-right, 0px) + 20px) 18px
       calc(env(safe-area-inset-left, 0px) + 20px);
   }
+  /* Declutter (mobile chrome): the header used to stack clock / SIGN IN /
+     controls into THREE right-aligned rows, which pushed .hl-top to ~133px and
+     dropped the bell and moon onto the orb's corona. One row instead — the
+     header shrinks to a single line and the orb gets the space back. The clock
+     is the flexible child so a long account chip shortens the clock rather
+     than wrapping the row. */
   .hl-top-right {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    min-width: 0;
+  }
+  /* quieter identity on the small screen: the wordmark keeps its face and
+     weight, loses some of its 0.32em swagger so it stops shouting next to a
+     6px orb-gold dot. Subtraction of spacing, not of the mark. */
+  .hl-wordmark {
+    letter-spacing: 0.22em;
+  }
+  .hl-brand {
+    gap: 9px;
   }
   .hl-clock {
     letter-spacing: 0.12em;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  /* the resting state word ("SYSTEMS STEADY") folds on phones — it reports
+     that nothing is happening. THINKING (.on) is real news and stays. */
+  .hl-state {
+    display: none;
+  }
+  .hl-state.on {
+    display: inline;
   }
   .hl-ctl {
     width: 44px;

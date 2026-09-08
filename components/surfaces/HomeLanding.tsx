@@ -346,7 +346,17 @@ export default function HomeLanding({
           <span className="hl-wordmark">AUGUST</span>
         </div>
         <div className="hl-top-right">
-          <span className="hl-clock">{clock ? `${clock} · ${stateWord}` : stateWord}</span>
+          {/* declutter: the state word carries signal only when it is
+              THINKING. "SYSTEMS STEADY" is the resting value — it says nothing
+              is happening — so on phones it folds away and the clock stands
+              alone, while THINKING still shows. Split into a span purely as a
+              CSS hook; the desktop string is unchanged. */}
+          <span className="hl-clock">
+            {clock || stateWord}
+            {clock ? (
+              <span className={`hl-state${state === "thinking" ? " on" : ""}`}> · {stateWord}</span>
+            ) : null}
+          </span>
           {account === null ? (
             <a className="hl-signin" href="/login">
               SIGN IN
