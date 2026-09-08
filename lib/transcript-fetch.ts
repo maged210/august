@@ -12,7 +12,13 @@
 //   GET https://api.supadata.ai/v1/transcript?url=<video url>&text=true&mode=native
 //     200 → { content: string, lang, availableLangs }
 //     202 → { jobId }  → poll GET /v1/transcript/{jobId}
-//                        → { status: queued|active|completed|failed, content, error }
+//                        → { status: queued|active|completed|failed, content,
+//                            lang, availableLangs, error }
+//       (lang/availableLangs on the JOB body are documented but NOT verified
+//        live — no test video large enough to trigger a 202 was available.
+//        The language gate treats an absent tag as a refusal, so the worst
+//        case is a large video being declined with an honest reason, never a
+//        non-English transcript slipping through.)
 //     206 transcript unavailable · 400 invalid request · 401 unauthorized ·
 //     402 upgrade required · 403 forbidden · 404 not found ·
 //     429 limit exceeded · 500 internal error
@@ -62,6 +68,48 @@ const INTAKE_CHAR_CAP = 120_000;
  *  owner sees is never an under-count. */
 const METADATA_DOCUMENTED_CREDITS = 1;
 
+/**
+ * LANGUAGE — pinned, then VERIFIED. Both halves are load-bearing.
+ *
+ * The bug this fixes: fetching an English video (i9dVorpqWpI, StockedUp)
+ * returned a 16,935-char ARABIC transcript. We sent no `lang`, and the
+ * provider's own default picked `ar` even though `availableLangs` was
+ * `["en","ar"]` — English was right there and it chose the other one.
+ *
+ * Pinning alone does NOT close this. The provider documents: "If the lang
+ * parameter is not provided OR THE TRANSCRIPT IS NOT AVAILABLE IN THE
+ * REQUESTED LANGUAGE, the API defaults to the first available language." So a
+ * request for English on a video without English still returns something else,
+ * with a 200 and no warning. The only defence is to check what actually came
+ * back — see assertLanguage.
+ *
+ * WHY THE PROVIDER'S DEFAULT IS SO BAD HERE, measured on the bug video: it
+ * carries EIGHTEEN caption tracks — ar, bn, nl, en, fr, de, iw, hi, id, ja, ko,
+ * ml, pt, pa, ru, es, ta, uk — because YouTube auto-translated the English
+ * original into seventeen languages. With no `lang` the provider picks one of
+ * those effectively at random (it picked Arabic). Pinning is not a nicety.
+ *
+ * `availableLangs` is NOT a reliable track list — it changes with the request.
+ * Same video, three calls: no lang → ["en","ar"]; lang=en → ["en"]; lang=fr →
+ * all eighteen. So it is reported in a failure message for whatever help it
+ * gives, and never used to make a decision.
+ *
+ * NOT IMPLEMENTED, because the API cannot support it: preferring the video's
+ * NATIVE track over auto-translated ones. Nothing in the provider's surface
+ * marks a track as original vs auto-generated vs auto-translated — the metadata
+ * endpoint's `transcriptLanguages` was `[]` for this very video, and
+ * `availableLangs` has no documented ordering (and, per above, isn't even
+ * stable). Inferring native-ness from array order would be exactly the kind of
+ * guess that produced this bug.
+ *
+ * THE LIMIT THIS LEAVES: for an English-native channel — every creator AUGUST
+ * tracks — pinning English IS the native track, so the fix is exact. For a
+ * hypothetically non-English creator, this would return YouTube's English
+ * AUTO-TRANSLATION and report it as "en", with no way to tell it from an
+ * English original. That is a real gap, and it is the provider's to close.
+ */
+const TRANSCRIPT_LANG = "en";
+
 export type VideoRef = { videoId: string; url: string };
 
 export type FetchFailureKind =
@@ -76,7 +124,8 @@ export type FetchFailureKind =
   | "provider_error"
   | "job_failed"
   | "still_processing"
-  | "empty_transcript";
+  | "empty_transcript"
+  | "wrong_language";
 
 export type VideoMeta = {
   title: string;
@@ -206,6 +255,53 @@ export function failureForStatus(status: number): { kind: FetchFailureKind; mess
   }
 }
 
+/**
+ * PURE. Is this BCP-47-ish tag English? Matches the primary subtag only, so
+ * "en", "en-US", "en-GB" and "EN_us" all pass while "ar" and "es" don't.
+ */
+export function isEnglish(lang: unknown): boolean {
+  // `unknown`, not `string | null`, on purpose: the argument comes from parsed
+  // provider JSON, and the gate that calls this runs OUTSIDE the fetch
+  // try/catch. A non-string tag reaching .trim() here would throw past every
+  // handler and surface as a bodyless 500 — the silent failure this feature
+  // exists to prevent.
+  if (typeof lang !== "string" || !lang) return false;
+  return lang.trim().split(/[-_]/)[0].toLowerCase() === "en";
+}
+
+/**
+ * PURE. The language gate. Returns null when the transcript is English (the
+ * caller proceeds), or the failure to return verbatim when it is not.
+ *
+ * This exists because the provider answers 200 with the WRONG language rather
+ * than erroring — see TRANSCRIPT_LANG. A null/absent tag also fails: if the
+ * provider won't say what it sent, we cannot claim it is English, and handing
+ * back an unverified transcript is the exact behaviour this fix removes.
+ */
+export function assertLanguage(
+  lang: string | null,
+  availableLangs: string[] | null,
+): { kind: FetchFailureKind; message: string } | null {
+  if (isEnglish(lang)) return null;
+
+  const others = (availableLangs ?? []).filter((l) => !isEnglish(l));
+  const had = others.length ? ` This video's tracks: ${others.join(", ")}.` : "";
+  if (!lang) {
+    return {
+      kind: "wrong_language",
+      message:
+        "The provider didn't say which language it returned, so the transcript can't be confirmed as English. Refusing it rather than guessing." + had,
+    };
+  }
+  return {
+    kind: "wrong_language",
+    message:
+      `No English transcript for this video — the provider returned "${lang}" instead.` +
+      had +
+      " The transcript box was left unchanged; paste an English transcript by hand if you need this one.",
+  };
+}
+
 /** PURE. Read the credits a response was billed. Absent/garbage → 0, never NaN. */
 export function billedCredits(headers: Headers): number {
   const raw = headers.get("x-billable-requests");
@@ -219,13 +315,28 @@ export function transcriptProviderConfigured(): boolean {
   return !!process.env.TRANSCRIPT_PROVIDER_API_KEY;
 }
 
-type JobBody = { status?: string; content?: unknown; lang?: string; error?: string };
+type JobBody = {
+  status?: string;
+  content?: unknown;
+  lang?: string;
+  availableLangs?: unknown;
+  error?: string;
+};
+
+/** PURE. availableLangs, defensively — the provider's shape is only trusted
+ *  once it has been checked. */
+function langList(raw: unknown): string[] | null {
+  return Array.isArray(raw) ? raw.filter((l): l is string => typeof l === "string") : null;
+}
 
 async function pollJob(
   jobId: string,
   key: string,
   spent: { credits: number },
-): Promise<{ ok: true; text: string; lang: string | null } | { ok: false; kind: FetchFailureKind; message: string }> {
+): Promise<
+  | { ok: true; text: string; lang: string | null; availableLangs: string[] | null }
+  | { ok: false; kind: FetchFailureKind; message: string }
+> {
   const deadline = Date.now() + JOB_POLL_BUDGET_MS;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, JOB_POLL_INTERVAL_MS));
@@ -255,7 +366,14 @@ async function pollJob(
     if (body.status === "completed") {
       const text = typeof body.content === "string" ? body.content.trim() : "";
       if (!text) return { ok: false, kind: "empty_transcript", message: "The provider reported success but returned no transcript text." };
-      return { ok: true, text, lang: body.lang ?? null };
+      // same runtime guard as the sync path — `JobBody` is a cast over
+      // untrusted JSON, so the declared type proves nothing about the value
+      return {
+        ok: true,
+        text,
+        lang: typeof body.lang === "string" ? body.lang : null,
+        availableLangs: langList(body.availableLangs),
+      };
     }
     // queued | active → keep waiting
   }
@@ -338,11 +456,13 @@ export async function fetchTranscript(
 
   let text: string;
   let lang: string | null = null;
+  let availableLangs: string[] | null = null;
   try {
     const u = new URL(TRANSCRIPT_URL);
     u.searchParams.set("url", ref.url);
     u.searchParams.set("text", "true");
     u.searchParams.set("mode", "native"); // see COST DISCIPLINE above
+    u.searchParams.set("lang", TRANSCRIPT_LANG); // see LANGUAGE above — pinned AND verified below
     const res = await fetch(u, {
       cache: "no-store",
       headers: { "x-api-key": key },
@@ -359,11 +479,12 @@ export async function fetchTranscript(
       if (!job.ok) return { ok: false, kind: job.kind, message: job.message, credits: spent.credits };
       text = job.text;
       lang = job.lang;
+      availableLangs = job.availableLangs;
     } else if (!res.ok) {
       const f = failureForStatus(res.status);
       return { ok: false, kind: f.kind, message: f.message, credits: spent.credits };
     } else {
-      const body = (await res.json()) as { content?: unknown; lang?: unknown };
+      const body = (await res.json()) as { content?: unknown; lang?: unknown; availableLangs?: unknown };
       const content = typeof body.content === "string" ? body.content.trim() : "";
       if (!content) {
         // A 200 with nothing in it is the exact case that must never look like
@@ -377,6 +498,7 @@ export async function fetchTranscript(
       }
       text = content;
       lang = typeof body.lang === "string" ? body.lang : null;
+      availableLangs = langList(body.availableLangs);
     }
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
@@ -388,6 +510,17 @@ export async function fetchTranscript(
         : "Couldn't reach the transcript provider.",
       credits: spent.credits,
     };
+  }
+
+  // THE LANGUAGE GATE. Pinning lang=en is not enough on its own: the provider
+  // documents that an unavailable language silently falls back to "the first
+  // available language" with a 200. So check what actually arrived, and refuse
+  // anything that isn't English rather than handing over a transcript in a
+  // language the owner can't read. Placed BEFORE the metadata call so a
+  // rejected fetch costs one credit, not two.
+  const wrongLang = assertLanguage(lang, availableLangs);
+  if (wrongLang) {
+    return { ok: false, kind: wrongLang.kind, message: wrongLang.message, credits: spent.credits };
   }
 
   const includeMetadata = opts.includeMetadata !== false;

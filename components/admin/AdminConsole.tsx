@@ -470,6 +470,7 @@ export default function AdminConsole() {
         overCap?: boolean;
         credits?: number;
         videoId?: string;
+        lang?: string | null;
         meta?: { title: string; channel: string; publishedAt: string | null; durationSeconds: number | null } | null;
         metaNote?: string | null;
       };
@@ -499,7 +500,10 @@ export default function AdminConsole() {
       }
       const chars = j.chars ?? 0;
       const cost = `${j.credits ?? 0} credit${(j.credits ?? 0) === 1 ? "" : "s"}`;
-      const line = `Fetched ${(chars / 1000).toFixed(1)}k chars · ${cost}${j.metaNote ? ` · ${j.metaNote}` : ""}`;
+      // the caption track's language sits next to the char count so a wrong
+      // track is visible BEFORE pressing PROCESS, not after
+      const track = j.lang ? ` · ${j.lang}` : " · language unreported";
+      const line = `Fetched ${(chars / 1000).toFixed(1)}k chars${track} · ${cost}${j.metaNote ? ` · ${j.metaNote}` : ""}`;
       setFetchState(
         j.overCap
           ? { kind: "warn", text: `${line} — over the 120k intake cap; trim it before PROCESS.` }
