@@ -538,6 +538,7 @@ export default function AdminConsole() {
       const j = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         drafts?: number;
+        dropped?: Array<{ instrument: string; entry: string }>;
         error?: string;
       };
       if (!res.ok || !j.ok) {
@@ -554,10 +555,16 @@ export default function AdminConsole() {
       setFetchMeta(null);
       setDupUrl(null);
       setFetchState({ kind: "idle" });
+      // The floor's drops are named, not just counted — the owner has to be
+      // able to see whether it cut something real.
+      const cut = j.dropped ?? [];
+      const cutNote = cut.length
+        ? ` ${cut.length} dropped as commentary (no level, no trigger): ${cut.map((d) => d.instrument).join(", ")}.`
+        : "";
       setTrResult(
         j.drafts === 0
-          ? "Processed — no trade ideas or tape callouts found in that transcript."
-          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.`,
+          ? `Processed — no trade ideas or tape callouts found in that transcript.${cutNote}`
+          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.${cutNote}`,
       );
       await Promise.all([load(), loadTranscripts(), loadTape()]);
     } catch (err) {

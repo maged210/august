@@ -660,6 +660,44 @@ export function parseEntryTrigger(entry: string): ParsedTrigger | null {
   return { kind: "level", dir: hits[0].dir, level: hits[0].level };
 }
 
+// Every number in a string, under the SAME grammar parseEntryTrigger uses —
+// the direction-keyword requirement is what's dropped, nothing else.
+const BARE_NUM_RE = new RegExp(LEVEL_NUM, "gi");
+
+/** PURE. Every number in `text` that could be a price level, as numbers.
+ *  Unit-wearing and year-like numbers are rejected exactly as the trigger
+ *  parser rejects them ("$100M", "50-day", "30%", "2024"), and the desk's
+ *  thousands shorthand is multiplied through ("21.5k" → 21500). */
+export function statedPriceNumbers(text: string): Set<number> {
+  const out = new Set<number>();
+  const t = (text ?? "").trim();
+  if (!t) return out;
+  for (const m of t.matchAll(BARE_NUM_RE)) {
+    const after = t.slice((m.index ?? 0) + m[0].length);
+    const kMult = K_AFTER_RE.test(after) ? 1000 : 1;
+    if (kMult === 1 && UNIT_AFTER_RE.test(after)) continue;
+    const v = toNum(m[1]);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    // The year guard asks a HARDER question than this function does. The
+    // grader must refuse to arm "loses 2024 support"; this is only asking
+    // whether the speaker named a price at all, and a $ says they did —
+    // gold at $1,995 and ETH at $2,010 live inside the year band. A bare
+    // 2024 with no $ stays a year, per the book's idiom.
+    const dollared = /\$\s*$/.test(m[0].slice(0, m[0].length - m[1].length)) || /^\s*\$/.test(m[0]);
+    if (kMult === 1 && YEAR_LIKE(m[1], v) && !dollared) continue;
+    out.add(v * kMult);
+  }
+  return out;
+}
+
+/** PURE. Does this entry state a price at all? "double bottom off $35
+ *  support" does (the parser just can't attach a direction to it); "watch for
+ *  continued breakout" does not. The extractor's floor uses this to tell a
+ *  level-bearing idea from bare commentary. */
+export function statesPriceLevel(text: string): boolean {
+  return statedPriceNumbers(text).size > 0;
+}
+
 export type EntryConflict = "two_sided" | "side_mismatch";
 
 /** PURE. Side and trigger direction must agree (INTEGRITY-1): a two-sided

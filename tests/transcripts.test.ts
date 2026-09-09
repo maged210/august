@@ -16,7 +16,9 @@ import {
   listTranscripts,
   applyConflictRule,
   applyEntryRule,
+  applyIdeaFloor,
   normalizeCandidates,
+  stopMasqueradingAsEntry,
   storeTranscript,
   transcriptsConfigured,
   updateTranscript,
@@ -168,4 +170,124 @@ test("conflict rule: side vs entry-language disagreement lands in REVIEW, never 
   assert.equal(out[0].status, "review");
   assert.equal(out[1].status, "review");
   assert.equal(out[2].status, "draft");
+});
+
+
+// --- fix/extractor-quality · THE STOP IS NOT THE ENTRY ----------------------
+// Live evidence from the 2026-09-09 run: the model emitted
+// "above 36.70 support (stop below 36.70)" for a call whose $36.70 was the
+// STOP. Graded literally that arms a trigger the speaker never gave.
+
+test("stop-as-entry: the same number as trigger AND stop is contested, not clean", () => {
+  assert.equal(stopMasqueradingAsEntry("above 36.70 support (stop below 36.70)"), true);
+  // the stop's number moved in front of the word — the shape seen on the rerun
+  assert.equal(stopMasqueradingAsEntry("above 36.70 support (stop below); options at $45 strike"), true);
+  // a stop carrying its own, different level is the normal healthy shape
+  assert.equal(stopMasqueradingAsEntry("break above $50; stop below $47"), false);
+  assert.equal(stopMasqueradingAsEntry("long above 9,450; stop below 9,400"), false);
+  assert.equal(stopMasqueradingAsEntry("above 775.50"), false);
+  assert.equal(stopMasqueradingAsEntry("watch for continuation"), false);
+});
+
+test("stop-as-entry: a decimal stop is read whole — $36.70 is not 36", () => {
+  // the clause boundary must not cut at the decimal point, or the guard
+  // compares 36 against a 36.70 trigger and waves it through
+  assert.equal(stopMasqueradingAsEntry("above $36.70 (stop below $36.70)"), true);
+  assert.equal(stopMasqueradingAsEntry("above $36.70; stop below $30.10"), false);
+});
+
+test("stop-as-entry: such a row lands in REVIEW rather than going out as a clean draft", () => {
+  const out = applyConflictRule(
+    normalizeCandidates([
+      { ...GOOD, instrument: "OKLO", entry: "above 36.70 support (stop below 36.70)", side: "long" },
+      { ...GOOD, instrument: "ORCL", entry: "break above 156.75", side: "long" },
+    ]),
+  );
+  assert.equal(out[0].status, "review");
+  assert.equal(out[1].status, "draft");
+});
+
+// --- fix/extractor-quality · THE IDEA FLOOR ---------------------------------
+
+const mk = (instrument: string, entry: string, target = "") => ({ ...GOOD, instrument, entry, target });
+
+test("floor: keeps a readable trigger, and a stated price the grader can't yet read", () => {
+  const { ideas, dropped } = applyIdeaFloor(
+    normalizeCandidates([
+      mk("ORCL", "break above 156.75"),
+      mk("ENPH", "double bottom off $35 support"), // price stated, no direction → NEEDS LEVEL, still real
+      mk("CAR", "confirmation break below short-term uptrend; gap fill target ~$57.70–$56"),
+      mk("DKNG", "holds support around $25"),
+    ]),
+  );
+  assert.equal(ideas.length, 4);
+  assert.equal(dropped.length, 0);
+});
+
+test("floor: drops bare commentary — no level, no trigger, just a ticker named in passing", () => {
+  const { ideas, dropped } = applyIdeaFloor(
+    normalizeCandidates([
+      mk("UGA", "continuing to move higher, still on the radar"),
+      mk("CRAK", "continuing to move higher, still on the radar"),
+      mk("UMAC", "watch for continuation out of recent push to new highs"),
+      mk("BMNU", "watch for continued breakout"),
+      mk("OKLO", "double bottom confirmed"),
+      mk("SPXS", "watch for continued market weakness/confirmation of downside"),
+      mk("ORCL", "break above 156.75"), // the one real idea survives
+    ]),
+  );
+  assert.deepEqual(ideas.map((i) => i.instrument), ["ORCL"]);
+  assert.equal(dropped.length, 6);
+});
+
+test("floor: a level stated only in the TARGET still counts — the row isn't destroyed", () => {
+  // the inverse would be perverse: an emptier row (entry "") demotes to a tape
+  // note and survives, so a row carrying MORE information must not be deleted
+  const { ideas, dropped } = applyIdeaFloor(normalizeCandidates([mk("BBB", "on a pullback", "$52")]));
+  assert.equal(ideas.length, 1);
+  assert.equal(dropped.length, 0);
+});
+
+test("floor: a specific stated trigger with no number is kept — the owner's rule has two halves", () => {
+  const { ideas, dropped } = applyIdeaFloor(
+    normalizeCandidates([
+      mk("AAA", "on a break of yesterday's high"),
+      mk("BBB", "if it reclaims the 200-day"),
+      mk("CCC", "watch for breakout above near-term key resistance"),
+    ]),
+  );
+  assert.equal(ideas.length, 3);
+  assert.equal(dropped.length, 0);
+});
+
+test("floor: a percentage, a unit or a bare year is not a price", () => {
+  const { ideas, dropped } = applyIdeaFloor(
+    normalizeCandidates([
+      mk("AAA", "down 30% off the highs, watching"),
+      mk("BBB", "back to the 2024 area, still on the radar"),
+    ]),
+  );
+  assert.equal(ideas.length, 0);
+  assert.equal(dropped.length, 2);
+});
+
+test("floor: a $-marked price inside the year band is a PRICE — gold and ETH survive", () => {
+  // the grader's year guard must not double as an existence test, or every
+  // $1,990–$2,039 idea is deleted before a human ever sees it
+  const { ideas, dropped } = applyIdeaFloor(
+    normalizeCandidates([mk("XAUUSD", "long gold near $1995"), mk("ETH", "buying $2010 area")]),
+  );
+  assert.equal(ideas.length, 2);
+  assert.equal(dropped.length, 0);
+});
+
+test("floor: runs BEFORE the per-transcript cap, so commentary can't eat the idea budget", () => {
+  const commentary = Array.from({ length: MAX_IDEAS_PER_TRANSCRIPT }, (_, n) =>
+    mk(`C${n}`, "still on the radar"),
+  );
+  const real = [mk("ORCL", "break above 156.75"), mk("BTG", "break above $5.70")];
+  const { ideas } = applyIdeaFloor(
+    normalizeCandidates([...commentary, ...real], MAX_IDEAS_PER_TRANSCRIPT * 4),
+  );
+  assert.deepEqual(ideas.map((i) => i.instrument), ["ORCL", "BTG"]);
 });
