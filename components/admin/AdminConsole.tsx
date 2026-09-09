@@ -469,6 +469,7 @@ export default function AdminConsole() {
         chars?: number;
         overCap?: boolean;
         credits?: number;
+        lang?: string | null;
         videoId?: string;
         meta?: { title: string; channel: string; publishedAt: string | null; durationSeconds: number | null } | null;
         metaNote?: string | null;
@@ -499,7 +500,11 @@ export default function AdminConsole() {
       }
       const chars = j.chars ?? 0;
       const cost = `${j.credits ?? 0} credit${(j.credits ?? 0) === 1 ? "" : "s"}`;
-      const line = `Fetched ${(chars / 1000).toFixed(1)}k chars · ${cost}${j.metaNote ? ` · ${j.metaNote}` : ""}`;
+      // Resolved language sits next to chars/credits so a wrong caption track
+      // (e.g. an auto-translated one Supadata substituted) is visible before
+      // PROCESS, not after — see lib/transcript-fetch.ts LANGUAGE PINNING.
+      const langNote = j.lang ? ` · ${j.lang}` : "";
+      const line = `Fetched ${(chars / 1000).toFixed(1)}k chars${langNote} · ${cost}${j.metaNote ? ` · ${j.metaNote}` : ""}`;
       setFetchState(
         j.overCap
           ? { kind: "warn", text: `${line} — over the 120k intake cap; trim it before PROCESS.` }

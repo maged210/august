@@ -15,6 +15,7 @@ import {
   billedCredits,
   failureForStatus,
   fetchTranscript,
+  languageUnavailableMessage,
   parseVideoRef,
   scrubKey,
   transcriptProviderConfigured,
@@ -131,6 +132,35 @@ test("failureForStatus: 206 explains the cost of the AI fallback we deliberately
   const m = failureForStatus(206).message;
   assert.match(m, /no captions/i);
   assert.match(m, /2 credits per minute/i);
+});
+
+// --- languageUnavailableMessage ----------------------------------------------
+// Regression coverage for the 2026-09-09 bug: an English video came back as a
+// 16.9k-char Arabic transcript because no `lang` was pinned on the request,
+// and the provider substitutes silently (200, not an error) when a pinned
+// language isn't available. This is the pure half of that fix — the network
+// half (the actual live substitution) is verified live and recorded in the
+// commit, per this file's no-mocking convention, at real provider cost.
+
+test("languageUnavailableMessage: names English by its name, lists what IS available", () => {
+  const m = languageUnavailableMessage("en", "ar", ["ar", "fr", "es"]);
+  assert.match(m, /english isn't available/i);
+  assert.match(m, /ar, fr, es/);
+});
+
+test("languageUnavailableMessage: a non-English requested code is named by its raw code", () => {
+  const m = languageUnavailableMessage("fr", "en", ["en"]);
+  assert.match(m, /^fr isn't available/);
+});
+
+test("languageUnavailableMessage: falls back to naming the substitute when availableLangs is empty", () => {
+  const m = languageUnavailableMessage("en", "ar", []);
+  assert.match(m, /english isn't available/i);
+  assert.match(m, /substituted "ar" instead/);
+});
+
+test("languageUnavailableMessage: never returns an empty string", () => {
+  assert.ok(languageUnavailableMessage("en", "unknown", []).trim().length > 10);
 });
 
 // --- billedCredits ----------------------------------------------------------

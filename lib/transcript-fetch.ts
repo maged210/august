@@ -8,9 +8,12 @@
 // lib/intel/transcript.ts producing TranscriptSegment[] for the intel store.
 // The two pipelines stay disjoint; this module never imports from lib/intel.
 //
-// PROVIDER CONTRACT — verified 2026-09-05 against docs.supadata.ai:
-//   GET https://api.supadata.ai/v1/transcript?url=<video url>&text=true&mode=native
-//     200 → { content: string, lang, availableLangs }
+// PROVIDER CONTRACT — verified 2026-09-05 against docs.supadata.ai; `lang`
+// pinning verified live 2026-09-09 (see LANGUAGE PINNING below):
+//   GET https://api.supadata.ai/v1/transcript?url=<video url>&text=true&mode=native&lang=en
+//     200 → { content: string, lang, availableLangs } — `lang` can legally
+//           differ from the requested one (see LANGUAGE PINNING); this module
+//           never treats that as success.
 //     202 → { jobId }  → poll GET /v1/transcript/{jobId}
 //                        → { status: queued|active|completed|failed, content, error }
 //     206 transcript unavailable · 400 invalid request · 401 unauthorized ·
@@ -62,12 +65,40 @@ const INTAKE_CHAR_CAP = 120_000;
  *  owner sees is never an under-count. */
 const METADATA_DOCUMENTED_CREDITS = 1;
 
+/** LANGUAGE PINNING — verified live 2026-09-09 against the reported bug: an
+ *  English video (i9dVorpqWpI) with no `lang` param came back as a
+ *  16,935-char ARABIC transcript. The docs say an unavailable `lang` "defaults
+ *  to the first available language" — true, confirmed live, but the same
+ *  silent-fallback happens with NO `lang` param too: the provider doesn't
+ *  detect the video's spoken language, it just hands back whatever its
+ *  internal default track is (Arabic, for that video). An unpinned request is
+ *  a coin flip, not an English default. We pin `lang=en` on every request.
+ *
+ *  When the pinned language isn't available, the provider does NOT error —
+ *  it still returns 200 and silently substitutes another language in `lang`.
+ *  Confirmed live: requesting `lang=vi` on that same video returned 200 with
+ *  `lang: "ar"`, not a 4xx. So a 200 alone never proves we got English —
+ *  `lang` in the body has to be checked against what we asked for.
+ *
+ *  NATIVE VS AUTO-TRANSLATED — the ask was to prefer a video's native/
+ *  original caption track over an auto-translated one, if the API exposes
+ *  that. It doesn't. Verified live across both endpoints: the transcript
+ *  response never carries anything beyond `content`/`lang`/`availableLangs`
+ *  (a flat list of codes, no track-type flag), and `/v1/youtube/video`'s
+ *  `transcriptLanguages` field — the one that looks purpose-built for this —
+ *  came back `[]` on every video tried, including one with 18 real caption
+ *  languages. There is no defaultAudioLanguage/defaultLanguage field either.
+ *  With no native-vs-translated signal to rank by, that preference isn't
+ *  implementable; English is pinned directly instead. */
+const TARGET_LANG = "en";
+
 export type VideoRef = { videoId: string; url: string };
 
 export type FetchFailureKind =
   | "not_configured"
   | "malformed_url"
   | "no_captions"
+  | "language_unavailable"
   | "not_found"
   | "unauthorized"
   | "plan_required"
@@ -206,6 +237,23 @@ export function failureForStatus(status: number): { kind: FetchFailureKind; mess
   }
 }
 
+/** PURE. Coerce an unknown JSON value into a string[], dropping non-strings.
+ *  `availableLangs` is untrusted provider input parsed from JSON. */
+function asLangList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/** PURE. The provider substituted a different language than the one pinned —
+ *  build a message that says so and, when we have it, what IS available.
+ *  Never returns an empty string; never silently describes this as success. */
+export function languageUnavailableMessage(requestedLang: string, gotLang: string, availableLangs: string[]): string {
+  const label = requestedLang === "en" ? "English" : requestedLang;
+  const list = availableLangs.length
+    ? ` Captions exist in: ${availableLangs.join(", ")}.`
+    : ` (the provider substituted "${gotLang}" instead.)`;
+  return `${label} isn't available for this video.${list}`;
+}
+
 /** PURE. Read the credits a response was billed. Absent/garbage → 0, never NaN. */
 export function billedCredits(headers: Headers): number {
   const raw = headers.get("x-billable-requests");
@@ -219,13 +267,16 @@ export function transcriptProviderConfigured(): boolean {
   return !!process.env.TRANSCRIPT_PROVIDER_API_KEY;
 }
 
-type JobBody = { status?: string; content?: unknown; lang?: string; error?: string };
+type JobBody = { status?: string; content?: unknown; lang?: string; availableLangs?: unknown; error?: string };
 
 async function pollJob(
   jobId: string,
   key: string,
   spent: { credits: number },
-): Promise<{ ok: true; text: string; lang: string | null } | { ok: false; kind: FetchFailureKind; message: string }> {
+): Promise<
+  | { ok: true; text: string; lang: string | null; availableLangs: string[] }
+  | { ok: false; kind: FetchFailureKind; message: string }
+> {
   const deadline = Date.now() + JOB_POLL_BUDGET_MS;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, JOB_POLL_INTERVAL_MS));
@@ -255,7 +306,12 @@ async function pollJob(
     if (body.status === "completed") {
       const text = typeof body.content === "string" ? body.content.trim() : "";
       if (!text) return { ok: false, kind: "empty_transcript", message: "The provider reported success but returned no transcript text." };
-      return { ok: true, text, lang: body.lang ?? null };
+      // NOT verified live — the async job path only fires for large videos
+      // (see the module doc above) and wasn't triggered during the 2026-09-09
+      // language-pinning verification. If the job body doesn't carry
+      // availableLangs, the language-mismatch message below just has less to
+      // say; it never treats that as English being present.
+      return { ok: true, text, lang: body.lang ?? null, availableLangs: asLangList(body.availableLangs) };
     }
     // queued | active → keep waiting
   }
@@ -318,7 +374,7 @@ async function fetchMetadata(ref: VideoRef, key: string, spent: { credits: numbe
  */
 export async function fetchTranscript(
   input: string,
-  opts: { includeMetadata?: boolean } = {},
+  opts: { includeMetadata?: boolean; lang?: string } = {},
 ): Promise<FetchTranscriptResult> {
   const spent = { credits: 0 };
   const key = process.env.TRANSCRIPT_PROVIDER_API_KEY;
@@ -335,14 +391,17 @@ export async function fetchTranscript(
   const parsed = parseVideoRef(input);
   if (!parsed.ok) return { ok: false, kind: "malformed_url", message: parsed.message, credits: 0 };
   const ref = parsed.ref;
+  const requestedLang = opts.lang || TARGET_LANG;
 
   let text: string;
   let lang: string | null = null;
+  let availableLangs: string[] = [];
   try {
     const u = new URL(TRANSCRIPT_URL);
     u.searchParams.set("url", ref.url);
     u.searchParams.set("text", "true");
     u.searchParams.set("mode", "native"); // see COST DISCIPLINE above
+    u.searchParams.set("lang", requestedLang); // see LANGUAGE PINNING above — never let the provider pick
     const res = await fetch(u, {
       cache: "no-store",
       headers: { "x-api-key": key },
@@ -359,11 +418,12 @@ export async function fetchTranscript(
       if (!job.ok) return { ok: false, kind: job.kind, message: job.message, credits: spent.credits };
       text = job.text;
       lang = job.lang;
+      availableLangs = job.availableLangs;
     } else if (!res.ok) {
       const f = failureForStatus(res.status);
       return { ok: false, kind: f.kind, message: f.message, credits: spent.credits };
     } else {
-      const body = (await res.json()) as { content?: unknown; lang?: unknown };
+      const body = (await res.json()) as { content?: unknown; lang?: unknown; availableLangs?: unknown };
       const content = typeof body.content === "string" ? body.content.trim() : "";
       if (!content) {
         // A 200 with nothing in it is the exact case that must never look like
@@ -377,6 +437,7 @@ export async function fetchTranscript(
       }
       text = content;
       lang = typeof body.lang === "string" ? body.lang : null;
+      availableLangs = asLangList(body.availableLangs);
     }
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
@@ -386,6 +447,18 @@ export async function fetchTranscript(
       message: timedOut
         ? `The provider didn't answer within ${Math.round(TRANSCRIPT_TIMEOUT_MS / 1000)}s. Nothing was returned — try again, or paste the transcript by hand.`
         : "Couldn't reach the transcript provider.",
+      credits: spent.credits,
+    };
+  }
+
+  // The provider answered 200 but that alone doesn't mean we got the language
+  // we pinned — see LANGUAGE PINNING above. Never pass through a silent
+  // substitution as if it were the requested language.
+  if (lang !== requestedLang) {
+    return {
+      ok: false,
+      kind: "language_unavailable",
+      message: languageUnavailableMessage(requestedLang, lang ?? "unknown", availableLangs),
       credits: spent.credits,
     };
   }
