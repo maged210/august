@@ -101,6 +101,12 @@ export async function POST(req: Request): Promise<Response> {
       drafts: ideaIds.length + tapeIds.length,
       ideaIds,
       tapeIds,
+      // What the idea floor refused to queue, reported rather than silently
+      // swallowed — a queue that shrinks without saying why is worse than a
+      // noisy one. This is a DECISION, not a deferred queue: the floor is
+      // deterministic on the extractor's output, so re-processing the same
+      // transcript drops the same rows again.
+      dropped: candidates.dropped,
     },
     { status: 201 },
   );

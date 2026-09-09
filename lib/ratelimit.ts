@@ -52,7 +52,14 @@ const LIMITS: Record<RouteKey, number> = {
   watchlist: 30, // per-user watchlist reads/writes — cheap Redis ops
   feeds: 30,  // per-user feed prefs + onboarded flag — cheap Redis ops
   ideas: 30,  // public trade-ideas rail — cheap Redis read, 60s client poll
-  admin: 30,  // admin ideas CRUD — token/owner-gated, cheap Redis ops
+  // Owner-side desk work, already behind the admin gate. One APPROVE tap is
+  // 2-3 requests on this bucket (the PATCH, the twin-consume PATCH when a live
+  // row is refreshed, then the list reload), so 30/min ran out roughly ten
+  // taps into triaging one video's queue and surfaced as "Approve failed:
+  // rate_limited". This limiter is a runaway backstop for an authenticated
+  // single user, not an abuse control — the gate is the abuse control.
+  // Env-tunable without a deploy: ADMIN_RATE_PER_MIN.
+  admin: 240,
   transcripts: 8, // transcript extraction — an Anthropic call per POST, tight (intelProcess profile)
   bars: 30,   // chart-dock daily candles — Yahoo fetch behind a 5min server cache
   tape: 30,   // public desk-tape read — cheap Redis, dock polls ~60s
@@ -75,6 +82,7 @@ function envInt(name: string, fallback: number): number {
  *  traffic) is env-tunable without a deploy: CHAT_RATE_PER_MIN. */
 function limitFor(key: RouteKey): number {
   if (key === "chat") return envInt("CHAT_RATE_PER_MIN", LIMITS.chat);
+  if (key === "admin") return envInt("ADMIN_RATE_PER_MIN", LIMITS.admin);
   return LIMITS[key];
 }
 

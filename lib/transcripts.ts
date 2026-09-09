@@ -21,6 +21,8 @@ import {
   entryConflict,
   MAX_LEVEL_CHARS,
   MAX_THESIS_CHARS,
+  parseEntryTrigger,
+  statesPriceLevel,
   validateIdeaCreate,
   type IdeaCreateInput,
 } from "@/lib/ideas";
@@ -89,16 +91,62 @@ export function validateTranscriptBody(
   return { ok: true, value: { text, source, videoId } };
 }
 
+// Crossing language pointed at a NAMED reference is a specific trigger even
+// with no number attached — "on a break of yesterday's high", "if it reclaims
+// the 200-day". Both halves are required: "watch for continued breakout" has
+// the verb and no reference, and is exactly the commentary the floor exists
+// to reject.
+const CROSSING_VERB_RE = /\b(?:break(?:s|ing)?|breaks?\s*out|above|below|over|under|reclaim\w*|clear\w*|lose[sn]?\w*|hold\w*|cross\w*|retest\w*)\b/i;
+const NAMED_REFERENCE_RE =
+  /\b(?:high|low|close|open|vwap|pivot|trend ?line|channel|neckline|gap|range|resistance|support|moving average|\d+\s*-?\s*day|\d+\s*-?\s*(?:d|s|e)ma|earnings|cpi|fomc|print|report|pre-?market)\b/i;
+
+/**
+ * PURE. THE IDEA FLOOR (fix/extractor-quality). An extracted idea has to
+ * offer the desk something to act on. A row that offers nothing — "watch for
+ * continued breakout", "still on the radar", "continuing to move higher" — is
+ * the host naming a ticker in passing. It can never be graded, so it lands in
+ * NEEDS LEVEL and stays there, and enough of them make the queue unusable.
+ *
+ * A row is kept when ANY of these hold:
+ *   1. the grader can already read a trigger out of the entry,
+ *   2. the entry or the target names a price — a human can point a direction
+ *      at a stated number; the desk should not throw the number away,
+ *   3. the entry states a specific trigger in words: crossing language
+ *      attached to a named reference ("break of yesterday's high"). The desk
+ *      grades numerically, so these still need a human to set a level, but
+ *      they ARE a stated trigger and the owner's rule keeps them.
+ *
+ * Dropped rows are NOT rewritten as tape notes: tape is for options and
+ * order-flow callouts, and a bare mention isn't one of those either. They are
+ * reported to the caller by instrument and entry rather than vanishing —
+ * note that re-processing the same transcript is deterministic on the same
+ * model output, so a drop is a decision, not a queue to be drained later.
+ */
+export function applyIdeaFloor(
+  ideas: IdeaCreateInput[],
+): { ideas: IdeaCreateInput[]; dropped: Array<{ instrument: string; entry: string }> } {
+  const kept: IdeaCreateInput[] = [];
+  const dropped: Array<{ instrument: string; entry: string }> = [];
+  for (const i of ideas) {
+    const readableTrigger = parseEntryTrigger(i.entry) !== null;
+    const statesAPrice = statesPriceLevel(i.entry) || statesPriceLevel(i.target);
+    const statesACondition = CROSSING_VERB_RE.test(i.entry) && NAMED_REFERENCE_RE.test(i.entry);
+    if (readableTrigger || statesAPrice || statesACondition) kept.push(i);
+    else dropped.push({ instrument: i.instrument, entry: i.entry });
+  }
+  return { ideas: kept, dropped };
+}
+
 /**
  * PURE. Filter the model's candidates down to rows that pass the SAME
  * validator the admin create API uses — anything malformed is dropped, never
  * repaired into existence. Caps the count; stamps source "extracted",
  * status "draft" (the pipeline can never publish).
  */
-export function normalizeCandidates(raw: unknown): IdeaCreateInput[] {
+export function normalizeCandidates(raw: unknown, max = MAX_IDEAS_PER_TRANSCRIPT): IdeaCreateInput[] {
   const list = Array.isArray(raw) ? raw : [];
   const out: IdeaCreateInput[] = [];
-  for (const c of list.slice(0, MAX_IDEAS_PER_TRANSCRIPT)) {
+  for (const c of list.slice(0, max)) {
     if (typeof c !== "object" || c === null) continue;
     const b = c as Record<string, unknown>;
     const parsed = validateIdeaCreate({
@@ -177,6 +225,57 @@ export function applyEntryRule(
   return { ideas: keptIdeas, tape: outTape.slice(0, MAX_TAPE_PER_TRANSCRIPT) };
 }
 
+// A stop marker plus the rest of its clause. The clause ends at ';' or ')' —
+// and at a SENTENCE period, which is a period followed by space or end-of-
+// string. A bare '.' must not end it: that would cut "$36.70" down to "$36"
+// and read the stop as a level nobody said.
+const STOP_CLAUSE_RE = /\b(?:stop(?:s|ped)?|invalidat\w*|exit\w*)\b([^;)]*)/gi;
+const SENTENCE_END_RE = /\.(?:\s|$)/;
+const CLAUSE_NUM_RE = /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/g;
+
+/**
+ * PURE (fix/extractor-quality). THE STOP IS NOT THE ENTRY. Asking the model
+ * to keep a direction word next to the number makes stated levels gradeable,
+ * but it also tempts it to reach for whichever number is nearest — and on a
+ * real run it emitted "above 36.70 support (stop below 36.70)" for a call
+ * whose entry was "near current levels (~$40)" and whose $36.70 was the STOP.
+ * Graded literally, that arms a trigger the speaker never gave.
+ *
+ * When the number the grader would trade on is also stated as this row's
+ * stop, the row is contested: it goes to REVIEW for a human rather than out
+ * as a clean draft. Detectable in code, so it is decided in code.
+ */
+/** PURE. Every number this entry states inside a stop clause. An EMPTY set
+ *  from a string that HAS a stop clause is the ambiguous case — the stop
+ *  names no level of its own, so it is pointing at some other number in the
+ *  row (in practice, the trigger). Callers distinguish the two. */
+export function stopNumbers(entry: string): { hasStopClause: boolean; numbers: Set<number> } {
+  const numbers = new Set<number>();
+  let hasStopClause = false;
+  for (const m of (entry ?? "").matchAll(STOP_CLAUSE_RE)) {
+    hasStopClause = true;
+    const clause = (m[1] ?? "").split(SENTENCE_END_RE)[0];
+    for (const n of clause.matchAll(CLAUSE_NUM_RE)) {
+      const v = Number(n[1].replace(/,/g, ""));
+      if (Number.isFinite(v) && v > 0) numbers.add(v);
+    }
+  }
+  return { hasStopClause, numbers };
+}
+
+export function stopMasqueradingAsEntry(entry: string): boolean {
+  const trigger = parseEntryTrigger(entry);
+  if (trigger?.kind !== "level") return false;
+  const { hasStopClause, numbers } = stopNumbers(entry);
+  if (!hasStopClause) return false;
+  // A stop with its own level, different from the trigger, is the normal
+  // healthy shape ("break above $50; stop below $47") — leave it alone.
+  if (numbers.size > 0) return numbers.has(trigger.level);
+  // A stop clause naming no level of its own ("above 36.70 support (stop
+  // below)") is pointing back at the trigger. Contested → a human decides.
+  return true;
+}
+
 /**
  * PURE (INTEGRITY-1). THE CONFLICT RULE: side and trigger direction must
  * agree. A candidate whose stated side contradicts its entry language, or
@@ -184,10 +283,13 @@ export function applyEntryRule(
  * bears" collapsed into one row), lands in REVIEW — never publishable as
  * live until a human resolves the direction. Runs AFTER applyEntryRule, so
  * every row here still passed the idea validator.
+ *
+ * A stop wearing the entry's clothes (above) lands in the same place, for the
+ * same reason: a human decides, the pipeline never guesses.
  */
 export function applyConflictRule(ideas: IdeaCreateInput[]): IdeaCreateInput[] {
   return ideas.map((i) => {
-    const conflict = entryConflict(i.side, i.entry);
+    const conflict = entryConflict(i.side, i.entry) !== null || stopMasqueradingAsEntry(i.entry);
     return conflict ? { ...i, status: "review" as const } : i;
   });
 }
@@ -206,8 +308,16 @@ const EXTRACT_SYSTEM = `You extract trade ideas AND options/flow callouts from t
 
 TRADE IDEAS (the "ideas" list):
 - thesis: a tight 1-3 sentence paraphrase of the speaker's ACTUAL reasoning for this idea, in plain prose (max ${MAX_THESIS_CHARS} chars).
-- entry / target: the speaker's stated levels or conditions, near-verbatim ("21,450", "break of 600", "under the pivot") — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
+- entry / target: the speaker's stated levels or conditions, near-verbatim — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
+- WHEN THE SPEAKER STATES A CROSSING, KEEP THE DIRECTION WORD NEXT TO THE NUMBER: "break above 775.50", "loses 600", "reclaims 21,450", "below $8.40". Do not scatter them ("break of 600", "below the trendline … 57.70") — the desk reads a direction word immediately followed by the number and nothing else.
+- BUT NEVER MANUFACTURE A CROSSING THE SPEAKER DIDN'T STATE, and never borrow a number from another role. These are the traps, all seen in real transcripts:
+  · A SUPPORT or RESISTANCE level is not an entry. "It's double-bottoming off $35 support" states support at 35 and NO trigger — write it as their words ("double bottom off $35 support"), NOT as "above $35". "It's close to resistance, 37 to $40" is a zone being watched, NOT "break above $40".
+  · A STOP is not an entry. "Buy here, stop below 36.70" states a stop of 36.70 and NO entry trigger.
+  · A TARGET is not an entry, and an option STRIKE is not a price level.
+  · "At current levels" / "right here" / "on a pullback" IS the entry when that is what they said. Keep it.
+- A row honestly carrying no crossable trigger is WANTED — a human sets the level from the desk. A borrowed or invented number is the one outcome that is never acceptable.
 - A call WITHOUT a stated entry is NOT an idea — emit it as a TAPE NOTE (the "tape" list, kind "note") instead. Ideas require an actionable entry.
+- THE FLOOR — an idea needs a stated level OR a specific stated trigger condition. The host naming a ticker in passing is NOT an idea: "still on the radar", "watch for continuation", "continuing to move higher", "looks good here" with no level and no specific trigger. LEAVE THOSE OUT ENTIRELY. The desk drops them regardless, and a queue full of them is worse than a short queue.
 - riskLevel: "high" when the speaker frames the idea as aggressive, speculative, or a lottery; "low" when framed as conservative, core, or highest-conviction; otherwise "medium".
 - side: "long" ONLY when the speaker's entry language points up ("break above", "clears", "reclaims", "retest higher", buying calls/going long); "short" ONLY when it points down ("break below", "breakdown", "loses", "rejection at", shorting/buying puts); "watch" ONLY when they explicitly frame it as watch-only, no trade yet. When the direction is genuinely ambiguous, OMIT the field entirely — a wrong side is worse than no side. Never infer it from the thesis mood alone.
 - Skip pure market commentary with no actionable idea. Merge repeats of the same idea into one row.
@@ -235,7 +345,11 @@ const EMIT_EXTRACTIONS_TOOL = {
           properties: {
             instrument: { type: "string", description: "The traded thing — 'NQ', 'NVDA', 'BTC'." },
             thesis: { type: "string", description: "1-3 sentence paraphrase of the speaker's reasoning." },
-            entry: { type: "string", description: "Stated entry level/condition, near-verbatim; empty string if none stated." },
+            entry: {
+              type: "string",
+              description:
+                "Stated entry level/condition, near-verbatim; empty string if none stated. When the speaker states a crossing, keep the direction word next to the number ('break above 775.50'). Never convert a support/resistance level, a stop, or a target into a crossing they did not state.",
+            },
             target: { type: "string", description: "Stated target, near-verbatim; empty string if none stated." },
             riskLevel: { type: "string", enum: ["low", "medium", "high"] },
             side: {
@@ -286,7 +400,7 @@ function getClient(apiKey: string): Anthropic {
  */
 export async function extractFromTranscript(
   text: string,
-): Promise<{ ideas: IdeaCreateInput[]; tape: TapeCreateInput[] }> {
+): Promise<{ ideas: IdeaCreateInput[]; tape: TapeCreateInput[]; dropped: Array<{ instrument: string; entry: string }> }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || !aiConfigured()) throw new Error("ai_not_configured");
   const client = getClient(apiKey);
@@ -304,12 +418,28 @@ export async function extractFromTranscript(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "emit_extractions",
   );
   const input = toolUse?.input as { ideas?: unknown; tape?: unknown } | undefined;
-  // F6 — the entry rule is enforced in code, not just prompted: entry-less
-  // idea candidates demote to tape notes no matter what the model emitted.
-  // INTEGRITY-1 — the conflict rule follows the same discipline: side vs
-  // entry-language disagreement (or a two-sided entry) lands in REVIEW.
-  const ruled = applyEntryRule(normalizeCandidates(input?.ideas), normalizeTapeCandidates(input?.tape));
-  return { ideas: applyConflictRule(ruled.ideas), tape: ruled.tape };
+  // Every rule below is enforced in CODE, not just prompted — the prompt asks,
+  // the code decides:
+  //   LEVEL CAPTURE — a stated level that the near-verbatim phrasing hides from
+  //     the grader is rewritten into canonical form, but only when the number
+  //     is actually in the transcript and the result round-trips.
+  //   F6 entry rule — entry-less idea candidates demote to tape notes.
+  //   THE FLOOR — a row with neither a readable trigger nor a stated price is
+  //     commentary, not an idea, and never reaches the queue.
+  //   INTEGRITY-1 conflict rule — side vs entry-language disagreement (or a
+  //     two-sided entry) lands in REVIEW.
+  // The floor runs BEFORE the per-transcript cap, so commentary can't eat the
+  // idea budget and push real calls out of the run unseen.
+  const ruled = applyEntryRule(
+    normalizeCandidates(input?.ideas, MAX_IDEAS_PER_TRANSCRIPT * 4),
+    normalizeTapeCandidates(input?.tape),
+  );
+  const floored = applyIdeaFloor(ruled.ideas);
+  return {
+    ideas: applyConflictRule(floored.ideas).slice(0, MAX_IDEAS_PER_TRANSCRIPT),
+    tape: ruled.tape,
+    dropped: floored.dropped,
+  };
 }
 
 // --- store ------------------------------------------------------------------
