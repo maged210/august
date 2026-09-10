@@ -539,7 +539,7 @@ export default function AdminConsole() {
         ok?: boolean;
         drafts?: number;
         dropped?: Array<{ instrument: string; entry: string }>;
-        symbolDrops?: Array<{ instrument: string; company: string; reason: string; detail: string }>;
+        symbolDrops?: Array<{ instrument: string; company: string; reason: string; detail: string; lane?: string }>;
         unverifiedSymbols?: string[];
         error?: string;
       };
@@ -569,7 +569,10 @@ export default function AdminConsole() {
       const symCut = j.symbolDrops ?? [];
       const symNote = symCut.length
         ? ` ${symCut.length} symbol${symCut.length === 1 ? "" : "s"} refused: ${symCut
-            .map((d) => `${d.instrument || d.company || "?"} — ${d.detail}`)
+            .map(
+              (d) =>
+                `${d.instrument || d.company || "?"}${d.lane === "tape" ? " (tape)" : ""} — ${d.detail}`,
+            )
             .join("; ")}.`
         : "";
       const unver = j.unverifiedSymbols ?? [];

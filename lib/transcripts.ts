@@ -138,7 +138,52 @@ export function applyIdeaFloor(
   return { ideas: kept, dropped };
 }
 
-export type SymbolDrop = { instrument: string; company: string; reason: SymbolRefusal; detail: string };
+export type SymbolDrop = {
+  instrument: string;
+  company: string;
+  reason: SymbolRefusal;
+  detail: string;
+  /** which lane the row would have reached — the queue or the dock */
+  lane: "idea" | "tape";
+};
+
+/** ONE implementation for both lanes. A wrong ticker publishes a call on the
+ *  wrong security whether it arrives as an idea or as a tape callout, so the
+ *  gates, their order, and their refusals are identical — only the lane label
+ *  and the field the symbol lives in differ. */
+async function gateRowsBySymbol<T>(
+  rows: T[],
+  symbolOf: (row: T) => string,
+  spokenFor: (symbol: string) => string,
+  lane: "idea" | "tape",
+): Promise<{ kept: T[]; dropped: SymbolDrop[]; unverified: string[] }> {
+  const verdicts = await Promise.all(
+    rows.map((r) => {
+      const sym = symbolOf(r);
+      return checkSymbol(sym, spokenFor(sym.trim().toUpperCase()));
+    }),
+  );
+  const kept: T[] = [];
+  const dropped: SymbolDrop[] = [];
+  const unverified: string[] = [];
+  rows.forEach((r, n) => {
+    const v = verdicts[n];
+    const sym = symbolOf(r);
+    if (!v.ok) {
+      dropped.push({
+        instrument: sym,
+        company: spokenFor(sym.trim().toUpperCase()),
+        reason: v.reason,
+        detail: v.detail,
+        lane,
+      });
+      return;
+    }
+    if (!v.verified) unverified.push(sym);
+    kept.push(r);
+  });
+  return { kept, dropped, unverified };
+}
 
 /**
  * fix/ticker-validation — THE SYMBOL GATE. Every surviving idea's symbol has
@@ -155,43 +200,51 @@ export type SymbolDrop = { instrument: string; company: string; reason: SymbolRe
  */
 export async function applySymbolGate(
   ideas: IdeaCreateInput[],
-  spokenBy: Map<string, string>,
+  spokenFor: (symbol: string) => string,
 ): Promise<{ ideas: IdeaCreateInput[]; dropped: SymbolDrop[]; unverified: string[] }> {
-  const verdicts = await Promise.all(
-    ideas.map((i) => checkSymbol(i.instrument, spokenBy.get(i.instrument.trim().toUpperCase()) ?? "")),
-  );
-  const kept: IdeaCreateInput[] = [];
-  const dropped: SymbolDrop[] = [];
-  const unverified: string[] = [];
-  ideas.forEach((i, n) => {
-    const v = verdicts[n];
-    if (!v.ok) {
-      dropped.push({
-        instrument: i.instrument,
-        company: spokenBy.get(i.instrument.trim().toUpperCase()) ?? "",
-        reason: v.reason,
-        detail: v.detail,
-      });
-      return;
-    }
-    if (!v.verified) unverified.push(i.instrument);
-    kept.push(i);
-  });
-  return { ideas: kept, dropped, unverified };
+  const r = await gateRowsBySymbol(ideas, (i) => i.instrument, spokenFor, "idea");
+  return { ideas: r.kept, dropped: r.dropped, unverified: r.unverified };
 }
 
-/** PURE. instrument → the company name the speaker actually said, read off
- *  the RAW model output before validation strips the field. */
-export function spokenCompanies(raw: unknown): Map<string, string> {
+/**
+ * The same gate on the DOCK lane. Tape rows carry a real security too, so a
+ * ticker recalled from memory publishes the same wrong thing here — and this
+ * lane also receives the F6 demotions (entry-less ideas rewritten as notes),
+ * which arrive carrying the idea's instrument and must be checked with it.
+ */
+export async function applyTapeSymbolGate(
+  tape: TapeCreateInput[],
+  spokenFor: (symbol: string) => string,
+): Promise<{ tape: TapeCreateInput[]; dropped: SymbolDrop[]; unverified: string[] }> {
+  const r = await gateRowsBySymbol(tape, (t) => t.symbol, spokenFor, "tape");
+  return { tape: r.kept, dropped: r.dropped, unverified: r.unverified };
+}
+
+/** PURE. symbol → the company name the speaker actually said, read off the RAW
+ *  model output before validation strips the field. `key` is the field the
+ *  symbol lives in: "instrument" for ideas, "symbol" for tape. */
+export function spokenCompanies(raw: unknown, key: "instrument" | "symbol" = "instrument"): Map<string, string> {
   const out = new Map<string, string>();
   for (const c of Array.isArray(raw) ? raw : []) {
     if (typeof c !== "object" || c === null) continue;
     const b = c as Record<string, unknown>;
-    const instrument = typeof b.instrument === "string" ? b.instrument.trim().toUpperCase() : "";
+    const symbol = typeof b[key] === "string" ? (b[key] as string).trim().toUpperCase() : "";
     const company = typeof b.company === "string" ? b.company.trim() : "";
-    if (instrument) out.set(instrument, company);
+    if (symbol) out.set(symbol, company);
   }
   return out;
+}
+
+/** PURE. One lookup across both lanes' raw candidates. The tape lane needs the
+ *  ideas map too: an F6 demotion reaches tape carrying the IDEA's instrument,
+ *  and its spoken company was only ever stated on the idea row. */
+export function spokenCompanyLookup(rawIdeas: unknown, rawTape: unknown): (symbol: string) => string {
+  const ideas = spokenCompanies(rawIdeas, "instrument");
+  const tape = spokenCompanies(rawTape, "symbol");
+  return (symbol: string) => {
+    const k = (symbol || "").trim().toUpperCase();
+    return tape.get(k) || ideas.get(k) || "";
+  };
 }
 
 /**
@@ -381,6 +434,7 @@ TRADE IDEAS (the "ideas" list):
 - Skip pure market commentary with no actionable idea. Merge repeats of the same idea into one row.
 
 TAPE CALLOUTS (the "tape" list) — specific options or order-flow trades the speaker mentions seeing or making ("someone swept the 7600 SPX puts", "I bought the 600 calls for Friday"):
+- symbol / company: same rule as ideas — the ticker ONLY when the speaker says it or it is unambiguous, and ALWAYS the company as they named it in "company". A ticker recalled from memory is worse than none, and every tape symbol is verified before it reaches the dock.
 - note: the callout in a short plain phrase, near-verbatim ("Buy 7600 SPX Put") (max ${MAX_TAPE_NOTE_CHARS} chars).
 - expiry / premium: ONLY when the speaker states them ("0DTE", "Friday", "$1.2M") — an EMPTY STRING otherwise. Never guess.
 - kind: "sweep" or "block" or "split" ONLY when the speaker uses that word or describes that mechanic; otherwise "note".
@@ -432,6 +486,11 @@ const EMIT_EXTRACTIONS_TOOL = {
           type: "object",
           properties: {
             symbol: { type: "string", description: "The underlying — 'SPX', 'NVDA'." },
+            company: {
+              type: "string",
+              description:
+                "The company or subject the speaker NAMED for this underlying, in their words. Empty string when they only said a ticker. Checked against the symbol — do not restate the ticker here.",
+            },
             note: { type: "string", description: "The callout, short and near-verbatim — 'Buy 7600 SPX Put'." },
             expiry: { type: "string", description: "Stated expiry ('0DTE', 'DEC 19'); empty string if none stated." },
             premium: { type: "string", description: "Stated premium/size ('$1.2M'); empty string if none stated." },
@@ -506,14 +565,20 @@ export async function extractFromTranscript(
   const floored = applyIdeaFloor(ruled.ideas);
   // THE SYMBOL GATE runs last, on rows that already earned their place — a
   // wrong ticker is the one failure that publishes a call on a security the
-  // desk never meant to watch, so nothing queues without resolving first.
-  const gated = await applySymbolGate(floored.ideas, spokenCompanies(input?.ideas));
+  // desk never meant to watch, so nothing reaches the queue OR the dock
+  // without resolving first. Tape is gated after applyEntryRule so the F6
+  // demotions it appended are checked too.
+  const spokenFor = spokenCompanyLookup(input?.ideas, input?.tape);
+  const [gated, gatedTape] = await Promise.all([
+    applySymbolGate(floored.ideas, spokenFor),
+    applyTapeSymbolGate(ruled.tape, spokenFor),
+  ]);
   return {
     ideas: applyConflictRule(gated.ideas).slice(0, MAX_IDEAS_PER_TRANSCRIPT),
-    tape: ruled.tape,
+    tape: gatedTape.tape,
     dropped: floored.dropped,
-    symbolDrops: gated.dropped,
-    unverifiedSymbols: gated.unverified,
+    symbolDrops: [...gated.dropped, ...gatedTape.dropped],
+    unverifiedSymbols: [...gated.unverified, ...gatedTape.unverified],
   };
 }
 

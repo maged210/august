@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   UNTRADEABLE_SUBJECTS,
+  editDistanceWithin,
   foldName,
   isUntradeableSubject,
   namesAgree,
@@ -113,4 +114,45 @@ test("names agree: spacing is not disagreement — the transcript writes compoun
   // and closing the gap must not start matching unrelated companies
   assert.equal(namesAgree("SpaceX", "Virgin Galactic Holdings, Inc."), false);
   assert.equal(namesAgree("Carrier Global", "Avis Budget Group, Inc."), false);
+});
+
+// --- the dock lane uses the SAME gate ---------------------------------------
+// A wrong ticker publishes the wrong security whether it arrives as an idea or
+// as a tape callout, so tape must not get a weaker check.
+
+test("tape lane: the same refusals and the same generosity apply", () => {
+  // untradeable subject, refused by name before any lookup
+  assert.equal(isUntradeableSubject("SpaceX"), true);
+  // a ticker recalled from memory is caught by name disagreement
+  assert.equal(namesAgree("SpaceX", "Virgin Galactic Holdings, Inc."), false);
+  assert.equal(namesAgree("Carrier Global", "Avis Budget Group, Inc."), false);
+  // and spacing is still not disagreement on this lane either
+  assert.equal(namesAgree("Solar Edge", "SolarEdge Technologies, Inc."), true);
+  // a bare underlying with no spoken company is never refused on name
+  assert.equal(namesAgree("", "State Street SPDR S&P 500 ETF Trust"), true);
+});
+
+// --- mis-heard names --------------------------------------------------------
+
+test("names agree: a mis-transcribed name is tolerated — 'Oaklo' is Oklo", () => {
+  // a real run refused OKLO on the dock lane because the transcript spelled
+  // it "Oaklo"; the ticker was right and the row was deleted for a typo
+  assert.equal(namesAgree("Oaklo", "Oklo Inc."), true);
+  assert.equal(namesAgree("Nphase", "Enphase Energy, Inc."), true);
+});
+
+test("names agree: tolerance stays tight — different companies still disagree", () => {
+  assert.equal(namesAgree("SpaceX", "Virgin Galactic Holdings, Inc."), false);
+  assert.equal(namesAgree("Carrier Global", "Avis Budget Group, Inc."), false);
+  assert.equal(namesAgree("Microsoft", "Apple Inc."), false);
+  assert.equal(namesAgree("Alphabet", "Alphatec Holdings, Inc."), false);
+  assert.equal(namesAgree("Lumentum", "Lucid Group, Inc."), false);
+});
+
+test("editDistanceWithin: exact, near, and far", () => {
+  assert.equal(editDistanceWithin("oklo", "oaklo", 1), true);
+  assert.equal(editDistanceWithin("oklo", "oklo", 0), true);
+  assert.equal(editDistanceWithin("apple", "microsoft", 2), false);
+  // the length guard short-circuits before any work
+  assert.equal(editDistanceWithin("a", "abcdefgh", 2), false);
 });

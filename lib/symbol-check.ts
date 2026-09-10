@@ -122,7 +122,38 @@ export function namesAgree(spokenName: string, resolvedName: string): boolean {
   const wordsA = a.split(" ").filter((w) => w.length >= 3);
   const wordsB = b.split(" ").filter((w) => w.length >= 3);
   if (wordsA.length === 0 || wordsB.length === 0) return true;
-  return wordsA.some((w) => wordsB.includes(w));
+  if (wordsA.some((w) => wordsB.includes(w))) return true;
+  // A transcript mis-hears a name as often as it mis-spaces one — a real run
+  // wrote Oklo as "Oaklo" and a correct ticker was refused for it. Allow a
+  // tight edit distance, scaled to length, as the last word.
+  //
+  // This is tolerance in the AGREEMENT test, never a search: it can only ever
+  // let a symbol the extractor already named survive, and can never reach for
+  // a different one. The bound stays small so genuinely different companies
+  // still disagree — "spacex"/"virgingalactic" and "carrierglobal"/
+  // "avisbudgetgroup" are nowhere near it.
+  const bound = Math.max(1, Math.floor(Math.min(aSquashed.length, bSquashed.length) / 6));
+  return editDistanceWithin(aSquashed, bSquashed, bound);
+}
+
+/** PURE. Levenshtein distance, but it gives up as soon as it exceeds `bound`
+ *  — the answer past that point is only ever "too far apart". */
+export function editDistanceWithin(a: string, b: string, bound: number): boolean {
+  if (Math.abs(a.length - b.length) > bound) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const v = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+      row.push(v);
+      if (v < best) best = v;
+    }
+    if (best > bound) return false; // whole row already past the bound
+    prev = row;
+  }
+  return prev[b.length] <= bound;
 }
 
 // --- durable verdict cache ---------------------------------------------------
