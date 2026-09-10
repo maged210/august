@@ -107,6 +107,15 @@ export async function POST(req: Request): Promise<Response> {
       // deterministic on the extractor's output, so re-processing the same
       // transcript drops the same rows again.
       dropped: candidates.dropped,
+      // fix/ticker-validation — symbols refused before they could queue, each
+      // with the specific reason (private company / no such symbol / the
+      // symbol names a different company than the speaker did). Nothing was
+      // substituted; these rows were dropped.
+      symbolDrops: candidates.symbolDrops,
+      // symbols the quote source could not answer for. These rows DID queue —
+      // an outage is not evidence a ticker is fake — but they are unverified
+      // and the owner should know which ones.
+      unverifiedSymbols: candidates.unverifiedSymbols,
     },
     { status: 201 },
   );

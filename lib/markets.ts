@@ -177,6 +177,55 @@ export async function probeSymbol(
   }
 }
 
+/** fix/ticker-validation — the same probe as above, but carrying WHAT the
+ *  symbol actually is. The extractor needs the resolved instrument's NAME:
+ *  a symbol resolving is not proof it is the right symbol, and the failure
+ *  that prompted this (SPCE emitted for SpaceX) resolves perfectly well —
+ *  as Virgin Galactic. Only the name exposes the substitution.
+ *
+ *  Deliberately NOT built on Yahoo's /v1/finance/search: verified live
+ *  2026-09-10, searching "SpaceX" returns SPCX, LOFF and SPCF (synthetic
+ *  pre-IPO and leveraged vehicles) and "OpenAI" returns tokenized-stock
+ *  and mutual-fund wrappers. Name-to-symbol search would hand back a
+ *  confident, wrong ticker for exactly the private companies that must be
+ *  refused — it is a substitution engine, which is the one thing forbidden.
+ *
+ *  Cached an hour: a listing's name and existence don't move intraday. */
+export type InstrumentProbe =
+  | { state: "ok"; symbol: string; name: string; instrumentType: string }
+  | { state: "no-such-symbol" }
+  | { state: "unavailable" };
+
+export async function probeInstrument(symbol: string): Promise<InstrumentProbe> {
+  const sym = normalizeYahooSymbol(symbol);
+  if (!sym) return { state: "no-such-symbol" };
+  try {
+    return await cached(`yinstr:${sym}`, 60 * 60_000, async () => {
+      const j = await getJson(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`,
+      );
+      const meta = j?.chart?.result?.[0]?.meta;
+      if (!meta) return { state: "unavailable" } as InstrumentProbe;
+      const name =
+        (typeof meta.longName === "string" && meta.longName) ||
+        (typeof meta.shortName === "string" && meta.shortName) ||
+        "";
+      return {
+        state: "ok",
+        symbol: typeof meta.symbol === "string" ? meta.symbol : sym,
+        name,
+        instrumentType: typeof meta.instrumentType === "string" ? meta.instrumentType : "",
+      } as InstrumentProbe;
+    });
+  } catch (e) {
+    // getJson throws Error(String(status)). 404/400 is the source saying the
+    // symbol does not exist; anything else is the source failing, which must
+    // never be reported as nonexistence.
+    const msg = e instanceof Error ? e.message : "";
+    return msg === "404" || msg === "400" ? { state: "no-such-symbol" } : { state: "unavailable" };
+  }
+}
+
 // Like getQuote but also returns the closes array for sparkline rendering.
 // Reuses the same 60s-cached yahooChart fetch — no extra network calls.
 export async function getQuoteWithSpark(

@@ -31,6 +31,7 @@ import {
   validateTapeCreate,
   type TapeCreateInput,
 } from "@/lib/tape";
+import { checkSymbol, type SymbolRefusal } from "@/lib/symbol-check";
 
 export const MAX_TRANSCRIPT_CHARS = 120_000;
 export const MAX_TRANSCRIPTS = 100;
@@ -135,6 +136,62 @@ export function applyIdeaFloor(
     else dropped.push({ instrument: i.instrument, entry: i.entry });
   }
   return { ideas: kept, dropped };
+}
+
+export type SymbolDrop = { instrument: string; company: string; reason: SymbolRefusal; detail: string };
+
+/**
+ * fix/ticker-validation — THE SYMBOL GATE. Every surviving idea's symbol has
+ * to resolve to a real instrument, and be the right one for the company the
+ * speaker named, before it can queue. See lib/symbol-check for the gates and
+ * for why Yahoo's name-search is deliberately not used.
+ *
+ * NOT PURE (one cached lookup per distinct symbol) and deliberately not a
+ * rewriter: a refused row is dropped and named, never repointed at a nearer
+ * ticker, and a row that passes keeps the extractor's own instrument text
+ * verbatim. `unverified` carries symbols the quote source couldn't answer for
+ * — those rows SURVIVE, because a source outage is not evidence a symbol is
+ * fake, and deleting real calls during a Yahoo blip is the worse failure.
+ */
+export async function applySymbolGate(
+  ideas: IdeaCreateInput[],
+  spokenBy: Map<string, string>,
+): Promise<{ ideas: IdeaCreateInput[]; dropped: SymbolDrop[]; unverified: string[] }> {
+  const verdicts = await Promise.all(
+    ideas.map((i) => checkSymbol(i.instrument, spokenBy.get(i.instrument.trim().toUpperCase()) ?? "")),
+  );
+  const kept: IdeaCreateInput[] = [];
+  const dropped: SymbolDrop[] = [];
+  const unverified: string[] = [];
+  ideas.forEach((i, n) => {
+    const v = verdicts[n];
+    if (!v.ok) {
+      dropped.push({
+        instrument: i.instrument,
+        company: spokenBy.get(i.instrument.trim().toUpperCase()) ?? "",
+        reason: v.reason,
+        detail: v.detail,
+      });
+      return;
+    }
+    if (!v.verified) unverified.push(i.instrument);
+    kept.push(i);
+  });
+  return { ideas: kept, dropped, unverified };
+}
+
+/** PURE. instrument → the company name the speaker actually said, read off
+ *  the RAW model output before validation strips the field. */
+export function spokenCompanies(raw: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const c of Array.isArray(raw) ? raw : []) {
+    if (typeof c !== "object" || c === null) continue;
+    const b = c as Record<string, unknown>;
+    const instrument = typeof b.instrument === "string" ? b.instrument.trim().toUpperCase() : "";
+    const company = typeof b.company === "string" ? b.company.trim() : "";
+    if (instrument) out.set(instrument, company);
+  }
+  return out;
 }
 
 /**
@@ -307,6 +364,7 @@ const EXTRACT_SYSTEM = `You extract trade ideas AND options/flow callouts from t
 - Extract ONLY what the speaker actually states. Never invent an instrument, level, direction, or trade the transcript does not contain.
 
 TRADE IDEAS (the "ideas" list):
+- instrument / company: give the ticker ONLY when the speaker says it or it is unambiguous, and ALWAYS put the company as they named it in "company". If you are not sure of a ticker, leave instrument as the speaker's own words and fill in "company" — a ticker recalled from memory is worse than none, and the desk verifies every symbol before it queues anything. NEVER map a private company (SpaceX, OpenAI, Stripe) onto a listed ticker: name the company and the desk will refuse it honestly.
 - thesis: a tight 1-3 sentence paraphrase of the speaker's ACTUAL reasoning for this idea, in plain prose (max ${MAX_THESIS_CHARS} chars).
 - entry / target: the speaker's stated levels or conditions, near-verbatim — an EMPTY STRING when the speaker states none (max ${MAX_LEVEL_CHARS} chars). Never guess a number.
 - WHEN THE SPEAKER STATES A CROSSING, KEEP THE DIRECTION WORD NEXT TO THE NUMBER: "break above 775.50", "loses 600", "reclaims 21,450", "below $8.40". Do not scatter them ("break of 600", "below the trendline … 57.70") — the desk reads a direction word immediately followed by the number and nothing else.
@@ -344,6 +402,11 @@ const EMIT_EXTRACTIONS_TOOL = {
           type: "object",
           properties: {
             instrument: { type: "string", description: "The traded thing — 'NQ', 'NVDA', 'BTC'." },
+            company: {
+              type: "string",
+              description:
+                "The company or subject the speaker NAMED, in their words ('SpaceX', 'Enphase', 'Alamos Gold'). Empty string when they only said a ticker. This is checked against the symbol — do not restate the ticker here.",
+            },
             thesis: { type: "string", description: "1-3 sentence paraphrase of the speaker's reasoning." },
             entry: {
               type: "string",
@@ -400,7 +463,13 @@ function getClient(apiKey: string): Anthropic {
  */
 export async function extractFromTranscript(
   text: string,
-): Promise<{ ideas: IdeaCreateInput[]; tape: TapeCreateInput[]; dropped: Array<{ instrument: string; entry: string }> }> {
+): Promise<{
+  ideas: IdeaCreateInput[];
+  tape: TapeCreateInput[];
+  dropped: Array<{ instrument: string; entry: string }>;
+  symbolDrops: SymbolDrop[];
+  unverifiedSymbols: string[];
+}> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || !aiConfigured()) throw new Error("ai_not_configured");
   const client = getClient(apiKey);
@@ -435,10 +504,16 @@ export async function extractFromTranscript(
     normalizeTapeCandidates(input?.tape),
   );
   const floored = applyIdeaFloor(ruled.ideas);
+  // THE SYMBOL GATE runs last, on rows that already earned their place — a
+  // wrong ticker is the one failure that publishes a call on a security the
+  // desk never meant to watch, so nothing queues without resolving first.
+  const gated = await applySymbolGate(floored.ideas, spokenCompanies(input?.ideas));
   return {
-    ideas: applyConflictRule(floored.ideas).slice(0, MAX_IDEAS_PER_TRANSCRIPT),
+    ideas: applyConflictRule(gated.ideas).slice(0, MAX_IDEAS_PER_TRANSCRIPT),
     tape: ruled.tape,
     dropped: floored.dropped,
+    symbolDrops: gated.dropped,
+    unverifiedSymbols: gated.unverified,
   };
 }
 

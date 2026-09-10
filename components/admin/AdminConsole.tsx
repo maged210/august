@@ -539,6 +539,8 @@ export default function AdminConsole() {
         ok?: boolean;
         drafts?: number;
         dropped?: Array<{ instrument: string; entry: string }>;
+        symbolDrops?: Array<{ instrument: string; company: string; reason: string; detail: string }>;
+        unverifiedSymbols?: string[];
         error?: string;
       };
       if (!res.ok || !j.ok) {
@@ -561,10 +563,23 @@ export default function AdminConsole() {
       const cutNote = cut.length
         ? ` ${cut.length} dropped as commentary (no level, no trigger): ${cut.map((d) => d.instrument).join(", ")}.`
         : "";
+      // fix/ticker-validation — a refused symbol is named WITH its reason.
+      // A wrong ticker is the failure that publishes a call on the wrong
+      // security, so it is never summarised down to a count.
+      const symCut = j.symbolDrops ?? [];
+      const symNote = symCut.length
+        ? ` ${symCut.length} symbol${symCut.length === 1 ? "" : "s"} refused: ${symCut
+            .map((d) => `${d.instrument || d.company || "?"} — ${d.detail}`)
+            .join("; ")}.`
+        : "";
+      const unver = j.unverifiedSymbols ?? [];
+      const unverNote = unver.length
+        ? ` Unverified (quote source unavailable, kept anyway): ${unver.join(", ")}.`
+        : "";
       setTrResult(
         j.drafts === 0
-          ? `Processed — no trade ideas or tape callouts found in that transcript.${cutNote}`
-          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.${cutNote}`,
+          ? `Processed — no trade ideas or tape callouts found in that transcript.${cutNote}${symNote}${unverNote}`
+          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.${cutNote}${symNote}${unverNote}`,
       );
       await Promise.all([load(), loadTranscripts(), loadTape()]);
     } catch (err) {
