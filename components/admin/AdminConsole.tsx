@@ -540,7 +540,7 @@ export default function AdminConsole() {
         drafts?: number;
         dropped?: Array<{ instrument: string; entry: string }>;
         symbolDrops?: Array<{ instrument: string; company: string; reason: string; detail: string; lane?: string }>;
-        unverifiedSymbols?: string[];
+        symbolFlags?: Array<{ instrument: string; company: string; detail: string; lane?: string }>;
         error?: string;
       };
       if (!res.ok || !j.ok) {
@@ -575,9 +575,13 @@ export default function AdminConsole() {
             )
             .join("; ")}.`
         : "";
-      const unver = j.unverifiedSymbols ?? [];
-      const unverNote = unver.length
-        ? ` Unverified (quote source unavailable, kept anyway): ${unver.join(", ")}.`
+      // Flagged rows are IN the queue, not deleted — say so plainly, so this
+      // never reads like a second list of things that were thrown away.
+      const flags = j.symbolFlags ?? [];
+      const unverNote = flags.length
+        ? ` ${flags.length} symbol${flags.length === 1 ? "" : "s"} queued UNCONFIRMED for you to decide: ${flags
+            .map((f) => `${f.instrument}${f.lane === "tape" ? " (tape)" : ""} — ${f.detail}`)
+            .join("; ")}.`
         : "";
       setTrResult(
         j.drafts === 0

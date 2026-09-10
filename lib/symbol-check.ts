@@ -38,13 +38,25 @@
 import { probeInstrument } from "@/lib/markets";
 import { Redis } from "@upstash/redis";
 
-export type SymbolRefusal = "private_company" | "unresolved_symbol" | "name_mismatch";
+/** Only two outcomes DELETE a row, and both mean "there is no security here":
+ *  a company with no listed equity, and a symbol that does not exist. */
+export type SymbolRefusal = "private_company" | "unresolved_symbol";
 
 export type SymbolVerdict =
-  | { ok: true; symbol: string; name: string; verified: true }
-  /** the source could not be reached — NOT a refusal; the row survives */
-  | { ok: true; symbol: string; name: ""; verified: false; note: string }
+  /** resolved, and the name confirms it is the right one */
+  | { ok: true; symbol: string; name: string; confirmed: true }
+  /** resolved, but NOT confirmed — the row reaches the queue carrying `flag`,
+   *  and a human decides. Never deleted: a ticker we cannot confirm is a
+   *  question for the desk, not a fact the pipeline may act on alone. */
+  | { ok: true; symbol: string; name: string; confirmed: false; flag: string }
   | { ok: false; reason: SymbolRefusal; detail: string };
+
+/** How the spoken name and the resolved name relate. Three states, not two:
+ *  "unknown" is its own answer and must never be collapsed into "agree" —
+ *  Yahoo returns indices and futures (SPX, NQ, VIX) with NO name at all, and
+ *  treating an unanswerable question as a pass is how a wrong ticker gets
+ *  stamped verified. */
+export type NameComparison = "agree" | "disagree" | "unknown";
 
 /** Real companies with no ordinary listed equity. Naming one is not a typo
  *  and not a lookup failure — it is an untradeable subject, and the honest
@@ -91,13 +103,30 @@ export function foldName(raw: string): string {
     .trim();
 }
 
-/** PURE. Is this spoken subject a known-untradeable company? */
+/** PURE. Lowercase and de-punctuate, but keep every WORD. Distinct from
+ *  foldName on purpose: the refusal list is matched with this, because
+ *  folding it strips the suffix off "x corp" and leaves the bare token "x",
+ *  which then matched the whole Global X ETF family (URA, LIT, BOTZ…) and
+ *  refused listed funds as private companies. A list that deletes rows must
+ *  never be allowed to degrade into a one-letter wildcard. */
+export function rawName(raw: string): string {
+  return (raw || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** PURE. Is this spoken subject a known-untradeable company? Compared on the
+ *  RAW name, both sides, so every word of the list entry has to be present. */
 export function isUntradeableSubject(spokenName: string): boolean {
-  const f = foldName(spokenName);
-  if (!f) return false;
+  const n = rawName(spokenName);
+  if (!n) return false;
   return UNTRADEABLE_SUBJECTS.some((s) => {
-    const t = foldName(s);
-    return t.length > 0 && (f === t || f.startsWith(`${t} `) || f.endsWith(` ${t}`) || f.includes(` ${t} `));
+    const t = rawName(s);
+    if (!t) return false;
+    return n === t || n.startsWith(`${t} `) || n.endsWith(` ${t}`) || n.includes(` ${t} `);
   });
 }
 
@@ -107,10 +136,33 @@ export function isUntradeableSubject(spokenName: string): boolean {
  *  Holdings") shares no words at all and is caught by any sane comparison.
  *  Agreement is: either folded name contains the other, or they share a
  *  significant leading word. An absent spoken name is not a disagreement. */
+export function compareNames(spokenName: string, resolvedName: string): NameComparison {
+  const a = foldName(spokenName);
+  const b = foldName(resolvedName);
+  // Yahoo answers indices and futures with no name at all — the question
+  // cannot be asked, which is NOT the same as it being answered yes.
+  if (!b) return "unknown";
+  // The speaker named no company, only a ticker. There is no claim to
+  // contradict, so there is nothing to flag: this is the one absence that is
+  // genuinely a non-question, and the model was asked to fill it whenever a
+  // name was spoken.
+  if (!a) return "agree";
+  return namesAgree(spokenName, resolvedName) ? "agree" : "disagree";
+}
+
+/** PURE. Do the spoken and resolved names refer to the same thing? Both must
+ *  be non-empty; callers use compareNames to handle absence honestly. */
 export function namesAgree(spokenName: string, resolvedName: string): boolean {
   const a = foldName(spokenName);
   const b = foldName(resolvedName);
-  if (!a || !b) return true; // nothing to compare — never refuse on absence
+  if (!a || !b) return false;
+  // KNOWN LIMIT, pinned by a test: containment cannot tell "Enphase" inside
+  // "Enphase Energy" (right) from "Apple" inside "Apple Hospitality REIT"
+  // (wrong) — they are structurally identical, and only real-world knowledge
+  // separates them. Tightening it far enough to catch APLE also flags every
+  // "S&P 500" → SPY row, which is the queue noise this work exists to remove.
+  // The gate catches UNRELATED substitutions; a wrong company whose name
+  // begins with the spoken one still passes.
   if (a.includes(b) || b.includes(a)) return true;
   // Spacing is not disagreement. A transcript writes compound names apart —
   // "B2 Gold", "Solar Edge", "Service Now" — where the listing writes them
@@ -119,10 +171,12 @@ export function namesAgree(spokenName: string, resolvedName: string): boolean {
   const aSquashed = a.replace(/ /g, "");
   const bSquashed = b.replace(/ /g, "");
   if (aSquashed.includes(bSquashed) || bSquashed.includes(aSquashed)) return true;
-  const wordsA = a.split(" ").filter((w) => w.length >= 3);
-  const wordsB = b.split(" ").filter((w) => w.length >= 3);
-  if (wordsA.length === 0 || wordsB.length === 0) return true;
-  if (wordsA.some((w) => wordsB.includes(w))) return true;
+  // NO shared-word rule. Accepting a single common token as agreement passed
+  // MRVL for "Micron Technology", AXP for "American Airlines" and MPC for
+  // "Marathon Digital" — precisely the substitutions this gate exists to
+  // catch. It was only ever there to avoid deleting rows, and a mismatch no
+  // longer deletes anything, so the strictness is now free.
+  //
   // A transcript mis-hears a name as often as it mis-spaces one — a real run
   // wrote Oklo as "Oaklo" and a correct ticker was refused for it. Allow a
   // tight edit distance, scaled to length, as the last word.
@@ -157,15 +211,16 @@ export function editDistanceWithin(a: string, b: string, bound: number): boolean
 }
 
 // --- durable verdict cache ---------------------------------------------------
-// A symbol's existence and name don't change often, so a verdict is worth
-// keeping across cold starts. Positive verdicts hold for 30 days; refusals for
-// 7, because a genuinely new listing should be able to start resolving without
-// waiting a month. "Unavailable" is NEVER cached — caching a source outage
-// would turn a blip into a week of wrongly-refused ideas.
+// ONLY successful resolutions are cached. A negative is never written: the
+// symbols that 404 are exactly the ones most likely to be wrong about being
+// wrong — BRK.B 404s while BRK-B resolves, a renamed listing (SQ → XYZ) 404s
+// until someone notices, and a rate-limited window can 404-shaped-fail. A
+// cached negative turns any of those into days of silently deleted ideas,
+// with no way to clear it short of a redeploy. Resolutions are cheap to
+// re-earn; refusals are not cheap to un-earn.
 
 const NS = "august:symcheck:v1";
 const OK_TTL_S = 30 * 24 * 60 * 60;
-const REFUSED_TTL_S = 7 * 24 * 60 * 60;
 
 let _redis: Redis | null | undefined;
 function getRedis(): Redis | null {
@@ -180,30 +235,27 @@ function getRedis(): Redis | null {
   return _redis;
 }
 
-type CachedProbe = { state: "ok"; symbol: string; name: string } | { state: "no-such-symbol" };
+type CachedOk = { state: "ok"; symbol: string; name: string };
 
-async function cachedProbe(symbol: string): Promise<CachedProbe | { state: "unavailable" }> {
+async function cachedProbe(
+  symbol: string,
+): Promise<CachedOk | { state: "no-such-symbol" } | { state: "unavailable" }> {
   const key = `${NS}:${symbol.toUpperCase()}`;
   const redis = getRedis();
   if (redis) {
     try {
-      const hit = (await redis.get(key)) as CachedProbe | null;
-      if (hit && (hit.state === "ok" || hit.state === "no-such-symbol")) return hit;
+      const hit = (await redis.get(key)) as CachedOk | null;
+      if (hit && hit.state === "ok" && typeof hit.symbol === "string") return hit;
     } catch {
       // cache read failure is never fatal — fall through to the live probe
     }
   }
   const probe = await probeInstrument(symbol);
-  if (probe.state === "unavailable") return { state: "unavailable" }; // never cached
-  const value: CachedProbe =
-    probe.state === "ok"
-      ? { state: "ok", symbol: probe.symbol, name: probe.name }
-      : { state: "no-such-symbol" };
+  if (probe.state !== "ok") return probe; // negatives and outages are NEVER cached
+  const value: CachedOk = { state: "ok", symbol: probe.symbol, name: probe.name };
   if (redis) {
     try {
-      await redis.set(key, JSON.stringify(value), {
-        ex: value.state === "ok" ? OK_TTL_S : REFUSED_TTL_S,
-      });
+      await redis.set(key, JSON.stringify(value), { ex: OK_TTL_S });
     } catch {
       // best effort — a cache write failure must not fail the check
     }
@@ -240,29 +292,45 @@ export async function checkSymbol(symbol: string, spokenName = ""): Promise<Symb
     };
   }
 
-  // Gate 2 — does the symbol exist at all?
+  // Gate 2 — does the symbol exist at all? This is the ONE lookup failure that
+  // deletes, because a symbol that does not resolve is not a security.
   const probe = await cachedProbe(sym);
   if (probe.state === "unavailable") {
     return {
       ok: true,
       symbol: sym,
       name: "",
-      verified: false,
-      note: "the quote source was unavailable — symbol could not be verified",
+      confirmed: false,
+      flag: `${sym} could not be checked — the quote source was unavailable`,
     };
   }
   if (probe.state === "no-such-symbol") {
     return { ok: false, reason: "unresolved_symbol", detail: `${sym} does not resolve to a listed instrument` };
   }
 
-  // Gate 3 — is it the RIGHT symbol for what the speaker named?
-  if (!namesAgree(spokenName, probe.name)) {
+  // Gate 3 — is it the RIGHT symbol for what the speaker named? A disagreement
+  // and an unanswerable question both FLAG. Neither deletes: the /admin queue
+  // is the only path into the lifecycle, and denial is the owner's, terminal,
+  // and with a stated reason.
+  const cmp = compareNames(spokenName, probe.name);
+  if (cmp === "disagree") {
     return {
-      ok: false,
-      reason: "name_mismatch",
-      detail: `${sym} is ${probe.name}, but the speaker named ${spokenName.trim()}`,
+      ok: true,
+      symbol: probe.symbol || sym,
+      name: probe.name,
+      confirmed: false,
+      flag: `${sym} is ${probe.name}, but the speaker named ${spokenName.trim()}`,
+    };
+  }
+  if (cmp === "unknown") {
+    return {
+      ok: true,
+      symbol: probe.symbol || sym,
+      name: probe.name,
+      confirmed: false,
+      flag: `${sym} could not be confirmed — the quote source returns no company name for it`,
     };
   }
 
-  return { ok: true, symbol: probe.symbol || sym, name: probe.name, verified: true };
+  return { ok: true, symbol: probe.symbol || sym, name: probe.name, confirmed: true };
 }

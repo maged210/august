@@ -300,6 +300,14 @@ export default function DeskInbox({
                   </button>
                   {denyControl(d)}
                 </>,
+                // fix/ticker-validation — the symbol resolved but could not be
+                // confirmed as the right security. Stated on the row so the
+                // decision is the owner's, exactly like the CONFLICT chip.
+                d.symbolNote ? (
+                  <span className="adm-review-chip" title={d.symbolNote}>
+                    SYMBOL?
+                  </span>
+                ) : undefined,
               ),
             ),
           )}

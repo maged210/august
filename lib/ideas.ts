@@ -90,6 +90,13 @@ export type Idea = {
   evaluation?: IdeaEvaluation;
   /** INTEGRITY-1 — why this row sits in review (side/trigger conflict detail) */
   reviewReason?: string;
+  /** fix/ticker-validation — the extractor resolved this symbol but could NOT
+   *  confirm it is the right one: the resolved company disagrees with the one
+   *  the speaker named, or the source returns no name to compare against.
+   *  Stated on the row so the OWNER decides — never a reason to delete, and
+   *  never a claim the symbol is wrong, only that it is unconfirmed.
+   *  Admin-side only; it does not ride the public wire. */
+  symbolNote?: string;
   /** DESK-INBOX — the human's stated reason, present only on denied rows */
   denyReason?: DenyReason;
   createdAt: number; // epoch ms
@@ -171,6 +178,8 @@ export type IdeaCreateInput = {
   side?: IdeaSide;
   status: IdeaStatus;
   source: IdeaSource;
+  /** see Idea.symbolNote */
+  symbolNote?: string;
 };
 
 /** `side: undefined` with the key PRESENT is a deliberate clear (the spread
@@ -243,6 +252,11 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
   const source = b.source === undefined ? "manual" : b.source;
   if (!IDEA_SOURCES.includes(source as IdeaSource)) return { ok: false, error: "source_invalid" };
 
+  // fix/ticker-validation — set by the extractor's symbol gate, not by a form.
+  // Collapsed and capped like every other free-form field; absent when empty.
+  const symbolNote =
+    typeof b.symbolNote === "string" ? collapse(b.symbolNote).slice(0, MAX_LEVEL_CHARS * 2) : "";
+
   return {
     ok: true,
     value: {
@@ -255,6 +269,7 @@ export function validateIdeaCreate(body: unknown): Ok<IdeaCreateInput> | Err {
       ...(side !== undefined ? { side: side as IdeaSide } : {}),
       status: status as IdeaStatus,
       source: source as IdeaSource,
+      ...(symbolNote ? { symbolNote } : {}),
     },
   };
 }

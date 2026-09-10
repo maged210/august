@@ -147,16 +147,21 @@ export type SymbolDrop = {
   lane: "idea" | "tape";
 };
 
+/** A row that RESOLVED but could not be confirmed as the right security. It
+ *  reaches the queue carrying the reason; this is the report of it, not a
+ *  record of a deletion. */
+export type SymbolFlag = { instrument: string; company: string; detail: string; lane: "idea" | "tape" };
+
 /** ONE implementation for both lanes. A wrong ticker publishes a call on the
  *  wrong security whether it arrives as an idea or as a tape callout, so the
  *  gates, their order, and their refusals are identical — only the lane label
  *  and the field the symbol lives in differ. */
-async function gateRowsBySymbol<T>(
+async function gateRowsBySymbol<T extends { symbolNote?: string }>(
   rows: T[],
   symbolOf: (row: T) => string,
   spokenFor: (symbol: string) => string,
   lane: "idea" | "tape",
-): Promise<{ kept: T[]; dropped: SymbolDrop[]; unverified: string[] }> {
+): Promise<{ kept: T[]; dropped: SymbolDrop[]; flagged: SymbolFlag[] }> {
   const verdicts = await Promise.all(
     rows.map((r) => {
       const sym = symbolOf(r);
@@ -165,7 +170,7 @@ async function gateRowsBySymbol<T>(
   );
   const kept: T[] = [];
   const dropped: SymbolDrop[] = [];
-  const unverified: string[] = [];
+  const flagged: SymbolFlag[] = [];
   rows.forEach((r, n) => {
     const v = verdicts[n];
     const sym = symbolOf(r);
@@ -179,10 +184,17 @@ async function gateRowsBySymbol<T>(
       });
       return;
     }
-    if (!v.verified) unverified.push(sym);
+    if (!v.confirmed) {
+      // NOT a deletion. The row arrives carrying what could not be confirmed,
+      // and the owner approves or denies it — the /admin queue is the only
+      // path in, and denial is theirs, terminal, and with a stated reason.
+      flagged.push({ instrument: sym, company: spokenFor(sym.trim().toUpperCase()), detail: v.flag, lane });
+      kept.push({ ...r, symbolNote: v.flag });
+      return;
+    }
     kept.push(r);
   });
-  return { kept, dropped, unverified };
+  return { kept, dropped, flagged };
 }
 
 /**
@@ -201,9 +213,9 @@ async function gateRowsBySymbol<T>(
 export async function applySymbolGate(
   ideas: IdeaCreateInput[],
   spokenFor: (symbol: string) => string,
-): Promise<{ ideas: IdeaCreateInput[]; dropped: SymbolDrop[]; unverified: string[] }> {
+): Promise<{ ideas: IdeaCreateInput[]; dropped: SymbolDrop[]; flagged: SymbolFlag[] }> {
   const r = await gateRowsBySymbol(ideas, (i) => i.instrument, spokenFor, "idea");
-  return { ideas: r.kept, dropped: r.dropped, unverified: r.unverified };
+  return { ideas: r.kept, dropped: r.dropped, flagged: r.flagged };
 }
 
 /**
@@ -215,9 +227,9 @@ export async function applySymbolGate(
 export async function applyTapeSymbolGate(
   tape: TapeCreateInput[],
   spokenFor: (symbol: string) => string,
-): Promise<{ tape: TapeCreateInput[]; dropped: SymbolDrop[]; unverified: string[] }> {
+): Promise<{ tape: TapeCreateInput[]; dropped: SymbolDrop[]; flagged: SymbolFlag[] }> {
   const r = await gateRowsBySymbol(tape, (t) => t.symbol, spokenFor, "tape");
-  return { tape: r.kept, dropped: r.dropped, unverified: r.unverified };
+  return { tape: r.kept, dropped: r.dropped, flagged: r.flagged };
 }
 
 /** PURE. symbol → the company name the speaker actually said, read off the RAW
@@ -527,7 +539,7 @@ export async function extractFromTranscript(
   tape: TapeCreateInput[];
   dropped: Array<{ instrument: string; entry: string }>;
   symbolDrops: SymbolDrop[];
-  unverifiedSymbols: string[];
+  symbolFlags: SymbolFlag[];
 }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || !aiConfigured()) throw new Error("ai_not_configured");
@@ -578,7 +590,7 @@ export async function extractFromTranscript(
     tape: gatedTape.tape,
     dropped: floored.dropped,
     symbolDrops: [...gated.dropped, ...gatedTape.dropped],
-    unverifiedSymbols: [...gated.unverified, ...gatedTape.unverified],
+    symbolFlags: [...gated.flagged, ...gatedTape.flagged],
   };
 }
 

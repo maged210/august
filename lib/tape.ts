@@ -38,6 +38,9 @@ export type TapeEntry = {
   sentiment: TapeSentiment;
   source: TapeSource;
   status: TapeStatus;
+  /** fix/ticker-validation — the symbol resolved but could not be confirmed as
+   *  the right one. Stated on the row so the owner decides; never a deletion. */
+  symbolNote?: string;
   updatedAt: number;
 };
 
@@ -85,6 +88,8 @@ export type TapeCreateInput = {
   status: TapeStatus;
   /** optional stated event time; defaults to now at create */
   ts?: number;
+  /** see TapeEntry.symbolNote */
+  symbolNote?: string;
 };
 
 export type TapePatchInput = Partial<Omit<TapeCreateInput, "source" | "ts">>;
@@ -152,6 +157,9 @@ export function validateTapeCreate(body: unknown): Ok<TapeCreateInput> | Err {
   if (expiry) value.expiry = expiry;
   if (premium) value.premium = premium;
   if (ts !== undefined) value.ts = ts;
+  // fix/ticker-validation — set by the extractor's symbol gate, not a form.
+  const symbolNote = typeof b.symbolNote === "string" ? collapse(b.symbolNote).slice(0, 240) : "";
+  if (symbolNote) value.symbolNote = symbolNote;
   return { ok: true, value };
 }
 
