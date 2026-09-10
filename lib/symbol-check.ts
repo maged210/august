@@ -17,25 +17,36 @@
 // is needed). Validating against the grader's own source has a property the
 // others don't: a symbol the grader can't quote is useless as an idea anyway.
 //
-// THE THREE GATES, in order — the first two are free, the third costs a call:
+// ONLY TWO OUTCOMES DELETE A ROW, and both mean "there is no security here":
 //   1. UNTRADEABLE SUBJECT. The speaker named a real company that has no
 //      listed equity (SpaceX, OpenAI, Stripe). This is NOT a lookup failure
 //      and must never be treated as one: verified live 2026-09-10, Yahoo
 //      happily returns SPCX / LOFF / SPCF for "SpaceX" and tokenized-stock
 //      wrappers for "OpenAI". Anything that resolved here would be a
 //      substitution. Refused by name, before any lookup.
-//   2. SYMBOL RESOLVES. Yahoo 404 → the symbol does not exist → refused.
-//      A source failure (429, 5xx, timeout) is NOT nonexistence and never
-//      drops a row; it is reported as unverified instead.
-//   3. THE NAME AGREES. The resolved instrument's name is checked against the
-//      company the speaker actually named. SPCE resolves fine — as "Virgin
-//      Galactic Holdings, Inc.", which is how a wrong ticker is caught.
+//   2. THE SYMBOL DOES NOT RESOLVE. A ticker-shaped string Yahoo 404s.
+//
+// EVERYTHING ELSE WE CANNOT CONFIRM IS FLAGGED, NOT DELETED. The row reaches
+// the /admin queue carrying the reason and the owner decides — that is the
+// house law (the queue is the only path into the lifecycle; denial is the
+// owner's, terminal, and with a stated reason). Flagged cases are:
+//   · the resolved company disagrees with the one the speaker named — SPCE
+//     resolves fine, as "Virgin Galactic Holdings, Inc.", which is how a
+//     wrong ticker is caught;
+//   · the source returns no name to compare (indices and futures do this),
+//     because unverifiable is not verified;
+//   · the instrument isn't ticker-shaped at all, because the extractor is
+//     told to keep the speaker's words when no ticker is certain, and
+//     "Alamos Gold" 404s exactly like a fake symbol would;
+//   · the source could not be reached — an outage is never evidence.
 //
 // NOTHING IS EVER SUBSTITUTED. There is no "nearest match" path in this file
-// by design. A row that fails a gate is dropped and named; it is never
-// repointed at a different security.
+// by design. The one rewrite is dot → dash on class shares and preferreds
+// (BRK.B → BRK-B), which is one security spelled two ways, not a second
+// candidate: it can only return the security the extractor already named.
 
 import { probeInstrument } from "@/lib/markets";
+import { deskSymbolFor } from "@/lib/desk-symbols";
 import { Redis } from "@upstash/redis";
 
 /** Only two outcomes DELETE a row, and both mean "there is no security here":
@@ -219,6 +230,26 @@ export function editDistanceWithin(a: string, b: string, bound: number): boolean
 // with no way to clear it short of a redeploy. Resolutions are cheap to
 // re-earn; refusals are not cheap to un-earn.
 
+/** What a ticker can look like at this desk: letters/digits plus the
+ *  punctuation Yahoo uses — ^VIX, BRK-B, NQ=F, BTC-USD. Anything with a space
+ *  or longer than this is the speaker's words, not a symbol. */
+const TICKER_SHAPED_RE = /^[A-Z0-9]{1,6}(?:[.\-=][A-Z0-9]{1,4})?$|^\^[A-Z0-9]{1,6}$/;
+
+/** PURE. Could this string be a ticker at all? Anything else is the speaker's
+ *  words, which is an unverifiable row, never a nonexistent security. */
+export function isTickerShaped(symbol: string): boolean {
+  return TICKER_SHAPED_RE.test((symbol || "").trim().toUpperCase());
+}
+
+/** PURE. The dash spelling of a dot-form class share or preferred — ONE
+ *  security written two ways, not a second candidate. Returns the input
+ *  unchanged when there is no dot. */
+export function dashedForm(symbol: string): string {
+  const s = (symbol || "").trim().toUpperCase();
+  if (!s.includes(".")) return s;
+  return s.replace(/\.PR([A-Z])$/, "-P$1").replace(/\./g, "-");
+}
+
 const NS = "august:symcheck:v1";
 const OK_TTL_S = 30 * 24 * 60 * 60;
 
@@ -292,9 +323,42 @@ export async function checkSymbol(symbol: string, spokenName = ""): Promise<Symb
     };
   }
 
+  // Gate 1b — is this even a ticker? The extractor is told to leave the
+  // speaker's own words in `instrument` when it isn't sure of a ticker, and
+  // "Alamos Gold" 404s at Yahoo exactly like a fake symbol does. Deleting it
+  // would destroy a real call (AGI) and report the false reason "does not
+  // resolve to a listed instrument" — true of the string, false of the
+  // security. A non-ticker string is UNVERIFIABLE, not nonexistent, so it
+  // flags for a human like every other thing we cannot confirm.
+  if (!isTickerShaped(sym)) {
+    return {
+      ok: true,
+      symbol: sym,
+      name: "",
+      confirmed: false,
+      flag: `"${symbol.trim()}" is not a ticker — the speaker's words were kept because no symbol was certain`,
+    };
+  }
+
   // Gate 2 — does the symbol exist at all? This is the ONE lookup failure that
   // deletes, because a symbol that does not resolve is not a security.
-  const probe = await cachedProbe(sym);
+  // Validate the instrument the DESK means. lib/desk-symbols is the one table
+  // the charts and the daily book pass already share, precisely so an idea on
+  // "NQ" or "CL" grades against the future and "never Colgate-Palmolive's
+  // listing" (its words). A gate that skipped it would confirm a different
+  // security than the one that later gets graded — CL really does resolve to
+  // Colgate-Palmolive on the raw lookup.
+  let probe = await cachedProbe(deskSymbolFor(sym));
+  // The SAME security, spelled the way the source spells it. Every US
+  // convention (and every transcript) writes class shares and preferreds with
+  // a dot — BRK.B, PBR.A, BAC.PRK — and Yahoo only answers to the dash form.
+  // Retrying the dash is a spelling correction on one identity, NOT a search
+  // for a nearer ticker: it can only ever return the security the extractor
+  // already named, and if it doesn't resolve either, the refusal stands.
+  if (probe.state === "no-such-symbol" && sym.includes(".")) {
+    const dashed = dashedForm(sym);
+    if (dashed !== sym && TICKER_SHAPED_RE.test(dashed)) probe = await cachedProbe(dashed);
+  }
   if (probe.state === "unavailable") {
     return {
       ok: true,

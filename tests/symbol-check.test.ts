@@ -15,6 +15,8 @@ import assert from "node:assert/strict";
 import {
   UNTRADEABLE_SUBJECTS,
   compareNames,
+  dashedForm,
+  isTickerShaped,
   editDistanceWithin,
   foldName,
   isUntradeableSubject,
@@ -206,4 +208,32 @@ test("KNOWN LIMIT: a wrong company whose name BEGINS with the spoken one still p
   // "Enphase" inside "Enphase Energy" — containment cannot separate them.
   assert.equal(namesAgree("Apple", "Apple Hospitality REIT, Inc."), true); // wrong, and known
   assert.equal(namesAgree("Enphase", "Enphase Energy, Inc."), true); // right
+});
+
+// --- gate 1b: a non-ticker is unverifiable, not nonexistent -----------------
+// The extractor is told to leave the speaker's words in `instrument` when no
+// ticker is certain. "Alamos Gold" 404s exactly like a fake symbol does, so
+// deleting it destroyed a real call (AGI) and reported a false reason.
+
+test("ticker shape: real ticker spellings are recognised", () => {
+  for (const s of ["NVDA", "F", "BRK-B", "BRK.B", "^VIX", "NQ=F", "BTC-USD", "BF.B"]) {
+    assert.equal(isTickerShaped(s), true, `${s} should be ticker-shaped`);
+  }
+});
+
+test("ticker shape: the speaker's words are not", () => {
+  for (const s of ["Alamos Gold", "the Nasdaq", "regional banks", "S&P 500", "10-year yield", ""]) {
+    assert.equal(isTickerShaped(s), false, `${s} should NOT be ticker-shaped`);
+  }
+});
+
+// --- dot-form class shares --------------------------------------------------
+
+test("dash retry: the dot and dash forms name ONE security, not two candidates", () => {
+  // Yahoo answers only the dash form; every transcript writes the dot form
+  assert.equal(dashedForm("BRK.B"), "BRK-B");
+  assert.equal(dashedForm("PBR.A"), "PBR-A");
+  assert.equal(dashedForm("BAC.PRK"), "BAC-PK");
+  // nothing to do when there is no dot
+  assert.equal(dashedForm("NVDA"), "NVDA");
 });

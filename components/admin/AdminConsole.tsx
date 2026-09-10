@@ -924,6 +924,15 @@ export default function AdminConsole() {
         {t.expiry ? <span className="adm-tape-x">{t.expiry}</span> : null}
         {t.premium ? <span className="adm-tape-x">{t.premium}</span> : null}
         <span className={`adm-tape-kind adm-tk-${t.kind}`}>{t.kind.toUpperCase()}</span>
+        {/* fix/ticker-validation — the dock lane's symbol flag. Without this
+            a flagged tape row showed APPROVE with no indication the symbol
+            was never confirmed, which is the same silent publish the gate
+            exists to prevent. */}
+        {t.symbolNote ? (
+          <span className="adm-review-chip" title={t.symbolNote}>
+            SYMBOL?
+          </span>
+        ) : null}
         <span className="adm-src">{t.source.toUpperCase()}</span>
         <span className="adm-when">{relativeTime(t.ts)}</span>
         <span className="adm-tape-acts">
