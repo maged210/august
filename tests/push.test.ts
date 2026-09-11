@@ -23,6 +23,7 @@ import {
 import { composeCallPush, flushCallPush, registerCallPush, type FlushDeps } from "../lib/call-push";
 import { emitCallSettled } from "../lib/call-events";
 import type { CallState, CallTally } from "../lib/call";
+import { DISCLAIMER_CALLS_SHORT } from "../lib/disclaimer";
 
 function fakePushKv(): PushKv & { data: Map<string, Record<string, unknown>> } {
   const data = new Map<string, Record<string, unknown>>();
@@ -176,7 +177,12 @@ test("compose: the spec body — settle, verdicts, records, tomorrow's call", ()
     }),
   )!;
   assert.equal(msg.title, "THE CALL");
-  assert.equal(msg.body, "NQ CLOSED +0.4% · AUGUST ✓ · YOU ✗ · YOU 3–1 · AUGUST 2–2 · TOMORROW: AUGUST HIGHER");
+  // chore/ship-ready — the body carries the short disclaimer: the notification
+  // lands on a lock screen where no component can follow it
+  assert.equal(
+    msg.body,
+    `NQ CLOSED +0.4% · AUGUST ✓ · YOU ✗ · YOU 3–1 · AUGUST 2–2 · TOMORROW: AUGUST HIGHER · ${DISCLAIMER_CALLS_SHORT}`,
+  );
 });
 
 test("compose: no take omits the YOU verdict; records always show", () => {
@@ -187,7 +193,10 @@ test("compose: no take omits the YOU verdict; records always show", () => {
       record: { august: tally(1, 0), you: tally(0, 0) },
     }),
   )!;
-  assert.equal(msg.body, "NQ CLOSED +0.4% · AUGUST ✓ · YOU 0–0 · AUGUST 1–0 · TOMORROW: AUGUST LOWER");
+  assert.equal(
+    msg.body,
+    `NQ CLOSED +0.4% · AUGUST ✓ · YOU 0–0 · AUGUST 1–0 · TOMORROW: AUGUST LOWER · ${DISCLAIMER_CALLS_SHORT}`,
+  );
 });
 
 test("compose: flat push, dead-even tomorrow, weekend next-call, and silence", () => {
@@ -197,11 +206,16 @@ test("compose: flat push, dead-even tomorrow, weekend next-call, and silence", (
       noCall: { reason: "dead_even", nextDate: "2026-09-03" },
     }),
   )!;
-  assert.equal(flat.body, "NQ CLOSED FLAT · PUSH · YOU 3–1 · AUGUST 2–2 · TOMORROW: NO CALL — the regime is dead even");
+  assert.equal(
+    flat.body,
+    `NQ CLOSED FLAT · PUSH · YOU 3–1 · AUGUST 2–2 · TOMORROW: NO CALL — the regime is dead even · ${DISCLAIMER_CALLS_SHORT}`,
+  );
   // Friday's REAL flush state: settled only — no active (nothing generates
   // until Sunday), no noCall marker. The forward line derives from the date.
   const friday = composeCallPush(state({ settled: { ...SETTLED, forDate: "2026-09-04" } }))!;
-  assert.ok(friday.body.endsWith("NEXT CALL MON"), friday.body);
+  // the disclaimer is now the tail, so the forward line is asserted in place
+  assert.ok(friday.body.includes("· NEXT CALL MON ·"), friday.body);
+  assert.ok(friday.body.endsWith(DISCLAIMER_CALLS_SHORT), friday.body);
   // silence: no settle today, and a NO_SESSION void
   assert.equal(composeCallPush(state({})), null);
   assert.equal(composeCallPush(state({ settled: { ...SETTLED, result: "NO_SESSION", closePct: null, augustWin: null, youWin: null } })), null);

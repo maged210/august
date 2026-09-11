@@ -17,6 +17,8 @@
 // SIMULATED ONLY. Education, not investment advice.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Disclaimer from "@/components/Disclaimer";
+import { DISCLAIMER_TRAINING } from "@/lib/disclaimer";
 import {
   createRoundRun, START_CASH,
   type PitEvent, type RoundRun,
@@ -61,7 +63,7 @@ export default function TrainingFloor({
   const next = open ? LESSONS.find((l) => l.n === open.n + 1) ?? null : null;
   return (
     <div className="trn">
-      <p className="pit-sim">SIMULATED — training floor. Education, not investment advice.</p>
+      <p className="pit-sim">{DISCLAIMER_TRAINING}</p>
       {open ? (
         <Cockpit key={open.id} lesson={open} done={allDone}
           onDone={() => { setLocalDone((d) => [...d, open.id]); onLessonDone(open.id); }}

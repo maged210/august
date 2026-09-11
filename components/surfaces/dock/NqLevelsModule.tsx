@@ -12,6 +12,7 @@ import DataTag from "@/components/DataTag";
 import type { BiasRead, SessionLevels } from "@/lib/levels";
 import { parseStatedLevel } from "@/lib/regime";
 import type { PublicIdea } from "@/lib/ideas";
+import Disclaimer from "@/components/Disclaimer";
 
 const px = (n: number) => (n >= 1000 ? Math.round(n).toLocaleString("en-US") : n.toFixed(2));
 
@@ -86,7 +87,7 @@ export default function NqLevelsModule({ liveIdeas }: { liveIdeas: PublicIdea[] 
                 {data.bias.label}
               </span>
             )}
-            <DataTag kind="calc" title="condition calculated from price vs prev close / pivot / VWAP — not advice" />
+            <DataTag kind="calc" title="condition calculated from price vs prev close / pivot / VWAP" />
           </div>
           <div className="nql-grid">
             {rows.map(([k, v]) =>
@@ -117,6 +118,9 @@ export default function NqLevelsModule({ liveIdeas }: { liveIdeas: PublicIdea[] 
       ) : err ? (
         <div className="ifm-body nql-empty">NQ LEVELS · DATA UNAVAILABLE — the levels feed is unreachable</div>
       ) : null}
+      {/* this module states a BULLISH / NEUTRAL / BEARISH bias off the levels.
+          It used to carry "not advice" in a hover tooltip only. */}
+      <Disclaimer className="aug-disc-tight" block={false} />
     </section>
   );
 }

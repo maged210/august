@@ -5,6 +5,7 @@
 
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { getPublicFeed } from "@/lib/intel/publishStore";
+import { DISCLAIMER_CALLS } from "@/lib/disclaimer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export async function GET(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
   try {
     const feed = await getPublicFeed();
-    return Response.json(feed, {
+    // republishers get the claim with the rows
+    return Response.json({ ...feed, disclaimer: DISCLAIMER_CALLS }, {
       headers: { "Cache-Control": "public, max-age=30, s-maxage=30" },
     });
   } catch (err) {

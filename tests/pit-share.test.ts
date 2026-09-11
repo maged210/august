@@ -14,6 +14,7 @@ import {
 import { dailySeed } from "../lib/pit";
 import { LADDER, START_CASH, careerDaySeed, createRoundRun, makeRound, weekAdjust } from "../lib/pit-engine";
 import type { TradeMark } from "../lib/pit-engine";
+import { DISCLAIMER_SIM } from "../lib/disclaimer";
 
 // ── S6: share content matches the run ────────────────────────────────────────
 
@@ -29,7 +30,11 @@ test("share text: facts line, glyph strip, link — reads like a real drop", () 
   const glyphs = glyphStrip(log, "daily");
   assert.equal(glyphs, "🟩🟥🟩🔔");
   const text = buildShareText({ tag: "#12", pct: 8.23, trades: 3, stamp: "DIAMOND HANDS", glyphs, url: "https://x.test/?view=pit&challenge=5.1.1.823" });
-  assert.equal(text, "THE PIT #12 · +8.2% · 3 trades · DIAMOND HANDS\n🟩🟥🟩🔔\nhttps://x.test/?view=pit&challenge=5.1.1.823");
+  // chore/ship-ready — the SIMULATED claim travels with text that leaves the app
+  assert.equal(
+    text,
+    `THE PIT #12 · +8.2% · 3 trades · DIAMOND HANDS\n🟩🟥🟩🔔\n${DISCLAIMER_SIM}\nhttps://x.test/?view=pit&challenge=5.1.1.823`,
+  );
   // no-trade day stays honest
   assert.equal(glyphStrip([], "busted"), "▫💀");
   const flat = buildShareText({ tag: "W2D4", pct: -61.0, trades: 0, stamp: "margin called", glyphs: "▫💀", url: "u" });

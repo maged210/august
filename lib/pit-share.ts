@@ -4,6 +4,7 @@
 // score as the bar — deterministic by construction (S8).
 
 import type { RoundSummary, TradeMark } from "./pit-engine";
+import { DISCLAIMER_SIM } from "@/lib/disclaimer";
 
 /** DAILY PIT epoch — 2026-08-15 was #1. */
 const DAILY_EPOCH_UTC = Date.UTC(2026, 7, 15);
@@ -61,7 +62,10 @@ export function buildShareText(input: {
     `${input.trades} trade${input.trades === 1 ? "" : "s"}`,
     ...(input.stamp ? [input.stamp] : []),
   ];
-  return `${bits.join(" · ")}\n${input.glyphs}\n${input.url}`;
+  // the share text leaves the app entirely — pasted into a chat, a post, a
+  // screenshot caption. It carries the SIMULATED claim with it, because
+  // nothing downstream will.
+  return `${bits.join(" · ")}\n${input.glyphs}\n${DISCLAIMER_SIM}\n${input.url}`;
 }
 
 // ── the challenge link ───────────────────────────────────────────────────────

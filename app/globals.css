@@ -7249,3 +7249,33 @@ html.sheet-open .view-panel {
 .trn-keep:hover { color: var(--label); }
 .trn-row.current { border-color: color-mix(in srgb, var(--label) 60%, transparent); }
 .trn-row.current .trn-state { color: var(--label); }
+
+/* ── THE DISCLAIMER (chore/ship-ready) ─────────────────────────────────────
+   One class for the one component. Deliberately quiet, deliberately NOT a
+   whisper: 11px on a real foreground token at 72% — not the 8.5px "disabled"
+   grey the owner desk footer used, and never a hover tooltip. It has to be
+   readable at rest on a phone, which is the whole point of this pass.
+   --bone is the primary ink in BOTH themes, so this resolves on either stage. */
+.aug-disc {
+  margin: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--bone) 72%, transparent);
+  text-wrap: pretty;
+}
+.aug-disc-block {
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  text-align: center;
+  max-width: 68ch;
+  margin-inline: auto;
+}
+/* inside the dense terminal/dock the row sits flush with the panel it closes */
+.aug-disc-tight { padding: 8px 12px; border-top: 1px solid var(--line); text-align: left; }
+/* under a single card (THE CALL) — no top rule, it already sits in a frame */
+.aug-disc-card { padding: 8px 2px 0; border-top: 0; text-align: left; }
+@media (max-width: 700px) {
+  .aug-disc { font-size: 11px; } /* held: do NOT shrink this on mobile */
+}

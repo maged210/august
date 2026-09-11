@@ -25,6 +25,8 @@ import {
 } from "@/lib/pit-share";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
 import TrainingFloor from "@/components/surfaces/TrainingFloor";
+import Disclaimer from "@/components/Disclaimer";
+import { DISCLAIMER_SIM } from "@/lib/disclaimer";
 
 // ── error boundary ───────────────────────────────────────────────────────────
 class PitBoundary extends Component<{ children: ReactNode }, { err: Error | null }> {
@@ -39,7 +41,7 @@ class PitBoundary extends Component<{ children: ReactNode }, { err: Error | null
     if (!this.state.err) return this.props.children;
     return (
       <div className="pit2">
-        <p className="pit-sim">SIMULATED — entertainment, not investment advice. No real orders.</p>
+        <p className="pit-sim">{DISCLAIMER_SIM}</p>
         <div className="pit2-shell">
           <div className="pit2-verdict">
             <h2>PIT ERROR</h2>
@@ -912,7 +914,7 @@ function PitInner({ active }: { active: boolean }) {
 
   return (
     <div className="pit2">
-      <p className="pit-sim">SIMULATED — entertainment, not investment advice. No real orders.</p>
+      <p className="pit-sim">{DISCLAIMER_SIM}</p>
 
       {stamp ? <div className="pit3-stamp" role="status">{stamp}</div> : null}
 

@@ -52,6 +52,7 @@ import {
   sideOf,
 } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
+import Disclaimer from "@/components/Disclaimer";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
 
@@ -1033,6 +1034,13 @@ export default function IdeasFeed() {
           onClose={() => setSheetOpen(false)}
         />
       ) : null}
+
+      {/* THE PUBLIC TERMINAL carries the line. This is the surface that
+          publishes side / entry / target / stop to everyone who is not the
+          owner, and it closes the whole dock (chart, book heatmap, NQ levels,
+          VIX context, tape, wire), so the one row covers the modules inside
+          it as well as the blotter above it. */}
+      <Disclaimer />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import WidgetState from "@/components/WidgetState";
 import { relativeTime, type PublicIdea, type IdeaRiskLevel } from "@/lib/ideas";
 import { publishRainSymbols } from "@/lib/rain-symbols";
+import Disclaimer from "@/components/Disclaimer";
 
 const RISK_LABEL: Record<IdeaRiskLevel, string> = {
   low: "LOW RISK",
@@ -175,6 +176,8 @@ export default function IdeasRail({ open, onClose, collapsed, onToggleCollapsed 
             </>
           )}
         </div>
+        {/* the rail publishes ENTRY and TARGET chips beside BOTH views */}
+        <Disclaimer className="aug-disc-tight" block={false} />
       </aside>
     </>
   );
