@@ -333,27 +333,42 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
                   {regime.label}
                 </span>
                 <DataTag kind="calc" title="deterministic read from the inputs below — a market condition, not a recommendation" />
-                {regime.agreement ? (
-                  <span className="hb-regime-agree">
-                    {regime.agreement.agree} of {regime.agreement.voting} inputs agree
-                  </span>
-                ) : null}
+                {/* feature/density-pass — ONE WORD and a toggle. The agreement
+                    counter and the vote-glyph column are gone; the WHY body
+                    below carries the same disclosure in plain rows. */}
                 <button type="button" className="hb-why" onClick={() => setWhy((v) => !v)} aria-expanded={why}>
                   {why ? "HIDE" : "WHY"}
                 </button>
               </>
             )}
           </div>
+          {/* THE WHY DISCLOSES THREE INPUTS. lib/regime can push up to five
+              (index trend, VIX level, VIX trend, book bias, NQ vs levels) and
+              that list is NOT trimmed there on purpose: lib/call sums the
+              votes to pick THE CALL's direction, and regimeFingerprint is
+              built from the input labels — changing the set server-side would
+              flip the fingerprint, force a paid thesis regeneration, and could
+              change the daily call. So the reduction is a RENDER decision and
+              lives here. `because` is already ordered by lib/regime, so the
+              first three are the strongest, and the count is stated rather
+              than the extras being silently dropped. */}
           {why && regime.because.length > 0 ? (
-            <ul className="hb-because">
-              {regime.because.map((b) => (
-                <li key={b.input} className={b.vote > 0 ? "up" : b.vote < 0 ? "down" : ""}>
-                  <i aria-hidden>{b.vote > 0 ? "▲" : b.vote < 0 ? "▼" : "◆"}</i>
-                  <span className="hb-because-k">{b.input}</span>
-                  <span>{b.value}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="hb-because">
+                {regime.because.slice(0, 3).map((b) => (
+                  <li key={b.input}>
+                    <span className="hb-because-k">{b.input}</span>
+                    <span>{b.value}</span>
+                  </li>
+                ))}
+              </ul>
+              {regime.because.length > 3 ? (
+                <p className="hb-because-more">
+                  {regime.because.length - 3} further input
+                  {regime.because.length - 3 === 1 ? "" : "s"} vote the same read
+                </p>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}

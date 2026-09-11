@@ -7327,3 +7327,22 @@ html.sheet-open .view-panel {
   font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.1em;
 }
 .hl-del-go:disabled { opacity: 0.5; cursor: default; }
+
+/* ── feature/density-pass ──────────────────────────────────────────────────
+   THE CALL as a question: the question is the loud line, THE CALL becomes a
+   quiet kicker above it. Structure only — same tokens, same weights. */
+.callcard .call-head-sub {
+  order: -1;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: color-mix(in srgb, var(--bone) 52%, transparent);
+}
+.callcard .call-head-tags { display: inline-flex; gap: 6px; align-items: center; }
+/* the regime WHY drops the glyph column; the rows carry themselves */
+.hb-because-more {
+  margin: 4px 0 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--bone) 55%, transparent);
+}

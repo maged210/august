@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 import IdeasRail from "@/components/IdeasRail";
 import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import HomeLanding from "@/components/surfaces/HomeLanding";
@@ -679,7 +680,8 @@ export default function Home() {
         const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
         if (stale(gen)) return; // the take stands server-side; the card belongs to the newer input
         if (j.ok) {
-          say(`TAKEN: ${side} — SETTLES AT THE CLOSE.`);
+          // the fourth copy of the settle claim — bound to the cron like the card
+          say(`TAKEN: ${side} — SETTLES ON THE ${SETTLE_UTC_LABEL} PASS.`);
           scrollFloorTo(".callcard");
         } else if (j.error === "locked") sayError("LOCKED — 09:30 ET HAS PASSED. TOMORROW'S CALL OPENS TONIGHT.");
         else if (j.error === "already_taken") sayError("ALREADY TAKEN TODAY — ONE SIDE PER TRADING DAY.");
