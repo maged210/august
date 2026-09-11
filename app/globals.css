@@ -7279,3 +7279,43 @@ html.sheet-open .view-panel {
 @media (max-width: 700px) {
   .aug-disc { font-size: 11px; } /* held: do NOT shrink this on mobile */
 }
+
+/* ── /privacy and /terms (chore/ship-ready) ────────────────────────────────
+   Two real routes, readable prose. Deliberately plain: a legal page people
+   cannot read is the same failure as a disclaimer they cannot see. */
+.legal-page {
+  min-height: 100dvh;
+  background: var(--charcoal, var(--stage, #0b0c0e));
+  padding: 48px 20px calc(64px + env(safe-area-inset-bottom, 0px));
+}
+.legal {
+  max-width: 66ch; margin: 0 auto;
+  color: var(--bone);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 15px; line-height: 1.65;
+}
+.legal h1 {
+  font-family: var(--font-mono), monospace;
+  font-size: 22px; letter-spacing: 0.14em; text-transform: uppercase;
+  margin: 0 0 6px;
+}
+.legal h2 {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+  margin: 34px 0 8px;
+  color: color-mix(in srgb, var(--bone) 82%, transparent);
+}
+.legal p { margin: 0 0 12px; }
+.legal code {
+  font-family: var(--font-mono), monospace; font-size: 13px;
+  padding: 1px 5px; border-radius: 4px; background: var(--glass, rgb(255 255 255 / 0.06));
+}
+.legal-sub { color: color-mix(in srgb, var(--bone) 68%, transparent); font-size: 13.5px; margin-bottom: 4px; }
+.legal-list { margin: 0 0 12px; padding-left: 20px; }
+.legal-list li { margin-bottom: 9px; }
+.legal-foot {
+  margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: 0.06em;
+}
+.legal a { color: inherit; text-underline-offset: 3px; }
+.aug-disc-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }

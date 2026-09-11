@@ -25,6 +25,21 @@ export default function Disclaimer({
   return (
     <p className={`aug-disc${block ? " aug-disc-block" : ""}${className ? ` ${className}` : ""}`}>
       {disclaimerText(variant)}
+      {/* the full-width variant is also how /terms and /privacy are reachable
+          from the app at all — they are real routes, not footer links to
+          nowhere, and every surface that publishes a call points at them */}
+      {block ? (
+        <>
+          {" "}
+          <a className="aug-disc-link" href="/terms">
+            Terms
+          </a>
+          {" · "}
+          <a className="aug-disc-link" href="/privacy">
+            Privacy
+          </a>
+        </>
+      ) : null}
     </p>
   );
 }
