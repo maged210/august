@@ -135,6 +135,14 @@
   --neg: #b4483e; /* down — the paper set */
   --neg-rgb: 180 72 62;
   --amber: #7e6119; /* catalyst amber as ink — #c9a24a is ~2.1:1 on the off-white stage */
+  /* feature/paper-theme — the three app-shell status colours that had no
+     light re-pin, following --amber above. They are NOT new colours: each
+     re-points at a value already in the paper set, so the stage gains nothing
+     to maintain. The dark surfaces (terminal, pit, admin, training) keep the
+     originals, because they never resolve this block. */
+  --rd-app-live: #1b7f4d;  /* was #7fe0a5 — 1.46:1 on paper. The paper set s up. */
+  --rd-app-alert: #b4483e; /* was #e08a7a — 2.36:1 on paper. The paper set s down. */
+  --rd-app-calc: #3f5670;  /* was #9cc4e4 — 1.67:1 on paper. The paper set s steel. */
   --amber-rgb: 126 97 25;
   --gauge-green: #557a48;
 
