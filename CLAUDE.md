@@ -19,6 +19,32 @@ Guidance for Claude Code working in this repo.
 - **AUGUST is intended to become a sellable product.** Nothing ships that the owner
   doesn't use weekly.
 
+- **Every surface that publishes a call carries the disclaimer** (chore/ship-ready).
+  One component, one string: `lib/disclaimer.ts` + `components/Disclaimer.tsx`.
+  THE RULE: rendered text, visible at rest, no interaction to read it — never a
+  `title` attribute, never hover-gated, never sr-only. A hover tooltip on a
+  phone-first app is not a disclaimer, it is the absence of one that passes a
+  keyword grep (THE CALL, the regime line and the NQ levels module each shipped
+  exactly that). Two claims, kept distinct: published calls are research and
+  opinion; PIT and Training are SIMULATED with no real orders, which is the
+  stronger claim and is never watered down to the generic line. The non-HTML
+  outputs carry it too — the push body (short form, so the OS cannot truncate
+  the claim away), the PIT share text, and a `disclaimer` field on /api/ideas,
+  /api/call and /api/intel/feed, because consumers of those wires are
+  republishing the desk's calls.
+
+- **/privacy and /terms are real routes**, written from what the code does and
+  importing the shared strings. DRAFTS — not reviewed by a lawyer.
+
+- **Account deletion is real** (`lib/account-delete.ts`). Confirm-then-delete;
+  the email comes from the session, never the request, so a caller can only
+  delete themselves. It SCANs the unindexed key patterns (magic-link tokens,
+  which the auth adapter writes with no TTL, and the ask cache) and finds the
+  claimed-device markers by scanning VALUES, because those keys are named after
+  the device and carry the account only in the value. What it cannot reach — the
+  user's own browser storage and Vercel's request logs — is returned and
+  rendered verbatim, never swallowed.
+
 ## Abandoned
 
 - LIVE pill dataState wiring (the BAR-2 brand pill stays decorative).
@@ -31,6 +57,27 @@ Guidance for Claude Code working in this repo.
 - Global leaderboard.
 - Per-user model calls to explain a user's wrong prediction (compute the
   disagreeing inputs instead).
+- THE MORNING BRIEF, deleted chore/ship-ready. THE CALL replaced it and the
+  code never caught up. Gone: `lib/gmail.ts`, `lib/morningbrief.ts`,
+  `lib/calendar.ts`, `/api/brief`, `/api/cron/brief`, and the Gmail/Calendar
+  OAuth routes under `/api/auth/google` (never sign-in — sign-in has always
+  been the Resend magic link). Calendar was a v0 feature that did not survive
+  the pivot and went with the chain. `lib/intel/brief.ts` is NOT this — it is
+  the live desk brief compiler the ingest pipeline feeds, and it stays.
+- The MapLibre globe. The dep is gone too; the code went several releases ago.
+
+## Kept deliberately, after being proposed for deletion
+
+- `three` and `components/Presence3D.tsx` — the orb is LIVE. HomeLanding
+  dynamic-imports it and the root page mounts HomeLanding.
+- `components/intel/OptionsWorkspace.tsx` — reachable at
+  `IntelDashboard.tsx:36`, and the OPTIONS tab survives the audience filter
+  for every viewer.
+- `/api/cron/watchers` + `lib/watchers.ts` — unscheduled and uncalled, but
+  CLAUDE.md names Watchers as planned work on the push seam. Documented intent
+  beats an import graph.
+- `/api/cron/intel` — unscheduled, but it imports `lib/intel/brief.ts` and was
+  never explicitly approved for deletion.
 
 ## Decided
 

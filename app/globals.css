@@ -599,14 +599,6 @@ body::after {
   }
 }
 
-/* keep MapLibre attribution legible + unobtrusive on the dark stage */
-.globe-overlay .maplibregl-ctrl-attrib {
-  background: rgba(19, 21, 26, 0.5);
-}
-.globe-overlay .maplibregl-ctrl-attrib a {
-  color: var(--ash);
-}
-
 /* ===========================================================================
    Command deck — four horizontally-paginated surfaces behind fixed chrome
    (Presence · Desk · World · Comms; /intel now just redirects to the Desk)
@@ -2780,9 +2772,7 @@ body::after {
 .command-map {
   position: absolute;
   inset: 0;
-  /* Explicit 100% so the container keeps full height even though MapLibre's own
-     .maplibregl-map rule forces position:relative (which voids inset:0 and would
-     collapse the height to 0 — the cause of the black globe). */
+  /* explicit 100% — the container must keep full height on its own */
   width: 100%;
   height: 100%;
 }
@@ -3250,13 +3240,6 @@ body::after {
   font-size: 12px;
   line-height: 1.55;
   margin-bottom: 8px;
-}
-
-.command-surface .maplibregl-ctrl-attrib {
-  background: var(--cmd-panel-bg);
-}
-.command-surface .maplibregl-ctrl-attrib a {
-  color: var(--ash);
 }
 
 /* ==========================================================================

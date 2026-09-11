@@ -11,10 +11,11 @@ test("B1: the anonymous principal surface is NEVER session-gated", () => {
     assert.equal(isGated(open), false, `${open} must not be gated`);
     assert.ok(!GATED.some((g) => open === g || open.startsWith(g + "/")), `${open} shadowed by GATED`);
   }
-  // the personal/spend surfaces stay gated
-  for (const g of ["/api/brief"]) {
-    assert.equal(isGated(g), true, `${g} must stay gated`);
-  }
+  // chore/ship-ready — /api/brief was the only other entry in GATED and the
+  // whole morning-brief chain is deleted, so the gated set is now exactly the
+  // push-subscribe carve-out below. The invariant under test is unchanged:
+  // nothing on the anonymous surface may be gated.
+  assert.deepEqual(GATED, [], "GATED should be empty now that /api/brief is gone");
   // feature/pwa-push — device subscriptions ride the visitor principal and
   // claim into the account; the middleware must NEVER 401 the subscribe verb
   assert.equal(isGated("/api/push/subscribe"), false, "push subscribe is anonymous-capable now");
