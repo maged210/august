@@ -300,6 +300,14 @@ export default function DeskInbox({
                   </button>
                   {denyControl(d)}
                 </>,
+                // fix/ticker-validation — the symbol resolved but could not be
+                // confirmed as the right security. Stated on the row so the
+                // decision is the owner's, exactly like the CONFLICT chip.
+                d.symbolNote ? (
+                  <span className="adm-review-chip" title={d.symbolNote}>
+                    SYMBOL?
+                  </span>
+                ) : undefined,
               ),
             ),
           )}
@@ -371,6 +379,10 @@ export default function DeskInbox({
                   >
                     QUOTE SUSPECT
                   </span>
+                ) : i.symbolNote ? (
+                  <span className="adm-review-chip" title={i.symbolNote}>
+                    SYMBOL?
+                  </span>
                 ) : undefined,
               ),
             ),
@@ -397,7 +409,16 @@ export default function DeskInbox({
                   )}
                   {denyControl(i)}
                 </>,
-                i.reviewReason ? <span className="adm-review-chip" title={i.reviewReason}>CONFLICT</span> : undefined,
+                // a row can be BOTH conflicted and symbol-flagged; the symbol
+                // question is the one that decides whether this is even the
+                // right security, so it is never hidden behind the conflict
+                i.symbolNote ? (
+                  <span className="adm-review-chip" title={`${i.symbolNote}${i.reviewReason ? ` · ${i.reviewReason}` : ""}`}>
+                    SYMBOL?
+                  </span>
+                ) : i.reviewReason ? (
+                  <span className="adm-review-chip" title={i.reviewReason}>CONFLICT</span>
+                ) : undefined,
               ),
             ),
           )}

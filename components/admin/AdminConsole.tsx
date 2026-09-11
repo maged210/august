@@ -539,6 +539,8 @@ export default function AdminConsole() {
         ok?: boolean;
         drafts?: number;
         dropped?: Array<{ instrument: string; entry: string }>;
+        symbolDrops?: Array<{ instrument: string; company: string; reason: string; detail: string; lane?: string }>;
+        symbolFlags?: Array<{ instrument: string; company: string; detail: string; lane?: string }>;
         error?: string;
       };
       if (!res.ok || !j.ok) {
@@ -561,10 +563,30 @@ export default function AdminConsole() {
       const cutNote = cut.length
         ? ` ${cut.length} dropped as commentary (no level, no trigger): ${cut.map((d) => d.instrument).join(", ")}.`
         : "";
+      // fix/ticker-validation — a refused symbol is named WITH its reason.
+      // A wrong ticker is the failure that publishes a call on the wrong
+      // security, so it is never summarised down to a count.
+      const symCut = j.symbolDrops ?? [];
+      const symNote = symCut.length
+        ? ` ${symCut.length} symbol${symCut.length === 1 ? "" : "s"} refused: ${symCut
+            .map(
+              (d) =>
+                `${d.instrument || d.company || "?"}${d.lane === "tape" ? " (tape)" : ""} — ${d.detail}`,
+            )
+            .join("; ")}.`
+        : "";
+      // Flagged rows are IN the queue, not deleted — say so plainly, so this
+      // never reads like a second list of things that were thrown away.
+      const flags = j.symbolFlags ?? [];
+      const unverNote = flags.length
+        ? ` ${flags.length} symbol${flags.length === 1 ? "" : "s"} queued UNCONFIRMED for you to decide: ${flags
+            .map((f) => `${f.instrument}${f.lane === "tape" ? " (tape)" : ""} — ${f.detail}`)
+            .join("; ")}.`
+        : "";
       setTrResult(
         j.drafts === 0
-          ? `Processed — no trade ideas or tape callouts found in that transcript.${cutNote}`
-          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.${cutNote}`,
+          ? `Processed — no trade ideas or tape callouts found in that transcript.${cutNote}${symNote}${unverNote}`
+          : `Processed — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.${cutNote}${symNote}${unverNote}`,
       );
       await Promise.all([load(), loadTranscripts(), loadTape()]);
     } catch (err) {
@@ -902,6 +924,15 @@ export default function AdminConsole() {
         {t.expiry ? <span className="adm-tape-x">{t.expiry}</span> : null}
         {t.premium ? <span className="adm-tape-x">{t.premium}</span> : null}
         <span className={`adm-tape-kind adm-tk-${t.kind}`}>{t.kind.toUpperCase()}</span>
+        {/* fix/ticker-validation — the dock lane's symbol flag. Without this
+            a flagged tape row showed APPROVE with no indication the symbol
+            was never confirmed, which is the same silent publish the gate
+            exists to prevent. */}
+        {t.symbolNote ? (
+          <span className="adm-review-chip" title={t.symbolNote}>
+            SYMBOL?
+          </span>
+        ) : null}
         <span className="adm-src">{t.source.toUpperCase()}</span>
         <span className="adm-when">{relativeTime(t.ts)}</span>
         <span className="adm-tape-acts">
