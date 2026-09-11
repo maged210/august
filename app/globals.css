@@ -4028,12 +4028,12 @@ button.pulse-line:focus-visible {
 .home-landing {
   --bg: #f5f4f1;
   --ink: #16150f;
-  --dim: #a39c8b;
+  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
   --body2: #6e685c;
   --hair: #e8e4da;
   --hair2: #eae6dc;
   --card: #ffffff;
-  --label: #a2823f;
+  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
   --thread: #16150f;
   --up: #1b7f4d;
   --down: #b4483e;
@@ -5244,11 +5244,11 @@ button.pulse-line:focus-visible {
 .login-page {
   --bg: #f5f4f1;
   --ink: #16150f;
-  --dim: #a39c8b;
+  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
   --body2: #6e685c;
   --hair: #e8e4da;
   --card: #ffffff;
-  --label: #a2823f;
+  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
   --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
 
   position: fixed;
@@ -5385,11 +5385,11 @@ button.pulse-line:focus-visible {
 .welcome-page {
   --bg: #f5f4f1;
   --ink: #16150f;
-  --dim: #a39c8b;
+  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
   --body2: #6e685c;
   --hair: #e8e4da;
   --card: #ffffff;
-  --label: #a2823f;
+  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
   --up: #1b7f4d;
   --down: #b4483e;
   --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
