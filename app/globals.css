@@ -122,18 +122,18 @@
    whole app re-themes without touching a single rule.)
    ---------------------------------------------------------------------------- */
 :root[data-theme="light"] {
-  --charcoal: #f3f2ed; /* off-white stage */
-  --charcoal-2: #e9e8e1; /* raised surface */
-  --bone: #18191c; /* primary ink */
-  --ash: #5c5d63; /* secondary ink */
-  --ink-mute: #8c8d92; /* tertiary */
+  --charcoal: #f5f4f1; /* THE PAPER STAGE */
+  --charcoal-2: #ffffff; /* cards — paper white */
+  --bone: #16150f; /* primary ink — the paper set */
+  --ash: #6e685c; /* dim — the paper set */
+  --ink-mute: #756f63; /* dimmer — darkened from #a39c8b, 2.48:1 -> 4.53:1 */
   --graphite: #cfcec7; /* dividers */
   --steel: #3f5670; /* the accent — calmer on white, not loud cyan */
   --steel-rgb: 63 86 112;
-  --pos: #3c6f5e;
-  --pos-rgb: 60 111 94;
-  --neg: #a8584c;
-  --neg-rgb: 168 88 76;
+  --pos: #1b7f4d; /* up — the paper set */
+  --pos-rgb: 27 127 77;
+  --neg: #b4483e; /* down — the paper set */
+  --neg-rgb: 180 72 62;
   --amber: #7e6119; /* catalyst amber as ink — #c9a24a is ~2.1:1 on the off-white stage */
   --amber-rgb: 126 97 25;
   --gauge-green: #557a48;
@@ -5764,6 +5764,44 @@ button.pulse-line:focus-visible {
    mono labels) so every theme — matrix included — carries it natively.
    Same fixed-scroller shape as .welcome-page (body scroll stays locked).
    ====================================================================== */
+/* ── feature/paper-theme · DARK DATA SURFACES ─────────────────────────────
+   The stage is paper; the surfaces that carry LIVE NUMBERS stay dark, and the
+   desk text ramp stays exactly as authored. The terminal (.intel-root /
+   .intel-embed-frame, rd- tokens) and the pit (.pit2) already paint their own
+   dark stage. These two did not — they inherited the root, so a paper root
+   would have put near-white status colours on near-white paper.
+   This re-states the DARK palette locally, byte-identical to what :root held
+   before the flip, so their children resolve dark tokens exactly as they
+   always did. No rule inside either surface changes. */
+.admin-page,
+.trn {
+  --charcoal: #13151a;
+  --charcoal-2: #0c0d11;
+  --bone: #e8e6e1;
+  --ash: #9a9a9f;
+  --ink-mute: #6b6b72;
+  --graphite: #3a3a40;
+  --steel: #6e8ca8;
+  --steel-rgb: 110 140 168;
+  --pos: #7fb0a3;
+  --pos-rgb: 127 176 163;
+  --neg: #bb7d72;
+  --neg-rgb: 187 125 114;
+  --amber: #c9a24a;
+  --amber-rgb: 201 162 74;
+  --gauge-green: #9bbf8a;
+  --wash-rgb: 255 255 255;
+  --dim: #a39c8b;
+  --label: #c9a96a;
+  --up: #57a97f;
+  --down: #c97064;
+  --ink: #d8ecd9;
+  --bg: #13151a;
+  --card: #0c0d11;
+  background: var(--charcoal);
+  color: var(--bone);
+}
+
 .admin-page {
   position: fixed;
   inset: 0;
