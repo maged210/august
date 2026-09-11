@@ -5105,17 +5105,6 @@ button.pulse-line:focus-visible {
 .call-note { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
 .call-record { font-size: 10px; color: var(--dim); letter-spacing: 0.14em; margin-top: 2px; }
 
-.shm { margin: 10px 0; }
-.shm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 6px; }
-.shm-tile {
-  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
-  font-family: var(--font-mono); border: 1px solid var(--hair); padding: 8px 10px; cursor: pointer; color: var(--ink, #d8ecd9);
-}
-.shm-tile b { font-size: 11px; letter-spacing: 0.12em; }
-.shm-tile span { font-size: 10.5px; }
-.shm-tile.on { outline: 1px solid var(--up, #7fe0a5); }
-.shm-ctx { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 12px; margin-top: 8px; border: 1px dashed var(--hair); padding: 8px 12px; flex-wrap: wrap; }
-.shm-ctx b { letter-spacing: 0.12em; }
 
 .hb-deskreport { border: 1px solid var(--hair); padding: 8px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
 .hb-terminal-link { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--up, #7fe0a5); text-decoration: none; width: fit-content; }
@@ -7345,4 +7334,26 @@ html.sheet-open .view-panel {
   font-size: 10px;
   letter-spacing: 0.04em;
   color: color-mix(in srgb, var(--bone) 55%, transparent);
+}
+
+/* ── feature/density-pass · the floor pulse as plain rows ──────────────────
+   Replaces the tile grid. Same tokens, no palette change: symbol left, last
+   and change right, hairline between, dropped on the last row. */
+.hb-pulserows { list-style: none; margin: 0; padding: 0; }
+.hb-pulserow {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+}
+.hb-pulserow:last-child { border-bottom: 0; }
+.hb-pulserow-l {
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--bone) 62%, transparent);
+}
+.hb-pulserow-v {
+  font-family: var(--font-mono), monospace; font-size: 12.5px;
+  font-variant-numeric: tabular-nums; margin-left: auto;
+}
+.hb-pulserow-c {
+  font-family: var(--font-mono), monospace; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
 }

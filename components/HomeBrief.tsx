@@ -22,7 +22,6 @@ import { useOwner } from "@/lib/use-owner";
 import DataTag from "@/components/DataTag";
 import CountdownRow from "@/components/CountdownRow";
 import TheCallCard from "@/components/TheCallCard";
-import SectorHeatmap from "@/components/SectorHeatmap";
 import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
 import type { BiasRead, SessionLevels } from "@/lib/levels";
 import Disclaimer from "@/components/Disclaimer";
@@ -70,38 +69,6 @@ function sessionNow(): { date: string; session: string } {
           ? "AFTER HOURS"
           : "MARKET CLOSED";
   return { date, session };
-}
-
-function Spark({ closes, up }: { closes: number[]; up: boolean }) {
-  if (!Array.isArray(closes) || closes.length < 2) return null;
-  const W = 52;
-  const H = 15;
-  let min = Math.min(...closes);
-  let max = Math.max(...closes);
-  const pad = (max - min) * 0.1 || 1;
-  min -= pad;
-  max += pad;
-  const d = closes
-    .map(
-      (v, i) =>
-        `${i === 0 ? "M" : "L"}${((i / (closes.length - 1)) * W).toFixed(1)},${(
-          H - 2 - ((v - min) / (max - min)) * (H - 4)
-        ).toFixed(1)}`,
-    )
-    .join(" ");
-  return (
-    <svg className="hb-spark" viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
-      <path
-        d={d}
-        fill="none"
-        style={{ stroke: up ? "var(--up)" : "var(--down)" }}
-        strokeWidth={1.2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
 }
 
 const TICKER_WHITELIST = /(AAPL|MSFT|AMZN|GOOGL|NVDA|META|PLTR|CRM|AMD|AVGO|MU|SMCI|JPM|GS|BAC|WFC|XOM|CVX|OXY|SLB|WMT|MCD|NKE|SBUX|LLY|UNH|PFE|MRK|COIN|MSTR|HOOD|RIOT|TSLA|GME|AFRM|UPST|SPY|QQQ|BTC|ETH|NQ|ES|VIX)/g;
@@ -383,7 +350,7 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
       {askBar}
 
       {/* R4 F2 — WHAT'S COMING: the state-aware countdown row */}
-      <CountdownRow liveIdeas={live} onAsk={onAsk} />
+      <CountdownRow />
 
       {/* pulse row — labeled, with honest failure states (R1) */}
       <div className="hb-pulsewrap">
@@ -401,19 +368,22 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
             <span className="hb-pending">loading…</span>
           )}
         </div>
+        {/* feature/density-pass — five PLAIN ROWS. The tiles and the sparkline
+            are gone; a row is symbol, last, change. A failed symbol still
+            renders no row at all (no mock, no ∅ filler), so this is 0-5 rows,
+            not always five. */}
         {tiles.length > 0 ? (
-          <div className="hb-pulse">
+          <ul className="hb-pulserows">
             {tiles.map((t) => (
-              <span key={t.sym} className="hb-tile">
-                <span className="hb-tile-l">{t.label}</span>
-                <span className="hb-tile-px">{fmtPx(t.q!.price)}</span>
-                <span className={`hb-tile-chg ${t.q!.chgPct >= 0 ? "hl-up" : "hl-down"}`}>
+              <li key={t.sym} className="hb-pulserow">
+                <span className="hb-pulserow-l">{t.label}</span>
+                <span className="hb-pulserow-v">{fmtPx(t.q!.price)}</span>
+                <span className={`hb-pulserow-c ${t.q!.chgPct >= 0 ? "hl-up" : "hl-down"}`}>
                   {fmtPct(t.q!.chgPct)}
                 </span>
-                <Spark closes={t.q!.closes} up={t.q!.chgPct >= 0} />
-              </span>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : null}
       </div>
 
@@ -438,7 +408,6 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
       ) : null}
 
       {/* R4 F3 — WHAT'S MOVING: the sector heatmap */}
-      <SectorHeatmap onAsk={onAsk} />
 
       {/* desk line — null-aware: a failed source says so instead of printing
           a fabricated zero (R1 audit fix) */}

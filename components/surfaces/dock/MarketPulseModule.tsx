@@ -24,38 +24,6 @@ function fmtPx(n: number): string {
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function LineSpark({ closes, up }: { closes: number[]; up: boolean }) {
-  if (closes.length < 2) return null;
-  const W = 56;
-  const H = 16;
-  let min = Math.min(...closes);
-  let max = Math.max(...closes);
-  const pad = (max - min) * 0.1 || 1;
-  min -= pad;
-  max += pad;
-  const d = closes
-    .map(
-      (v, i) =>
-        `${i === 0 ? "M" : "L"}${((i / (closes.length - 1)) * W).toFixed(1)},${(
-          H - 2 - ((v - min) / (max - min)) * (H - 4)
-        ).toFixed(1)}`,
-    )
-    .join(" ");
-  return (
-    <svg className="ifm-spark" viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
-      <path
-        d={d}
-        fill="none"
-        style={{ stroke: up ? "var(--rd-bull, #6fa085)" : "var(--rd-bear, #cd7e6d)" }}
-        strokeWidth={1.2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
 export default function MarketPulseModule() {
   const [quotes, setQuotes] = useState<Record<string, Quote> | null>(null);
 
@@ -108,17 +76,22 @@ export default function MarketPulseModule() {
           </span>
         </div>
       ) : (
-        <div className="ifm-body ifm-pulse">
+        /* feature/density-pass — five PLAIN ROWS, reusing the module-stats row
+           primitive that is already styled (.ifm-stat*): label left, value
+           right, hairline between. The tiles and the sparkline are gone. A
+           symbol whose quote failed still renders no row — 0-5, not padded. */
+        <div className="ifm-body ifm-stats">
           {tiles.map((t) => (
-            <span key={t.sym} className="ifm-tile">
-              <span className="ifm-tile-l">{t.label}</span>
-              <span className="ifm-tile-px">{fmtPx(t.q!.price)}</span>
-              <span className={`ifm-tile-chg ${t.q!.chgPct >= 0 ? "if-pos" : "if-neg"}`}>
-                {t.q!.chgPct >= 0 ? "+" : ""}
-                {t.q!.chgPct.toFixed(1)}%
+            <div key={t.sym} className="ifm-stat">
+              <span className="ifm-stat-l">{t.label}</span>
+              <span className="ifm-stat-v">
+                {fmtPx(t.q!.price)}{" "}
+                <span className={t.q!.chgPct >= 0 ? "if-pos" : "if-neg"}>
+                  {t.q!.chgPct >= 0 ? "+" : ""}
+                  {t.q!.chgPct.toFixed(1)}%
+                </span>
               </span>
-              <LineSpark closes={t.q!.closes} up={t.q!.chgPct >= 0} />
-            </span>
+            </div>
           ))}
         </div>
       )}
