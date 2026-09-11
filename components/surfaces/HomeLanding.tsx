@@ -22,6 +22,7 @@ import { suggestFor, type Suggestion } from "@/lib/command-bar";
 import type { AnswerCard } from "@/app/page";
 import type { PushState } from "@/lib/push-client";
 import Disclaimer from "@/components/Disclaimer";
+import DeleteAccount from "@/components/DeleteAccount";
 
 const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
 
@@ -376,6 +377,8 @@ export default function HomeLanding({
               >
                 SIGN OUT
               </button>
+              {/* deletion lives beside sign-out rather than on a new surface */}
+              <DeleteAccount email={account.email} />
             </span>
           ) : null}
           <div className="hl-ctls">
