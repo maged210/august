@@ -1,210 +1,112 @@
-# AUGUST — v0
+# AUGUST
 
-A personal AI companion behind a single dark, cinematic web page. A living ink-circle
-in the center, one input bar at the bottom. Type to it; it replies in text, in its
-own dry, warm, economical voice.
+A one-operator market desk. It publishes a dated directional call on the
+Nasdaq every trading day and grades itself against the close, keeps a book of
+trade ideas extracted from market commentary, and runs two simulated trading
+games — and every surface that says any of it carries the line that it is
+research and opinion, not investment advice.
 
-This is **v0 — the front door**. No map, no external tools, no accounts. A page that
-boots and talks back with a real personality.
+> **Research and opinion, not investment advice.** See [/terms](app/terms) and
+> [/privacy](app/privacy), which are real routes in the app.
 
-> Voice retired Aug 2026: AUGUST does not speak or listen. There is no TTS/STT setup.
+---
 
-## Run it
+## What it actually is
 
-1. **Install**
+Three views, one screen, navigated by `?view=`.
 
-   ```bash
-   npm install
-   ```
-
-2. **Add your key** — open `.env.local` and paste your Anthropic API key:
-
-   ```
-   ANTHROPIC_API_KEY=sk-ant-...
-   ```
-
-   Optionally add Upstash Redis to give AUGUST **persistent memory** of you across
-   sessions (without it, he simply doesn't remember between visits):
-
-   ```
-   UPSTASH_REDIS_REST_URL=...
-   UPSTASH_REDIS_REST_TOKEN=...
-   ```
-
-   All keys are read **server-side only** (in the `app/api/*` routes) and never reach
-   the browser.
-
-3. **Start**
-
-   ```bash
-   npm run dev
-   ```
-
-   Open <http://localhost:3000>.
-
-## How it works
-
-- The page loads with a short boot HUD, then the circle resolves out of noise into idle.
-- Type in the bar.
-- Your text + the running conversation go to `/api/chat`, which calls Claude
-  (`claude-sonnet-4-6`) with the AUGUST persona and **streams** the reply back.
-- The reply renders as text near the circle.
-- The circle moves through its states — **idle, thinking**.
-
-Conversation history lives in memory for the session only. There is no database.
-
-## Where things are
-
-| File | What it is |
+| View | What it is |
 | --- | --- |
-| `app/page.tsx` | The experience — boot, state machine, send loop |
-| `app/api/chat/route.ts` | Claude proxy, streaming (server-side, holds the key) |
-| `app/api/memory/route.ts` | Background memory updates + `/forget` wipe (server-side) |
-| `components/Composer.tsx` | The input bar |
-| `components/Globe.tsx` | MapLibre dark globe — fly-to + labeled marker |
-| `lib/persona.ts` | The AUGUST system prompt + the `USER_NAME` constant |
-| `lib/memory.ts` | Long-term memory: Upstash profile + summaries, Haiku merge (server-side) |
-| `lib/tools.ts` | Claude tool-use defs (look_closer / close_map) + guidance |
+| **the floor** (`/`) | The orb, the command bar, the market regime read, **THE CALL**, NQ levels, sector heat, the desk tape. |
+| **the terminal** (`?view=terminal`) | The owner sees the desk: the idea board, the brief, sources, options. Everyone else sees the public ideas blotter — ticker, side, entry, target, stop, performance. |
+| **the pit** (`?view=pit`) | THE PIT and the Training floor. Simulated, no real orders. |
 
-To re-key AUGUST to a different person, change **one constant**: `USER_NAME` in
-[`lib/persona.ts`](lib/persona.ts). It defaults to `Maged`.
+**The command bar is the only input.** It has two lanes and they never mix.
+Commands (`<TICKER>`, `arm`/`close`, `higher`/`lower`, `call`, `why`, `pit`,
+`terminal`, `ideas`, `inbox`, `clear`, `/forget`) resolve deterministically on
+the server and **never reach the model**. Anything else is an ask: one message,
+no tools, a small stated token budget, cached ten minutes, capped per day. The
+answer is one card that the next input replaces. There is no chat history, no
+threads, and no conversation UI anywhere — that is a design law, not an
+oversight.
 
-## Memory
+**THE CALL** is the spine. Every trading day AUGUST commits to HIGHER or LOWER
+on NQ before the close; the direction is deterministic from a regime model, not
+from a model call. You can agree or take the other side. At 22:10 UTC the daily
+pass settles it against Yahoo's daily bar and both running records update, from
+0–0, win or lose.
 
-When Upstash is configured, AUGUST remembers you across sessions — kept entirely separate
-from his own persona/backstory (Viv, Cleo, …). That's his life; this is what he's learned
-about **you**.
+**The ideas book** is fed by pasting a market-commentary video link in `/admin`.
+The transcript is fetched, an extractor pulls out candidate ideas, and every
+one of them lands in a review queue. Nothing auto-publishes: approving is a
+human tap. An extracted idea has to clear a floor (a stated level or a specific
+stated trigger) and its ticker has to resolve to a real instrument before it can
+queue at all.
 
-- **Two stores in Upstash Redis.** `august:profile` is a JSON blob of durable facts about
-  you (name, what you're working on, preferences, recurring people); `august:summaries` is
-  a list of short, timestamped per-conversation summaries.
-- **On each reply**, the chat route loads your profile + the last ~10 summaries and injects
-  them into AUGUST's system prompt as a "What you remember about \<name\>" section — so he
-  references them naturally, in his own voice, never "according to my records."
-- **After each exchange**, in the background (never blocking the reply), a cheap model
-  (`claude-haiku-4-5`) updates the rolling session summary and merges any new durable facts
-  into the profile — deduped and kept tight, not just appended.
-- **Ask "what do you remember about me?"** and he'll tell you, in character.
-- **Type `/forget`** to wipe his memory of you (profile + summaries) and start clean.
+**Not a chatbot, and no voice.** Voice was retired in August 2026 — no TTS, no
+STT, no microphone.
 
-Without `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`, the memory layer is a no-op
-and the app runs exactly as before.
+---
 
-## Look closer (the globe)
+## Running it locally
 
-Ask AUGUST to see a place — "show me Tokyo", "show me flights over Europe", "take me to
-Reykjavik" — and he flies the **World** globe there. No API key required.
+```bash
+npm install
+cp .env.local.example .env.local   # then fill it in — see below
+npm run dev                        # http://localhost:3000
+npm test                           # node:test, no network
+npm run build                      # production build
+```
 
-- **Claude tool use.** A `look_closer` tool (lat, lon, label, zoom) is defined server-side;
-  Claude fills the coordinates from its own knowledge — no geocoding service. The chat route
-  runs the tool-use continuation so he both flies the globe **and** says something in
-  character about the place.
-- **One globe.** `look_closer` slides the deck to the World surface and `flyTo`s the
-  coordinates with a smooth arc, dropping a labeled marker — the same live globe described
-  below, not a second one.
-- **Return** by saying "close the map" / "go back" (a `close_map` tool slides back to the orb).
+**The minimum that boots something useful** is the two Upstash variables plus
+`ANTHROPIC_API_KEY`. Without Upstash there is no sign-in, no PIT, no THE CALL,
+no book, no admin queue — and no rate limiting, which means the daily spend cap
+on the ask lane silently does not exist. Treat it as required, not optional.
 
-## Command deck
+**Sign-in works locally with no key at all.** It is an email magic link via
+Resend; outside production with no Resend key the link prints to the server
+console, so the whole flow is testable offline.
 
-The app is a horizontally-paginated deck of four full-screen surfaces — **Presence**,
-**Desk**, **World**, **Comms** — behind fixed chrome (the HUD, the indicator dots, and the
-reply + command input, which stay on every surface). Legacy `/intel` URLs redirect to the
-Desk slide (`/?screen=desk`).
+**Two keys cost money per call:** `ANTHROPIC_API_KEY` and
+`TRANSCRIPT_PROVIDER_API_KEY` (Supadata, billed in credits). Everything else is
+free or free-tier. `.env.local.example` marks both and explains the cost
+discipline built around them.
 
-- **Navigate** by swipe / trackpad, the **← →** arrow keys, the indicator dots, or by
-  asking AUGUST ("take me to the world", "open the desk", "go to markets") — a
-  `go_to_screen` tool slides the deck (markets/intel are accepted aliases for the desk).
-- **Presence** (home) is a Three.js centerpiece of slowly-rotating concentric mechanical
-  rings (loads `/public/circle.glb` instead if it exists), with corner readouts wired to
-  the live feeds.
-- **Desk** is the market terminal (BOARD · TAPE · ARCHIVE · SOURCES · OPTIONS): today's
-  brief beside a live trade blotter + inspector, the full market grid, past briefs, and the
-  sources/options workbench. It lazy-mounts (dynamic import + IntersectionObserver) so the
-  orb page never pays for charts upfront, and it is viewport-locked on desktop — panels
-  scroll internally, never the page.
-- **World** fuses the intelligence globe with the news wires; **Comms** is live Gmail
-  (read + draft→confirm→send). The **Desk** is live end-to-end.
-- The look-closer globe **is** the World surface — one globe AUGUST can fly.
+**A new key goes in two places** — `.env.local` for local dev *and* the Vercel
+project's environment variables for deployed builds. Setting only one is the
+usual reason something works locally and dies in production.
 
-| Deck file | What it is |
-| --- | --- |
-| `components/Presence3D.tsx` | Three.js centerpiece — concentric mechanical rings |
-| `components/Deck.tsx` | Horizontal scroll-snap deck + indicator dots + arrow keys + `goTo()` |
-| `components/command/CommandGlobe.tsx` | MapLibre intelligence globe — flights / quakes / day-night, HUD, toggles |
-| `components/surfaces/CommsSurface.tsx` | Comms surface — Gmail read + draft/confirm/send |
-| `components/surfaces/DeskSurface.tsx` | Desk slide host — lazy-mounts the dashboard as it approaches view |
-| `components/intel/IntelDashboard.tsx` | The desk — BOARD / TAPE / ARCHIVE / SOURCES / OPTIONS |
-| `lib/screens.ts` | Surface ids + labels + aliases (`resolveTarget`) |
-| `lib/markets.ts` | Live free market data + per-source caching + AUGUST's snapshot (server) |
-| `lib/command.ts` | Live flights (OpenSky) + quakes (USGS) + caching + AUGUST's snapshot (server) |
-| `app/api/{markets,flights,quakes,command}/route.ts` | Cached JSON feeds the surfaces poll |
+---
 
-## Markets (live, free data)
+## How it is put together
 
-The desk's TAPE tab is live and chart-rich, auto-refreshing on a ~30s poll. Every source is
-free and mostly keyless; per-source TTL caching in `lib/markets.ts` keeps us off rate limits.
-A graceful skeleton shows while data loads — never an endless spinner.
+- **Next.js App Router**, React, TypeScript. Deployed on Vercel.
+- **Upstash Redis** is the only database, under `august:*` keys.
+- **Auth.js v5** with a single Resend email provider. Sessions are stateless
+  JWTs carrying only an email; owner status is derived from `OWNER_EMAIL` at
+  request time and never stored.
+- **Market data is free and mostly keyless** — Yahoo for quotes and daily bars,
+  FRED for macro, Finnhub for earnings dates, CoinGecko and Coinbase for crypto,
+  plus public RSS. Delayed data is labelled as delayed rather than dressed up.
+- **One scheduled job.** `vercel.json` declares exactly one cron,
+  `/api/cron/intel-track` at 22:10 UTC, which settles THE CALL, runs the idea
+  tracker, backfills calendar actuals, and sends the day's one push.
+- **PWA + Web Push** with VAPID and no third-party push service. The service
+  worker does push and notification clicks only — there is no offline caching.
 
-**Wave 1 adds:** a sparkline on every watchlist row, a main price chart (candlesticks,
-1D/1W/1M, click a row to load that symbol — lightweight-charts), a dial-gauge cluster
-(Crypto Fear & Greed, VIX, and FRED macro: 10Y-2Y spread + financial stress), and expanded
-crypto (8 majors).
+### The laws worth knowing before you change anything
 
-| Panel | Source | Key? |
-| --- | --- | --- |
-| Crypto — 8 majors (price, 24h, sparkline) | CoinGecko | keyless |
-| Crypto chart candles | Coinbase (US-friendly) | keyless |
-| Price charts + row sparklines | lightweight-charts (lib) | — |
-| Index/commodity proxies (QQQ→NQ, SPY→ES, DIA→YM, USO→crude, GLD→gold) + their charts/sparklines | Yahoo chart | keyless |
-| NQ levels (R/P/S + O/N high/low) | computed from NDX prior-session OHLC (Yahoo) | keyless |
-| Movers (gainers / losers / active) | Yahoo screener | keyless |
-| VIX | Yahoo chart | keyless |
-| Fear & Greed (crypto) gauge | alternative.me | keyless |
-| Macro gauges — 10Y-2Y spread, financial stress | FRED | **free key** (`FRED_API_KEY`) |
-| Sector strip (11 SPDRs) | Yahoo chart | keyless |
-| Economic calendar (US, today) | faireconomy (ForexFactory mirror) | keyless |
-| **FLOW · LITE** | Yahoo screener — *unusual equity volume* | keyless |
+1. **Never invent a number.** Absent data renders as absent. A level the source
+   did not state stays missing and the row says so.
+2. **The queue is the only way in.** Anything the extractor cannot fully parse
+   goes to `/admin` for a human tap. Denial is terminal and carries a reason —
+   never a silent deletion.
+3. **Commands never reach the model.** A command-shaped parse failure hints
+   locally; an unknown ticker says NO SUCH SYMBOL. Neither falls through.
+4. **Every surface that publishes a call carries the disclaimer**, as rendered
+   text — never a tooltip, never hover-gated. One component, one string, in
+   `lib/disclaimer.ts`.
 
-Index/ETF quotes are **delayed proxies**, not the live CME tape (labeled as such in the UI).
-
-**FLOW · LITE is honest.** Real options flow (sweeps, blocks, premium) is a paid feed. This
-panel is a free stand-in: *unusual volume* among the most-active equities (today's volume vs
-the 3-month average). It is **not** institutional options flow. To upgrade, swap `buildFlow()`
-in `lib/markets.ts` for a real provider (Unusual Whales / FlowAlgo / CBOE) — the surface only
-reads `FlowItem[]`, so nothing else changes.
-
-AUGUST reads this surface: the **Brief**'s Markets line is live, and he answers "where's NQ vs
-my levels?" from the live numbers (a cached snapshot is injected into his system prompt).
-
-## World (live intelligence globe)
-
-The **World** surface is a full-screen MapLibre globe (globe projection, Carto's free
-dark-matter style) in an OSIRIS-style command aesthetic. It's the same globe `look_closer`
-flies. Every layer is drawn in **WebGL** (no DOM markers) and fed by a cached server-side
-proxy route, so the free APIs are never hammered.
-
-| Layer | Source | Render | Refresh |
-| --- | --- | --- | --- |
-| **Flights** | OpenSky via `/api/flights` | symbol layer, rotated by heading | ~15s, viewport bbox |
-| **Earthquakes** | USGS all-day GeoJSON via `/api/quakes` | circle layer, sized/coloured by magnitude | 5 min |
-| **Day / Night** | computed from the sun (no source) | terminator polygon over the night side | 1 min |
-
-- **Flights** work **anonymously** (sparse, rate-limited). Set `OPENSKY_CLIENT_ID` /
-  `OPENSKY_CLIENT_SECRET` (free OAuth2 client creds) to densify. The feed is fetched only
-  while you're on the surface, capped (3,000), and viewport-culled for 60fps.
-- **HUD** (top): ZULU clock, active-layer count, live "N aircraft" / "M quakes (24h)".
-- **Toggles** (left, OSIRIS style): Flights / Quakes / Day-Night — more layers slot in later.
-- AUGUST reads it: the **Brief**'s Command line is live, and a cached snapshot in his prompt
-  lets him answer "what's on the globe?" and fly it ("show me flights over Europe").
-
-Wave 1 is flights + quakes + day/night. Ships, weather, fires, and conflict layers are
-later passes — each is one more cached proxy route + WebGL layer.
-
-## Known v0 limits
-
-- Replies are kept tight (the system prompt enforces this).
-
-## Stack
-
-Next.js (App Router) · TypeScript · Tailwind CSS · `@anthropic-ai/sdk` (server-side) ·
-Upstash Redis · MapLibre GL · Three.js · Canvas + SVG.
+`CLAUDE.md` carries the standing decisions, what was deliberately abandoned, and
+why. Read it before a change that touches the extractor, the ticker gate, the
+tracker, or the settle cron.

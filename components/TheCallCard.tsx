@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import DataTag from "@/components/DataTag";
+import Disclaimer from "@/components/Disclaimer";
 
 type Tally = { wins: number; losses: number; pushes: number };
 type Side = "HIGHER" | "LOWER";
@@ -169,9 +170,13 @@ export default function TheCallCard() {
           {a.thesis ? <p className="call-thesis">{a.thesis}</p> : null}
           <span className="call-head">
             THE CALL · NQ {dayWord}
+            {/* the tooltip keeps the PROVENANCE note (how the direction was
+                derived) — that is genuinely supplementary. The "not advice"
+                half moved out of here into the rendered Disclaimer below,
+                because a hover tooltip on a phone is not a disclaimer. */}
             <DataTag
               kind="calc"
-              title="direction was derived deterministically from the regime model at the pass that opened this call — the sign of its vote sum; dead even = no call. The thesis above is AUGUST's current read. Not advice."
+              title="direction was derived deterministically from the regime model at the pass that opened this call — the sign of its vote sum; dead even = no call. The thesis above is AUGUST's current read."
             />
             {misses >= 2 ? <DataTag kind="stale" title="the card can't reach the server — showing the last good state" /> : null}
           </span>
@@ -216,6 +221,9 @@ export default function TheCallCard() {
       <span className="call-record" title="settled calls only; pushes and void days count for nobody">
         YOU {fmtRec(st.record.you)} · AUGUST {fmtRec(st.record.august)}
       </span>
+
+      {/* THE CALL publishes a dated directional call. It carries the line. */}
+      <Disclaimer className="aug-disc-card" block={false} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { listLiveIdeas } from "@/lib/ideas";
+import { DISCLAIMER_CALLS } from "@/lib/disclaimer";
 
 // Public trade-ideas rail feed (CORE V2). Serves ONLY live ideas in the
 // redacted PublicIdea shape — drafts, closed rows, and provenance never leave
@@ -13,5 +14,7 @@ export async function GET(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
   const ideas = await listLiveIdeas();
-  return Response.json({ ok: true, ideas });
+  // anyone consuming this wire is republishing the desk's calls — the
+  // claim travels with the payload, not just on our own pages
+  return Response.json({ ok: true, ideas, disclaimer: DISCLAIMER_CALLS });
 }

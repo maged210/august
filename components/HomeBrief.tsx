@@ -25,6 +25,7 @@ import TheCallCard from "@/components/TheCallCard";
 import SectorHeatmap from "@/components/SectorHeatmap";
 import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts } from "@/lib/regime";
 import type { BiasRead, SessionLevels } from "@/lib/levels";
+import Disclaimer from "@/components/Disclaimer";
 
 const PULSE: Array<{ sym: string; label: string }> = [
   { sym: "SPY", label: "SPY" },
@@ -331,7 +332,7 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
                 <span className={`hb-regime-read r-${regime.label.toLowerCase().replace(" ", "")}`}>
                   {regime.label}
                 </span>
-                <DataTag kind="calc" title="deterministic read from the inputs below — a market condition, not advice" />
+                <DataTag kind="calc" title="deterministic read from the inputs below — a market condition, not a recommendation" />
                 {regime.agreement ? (
                   <span className="hb-regime-agree">
                     {regime.agreement.agree} of {regime.agreement.voting} inputs agree
@@ -608,6 +609,10 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
         )}
       </div>
       )}
+
+      {/* the floor brief publishes the regime read, the NQ level chips and the
+          desk record. THE CALL card mounted inside it carries its own line. */}
+      <Disclaimer />
     </div>
   );
 }

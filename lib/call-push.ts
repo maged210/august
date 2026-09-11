@@ -35,6 +35,7 @@ import {
 } from "@/lib/push";
 import { Redis } from "@upstash/redis";
 import type { RegimeRead } from "@/lib/regime";
+import { DISCLAIMER_CALLS_SHORT } from "@/lib/disclaimer";
 
 const PUSHED_KEY = (d: string) => `august:call:v1:pushed:${d}`;
 const LOG_KEY = "august:push:calllog";
@@ -115,7 +116,11 @@ export function composeCallPush(state: CallState): { title: string; body: string
     parts.push(`NEXT CALL ${weekdayShort(nextWeekday(s.forDate)).toUpperCase()}`);
   }
 
-  return { title: "THE CALL", body: parts.join(" · ") };
+  // The notification publishes a dated directional call straight to a lock
+  // screen, where no component can follow it — so the claim travels inside the
+  // string. The SHORT form is used because a push body that overruns is
+  // truncated by the OS, and a truncated disclaimer is no disclaimer.
+  return { title: "THE CALL", body: `${parts.join(" · ")} · ${DISCLAIMER_CALLS_SHORT}` };
 }
 
 // --- the seam + the flush ---------------------------------------------------

@@ -4,7 +4,7 @@
 // browsable signed out).
 //
 // GATED (signed out → 401): lib/route-gates GATED — personal integrations
-// and paid-quota surfaces only (/api/brief, /api/push/subscribe).
+// and paid-quota surfaces only (/api/push/subscribe).
 //
 // NEVER GATED (AUTH-1a B1, the chat-privacy-hotfix surface): /api/chat,
 // /api/memory, /api/pit — these serve anonymous visitors via per-visitor
@@ -66,7 +66,6 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
 // serve anonymous visitors via per-visitor principals — B1.)
 export const config = {
   matcher: [
-    "/api/brief/:path*",
     "/api/push/subscribe/:path*",
   ],
 };

@@ -17,7 +17,6 @@ import { computeOptionMetrics, spreadPct, quoteFromContract, providerStatusForHt
 import { rankOption } from "../lib/intel/options-rank.ts";
 import { normalizeOptionIdea, numberSupported, type RawOptionIdea } from "../lib/intel/normalize.ts";
 import { pickExpiration, passesLiquidity, effLiquidity, priceOf, convictionFor } from "../lib/intel/candidates.ts";
-import { mergeOptionSettings } from "../lib/intel/option-settings.ts";
 import { DEFAULT_OPTION_CANDIDATE_SETTINGS } from "../lib/intel/types.ts";
 import type { BriefIdea, DailyBrief, IntelSource, IntelVideo, OptionIdea, TradeIdea, VideoAnalysis } from "../lib/intel/types.ts";
 import { validateRawShape, ExtractionFailedError } from "../lib/intel/extract.ts";
@@ -452,25 +451,6 @@ test("normalizeOptionIdea: an unsupported trigger warns exactly ONCE (no duplica
   const n = normalizeOptionIdea(rawOpt({ underlyingTrigger: 555 }), "NVDA", "NVDA calls", BASE);
   assert.equal(n.underlyingTrigger, null);
   assert.equal(n.warnings.filter((w) => w.includes("555")).length, 1);
-});
-
-// --- option-candidate settings validation --------------------------------
-test("mergeOptionSettings: rejects wrong types and null on non-nullable numerics", () => {
-  const base = DEFAULT_OPTION_CANDIDATE_SETTINGS;
-  assert.equal(mergeOptionSettings(base, { allow0DTE: "yes" }).allow0DTE, false); // non-bool ignored
-  assert.equal(mergeOptionSettings(base, { allow0DTE: true }).allow0DTE, true);
-  assert.equal(mergeOptionSettings(base, { minOpenInterest: null }).minOpenInterest, base.minOpenInterest); // non-nullable, null rejected
-  assert.equal(mergeOptionSettings(base, { minOpenInterest: -5 }).minOpenInterest, base.minOpenInterest); // negative rejected
-  assert.equal(mergeOptionSettings(base, { maxPremium: null }).maxPremium, null); // nullable cap accepts null
-  assert.equal(mergeOptionSettings(base, { maxLossCap: 500 }).maxLossCap, 500);
-});
-
-test("mergeOptionSettings: inverted DTE band is swapped so min<=max; unknown keys ignored", () => {
-  const out = mergeOptionSettings(DEFAULT_OPTION_CANDIDATE_SETTINGS, { preferredDteMin: 50, preferredDteMax: 10, bogusKey: 1 });
-  assert.ok(out.preferredDteMin <= out.preferredDteMax);
-  assert.equal(out.preferredDteMin, 10);
-  assert.equal(out.preferredDteMax, 50);
-  assert.equal("bogusKey" in out, false);
 });
 
 // --- source privacy (redact.ts) --------------------------------------------

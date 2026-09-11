@@ -8,6 +8,7 @@ import { checkRateLimit, getIp, rateLimitedResponse } from "@/lib/ratelimit";
 import { resolveChatPrincipal } from "@/lib/user-scope";
 import { pidFor } from "@/lib/pit";
 import { callConfigured, readCallState, takeSide } from "@/lib/call";
+import { DISCLAIMER_CALLS } from "@/lib/disclaimer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const cid = pidFor(principal);
   const state = await readCallState(cid);
   return withCookie(
-    Response.json({ ok: true, ...state }, { headers: { "Cache-Control": "no-store" } }),
+    Response.json({ ok: true, ...state, disclaimer: DISCLAIMER_CALLS }, { headers: { "Cache-Control": "no-store" } }),
     setCookie,
   );
 }
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const state = await readCallState(cid);
   return withCookie(
-    Response.json({ ok: true, ...state }, { headers: { "Cache-Control": "no-store" } }),
+    Response.json({ ok: true, ...state, disclaimer: DISCLAIMER_CALLS }, { headers: { "Cache-Control": "no-store" } }),
     setCookie,
   );
 }

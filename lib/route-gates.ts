@@ -15,7 +15,6 @@ export const GATED: readonly string[] = [
   // (R1 A1: /api/day, /api/comms, /api/inbox routes were DELETED with their
   //  parked surfaces — rebuild from git when wanted. Voice retirement Aug 2026
   //  deleted /api/speak + /api/deepgram-token outright.)
-  "/api/brief", // personal calendar+inbox brief (headlines are separate + public)
   // (feature/pwa-push: /api/push/subscribe moved to the anonymous surface —
   //  devices subscribe on the visitor principal and claim into the account)
 ];

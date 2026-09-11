@@ -599,14 +599,6 @@ body::after {
   }
 }
 
-/* keep MapLibre attribution legible + unobtrusive on the dark stage */
-.globe-overlay .maplibregl-ctrl-attrib {
-  background: rgba(19, 21, 26, 0.5);
-}
-.globe-overlay .maplibregl-ctrl-attrib a {
-  color: var(--ash);
-}
-
 /* ===========================================================================
    Command deck — four horizontally-paginated surfaces behind fixed chrome
    (Presence · Desk · World · Comms; /intel now just redirects to the Desk)
@@ -2780,9 +2772,7 @@ body::after {
 .command-map {
   position: absolute;
   inset: 0;
-  /* Explicit 100% so the container keeps full height even though MapLibre's own
-     .maplibregl-map rule forces position:relative (which voids inset:0 and would
-     collapse the height to 0 — the cause of the black globe). */
+  /* explicit 100% — the container must keep full height on its own */
   width: 100%;
   height: 100%;
 }
@@ -3250,13 +3240,6 @@ body::after {
   font-size: 12px;
   line-height: 1.55;
   margin-bottom: 8px;
-}
-
-.command-surface .maplibregl-ctrl-attrib {
-  background: var(--cmd-panel-bg);
-}
-.command-surface .maplibregl-ctrl-attrib a {
-  color: var(--ash);
 }
 
 /* ==========================================================================
@@ -7249,3 +7232,98 @@ html.sheet-open .view-panel {
 .trn-keep:hover { color: var(--label); }
 .trn-row.current { border-color: color-mix(in srgb, var(--label) 60%, transparent); }
 .trn-row.current .trn-state { color: var(--label); }
+
+/* ── THE DISCLAIMER (chore/ship-ready) ─────────────────────────────────────
+   One class for the one component. Deliberately quiet, deliberately NOT a
+   whisper: 11px on a real foreground token at 72% — not the 8.5px "disabled"
+   grey the owner desk footer used, and never a hover tooltip. It has to be
+   readable at rest on a phone, which is the whole point of this pass.
+   --bone is the primary ink in BOTH themes, so this resolves on either stage. */
+.aug-disc {
+  margin: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--bone) 72%, transparent);
+  text-wrap: pretty;
+}
+.aug-disc-block {
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  text-align: center;
+  max-width: 68ch;
+  margin-inline: auto;
+}
+/* inside the dense terminal/dock the row sits flush with the panel it closes */
+.aug-disc-tight { padding: 8px 12px; border-top: 1px solid var(--line); text-align: left; }
+/* under a single card (THE CALL) — no top rule, it already sits in a frame */
+.aug-disc-card { padding: 8px 2px 0; border-top: 0; text-align: left; }
+@media (max-width: 700px) {
+  .aug-disc { font-size: 11px; } /* held: do NOT shrink this on mobile */
+}
+
+/* ── /privacy and /terms (chore/ship-ready) ────────────────────────────────
+   Two real routes, readable prose. Deliberately plain: a legal page people
+   cannot read is the same failure as a disclaimer they cannot see. */
+.legal-page {
+  min-height: 100dvh;
+  background: var(--charcoal, var(--stage, #0b0c0e));
+  padding: 48px 20px calc(64px + env(safe-area-inset-bottom, 0px));
+}
+.legal {
+  max-width: 66ch; margin: 0 auto;
+  color: var(--bone);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 15px; line-height: 1.65;
+}
+.legal h1 {
+  font-family: var(--font-mono), monospace;
+  font-size: 22px; letter-spacing: 0.14em; text-transform: uppercase;
+  margin: 0 0 6px;
+}
+.legal h2 {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+  margin: 34px 0 8px;
+  color: color-mix(in srgb, var(--bone) 82%, transparent);
+}
+.legal p { margin: 0 0 12px; }
+.legal code {
+  font-family: var(--font-mono), monospace; font-size: 13px;
+  padding: 1px 5px; border-radius: 4px; background: var(--glass, rgb(255 255 255 / 0.06));
+}
+.legal-sub { color: color-mix(in srgb, var(--bone) 68%, transparent); font-size: 13.5px; margin-bottom: 4px; }
+.legal-list { margin: 0 0 12px; padding-left: 20px; }
+.legal-list li { margin-bottom: 9px; }
+.legal-foot {
+  margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: 0.06em;
+}
+.legal a { color: inherit; text-underline-offset: 3px; }
+.aug-disc-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+
+/* ── delete account (chore/ship-ready) — beside SIGN OUT, never one tap ──── */
+.hl-del-link {
+  background: none; border: none; cursor: pointer; padding: 2px 0;
+  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--bone) 55%, transparent);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.hl-del-link:hover { color: var(--amber); }
+.hl-del-arm, .hl-del-done {
+  margin-top: 10px; padding: 12px; max-width: 46ch;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--glass, rgb(255 255 255 / 0.04));
+}
+.hl-del-head { margin: 0 0 6px; font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: 0.12em; }
+.hl-del-line { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--bone); }
+.hl-del-list { margin: 0 0 8px; padding-left: 18px; font-size: 11.5px; line-height: 1.5; color: color-mix(in srgb, var(--bone) 70%, transparent); }
+.hl-del-err { margin: 0 0 8px; font-size: 11.5px; color: var(--amber); }
+.hl-del-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.hl-del-go {
+  appearance: none; cursor: pointer; padding: 6px 12px; border-radius: 6px;
+  border: 1px solid var(--amber); background: none; color: var(--amber);
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.1em;
+}
+.hl-del-go:disabled { opacity: 0.5; cursor: default; }

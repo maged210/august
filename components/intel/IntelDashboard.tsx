@@ -1,5 +1,6 @@
 "use client";
 
+import Disclaimer from "@/components/Disclaimer";
 import {
   Fragment,
   useCallback,
@@ -5974,9 +5975,15 @@ export default function IntelDashboard({
         {/* The bottom reserve used to clear the fixed ASK bar (~99px on a
             phone). That bar is gone, so the reserve is back to the home dock's
             own inset — the disclaimer is the last thing in the scroll. */}
-        <div className="rd-disc" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}>
-          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers. Not financial advice.
+        {/* was a hand-written sentence in .rd-disc at 8.5px on the "disabled"
+            grey token — legible enough to pass a grep, not to read. It now
+            renders the shared component. The provenance half of the old line
+            (never trades, never invents prices/levels/tickers) is a claim
+            about the desk, not a disclaimer, so it stays as its own note. */}
+        <div className="rd-disc" style={{ paddingBottom: "4px" }}>
+          AUGUST Market Intel is decision-support over creator commentary. It never trades and never invents prices, levels, or tickers.
         </div>
+        <Disclaimer />
 
         {openVideo && (
           <VideoDrawer key={openVideo} videoId={openVideo} onClose={() => setOpenVideo(null)} onProcessed={load} aiOn={config.ai} owner={owner} />

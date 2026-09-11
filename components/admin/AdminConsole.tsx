@@ -43,6 +43,7 @@ import {
 import type { TranscriptRecord } from "@/lib/transcripts";
 // type-only for the same reason (lib/call-push is the server-side sender)
 import type { CallPushLogEntry } from "@/lib/call-push";
+import Disclaimer from "@/components/Disclaimer";
 
 const TOKEN_KEY = "aug-admin-token";
 const STALE_DAYS_KEY = "aug-admin-stale-days";
@@ -1503,6 +1504,9 @@ export default function AdminConsole() {
           </div>
         </div>
       </div>
+      {/* the owner console edits SIDE / ENTRY / TARGET / STOP and flips rows
+          live. Owner-only, but it is the surface where the calls are authored. */}
+      <Disclaimer />
     </main>
   );
 }
