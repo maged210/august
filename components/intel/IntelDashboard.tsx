@@ -1,6 +1,7 @@
 "use client";
 
 import Disclaimer from "@/components/Disclaimer";
+import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 import {
   Fragment,
   useCallback,
@@ -5751,13 +5752,13 @@ export default function IntelDashboard({
                 {/* INTEGRITY-1 — the honest cadences: quotes poll at 30s; the
                     TRACKER lifecycle evaluates on each pass (page-load passes
                     are ~2-min throttled) with the guaranteed daily pass at
-                    22:10 UTC (post-close in EST and EDT). Only the published
+                    {SETTLE_UTC_LABEL} (post-close in EST and EDT). Only the published
                     BOOK (IdeasFeed) is strictly once-daily — its label says
                     "evaluated daily at close". */}
                 <span className="rd-bhead-meta">
                   {isStack
-                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR · DAILY PASS 22:10 UTC`
-                    : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · LIFECYCLE PER PASS · DAILY PASS 22:10 UTC`}
+                    ? `TODAY · ${todayKey} · ${blotter.length} IDEAS · CREATED → ALERTED → SO FAR · DAILY PASS ${SETTLE_UTC_LABEL}`
+                    : `${blotter.length} IDEAS · ▾ URGENCY · QUOTES 30s · LIFECYCLE PER PASS · DAILY PASS ${SETTLE_UTC_LABEL}`}
                 </span>
                 {owner && (
                   <span

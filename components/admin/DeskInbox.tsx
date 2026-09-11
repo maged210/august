@@ -393,7 +393,26 @@ export default function DeskInbox({
               row(
                 i,
                 <>
-                  {i.side === "long" || i.side === "short" ? (
+                  {/* feature/density-pass — a SYMBOL-flagged row could not be
+                      cleared at all before: the gate writes the note, nothing
+                      could retire it, and the row sat flagged forever. These
+                      are the two resolutions, and they are offered FIRST
+                      because whether this is even the right security is the
+                      prior question to which way it points. */}
+                  {i.symbolNote ? (
+                    <>
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn-acc"
+                        disabled={busyId === i.id}
+                        onClick={() => void onPatch(i.id, { clearSymbolNote: true })}
+                        title={`confirm the symbol is right and retire the flag — ${i.symbolNote}`}
+                      >
+                        SYMBOL OK
+                      </button>
+                      {denyControl(i)}
+                    </>
+                  ) : i.side === "long" || i.side === "short" ? (
                     <>
                       <button type="button" className="adm-btn adm-btn-acc" disabled={busyId === i.id} onClick={() => resolveReview(i, true)} title="keep the stated side; a conflicting entry clears → NEEDS LEVEL">
                         KEEP SIDE
@@ -401,13 +420,16 @@ export default function DeskInbox({
                       <button type="button" className="adm-btn" disabled={busyId === i.id} onClick={() => resolveReview(i, false)} title="flip the side; an agreeing entry stands → LIVE">
                         FLIP SIDE
                       </button>
+                      {denyControl(i)}
                     </>
                   ) : (
-                    <button type="button" className="adm-btn adm-btn-acc" disabled={busyId === i.id} onClick={() => resolveReview(i, true)} title="no directional side stated — clears the entry for restatement">
-                      RESTATE
-                    </button>
+                    <>
+                      <button type="button" className="adm-btn adm-btn-acc" disabled={busyId === i.id} onClick={() => resolveReview(i, true)} title="no directional side stated — clears the entry for restatement">
+                        RESTATE
+                      </button>
+                      {denyControl(i)}
+                    </>
                   )}
-                  {denyControl(i)}
                 </>,
                 // a row can be BOTH conflicted and symbol-flagged; the symbol
                 // question is the one that decides whether this is even the
