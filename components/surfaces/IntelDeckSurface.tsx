@@ -103,7 +103,14 @@ export default function IntelDeckSurface({
           <IdeasFeed />
         </div>
       ) : (
-        <div className={`intel-root cinematic intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
+        // feature/paper-theme — the illumination layers are RETIRED via the
+        // off-ramp tokens.css documents: dropping `cinematic` turns off the
+        // ambient wash, the top glow, the row wash, the selection ring's glow
+        // and the TRIGGERED status glow. Every one has a base rule underneath
+        // it — the washes and the glow are display:none, and the selection
+        // ring falls back to --rd-sel-ring-flat, authored for exactly this.
+        // Nothing loses its state, only its bloom.
+        <div className={`intel-root intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
           {/* fix/p0-live-trust — `active` reaches the desk so its 30s quote
               poll and 5-min desk poll stop while the Terminal view is hidden.
               The latch above deliberately keeps the desk MOUNTED across view

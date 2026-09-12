@@ -86,7 +86,13 @@ export default function RootLayout({
               // a flash. A theme failure must not cost the mood, and vice versa,
               // so each resolves in its own try/catch with its own safe default.
               "(function(){var d=document.documentElement;" +
-              "try{var f=localStorage.getItem('aug-theme-matrixdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-matrixdefault','1');t='matrix';localStorage.setItem('aug-theme','matrix');}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':t==='light'?'light':'matrix');}catch(e){d.setAttribute('data-theme','matrix');}" +
+              // feature/paper-theme — PAPER is the stage now. data-theme is
+              // always set, so :root's base values are never the effective
+              // stage; flipping the stage means flipping the DEFAULT. Same
+              // one-time migration the matrix switch used, new flag key, so a
+              // stored 'matrix' resets once and the new default actually
+              // lands. An explicit later choice still sticks.
+              "try{var f=localStorage.getItem('aug-theme-paperdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-paperdefault','1');t='light';localStorage.setItem('aug-theme','light');}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':t==='matrix'?'matrix':'light');}catch(e){d.setAttribute('data-theme','light');}" +
               "try{var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-mood','steel');}" +
               // RAIL (UX1) — a persisted collapse must apply before first paint,
               // exactly like the theme, or the sidebar flashes open then slides shut.
