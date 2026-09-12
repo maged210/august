@@ -53,6 +53,7 @@ import {
 } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 import Disclaimer from "@/components/Disclaimer";
+import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 
 const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
 
@@ -824,8 +825,8 @@ export default function IdeasFeed() {
           ) : (
             <div className="if-mcards">
               {liveIdeas.length > 0 ? (
-                <div className="if-mgroup" title="evaluated daily at close · next pass 22:10 UTC">
-                  LIVE — EVALUATED DAILY AT CLOSE · 22:10 UTC
+                <div className="if-mgroup" title={`evaluated daily at close · next pass ${SETTLE_UTC_LABEL}`}>
+                  {`LIVE — EVALUATED DAILY AT CLOSE · ${SETTLE_UTC_LABEL}`}
                 </div>
               ) : null}
               {liveIdeas.map((idea) => (
@@ -948,7 +949,7 @@ export default function IdeasFeed() {
                       <span className="if-bgroup-label">LIVE</span>
                       {/* the honest Hobby cadence — one evaluation pass, post-close */}
                       <span className="if-bgroup-sub">
-                        DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS 22:10 UTC
+                        {`DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS ${SETTLE_UTC_LABEL}`}
                       </span>
                       <span className="if-bgroup-hair" aria-hidden="true" />
                       <span className="if-bgroup-count">

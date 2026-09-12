@@ -586,3 +586,37 @@ test("deny: a row cannot be BORN denied — denial is a resolution, not a creati
   assert.equal(res.ok, false);
   assert.equal((res as { error: string }).error, "status_denied_at_create");
 });
+
+// --- feature/density-pass · THE FLAG-CLEARING VERB --------------------------
+// The symbol gate can only ever say "I could not confirm this". Only a human
+// can say "it is right", and until this verb existed there was no way to say
+// it — a flagged row carried its note forever with no API to retire it.
+
+test("clearSymbolNote: accepts only true — it retires a flag, it can never write one", () => {
+  const ok = validateIdeaPatch({ clearSymbolNote: true });
+  assert.ok(ok.ok);
+  if (ok.ok) assert.equal(ok.value.clearSymbolNote, true);
+  // false, a string, or a note body are all refused: there is no path for a
+  // caller to stamp a row as unconfirmed
+  for (const bad of [false, "yes", 1, null, { note: "x" }]) {
+    const r = validateIdeaPatch({ clearSymbolNote: bad });
+    assert.equal(r.ok, false, `${JSON.stringify(bad)} must be refused`);
+    if (!r.ok) assert.equal(r.error, "clear_symbol_note_invalid");
+  }
+});
+
+test("clearSymbolNote: symbolNote itself is NOT patchable — the gate owns writing it", () => {
+  // a patch carrying only symbolNote is an empty patch: the field is dropped
+  const r = validateIdeaPatch({ symbolNote: "SPCE is actually fine, trust me" });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.error, "empty_patch");
+});
+
+test("clearSymbolNote: rides alongside a real edit without disturbing it", () => {
+  const r = validateIdeaPatch({ status: "live", clearSymbolNote: true });
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.equal(r.value.status, "live");
+    assert.equal(r.value.clearSymbolNote, true);
+  }
+});

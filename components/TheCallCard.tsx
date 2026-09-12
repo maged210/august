@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import DataTag from "@/components/DataTag";
 import Disclaimer from "@/components/Disclaimer";
+import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 
 type Tally = { wins: number; losses: number; pushes: number };
 type Side = "HIGHER" | "LOWER";
@@ -51,6 +52,9 @@ function fmtPct(pct: number): string {
 }
 const weekdayShort = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+/** HIGHER is YES to "NQ closes higher?", LOWER is NO. Stated explicitly so a
+ *  fixed question can never invert the call it is reporting. */
+const answerWord = (side: Side) => (side === "HIGHER" ? "YES" : "NO");
 const etToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 export default function TheCallCard() {
@@ -168,8 +172,15 @@ export default function TheCallCard() {
       {a ? (
         <div className="call-block">
           {a.thesis ? <p className="call-thesis">{a.thesis}</p> : null}
+          {/* feature/density-pass — the call reads as a QUESTION. The day word
+              stays bound to dayWord rather than a flat "today": on a settle-lag
+              day the card deliberately names the weekday, and a hardcoded
+              "today?" would make the question a lie. */}
           <span className="call-head">
-            THE CALL · NQ {dayWord}
+            NQ closes higher {dayWord.toLowerCase()}?</span>
+          <span className="call-head call-head-sub">
+            THE CALL</span>
+          <span className="call-head call-head-tags">
             {/* the tooltip keeps the PROVENANCE note (how the direction was
                 derived) — that is genuinely supplementary. The "not advice"
                 half moved out of here into the rendered Disclaimer below,
@@ -180,20 +191,27 @@ export default function TheCallCard() {
             />
             {misses >= 2 ? <DataTag kind="stale" title="the card can't reach the server — showing the last good state" /> : null}
           </span>
+          {/* The question is fixed ("closes higher?"), so AUGUST's side has to
+              read as an ANSWER or the card silently inverts the call: HIGHER
+              is YES, LOWER is NO. Both are printed — the answer and the
+              direction — so neither can be misread. The settle phrasing names
+              the PASS, which is what actually settles it. */}
           {a.youSide ? (
             <span className="call-line">
-              YOU: {a.youSide} · AUGUST: {a.side} · settles at the close
+              AUGUST: {answerWord(a.side)} ({a.side}) · YOU: {answerWord(a.youSide)} ({a.youSide}) · settles on the {SETTLE_UTC_LABEL} pass
             </span>
           ) : a.locked ? (
             <span className="call-line">
-              AUGUST: {a.side} · you didn&apos;t call · settles at the close
+              AUGUST: {answerWord(a.side)} ({a.side}) · you didn&apos;t call · settles on the {SETTLE_UTC_LABEL} pass
             </span>
           ) : (
             <>
-              <span className="call-line">AUGUST: {a.side}</span>
+              <span className="call-line">AUGUST: {answerWord(a.side)} ({a.side})</span>
               <span className="call-actions">
+                {/* the buttons stay explicit about DIRECTION — a bare YES/NO
+                    beside a question is ambiguous the moment it scrolls */}
                 <button type="button" className="call-btn" disabled={busy} onClick={() => take(a.side)}>
-                  AGREE
+                  AGREE · {a.side}
                 </button>
                 <button type="button" className="call-btn" disabled={busy} onClick={() => other && take(other)}>
                   {other}

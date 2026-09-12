@@ -28,6 +28,8 @@ import {
 } from "../lib/call";
 import type { RegimeRead, RegimeVote } from "../lib/regime";
 import type { DailyBar } from "../lib/markets";
+import { readFileSync } from "node:fs";
+import { SETTLE_ROUTE, parseDailyCron, settleLabel } from "../lib/settle-time";
 
 void claimCallRecord;
 
@@ -518,4 +520,27 @@ test("pass is idempotent: a double run settles and generates nothing twice", asy
   assert.equal(again.generated, null); // NX — already generated
   const s = await readCallState(null, { kv, now: passAt(TUE) + 1000, readRegime: riskOn, thesisGen: async () => null });
   assert.deepEqual(s.record.august, { wins: 1, losses: 0, pushes: 0 }); // folded ONCE
+});
+
+// --- feature/density-pass · the settle time is BOUND to the real cron -------
+// Six user-visible strings used to hardcode "22:10 UTC". If the schedule in
+// vercel.json moves and a label does not, the desk announces a time that is
+// no longer true — so the label is derived, and this pins the derivation.
+
+test("settle time: the label comes from vercel.json's cron, not a second copy", () => {
+  const vercelConfig = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+  const crons = (vercelConfig.crons ?? []) as Array<{ path: string; schedule: string }>;
+  const settle = crons.find((c) => c.path === SETTLE_ROUTE);
+  assert.ok(settle, `${SETTLE_ROUTE} must be the scheduled settle cron`);
+  const parsed = parseDailyCron(settle!.schedule);
+  assert.ok(parsed, `${settle!.schedule} must be a plain daily HH:MM schedule`);
+  const expected = `${String(parsed!.hour).padStart(2, "0")}:${String(parsed!.minute).padStart(2, "0")} UTC`;
+  assert.equal(settleLabel(settle!.schedule), expected);
+});
+
+test("settle time: an unreadable schedule names the pass instead of inventing a time", () => {
+  assert.equal(parseDailyCron("*/5 * * * *"), null);
+  assert.equal(parseDailyCron("0 */2 * * *"), null);
+  assert.equal(parseDailyCron("not a cron"), null);
+  assert.deepEqual(parseDailyCron("10 22 * * *"), { hour: 22, minute: 10 });
 });

@@ -190,6 +190,12 @@ export type IdeaPatchInput = Partial<Omit<IdeaCreateInput, "source">> & {
   archiveThesis?: boolean;
   /** DESK-INBOX — required with (and only with) status "denied" */
   denyReason?: DenyReason;
+  /** feature/density-pass — THE FLAG-CLEARING VERB. The symbol gate can only
+   *  ever say "I could not confirm this"; only a human can say "it is right".
+   *  `true` retires the row's symbolNote. There is deliberately no way to SET
+   *  a note through a patch: the gate writes it at extraction, a person clears
+   *  it, and nothing in between can forge one. */
+  clearSymbolNote?: boolean;
 };
 
 type Ok<T> = { ok: true; value: T };
@@ -348,6 +354,14 @@ export function validateIdeaPatch(body: unknown): Ok<IdeaPatchInput> | Err {
   if (patch.status === "denied" && patch.denyReason === undefined)
     return { ok: false, error: "deny_reason_required" };
 
+  // feature/density-pass — a human confirming the symbol is the right one.
+  // Only `true` is accepted: this verb exists to RETIRE a flag, never to write
+  // one, so there is no path for a caller to stamp a row as unconfirmed.
+  if (b.clearSymbolNote !== undefined) {
+    if (b.clearSymbolNote !== true) return { ok: false, error: "clear_symbol_note_invalid" };
+    patch.clearSymbolNote = true;
+  }
+
   if (Object.keys(patch).length === 0) return { ok: false, error: "empty_patch" };
   return { ok: true, value: patch };
 }
@@ -459,7 +473,8 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
   if (!existing) return null;
   // ADMIN-1 — a dedupe-approve REFRESH: the replaced thesis is preserved,
   // oldest first, capped (archiveThesis is a directive, never stored)
-  const { archiveThesis, ...fields } = patch;
+  // clearSymbolNote is a DIRECTIVE like archiveThesis — never a stored field
+  const { archiveThesis, clearSymbolNote, ...fields } = patch;
   const archives =
     archiveThesis && typeof fields.thesis === "string" && fields.thesis !== existing.thesis
       ? [...(existing.thesisHistory ?? []), existing.thesis].slice(-MAX_THESIS_HISTORY)
@@ -487,6 +502,10 @@ export async function updateIdea(id: string, patch: IdeaPatchInput): Promise<Ide
   if (fields.status !== undefined && fields.status !== "denied" && existing.status === "denied") {
     delete updated.denyReason;
   }
+  // feature/density-pass — a human has confirmed the symbol is the right one.
+  // Retired the same way the conflict and denial notes are: the note asked a
+  // question, a person answered it, the note goes.
+  if (clearSymbolNote) delete updated.symbolNote;
   try {
     await redis.set(K.idea(id), JSON.stringify(updated));
     return updated;
