@@ -2670,8 +2670,20 @@ a.rd-cite:hover { text-decoration: underline; }
    the re-pinned semantic hues), --rd-cols/--rd-embed-dock (layout).
    ========================================================================== */
 
-:root[data-theme="light"] .intel-root,
-:root[data-theme="light"] .intel-embed-frame {
+/* ── feature/paper-theme · THE DESK STAYS DARK ────────────────────────────
+   This 244-line block re-pinned every desk token to a paper/ink derivation
+   when the APP theme was light. That was right when light was an opt-in
+   theme. It is wrong now: light is the DEFAULT stage, and the design is
+   paper stage with DARK DATA CARDS — the desk is a data card. Left active,
+   the terminal would render light and the whole split would collapse.
+
+   The block is GATED, not deleted: it is a complete, well-derived light desk
+   and it costs nothing to keep. `.rd-paper` is set by nothing today, so the
+   desk resolves its dark tokens under every theme. Add that class to
+   .intel-root to bring the light desk back.
+   ────────────────────────────────────────────────────────────────────────── */
+:root[data-theme="light"] .intel-root.rd-paper,
+:root[data-theme="light"] .intel-embed-frame.rd-paper {
   /* ---- P palette (semantic colors — deeper ink derivations) ---- */
   --rd-bull: #3e7a54;
   --rd-bear: #b0503e;
@@ -2924,7 +2936,7 @@ a.rd-cite:hover { text-decoration: underline; }
    deeper stage and the mobile ambient-gradient shape. Placed after the light
    block so it wins its equal-specificity siblings by source order. */
 @media (max-width: 700px) {
-  :root[data-theme="light"] .intel-root {
+  :root[data-theme="light"] .intel-root.rd-paper {
     --rd-stage: #efeee9;
     --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(46, 107, 104, 0.07), transparent 62%);
   }
