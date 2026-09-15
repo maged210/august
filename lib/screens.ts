@@ -1,16 +1,15 @@
 // The command deck's surfaces, in order. Shared by the deck, the indicators,
-// and the go_to_screen tool. Four surfaces. The second slide embeds the full
-// intel desk. /intel also remains a real standalone page (its own chrome and
-// sign-in affordances) — the deck slide and that route are two hosts for the
-// same dashboard, NOT a redirect. The slide's id stays "markets" so
+// and the go_to_screen tool. Four surfaces. The second slide is the terminal
+// (the public ideas feed since chore/terminal-cut; the standalone /intel page
+// is gone — old bookmarks 404 by decision). The slide's id stays "markets" so
 // go_to_screen, watcher deep links, and saved "?screen=markets" URLs keep working.
 export const SCREENS = ["presence", "markets", "world", "comms"] as const;
 export type ScreenId = (typeof SCREENS)[number];
 
 export const SCREEN_LABELS: Record<ScreenId, string> = {
   presence: "Presence",
-  // the second surface embeds the full /intel desk — the label follows what is
-  // actually on the slide, while the id stays "markets" (see above)
+  // the second surface is the terminal — the label follows what is actually
+  // on the slide, while the id stays "markets" (see above)
   markets: "Intel",
   world: "World",
   comms: "Comms",

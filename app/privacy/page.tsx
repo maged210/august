@@ -24,7 +24,7 @@ export default function PrivacyPage() {
       <article className="legal">
         <h1>Privacy</h1>
         <p className="legal-sub">
-          Last updated 11 September 2026. This page describes what AUGUST actually stores and
+          Last updated 15 September 2026. This page describes what AUGUST actually stores and
           sends. If the code and this page ever disagree, the code is the bug.
         </p>
 
@@ -106,19 +106,15 @@ export default function PrivacyPage() {
             message body is encrypted before it is sent.
           </li>
           <li>
-            <strong>TradingView</strong> — renders one chart widget in the owner desk. This one
-            runs in your browser, so TradingView sees your IP address directly.
-          </li>
-          <li>
-            <strong>Market and news sources</strong> — Yahoo Finance, FRED, Finnhub, CoinGecko,
+            <strong>Market and news sources</strong> — Yahoo Finance, FRED, CoinGecko,
             Coinbase, the US Geological Survey, OpenSky, an economic calendar mirror, a
-            crypto sentiment index, CNN&apos;s market sentiment data, and public RSS feeds from
+            crypto sentiment index, and public RSS feeds from
             news publishers. These are all fetched by the server. They receive a ticker, a date
             range or nothing at all. None of them receives anything about you.
           </li>
           <li>
-            <strong>Supadata and YouTube</strong> — used by the owner to turn a public video link
-            into a transcript. Receives a video link. No visitor data.
+            <strong>Supadata</strong> — used by the owner to turn a public video link into a
+            transcript. Receives the video link. No visitor data.
           </li>
         </ul>
         <p>

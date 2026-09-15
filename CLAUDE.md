@@ -29,9 +29,9 @@ Guidance for Claude Code working in this repo.
   opinion; PIT and Training are SIMULATED with no real orders, which is the
   stronger claim and is never watered down to the generic line. The non-HTML
   outputs carry it too — the push body (short form, so the OS cannot truncate
-  the claim away), the PIT share text, and a `disclaimer` field on /api/ideas,
-  /api/call and /api/intel/feed, because consumers of those wires are
-  republishing the desk's calls.
+  the claim away), the PIT share text, and a `disclaimer` field on /api/ideas and
+  /api/call, because consumers of those wires are republishing the desk's
+  calls.
 
 - **/privacy and /terms are real routes**, written from what the code does and
   importing the shared strings. DRAFTS — not reviewed by a lawyer.
@@ -47,9 +47,8 @@ Guidance for Claude Code working in this repo.
 
 ## Abandoned
 
-- LIVE pill dataState wiring (the BAR-2 brand pill stays decorative).
-- US10Y tape entry (^TNX ÷10 + basis-point formatting).
-- Mobile board defaults (first card open, TODAY horizon).
+- LIVE pill dataState wiring, the US10Y tape entry, mobile board defaults —
+  all owner-desk items, moot since chore/terminal-cut deleted the desk.
 - 390px chrome pass.
 - Market-brain visualization.
 - Confidence percentages not computed from a model.
@@ -62,24 +61,39 @@ Guidance for Claude Code working in this repo.
   `lib/calendar.ts`, `/api/brief`, `/api/cron/brief`, and the Gmail/Calendar
   OAuth routes under `/api/auth/google` (never sign-in — sign-in has always
   been the Resend magic link). Calendar was a v0 feature that did not survive
-  the pivot and went with the chain. `lib/intel/brief.ts` is NOT this — it is
-  the live desk brief compiler the ingest pipeline feeds, and it stays.
+  the pivot and went with the chain. `lib/intel/brief.ts` was NOT this — it
+  was the owner desk's brief compiler, deleted with the desk (chore/terminal-cut).
 - The MapLibre globe. The dep is gone too; the code went several releases ago.
 
 ## Kept deliberately, after being proposed for deletion
 
 - `three` and `components/Presence3D.tsx` — the orb is LIVE. HomeLanding
   dynamic-imports it and the root page mounts HomeLanding.
-- `components/intel/OptionsWorkspace.tsx` — reachable at
-  `IntelDashboard.tsx:36`, and the OPTIONS tab survives the audience filter
-  for every viewer.
 - `/api/cron/watchers` + `lib/watchers.ts` — unscheduled and uncalled, but
   CLAUDE.md names Watchers as planned work on the push seam. Documented intent
   beats an import graph.
-- `/api/cron/intel` — unscheduled, but it imports `lib/intel/brief.ts` and was
-  never explicitly approved for deletion.
 
 ## Decided
+
+- THE TERMINAL CUT (chore/terminal-cut, 2026-09-15) — ONE terminal for every
+  role: `IntelDeckSurface` renders `IdeasFeed`, and the July owner desk
+  (`components/intel/*`, the brief pipeline under `lib/intel/`, seventeen
+  `/api/intel/*` routes — the sixteen desk routes plus `/api/intel/feed` —
+  `/api/cron/intel`, the `/intel` stub) is DELETED,
+  not parked — tag `archive/owner-desk` on main is the rebuild point. The
+  TRACKED lane is retired with it: every open tracked row was closed with
+  reason "desk retired" (`scripts/close-tracked-desk-retired.ts` — ran against
+  the preview store 2026-09-15; run it ONCE against production, then delete it),
+  `/api/intel/feed` and the publish store are gone, and the daily cron's
+  tracker pass no longer ingests. The live book (DESK INBOX → live,
+  INTEGRITY-1) is the only lane: one header, one list, no sub-nav row.
+  OWNER PARITY IS STRICT: the ADMIN chip (a link to /admin via `useOwner`, no
+  controls) is the ONLY owner difference on the terminal — no INGEST wire
+  rows, and the `<TICKER>` command deep-selects for the owner exactly as for
+  a visitor. Phones drop the IDEAS tab and do not mount the rail sheet; the
+  desktop rail is untouched. `app/intel/frame.css` carries the kept tokens
+  byte-identical (re-palette is v4-1). `lib/intel.ts` (RSS, the watchers
+  seam) is unrelated to `lib/intel/` and stays — never a `lib/intel*` glob.
 
 - THE COMMAND BAR (feature/command-bar) — the bar is the ONLY input, on the
   floor and on mobile. Two lanes by law: COMMANDS (`<TICKER>`, `arm`/`close`,

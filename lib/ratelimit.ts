@@ -26,10 +26,10 @@ function getRedis(): Redis {
 
 type RouteKey =
   | "chat" | "intel" | "memory" | "inbox" | "brief"
-  | "intelMutate" | "intelProcess" | "intelAsk" | "intelRole" | "intelFeed"
+  | "intelRole"
   | "push" | "day" | "draft" | "commsSend" | "watchers" | "intel-track"
   | "watchlist" | "feeds" | "ideas" | "admin" | "transcripts"
-  | "bars" | "tape" | "wire" | "headlines" | "pit" | "account" | "quotes" | "desk" | "call";
+  | "bars" | "tape" | "wire" | "headlines" | "pit" | "account" | "quotes" | "call";
 
 // Sliding-window limits per route, per IP, per 60 seconds.
 const LIMITS: Record<RouteKey, number> = {
@@ -38,11 +38,7 @@ const LIMITS: Record<RouteKey, number> = {
   memory: 20, // Upstash writes + occasional Anthropic summarisation
   inbox: 20,  // Gmail API quota — read-only, server-cached
   brief: 6,   // on-demand morning-brief compile — multi-organ fetch + Anthropic, tight
-  intelMutate: 30, // Market Intel CRUD (sources/settings/sync) — cheap
-  intelProcess: 8, // transcript extraction / brief generation — multi Anthropic calls, tight
-  intelAsk: 20,    // Ask-AUGUST retrieval over processed videos
   intelRole: 30,   // owner/auth signal — one cheap session read per page load
-  intelFeed: 30,   // public published-ideas feed — served from a 45s cache
   push: 20,   // Web Push subscribe — unauthenticated POST, so bound it per IP
   day: 30,    // Google Calendar today-view — server-cached, Presence polls it
   draft: 15,  // AUGUST drafts a reply — an Anthropic call per draft
@@ -60,7 +56,7 @@ const LIMITS: Record<RouteKey, number> = {
   // single user, not an abuse control — the gate is the abuse control.
   // Env-tunable without a deploy: ADMIN_RATE_PER_MIN.
   admin: 240,
-  transcripts: 8, // transcript extraction — an Anthropic call per POST, tight (intelProcess profile)
+  transcripts: 8, // transcript extraction — an Anthropic call per POST, tight
   bars: 30,   // chart-dock daily candles — Yahoo fetch behind a 5min server cache
   tape: 30,   // public desk-tape read — cheap Redis, dock polls ~60s
   wire: 30,   // public desk-wire ingest log — redacted counts, cheap Redis
@@ -68,7 +64,6 @@ const LIMITS: Record<RouteKey, number> = {
   pit: 30, // THE PIT arcade — state read + one score submit per run
   account: 6, // AUTH-1a — claim migration; one real call per device ever
   quotes: 60, // R1 A1 — public quote tiles poll at 30-60s; generous but bounded
-  desk: 20, // R1 A1 — desk fold-ins fan out to three upstreams per miss
   call: 30, // THE CALL — card state read (60s poll) + the one-tap take
 };
 

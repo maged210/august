@@ -13,7 +13,7 @@
 // the layer's overall strength is CSS (--rain-opacity on .matrix-rain).
 //
 // UX5 (v2): quieter and OURS. The falling strings are STOCK SYMBOLS from
-// lib/rain-symbols — the current live/tracked book plus the pulse five and a
+// lib/rain-symbols — the current live book plus the pulse five and a
 // small static filler — spelled vertically down each column with gaps between
 // words. The pool refreshes in place when the book changes (new words pick up
 // the new pool; the field is never reset). Every knob is turned down from v1:

@@ -12,12 +12,13 @@
 // the principal; its absence changes nothing.
 //
 // NOT gated (public data or separately protected):
-//   /api/cron/*  (CRON_SECRET)  ·  /api/markets  ·  /api/quakes
-//   /api/intel/* (reads/quotes/desk; MUTATIONS are owner-gated in-route)
-//   /api/command  ·  /api/flights  ·  /api/push/send (PUSH_SEND_SECRET)
+//   /api/cron/*  (CRON_SECRET)  ·  /api/push/send (PUSH_SEND_SECRET)
+//   /api/intel/* (public reads: quotes · bars · levels · probe · role)
+//   /api/ideas · /api/tape · /api/wire · /api/headlines · /api/calendar
+//   /api/admin/* (owner session or ADMIN_TOKEN, gated in-route)
 //   /api/auth/*  ·  every page route
 //
-// UNCONFIGURED (no AUTH_SECRET / Google client): pass everything through with
+// UNCONFIGURED (no AUTH_SECRET / Resend key): pass everything through with
 // a one-time console.warn — the single-user dev fallback documented in
 // .env.local.example. Nothing 401s until auth is actually configured.
 
@@ -48,7 +49,7 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
     if (!warnedUnconfigured) {
       warnedUnconfigured = true;
       console.warn(
-        "[auth] sign-in not configured (AUTH_SECRET + Google client) — " +
+        "[auth] sign-in not configured (AUTH_SECRET + Resend key) — " +
           "personal API routes are open in single-user fallback mode.",
       );
     }

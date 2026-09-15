@@ -2,7 +2,6 @@
 // (IdeasFeed) and the dock modules alike, so the SIDE/symbol/selection logic
 // can never drift between the grid, the chart and the heatmap.
 
-import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { ChartSelection } from "./IdeaChartModule";
 
@@ -45,17 +44,9 @@ export function chartSymbolFor(ticker: string): string {
   return deskSymbolFor(ticker);
 }
 
-// — the desk's ONE selection constructor pair (G3 r5; moved here for UX2-T4
-// so blotter rows and heatmap tiles build byte-identical selections) —
-
-const LIFE_LABEL: Record<string, string> = {
-  TRIGGERED: "TRIGGERED",
-  ARMED: "ARMED",
-  ACTIVE: "ACTIVE",
-  TARGET_HIT: "TARGET HIT",
-  INVALIDATED: "INVALIDATED",
-  CLOSED: "CLOSED",
-};
+// — the desk's ONE selection constructor (G3 r5; moved here for UX2-T4 so
+// blotter rows and heatmap tiles build byte-identical selections). The
+// tracked-card constructor went with the retired lane (chore/terminal-cut). —
 
 export function selectionFromLive(idea: PublicIdea): ChartSelection {
   return {
@@ -67,20 +58,5 @@ export function selectionFromLive(idea: PublicIdea): ChartSelection {
       target: numOf(idea.target) ?? undefined,
     },
     triggeredAt: null,
-  };
-}
-
-export function selectionFromTracked(card: FeedCard): ChartSelection {
-  const trig = card.statusHistory.find((h) => h.state === "TRIGGERED");
-  return {
-    key: `trk:${card.id}`,
-    ticker: card.ticker,
-    label: LIFE_LABEL[card.status] ?? card.status,
-    levels: {
-      entry: card.statedLevels.trigger?.value ?? undefined,
-      target: card.statedLevels.targets[0]?.value ?? undefined,
-      stop: card.statedLevels.invalidation?.value ?? undefined,
-    },
-    triggeredAt: trig ? trig.at : null,
   };
 }

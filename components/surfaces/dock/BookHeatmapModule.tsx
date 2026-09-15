@@ -1,30 +1,26 @@
 "use client";
 
 // UX2-T4/T5 — THE DESK HEATMAP + MOVERS STRIP. A Finviz-style map of OUR
-// book. INTEGRITY-1 DEDUPE RULE: ONE TILE PER TICKER — an instrument that is
-// both a live desk call and a tracked card renders once, and TRACKED WINS
-// while its lifecycle is OPEN (the tracked card carries the measured
-// lifecycle; the live row is the same call before measurement). A TERMINAL
-// tracked card (target hit / invalidated / closed) is history and never
-// shadows a current live call on the same ticker. Within a source, first
-// occurrence wins (both lists arrive newest-first). Equal tile sizing stays
-// the honest layout (no
-// position data exists — a plain filled grid IS the squarified treemap for
-// equal weights; hand-rolled, zero dependencies). Color encodes
-// TODAY's % move off the existing price pipeline: tracked rows already carry
-// their quote; live instruments ride one /api/intel/quotes call (the desk
-// shorthand mapped through chartSymbolFor). No quote → a neutral ∅ tile,
-// never a fabricated zero. Tile click = the desk's ONE selection (chart dock
-// + detail panel + ?idea=). Under the map: today's top/bottom three.
+// book: ONE TILE PER TICKER over the published book's live calls (first
+// occurrence wins — the list arrives newest-first). Equal tile sizing stays
+// the honest layout (no position data exists — a plain filled grid IS the
+// squarified treemap for equal weights; hand-rolled, zero dependencies).
+// Color encodes TODAY's % move off the existing price pipeline: live
+// instruments ride one /api/intel/quotes call (the desk shorthand mapped
+// through chartSymbolFor). No quote → a neutral ∅ tile, never a fabricated
+// zero. Tile click = the desk's ONE selection (chart dock + detail panel +
+// ?idea=). Under the map: today's top/bottom three.
+//
+// chore/terminal-cut: the tracked cards (the retired desk's publish pipeline)
+// no longer feed the map — the book is the live book.
 //
 // T3 folded the old Desk Bias here: the header carries the long/short book
 // counts ("BOOK — n LONG · n SHORT · n unset").
 
 import { useEffect, useMemo, useState } from "react";
-import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { ChartSelection } from "./IdeaChartModule";
-import { chartSymbolFor, selectionFromLive, selectionFromTracked, sideOf } from "./derive";
+import { chartSymbolFor, selectionFromLive, sideOf } from "./derive";
 
 type Quote = { price: number; chgPct: number };
 
@@ -43,17 +39,15 @@ type Tile = {
 };
 
 export default function BookHeatmapModule({
-  cards,
   liveIdeas,
   sourcesAnswered = true,
   selection,
   onSelect,
 }: {
-  cards: FeedCard[];
   liveIdeas: PublicIdea[];
-  /** fix/p0-live-trust — false while either source is still loading or has
-   *  failed. `cards`/`liveIdeas` both default to [] in the parent, so without
-   *  this the module cannot tell an empty book from an unread one and states
+  /** fix/p0-live-trust — false while the book is still loading or has
+   *  failed. `liveIdeas` defaults to [] in the parent, so without this the
+   *  module cannot tell an empty book from an unread one and states
    *  "0 LONG · 0 SHORT · 0 UNSET" and "nothing on the book yet" as fact. */
   sourcesAnswered?: boolean;
   selection: ChartSelection | null;
@@ -89,28 +83,9 @@ export default function BookHeatmapModule({
   }, [liveSyms]);
 
   const tiles: Tile[] = useMemo(() => {
-    // ONE TILE PER TICKER, TRACKED WINS — while the lifecycle is OPEN. Order
-    // of claim: open tracked cards (ARMED/ACTIVE/TRIGGERED — the measured
-    // current call), then live desk calls, then terminal tracked cards
-    // (TARGET_HIT/INVALIDATED/CLOSED — history must not shadow a current call
-    // on the same ticker). Within a source, first occurrence (newest) wins.
+    // ONE TILE PER TICKER — first occurrence (newest) wins
     const seen = new Set<string>();
     const out: Tile[] = [];
-    const trackedTile = (c: FeedCard): Tile => ({
-      key: `trk:${c.id}`,
-      ticker: c.ticker.toUpperCase(),
-      side: c.direction === "bullish" ? "LONG" : c.direction === "bearish" ? "SHORT" : null,
-      quote: c.quote && Number.isFinite(c.quote.chgPct) ? c.quote : null,
-      select: selectionFromTracked(c),
-    });
-    const isOpen = (c: FeedCard) =>
-      c.status === "ARMED" || c.status === "ACTIVE" || c.status === "TRIGGERED";
-    for (const c of cards.filter(isOpen)) {
-      const ticker = c.ticker.toUpperCase();
-      if (seen.has(ticker)) continue;
-      seen.add(ticker);
-      out.push(trackedTile(c));
-    }
     for (const i of liveIdeas) {
       const ticker = i.instrument.toUpperCase();
       if (seen.has(ticker)) continue;
@@ -125,12 +100,6 @@ export default function BookHeatmapModule({
         select: selectionFromLive(i),
       });
     }
-    for (const c of cards.filter((c) => !isOpen(c))) {
-      const ticker = c.ticker.toUpperCase();
-      if (seen.has(ticker)) continue;
-      seen.add(ticker);
-      out.push(trackedTile(c));
-    }
     // F4 — Finviz reading order: hottest gainers first, losers last, the
     // quote-less tail at the end
     out.sort((a, b) => {
@@ -140,7 +109,7 @@ export default function BookHeatmapModule({
       return b.quote.chgPct - a.quote.chgPct;
     });
     return out;
-  }, [liveIdeas, cards, liveQuotes]);
+  }, [liveIdeas, liveQuotes]);
 
   const longs = tiles.filter((t) => t.side === "LONG").length;
   const shorts = tiles.filter((t) => t.side === "SHORT").length;
@@ -201,10 +170,9 @@ export default function BookHeatmapModule({
         </div>
       ) : (
         <div className="ifm-body">
-          <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per ticker, tracked wins">
+          <div className="if-hm" role="listbox" aria-label="Book heatmap — one tile per ticker">
             {tiles.map((t) => {
-              // key match, or ticker match when the selected row's tile was
-              // claimed by the other source — the map always shows where the
+              // key match, or ticker match — the map always shows where the
               // selected instrument lives
               const sel =
                 selection != null &&

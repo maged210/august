@@ -1,42 +1,34 @@
 "use client";
 
-// IDEAS TERMINAL — the public face of the desk (G3 revision: the soft card
-// feed became a dense monospace blotter again). Two data sources, one grid:
+// IDEAS TERMINAL — the terminal for every role (chore/terminal-cut). One data
+// source, one grid:
 //
-//   LIVE    — the CORE V2 trade-ideas backend (GET /api/ideas): the desk's
-//             current calls, redacted PublicIdea rows. They LEAD the board —
-//             pinned on top, visually hot.
-//   TRACKED — the legacy publish pipeline (GET /api/intel/feed): owner-
-//             published FeedCard rows with stated levels, live quotes and
-//             since-call performance. They sit below, under the lifecycle
-//             filters.
+//   LIVE — the published book (GET /api/ideas): the desk's current calls,
+//          redacted PublicIdea rows, evaluated daily at the close by the book
+//          pass (INTEGRITY-1). They ARE the board.
 //
-// Grid columns: TICKER · SIDE · STATUS · ENTRY · TARGET · STOP · % SINCE
-// CALL · SPARK · LAST · AGE. A row click expands INLINE to the full thesis
-// and detail (the old card/sheet content); collapsed by default.
+// The TRACKED lane (the retired desk's publish pipeline, /api/intel/feed) is
+// gone with the desk: no sub-nav row, no tracked section, no second store.
 //
-// Honesty rules (the law, inherited from the tracker/publish pipeline):
+// Grid columns: TICKER · SIDE · STATUS · ENTRY · TARGET · REASONING · AGE.
+// A row click selects the idea for the chart dock and the detail panel.
+//
+// Honesty rules (the law):
 // - absent data renders as absent (∅ / —) — never a dash-as-zero, never a
 //   computed placeholder;
-// - the performance numeral comes exclusively from the feed's pnl view and is
-//   labeled by its kind verbatim (SINCE CALLED / SINCE FIRST MENTION°, the °
-//   marking a price move that is NOT trade P&L);
 // - a LIVE idea's SIDE renders solid only when the desk STATED one (UX4:
 //   extraction inference or /admin); otherwise the entry-vs-target derivation
 //   shows, styled as derived — never presented as stated;
-// - sparklines draw only the tracker's real priceHistory ring — fewer than two
-//   observations means no line;
 // - no demo/sample rows; an empty board shows the empty state.
+//
+// OWNER PARITY (chore/terminal-cut, decision 6): the ONLY owner difference on
+// this surface is the ADMIN chip in the header — a link to /admin, nothing
+// else. Ingest status lives in /admin.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { isTriggered, type FeedCard } from "@/lib/intel/publish";
-import type { PriceSnap, TrackedLevel, TrackedStatus } from "@/lib/intel/tracker";
-import type { Direction } from "@/lib/intel/types";
 import { relativeTime, type PublicIdea } from "@/lib/ideas";
-import { publishRainSymbols } from "@/lib/rain-symbols";
 import { useOwner } from "@/lib/use-owner";
 import type { PublicTapeEntry } from "@/lib/tape";
-import type { PublicIngest } from "@/lib/transcripts";
 import ChartDock, { type ChartSelection } from "@/components/surfaces/dock/ChartDock";
 import NqLevelsModule from "@/components/surfaces/dock/NqLevelsModule";
 import VixContextModule from "@/components/surfaces/dock/VixContextModule";
@@ -46,54 +38,17 @@ import IdeaChartModule from "@/components/surfaces/dock/IdeaChartModule";
 import IdeaDetailPanel from "@/components/surfaces/dock/IdeaDetailPanel";
 import MarketPulseModule from "@/components/surfaces/dock/MarketPulseModule";
 import TapeModule from "@/components/surfaces/dock/TapeModule";
-import {
-  selectionFromLive,
-  selectionFromTracked,
-  sideOf,
-} from "@/components/surfaces/dock/derive";
+import { selectionFromLive, sideOf } from "@/components/surfaces/dock/derive";
 import "@/app/intel/feed.css";
 import Disclaimer from "@/components/Disclaimer";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 
-const REFRESH_MS = 60_000; // server caches ~45s; 60s keeps the quote dot honest
-
-type FeedPayload = {
-  ok: true;
-  attribution: string;
-  generatedAt: number;
-  count: number;
-  ideas: FeedCard[];
-};
-
-// ── formatting (mono, tabular; dates are display-only, computed client-side) ──
-
-const px = (v: number) =>
-  v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pctFmt = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
-
-// ── vocab maps (consumer language; every state computable from real data) ─────
-
-const DIR_META: Record<Direction, { label: string; glyph: string; cls: string; title?: string }> = {
-  bullish: { label: "LONG", glyph: "▲", cls: "if-dir-bull" },
-  bearish: { label: "SHORT", glyph: "▼", cls: "if-dir-bear" },
-  neutral: { label: "NEUT", glyph: "◆", cls: "if-dir-neut" },
-  watch: { label: "WATCH", glyph: "◆", cls: "if-dir-neut", title: "watch idea" },
-};
-
-const LIFE_META: Record<TrackedStatus, { label: string; chip: string; family: string }> = {
-  TRIGGERED: { label: "TRIGGERED", chip: "if-life-trig", family: "if-lc-trig" },
-  ARMED: { label: "ARMED", chip: "if-life-arm", family: "if-lc-arm" },
-  ACTIVE: { label: "ACTIVE", chip: "if-life-act", family: "if-lc-act" },
-  TARGET_HIT: { label: "TARGET HIT", chip: "if-life-tgt", family: "if-lc-tgt" },
-  INVALIDATED: { label: "INVALIDATED", chip: "if-life-inval", family: "if-lc-inval" },
-  CLOSED: { label: "CLOSED", chip: "if-life-exp", family: "if-lc-exp" },
-};
+const REFRESH_MS = 60_000; // the book and the tape poll together
 
 // INTEGRITY-1 — the truth chip for a published idea: the daily book pass's
 // conclusion replaces the old blanket LIVE. ARMED (crossable trigger stated,
 // fresh, uncrossed) still reads LIVE — it is; the other conclusions say what
-// is actually true. A row the pass hasn't seen yet keeps plain LIVE. Chip
-// classes reuse the tracked lifecycle families — no new styling.
+// is actually true. A row the pass hasn't seen yet keeps plain LIVE.
 function liveStatusChip(idea: PublicIdea): { label: string; cls: string; title?: string } {
   const ev = idea.evaluation;
   if (!ev || ev.state === "ARMED") return { label: "LIVE", cls: "if-live-chip", title: ev?.reason };
@@ -107,127 +62,10 @@ function liveStatusChip(idea: PublicIdea): { label: string; cls: string; title?:
   return { label: "NEEDS LEVEL", cls: "if-life if-life-act", title: ev.reason };
 }
 
-const FILTERS = ["ALL", "TRIGGERED", "ARMED", "ACTIVE", "INVALIDATED"] as const;
-type Filter = (typeof FILTERS)[number];
-
-function matchesFilter(f: Filter, status: TrackedStatus): boolean {
-  switch (f) {
-    case "ALL":
-      return true;
-    case "TRIGGERED":
-      // TARGET_HIT is a triggered call that reached its stated target —
-      // shared with the header pill and HomeBrief via lib/intel/publish
-      return isTriggered(status);
-    case "ARMED":
-      return status === "ARMED";
-    case "ACTIVE":
-      return status === "ACTIVE";
-    case "INVALIDATED":
-      return status === "INVALIDATED";
-  }
-}
-
-// ── tiny leaf renderers ────────────────────────────────────────────────────────
-
-/** blotter cell dash — column has no value for this row (title says why) */
-function Dash({ title }: { title?: string }) {
-  return (
-    <span className="if-bdash" title={title} aria-hidden={title ? undefined : true}>
-      —
-    </span>
-  );
-}
-
-/** sparkline from the tracker's REAL priceHistory ring — never drawn with
- *  fewer than two observations (no flat fake lines) */
-function FeedSpark({ points, tone }: { points: PriceSnap[]; tone: "bull" | "bear" }) {
-  if (points.length < 2) return null;
-  const W = 60;
-  const H = 18;
-  const padY = 2;
-  const vals = points.map((p) => p.price);
-  let min = Math.min(...vals);
-  let max = Math.max(...vals);
-  const pad = (max - min) * 0.1 || Math.abs(vals[vals.length - 1]) * 0.01 || 1;
-  min -= pad;
-  max += pad;
-  const xAt = (i: number) => (i / (vals.length - 1)) * W;
-  const yAt = (v: number) => H - padY - ((v - min) / (max - min)) * (H - 2 * padY);
-  const d = vals.map((v, i) => `${i === 0 ? "M" : "L"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
-  const line = tone === "bull" ? "var(--rd-bull, #6fa085)" : "var(--rd-bear, #cd7e6d)";
-  const fill =
-    tone === "bull"
-      ? "var(--rd-chart-fill-bull, rgba(111, 160, 133, 0.1))"
-      : "var(--rd-chart-fill-bear, rgba(205, 126, 109, 0.1))";
-  return (
-    <svg
-      className="if-spark"
-      viewBox={`0 0 ${W} ${H}`}
-      width={W}
-      height={H}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={`tracker price observations, ${points.length} points`}
-    >
-      <title>tracker price observations</title>
-      <path d={`${d} L ${W},${H} L 0,${H} Z`} style={{ fill }} />
-      <path
-        d={d}
-        fill="none"
-        style={{ stroke: line }}
-        strokeWidth={1.3}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-      />
-      <circle cx={xAt(vals.length - 1)} cy={yAt(vals[vals.length - 1])} r={1.8} style={{ fill: line }} />
-    </svg>
-  );
-}
-
-/** performance view derived ONLY from the feed's pnl — label kinds verbatim */
-function perfOf(card: FeedCard): { text: string; label: string; cls: string } | null {
-  const pnl = card.pnl;
-  if (!pnl || pnl.kind === "none") return null;
-  const cls = pnl.pct >= 0 ? "if-pos" : "if-neg";
-  if (pnl.kind === "since_called") return { text: pctFmt(pnl.pct), label: "SINCE CALLED", cls };
-  // F3 — no glyph suffix: the kind rides the hover title, the numeral stays clean
-  return { text: pctFmt(pnl.pct), label: "SINCE FIRST MENTION — price move, not trade P&L", cls };
-}
-
-/** spark tone: the perf sign when a pnl exists, else the real measured drift
- *  of the history itself (last vs first observation) */
-function sparkTone(card: FeedCard): "bull" | "bear" {
-  const pnl = card.pnl;
-  if (pnl && pnl.kind !== "none") return pnl.pct >= 0 ? "bull" : "bear";
-  const h = card.priceHistory;
-  if (h.length >= 2) return h[h.length - 1].price >= h[0].price ? "bull" : "bear";
-  return "bull";
-}
-
 // LIVE-idea derivations (numOf / liveSide) live in dock/derive.ts — shared
 // with the chart dock so SIDE logic can never drift between grid and chart.
 
-// ── blotter cells ──────────────────────────────────────────────────────────────
-
-/** one tracked-level cell: numeric → tinted numeral; stated text → verbatim
- *  (ellipsized, title = full); absent → dash */
-function LevelCell({ level, cls }: { level: TrackedLevel | null; cls: string }) {
-  if (level == null) return <Dash title="not stated" />;
-  if (level.value != null)
-    return (
-      <span className={`if-bval ${cls}`} title={level.text}>
-        {px(level.value)}
-      </span>
-    );
-  return (
-    <span className={`if-bval if-bval-txt ${cls}`} title={level.text}>
-      {level.text}
-    </span>
-  );
-}
-
-// ── LIVE row (new backend) ─────────────────────────────────────────────────────
+// ── LIVE row ───────────────────────────────────────────────────────────────────
 
 function LiveRow({
   idea,
@@ -330,161 +168,27 @@ function LiveRow({
   );
 }
 
-// ── TRACKED row (legacy publish pipeline) ──────────────────────────────────────
-
-function TrackedRow({
-  card,
-  selected,
-  onSelect,
-}: {
-  card: FeedCard;
-  /** the selection drives the dock chart AND the idea-detail panel (G3 r5) */
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
-  const dir = DIR_META[card.direction] ?? DIR_META.watch;
-  const perf = perfOf(card);
-  const targets = card.statedLevels.targets;
-  return (
-    <>
-      <div
-        className={`if-brow ${life.family}${card.stale ? " stale" : ""}${selected ? " sel" : ""}`}
-        role="button"
-        tabIndex={0}
-        aria-pressed={selected}
-        onClick={onSelect}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelect();
-          }
-        }}
-      >
-        <span className="if-brail" aria-hidden="true" />
-        <span className="if-bc if-bc-tkr">{card.ticker}</span>
-        <span className="if-bc">
-          <span className={`if-bside ${dir.cls}`} title={dir.title}>
-            <span className="if-bside-g" aria-hidden="true">
-              {dir.glyph}
-            </span>
-            {dir.label}
-          </span>
-        </span>
-        <span className="if-bc">
-          <span className={`if-life ${life.chip}`} title={card.stale ? (card.evicted ? "archived — live tracking ended" : "stale — quotes not refreshed recently") : undefined}>
-            <span className="if-life-dot" aria-hidden="true" />
-            {life.label}
-            {card.conflict && (
-              <span className="if-life-conflict" title="conflicting stated triggers exist for this idea">
-                !
-              </span>
-            )}
-          </span>
-        </span>
-        <span className="if-bc">
-          <LevelCell level={card.statedLevels.trigger} cls="if-lev-entry" />
-        </span>
-        <span className="if-bc">
-          {targets.length > 0 ? (
-            <span className="if-bval if-lev-target" title={targets[0].text}>
-              {targets[0].value != null ? px(targets[0].value) : targets[0].text}
-              {targets.length > 1 ? <span className="if-bmore"> +{targets.length - 1}</span> : null}
-            </span>
-          ) : (
-            <Dash title="not stated" />
-          )}
-        </span>
-        <span className="if-bc">
-          <LevelCell level={card.statedLevels.invalidation} cls="if-lev-stop" />
-        </span>
-        <span className="if-bc">
-          {perf ? (
-            <span className={`if-bpct ${perf.cls}`} title={perf.label}>
-              {perf.text}
-            </span>
-          ) : (
-            <Dash
-              title={
-                card.pnl && card.pnl.kind === "none"
-                  ? card.pnl.reason
-                  : card.evicted
-                    ? "live tracking ended"
-                    : "no measurement yet"
-              }
-            />
-          )}
-        </span>
-        <span className="if-bc if-bc-spark">
-          <FeedSpark points={card.priceHistory} tone={sparkTone(card)} />
-        </span>
-        <span className="if-bc">
-          {card.quote ? (
-            <span className="if-blast">
-              <span className="if-live-dot" aria-hidden="true">
-                ◉
-              </span>
-              {px(card.quote.price)}
-            </span>
-          ) : (
-            <Dash title="no live quote" />
-          )}
-        </span>
-        {/* R7 — one-line reasoning preview; the row click opens the full thesis */}
-        <span className="if-bc">
-          <span className="if-breason" title="click the row for the full thesis">
-            {card.thesis.slice(0, 120)}
-          </span>
-        </span>
-        <span className="if-bc if-bc-age" title="since first mention">
-          {relativeTime(card.firstMentionAt)}
-        </span>
-      </div>
-    </>
-  );
-}
-
-// Chart-dock selection constructors moved to dock/derive.ts (UX2-T4) — the
-// blotter rows and the heatmap tiles must build byte-identical selections.
-
 // ── the terminal surface ───────────────────────────────────────────────────────
 
-// R6 — LIVE and TRACKED are different animals and carry different column
-// sets: a live call has no measurement, so the measurement columns simply
-// don't exist there (no em-dash walls). R7 — both sections spend their
-// surplus width on a one-line REASONING preview (muted; row click = full).
+// R6/R7 — a live call has no measurement columns; the surplus width goes to a
+// one-line REASONING preview (muted; row click = full).
 const LIVE_COLS = ["TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "REASONING", "AGE"] as const;
-const TRACKED_COLS = [
-  "TICKER", "SIDE", "STATUS", "ENTRY", "TARGET", "STOP", "% SINCE CALL", "SPARK", "LAST", "REASONING", "AGE",
-] as const;
 
-const SKEL_W = [42, 36, 60, 48, 48, 48, 44, 52, 44, 90, 30];
+const SKEL_W = [42, 36, 60, 48, 48, 90, 30];
 
-function ColHead({ cols, live }: { cols: readonly string[]; live?: boolean }) {
+function ColHead({ cols }: { cols: readonly string[] }) {
   return (
-    <div className={`if-bhead${live ? " if-bhead-live" : ""}`} aria-hidden="true">
+    <div className="if-bhead if-bhead-live" aria-hidden="true">
       {cols.map((c) => (
-        <span
-          key={c}
-          title={
-            c === "% SINCE CALL"
-              ? "signed vs stated trigger; watch-type rows show price since first mention"
-              : undefined
-          }
-        >
-          {c}
-        </span>
+        <span key={c}>{c}</span>
       ))}
     </div>
   );
 }
 
 export default function IdeasFeed() {
-  const [feed, setFeed] = useState<FeedPayload | null>(null);
-  const [feedErr, setFeedErr] = useState(false);
   const [live, setLive] = useState<PublicIdea[] | null>(null);
   const [liveErr, setLiveErr] = useState(false);
-  const [filter, setFilter] = useState<Filter>("ALL");
   const [clock, setClock] = useState("");
   // chart-dock selection (G3) — a row click charts that ticker; defaults to
   // the top LIVE idea once data lands
@@ -492,11 +196,8 @@ export default function IdeasFeed() {
   // desk tape (G3 round 4) — fetched here, rendered by the dock's TapeModule
   const [tapeRows, setTapeRows] = useState<PublicTapeEntry[] | null>(null);
   const [tapeErr, setTapeErr] = useState(false);
-  // desk wire ingest events (G3 round 5) — redacted counts off /api/wire.
-  // PUBLIC-LANGUAGE P3: INGEST rows are internal vocabulary — they render
-  // only for the owner session; visitors' wire is LIVE / TRIG / TAPE.
+  // the ONE owner truth on this surface: the ADMIN chip (decision 5)
   const isOwner = useOwner();
-  const [ingests, setIngests] = useState<PublicIngest[] | null>(null);
   // ≤700px: the dock hides behind a toggle (tablet band 701–1179 keeps it)
   const [dockOpen, setDockOpen] = useState(false);
   // M2 — the PHONE redesign: at ≤700px the blotter does not render; the desk
@@ -516,16 +217,6 @@ export default function IdeasFeed() {
   const load = useCallback(() => {
     // two independent sources — one failing never blanks the other; a refresh
     // blip never blanks already-live data (sticky-live, no cached fakes)
-    fetch("/api/intel/feed", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: FeedPayload) => {
-        if (!j || j.ok !== true || !Array.isArray(j.ideas)) throw new Error("malformed");
-        setFeed(j);
-        setFeedErr(false);
-        // UX5 — tracked tickers feed the rain's symbol pool (data already here)
-        publishRainSymbols("tracked", j.ideas.map((c) => c.ticker));
-      })
-      .catch(() => setFeedErr(true));
     fetch("/api/ideas", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((j: { ideas?: PublicIdea[] }) => {
@@ -540,26 +231,14 @@ export default function IdeasFeed() {
         setTapeErr(false);
       })
       .catch(() => setTapeErr(true));
-    fetch("/api/wire", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { ingests?: PublicIngest[] }) => {
-        setIngests(Array.isArray(j.ingests) ? j.ingests : []);
-      })
-      .catch(() => {
-        // the wire degrades to the three sources the client already holds
-        setIngests((prev) => prev ?? []);
-      });
   }, []);
 
   useEffect(() => {
     load();
-    // fix/p0-live-trust — this fired unconditionally every 60s, and `load()`
-    // issues FOUR fetches (/api/intel/feed, /api/ideas, /api/tape, /api/wire).
-    // IdeasFeed is the non-owner body of IntelDeckSurface, which latches
-    // mounted after the first TERMINAL visit and is only display:none'd after,
-    // so every visitor tab that ever touched TERMINAL kept issuing 4
-    // requests/minute forever — including minimized, and including against an
-    // endpoint returning 500s, 1,440 times a day with no backoff.
+    // fix/p0-live-trust — the poll pauses while the tab is hidden. The
+    // terminal latches mounted after its first visit and is only
+    // display:none'd after, so an unconditional interval would keep every
+    // visitor tab that ever touched TERMINAL polling forever.
     const id = window.setInterval(() => {
       if (!document.hidden) load();
     }, REFRESH_MS);
@@ -587,36 +266,20 @@ export default function IdeasFeed() {
     return () => window.clearInterval(id);
   }, []);
 
-  const tracked = feed?.ideas ?? [];
   const liveIdeas = live ?? [];
-  // fix/p0-live-trust — the TRIG pill counts EXACTLY what tapping TRIGGERED
-  // shows: the same predicate over the same `tracked` array the filter reads.
-  // It used to count TRIGGERED-only and then add live desk ideas the filter
-  // ignores entirely, so the pill and its own filter could never agree. Live
-  // calls keep their own representation in the "N LIVE" statline.
-  const trig = tracked.filter((i) => isTriggered(i.status)).length;
-  const arm = tracked.filter((i) => i.status === "ARMED").length;
-  const visible = tracked.filter((i) => matchesFilter(filter, i.status));
 
-  const loading = feed === null && !feedErr && live === null && !liveErr;
-  const unreachable = feed === null && feedErr && live === null && liveErr;
-  // fix/p0-live-trust — EMPTY requires that BOTH sources actually answered.
-  // `empty` used to be computed from row counts alone, so a failed
-  // /api/intel/feed alongside a successful /api/ideas with zero live calls
-  // rendered "NO IDEAS ON THE BOARD" — a factual claim about the product made
-  // from a failed request. Worse, that branch short-circuits before the
-  // blotter, so the honest per-source "TRACKED FEED UNREACHABLE" strip below
-  // could never be reached. Requiring both to have answered lets the existing
-  // partial-failure strips render instead.
-  const empty =
-    !loading && !unreachable && !feedErr && !liveErr && liveIdeas.length === 0 && tracked.length === 0;
+  const loading = live === null && !liveErr;
+  const unreachable = live === null && liveErr;
+  // EMPTY is a factual claim about the product, so it requires that the book
+  // actually answered — never derived from a failed request.
+  const empty = live !== null && liveIdeas.length === 0;
 
   // Initial selection (G3 r5): honor a shared ?idea= deep link first — waiting
-  // for the store that owns the key if it hasn't answered yet — then default
-  // to the top LIVE idea, else the first tracked row. Set once; every later
-  // change is a user click.
+  // for the book if it hasn't answered yet — then default to the top LIVE
+  // idea. Set once; every later change is a user click.
   useEffect(() => {
     if (selection !== null) return;
+    if (live === null) return; // the book hasn't answered yet
     let want: string | null = null;
     try {
       want = new URL(window.location.href).searchParams.get("idea");
@@ -624,23 +287,14 @@ export default function IdeasFeed() {
       /* no-op */
     }
     if (want?.startsWith("live:")) {
-      if (live === null && !liveErr) return; // that store hasn't answered yet
       const i = liveIdeas.find((x) => `live:${x.id}` === want);
       if (i) {
         setSelection(selectionFromLive(i));
         return;
       }
-    } else if (want?.startsWith("trk:")) {
-      if (feed === null && !feedErr) return;
-      const c = tracked.find((x) => `trk:${x.id}` === want);
-      if (c) {
-        setSelection(selectionFromTracked(c));
-        return;
-      }
     }
     if (liveIdeas.length > 0) setSelection(selectionFromLive(liveIdeas[0]));
-    else if (tracked.length > 0) setSelection(selectionFromTracked(tracked[0]));
-  }, [selection, liveIdeas, tracked, live, liveErr, feed, feedErr]);
+  }, [selection, liveIdeas, live]);
 
   // A user selection also lands in the URL (?idea=) so the exact view is
   // shareable — replaceState, not push: row clicks must not stack history.
@@ -657,7 +311,7 @@ export default function IdeasFeed() {
 
   // COMMAND-BAR ticker jump — the initial-selection effect above runs ONCE, so
   // a later `<TICKER>` command re-selects via this event (chart + row), same
-  // as a row click. Not a layout change: selection machinery already existed.
+  // as a row click. Every role gets this seam (decision 6).
   useEffect(() => {
     const onSelect = (e: Event) => {
       const key = (e as CustomEvent<{ key?: string }>).detail?.key;
@@ -669,23 +323,27 @@ export default function IdeasFeed() {
     return () => window.removeEventListener("aug:select-idea", onSelect);
   }, [liveIdeas]);
 
-  // the wire — merged reverse-chron from the four public sources; null while
-  // every source is still pending (skeleton)
+  // the wire — merged reverse-chron from the two public sources; null while
+  // both are still pending (skeleton)
   const wireEvents = useMemo(() => {
-    if (ingests === null && tapeRows === null && feed === null && live === null) return null;
-    // P3 — visitors never see INGEST rows; the owner session keeps them
-    return buildWire(isOwner ? ingests ?? [] : [], liveIdeas, tracked, tapeRows ?? []);
-  }, [ingests, liveIdeas, tracked, tapeRows, feed, live, isOwner]);
+    if (tapeRows === null && live === null) return null;
+    return buildWire(liveIdeas, tapeRows ?? []);
+  }, [liveIdeas, tapeRows, live]);
 
-  // the selected row's full objects for the detail panel
+  // the selected row's full object for the detail panel
   const selLive =
     selection?.key.startsWith("live:") === true
       ? liveIdeas.find((i) => `live:${i.id}` === selection.key) ?? null
       : null;
-  const selCard =
-    selection?.key.startsWith("trk:") === true
-      ? tracked.find((c) => `trk:${c.id}` === selection.key) ?? null
-      : null;
+
+  // M2 — the phone sheet exists only while its idea does. If the poll drops
+  // the selected idea (closed/denied in /admin, evicted), the sheet closes
+  // and the body comes back — never a hidden body under an unmounted sheet
+  // (review finding).
+  const sheetShown = phone && sheetOpen && selection !== null && selLive !== null;
+  useEffect(() => {
+    if (sheetOpen && selLive === null) setSheetOpen(false);
+  }, [sheetOpen, selLive]);
 
   return (
     <div className="if-feed">
@@ -694,28 +352,21 @@ export default function IdeasFeed() {
           <span className="if-brand-dot" aria-hidden="true" />
           <span className="if-wordmark">IDEAS TERMINAL</span>
           <span className="if-head-right">
-            {/* fix/p0-live-trust — a count only prints once its source has
-                actually answered. `tracked` falls back to [] whenever `feed`
-                is null, which is BOTH the pre-first-response state and the
-                permanent hard-failure state, so this chrome used to state as
-                fact that the desk carries zero tracked ideas and zero
-                triggered calls while /api/intel/feed was down. HomeBrief
-                already renders DataTag "unavailable" for the same payload. */}
+            {/* decision 5 — the one owner difference on the terminal: a link
+                to /admin, no controls. FIRST child of the right-anchored
+                cluster, so its presence grows into the free space on the left
+                and never moves the statline or the DOCK toggle: owner and
+                visitor render pixel-identical except for this chip. Below
+                340px feed.css hides it rather than squeeze the statline. */}
+            {isOwner ? (
+              <a className="if-admin-chip" href="/admin">
+                ADMIN
+              </a>
+            ) : null}
+            {/* a count only prints once its source has actually answered */}
             <span className="if-statline" role="status">
               {clock ? `${clock} · ` : ""}
-              {live !== null ? `${liveIdeas.length} LIVE` : "— LIVE"} ·{" "}
-              {feed !== null ? `${tracked.length} TRACKED` : "— TRACKED"}
-            </span>
-            {/* zero-count chips dim but stay mounted — no CLS when counts land */}
-            <span
-              className={`if-count if-count-trig${feed === null || trig === 0 ? " if-count-zero" : ""}`}
-              title={feed === null ? "the tracked feed hasn't answered yet" : undefined}
-            >
-              {feed !== null && trig > 0 && <span className="if-count-dot" aria-hidden="true" />}
-              {feed !== null ? trig : "—"} TRIG
-            </span>
-            <span className={`if-count if-count-arm${feed === null || arm === 0 ? " if-count-zero" : ""}`}>
-              {feed !== null ? arm : "—"} ARM
+              {live !== null ? `${liveIdeas.length} LIVE` : "— LIVE"}
             </span>
             {/* tablets only — phones get the segmented strip instead (M2) */}
             {!phone ? (
@@ -730,22 +381,6 @@ export default function IdeasFeed() {
             ) : null}
           </span>
         </div>
-        <div className="if-pills" role="tablist" aria-label="Filter tracked ideas by lifecycle">
-          <div className="if-pillseg">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                role="tab"
-                aria-selected={filter === f}
-                className={`if-pill${filter === f ? " on" : ""}`}
-                onClick={() => setFilter(f)}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* M2 — PHONE: segmented modules + stacked cards + full-screen sheet.
@@ -753,7 +388,7 @@ export default function IdeasFeed() {
       {phone ? (
         // hidden (not unmounted) under the sheet: no double-rendered chart
         // behind it, no scroll, state preserved for the return
-        <div className="if-mobile" style={sheetOpen ? { visibility: "hidden" } : undefined}>
+        <div className="if-mobile" style={sheetShown ? { visibility: "hidden" } : undefined}>
           <div className="if-seg" role="tablist" aria-label="Desk modules">
             {(
               [
@@ -781,9 +416,8 @@ export default function IdeasFeed() {
             {seg === "chart" ? <IdeaChartModule selection={selection} /> : null}
             {seg === "book" ? (
               <BookHeatmapModule
-                cards={tracked}
                 liveIdeas={liveIdeas}
-                sourcesAnswered={feed !== null && live !== null}
+                sourcesAnswered={live !== null}
                 selection={selection}
                 onSelect={applySelect}
               />
@@ -810,7 +444,7 @@ export default function IdeasFeed() {
               <div className="if-state-glyph" aria-hidden="true">
                 ·
               </div>
-              <div className="if-state-title">FEED UNREACHABLE</div>
+              <div className="if-state-title">BOOK UNREACHABLE</div>
               <button type="button" className="if-retry" onClick={load}>
                 RETRY
               </button>
@@ -824,11 +458,9 @@ export default function IdeasFeed() {
             </div>
           ) : (
             <div className="if-mcards">
-              {liveIdeas.length > 0 ? (
-                <div className="if-mgroup" title={`evaluated daily at close · next pass ${SETTLE_UTC_LABEL}`}>
-                  {`LIVE — EVALUATED DAILY AT CLOSE · ${SETTLE_UTC_LABEL}`}
-                </div>
-              ) : null}
+              <div className="if-mgroup" title={`evaluated daily at close · next pass ${SETTLE_UTC_LABEL}`}>
+                {`LIVE — EVALUATED DAILY AT CLOSE · ${SETTLE_UTC_LABEL}`}
+              </div>
               {liveIdeas.map((idea) => (
                 <MobileCard
                   key={idea.id}
@@ -845,38 +477,6 @@ export default function IdeasFeed() {
                   age={relativeTime(idea.createdAt)}
                 />
               ))}
-              <div className="if-mgroup">
-                TRACKED — {visible.length} OF {tracked.length}
-              </div>
-              {visible.map((card) => {
-                const dir = DIR_META[card.direction] ?? DIR_META.watch;
-                const life = LIFE_META[card.status] ?? LIFE_META.CLOSED;
-                const perf = perfOf(card);
-                return (
-                  <MobileCard
-                    key={card.id}
-                    selected={selection?.key === `trk:${card.id}`}
-                    onOpen={() => {
-                      applySelect(selectionFromTracked(card));
-                      setSheetOpen(true);
-                    }}
-                    ticker={card.ticker}
-                    side={{ side: dir.label as "LONG" | "SHORT" | "WATCH", derived: false }}
-                    statusChip={{ label: life.label, cls: `if-life ${life.chip}` }}
-                    entry={
-                      card.statedLevels.trigger
-                        ? card.statedLevels.trigger.value != null
-                          ? px(card.statedLevels.trigger.value)
-                          : card.statedLevels.trigger.text
-                        : ""
-                    }
-                    reason={card.thesis}
-                    age={relativeTime(card.firstMentionAt)}
-                    perf={perf ? { text: perf.text, cls: perf.cls } : null}
-                    last={card.quote ? px(card.quote.price) : null}
-                  />
-                );
-              })}
             </div>
           )}
         </div>
@@ -886,9 +486,8 @@ export default function IdeasFeed() {
           <ChartDock
             selection={selection}
             onSelect={applySelect}
-            cards={tracked}
             liveIdeas={liveIdeas}
-            sourcesAnswered={feed !== null && live !== null}
+            sourcesAnswered={live !== null}
             tape={tapeRows}
             tapeFailed={tapeErr}
             onTapeRetry={load}
@@ -899,9 +498,9 @@ export default function IdeasFeed() {
           {loading ? (
             <div className="if-blot-wrap" aria-hidden="true">
               <div className="if-blot-min">
-                <ColHead cols={TRACKED_COLS} />
+                <ColHead cols={LIVE_COLS} />
                 {[0, 1, 2, 3].map((r) => (
-                  <div key={r} className="if-brow if-brow-skel">
+                  <div key={r} className="if-brow if-brow-live if-brow-skel">
                     <span className="if-brail" aria-hidden="true" />
                     {SKEL_W.map((w, i) => (
                       <span key={i} className="if-bc">
@@ -920,8 +519,8 @@ export default function IdeasFeed() {
               <div className="if-state-glyph" aria-hidden="true">
                 ·
               </div>
-              <div className="if-state-title">FEED UNREACHABLE</div>
-              <p className="if-state-copy">The ideas feed could not be loaded.</p>
+              <div className="if-state-title">BOOK UNREACHABLE</div>
+              <p className="if-state-copy">The ideas book could not be loaded.</p>
               <button type="button" className="if-retry" onClick={load}>
                 RETRY
               </button>
@@ -933,92 +532,45 @@ export default function IdeasFeed() {
               </div>
               <div className="if-state-title">NO IDEAS ON THE BOARD</div>
               <p className="if-state-copy">
-                When the desk publishes an idea, it appears here with its stated levels and live
-                tracking.
+                When the desk publishes an idea, it appears here with its stated levels, evaluated
+                daily at the close.
               </p>
             </div>
           ) : (
             <div className="if-blot-wrap">
               <div className="if-blot-min">
-                {/* LIVE — the desk's current calls lead the board, on their
-                    OWN column set (R6) */}
-                {liveIdeas.length > 0 && (
-                  <>
-                    <div className="if-bgroup hot">
-                      <span className="if-bgroup-tick" aria-hidden="true" />
-                      <span className="if-bgroup-label">LIVE</span>
-                      {/* the honest Hobby cadence — one evaluation pass, post-close */}
-                      <span className="if-bgroup-sub">
-                        {`DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS ${SETTLE_UTC_LABEL}`}
-                      </span>
-                      <span className="if-bgroup-hair" aria-hidden="true" />
-                      <span className="if-bgroup-count">
-                        {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
-                      </span>
-                    </div>
-                    <ColHead cols={LIVE_COLS} live />
-                    {liveIdeas.map((idea) => (
-                      <LiveRow
-                        key={idea.id}
-                        idea={idea}
-                        selected={selection?.key === `live:${idea.id}`}
-                        onSelect={() => applySelect(selectionFromLive(idea))}
-                      />
-                    ))}
-                  </>
-                )}
-                {liveErr && live === null && (
-                  <div className="if-bmiss">
-                    LIVE CALLS UNREACHABLE
-                    <button type="button" className="if-bmiss-retry" onClick={load}>
-                      RETRY
-                    </button>
-                  </div>
-                )}
-
-                {/* TRACKED — the legacy publish pipeline, under the lifecycle filter */}
-                <div className="if-bgroup">
-                  <span className="if-bgroup-tick dim" aria-hidden="true" />
-                  <span className="if-bgroup-label">TRACKED</span>
-                  <span className="if-bgroup-sub">SINCE-CALL PERFORMANCE</span>
+                <div className="if-bgroup hot">
+                  <span className="if-bgroup-tick" aria-hidden="true" />
+                  <span className="if-bgroup-label">LIVE</span>
+                  {/* the honest Hobby cadence — one evaluation pass, post-close */}
+                  <span className="if-bgroup-sub">
+                    {`DESK CALLS — EVALUATED DAILY AT CLOSE · NEXT PASS ${SETTLE_UTC_LABEL}`}
+                  </span>
                   <span className="if-bgroup-hair" aria-hidden="true" />
                   <span className="if-bgroup-count">
-                    {visible.length} OF {tracked.length}
+                    {liveIdeas.length} IDEA{liveIdeas.length !== 1 ? "S" : ""}
                   </span>
                 </div>
-                {tracked.length > 0 && visible.length > 0 ? <ColHead cols={TRACKED_COLS} /> : null}
-                {feed === null && feedErr ? (
-                  <div className="if-bmiss">
-                    TRACKED FEED UNREACHABLE
-                    <button type="button" className="if-bmiss-retry" onClick={load}>
-                      RETRY
-                    </button>
-                  </div>
-                ) : tracked.length === 0 ? (
-                  <div className="if-bmiss">NOTHING TRACKED YET</div>
-                ) : visible.length === 0 ? (
-                  <div className="if-bmiss">NO {filter} IDEAS RIGHT NOW</div>
-                ) : (
-                  visible.map((card) => (
-                    <TrackedRow
-                      key={card.id}
-                      card={card}
-                      selected={selection?.key === `trk:${card.id}`}
-                      onSelect={() => applySelect(selectionFromTracked(card))}
-                    />
-                  ))
-                )}
+                <ColHead cols={LIVE_COLS} />
+                {liveIdeas.map((idea) => (
+                  <LiveRow
+                    key={idea.id}
+                    idea={idea}
+                    selected={selection?.key === `live:${idea.id}`}
+                    onSelect={() => applySelect(selectionFromLive(idea))}
+                  />
+                ))}
               </div>
             </div>
           )}
 
           {/* G3 r5 — the bottom band fills the center column under the
               blotter: IDEA DETAIL (selection-driven, the one detail surface)
-              · DESK WIRE (pipeline activity). Hidden only while the whole
-              board is in its empty/unreachable state. */}
+              · DESK WIRE (desk activity). Hidden only while the whole board
+              is in its empty/unreachable state. */}
           {!loading && !unreachable && !empty ? (
             <div className="if-band">
-              <IdeaDetailPanel live={selLive} card={selCard} />
+              <IdeaDetailPanel live={selLive} />
               <DeskWirePanel events={wireEvents} />
             </div>
           ) : null}
@@ -1027,26 +579,21 @@ export default function IdeasFeed() {
       )}
 
       {/* M2 — the full-screen idea detail sheet (phone) */}
-      {phone && sheetOpen && selection ? (
-        <MobileIdeaSheet
-          selection={selection}
-          live={selLive}
-          card={selCard}
-          onClose={() => setSheetOpen(false)}
-        />
+      {sheetShown && selection && selLive ? (
+        <MobileIdeaSheet selection={selection} live={selLive} onClose={() => setSheetOpen(false)} />
       ) : null}
 
       {/* THE PUBLIC TERMINAL carries the line. This is the surface that
-          publishes side / entry / target / stop to everyone who is not the
-          owner, and it closes the whole dock (chart, book heatmap, NQ levels,
-          VIX context, tape, wire), so the one row covers the modules inside
-          it as well as the blotter above it. */}
+          publishes side / entry / target / stop to every viewer, and it
+          closes the whole dock (chart, book heatmap, NQ levels, VIX context,
+          tape, wire), so the one row covers the modules inside it as well as
+          the blotter above it. */}
       <Disclaimer />
     </div>
   );
 }
 
-// ── M2 · the phone card (rail-card pattern; TRACKED adds perf + last) ─────────
+// ── M2 · the phone card (rail-card pattern) ───────────────────────────────────
 
 function MobileCard({
   ticker,
@@ -1055,8 +602,6 @@ function MobileCard({
   entry,
   reason,
   age,
-  perf,
-  last,
   selected,
   onOpen,
 }: {
@@ -1067,8 +612,6 @@ function MobileCard({
   entry: string;
   reason: string;
   age: string;
-  perf?: { text: string; cls: string } | null;
-  last?: string | null;
   selected: boolean;
   onOpen: () => void;
 }) {
@@ -1100,12 +643,6 @@ function MobileCard({
         </span>
       ) : null}
       <span className="if-mcard-reason">{reason.slice(0, 110)}</span>
-      {perf || last ? (
-        <span className="if-mcard-foot">
-          {perf ? <span className={`if-bpct ${perf.cls}`}>{perf.text}</span> : null}
-          {last ? <span className="if-blast">{last}</span> : null}
-        </span>
-      ) : null}
     </button>
   );
 }
@@ -1115,12 +652,10 @@ function MobileCard({
 function MobileIdeaSheet({
   selection,
   live,
-  card,
   onClose,
 }: {
   selection: ChartSelection;
-  live: PublicIdea | null;
-  card: FeedCard | null;
+  live: PublicIdea;
   onClose: () => void;
 }) {
   // page scroll locks under the sheet; Esc closes (hardware keyboards exist)
@@ -1136,19 +671,7 @@ function MobileIdeaSheet({
     };
   }, [onClose]);
 
-  const side = live ? sideOf(live) : null;
-  const dir = card ? DIR_META[card.direction] ?? DIR_META.watch : null;
-  const life = card ? LIFE_META[card.status] ?? LIFE_META.CLOSED : null;
-  const perf = card ? perfOf(card) : null;
-  const entryText = live
-    ? live.entry
-    : card?.statedLevels.trigger
-      ? card.statedLevels.trigger.value != null
-        ? px(card.statedLevels.trigger.value)
-        : card.statedLevels.trigger.text
-      : "";
-  const thesis = live ? live.thesis : card?.thesis ?? "";
-  const age = live ? relativeTime(live.createdAt) : card ? relativeTime(card.firstMentionAt) : "";
+  const side = sideOf(live);
 
   return (
     <div className="im-sheet intel-embed-frame" role="dialog" aria-modal="true" aria-label={`${selection.ticker} detail`}>
@@ -1156,18 +679,17 @@ function MobileIdeaSheet({
         ✕
       </button>
       <div className="im-scroll">
-        {/* 1 · the chart — entry/target/stop lines + TRIG mark ride the
-            existing module; ~40dvh via CSS */}
+        {/* 1 · the chart — entry/target lines ride the existing module; ~40dvh via CSS */}
         <div className="im-chart">
           <IdeaChartModule selection={selection} />
         </div>
 
-        {/* 2 · entry chip · side · risk/status · age */}
+        {/* 2 · entry chip · side · risk · age */}
         <div className="im-meta">
-          {entryText ? (
+          {live.entry ? (
             <span className="if-entry-hero">
               <span className="if-entry-hero-k">ENTRY</span>
-              <span className="if-entry-hero-v">{entryText}</span>
+              <span className="if-entry-hero-v">{live.entry}</span>
             </span>
           ) : null}
           <span className="im-meta-row">
@@ -1180,57 +702,19 @@ function MobileIdeaSheet({
                 {side.side}
               </span>
             ) : null}
-            {dir ? <span className={`if-bside ${dir.cls}`}>{dir.label}</span> : null}
-            {live ? (
-              <span className="if-risk">{live.riskLevel.toUpperCase()} RISK</span>
-            ) : null}
-            {life ? <span className={`if-life ${life.chip}`}>{life.label}</span> : null}
-            <span className="im-age">{age}</span>
+            <span className="if-risk">{live.riskLevel.toUpperCase()} RISK</span>
+            <span className="im-age">{relativeTime(live.createdAt)}</span>
           </span>
         </div>
 
         {/* 3 · the full thesis */}
-        <p className="im-thesis">{thesis}</p>
+        <p className="im-thesis">{live.thesis}</p>
 
         {/* 4 · compact facts — only what exists */}
         <div className="im-facts">
-          {live?.target ? <FactRow k="TARGET" v={live.target} cls="if-lev-target" /> : null}
-          {live?.stop ? <FactRow k="STOP" v={live.stop} cls="if-lev-stop" /> : null}
-          {card?.statedLevels.targets.map((t, i) => (
-            <FactRow
-              key={i}
-              k={card.statedLevels.targets.length > 1 ? `TARGET ${i + 1}` : "TARGET"}
-              v={t.value != null ? px(t.value) : t.text}
-              cls="if-lev-target"
-            />
-          ))}
-          {card?.statedLevels.invalidation ? (
-            <FactRow
-              k="STOP"
-              v={
-                card.statedLevels.invalidation.value != null
-                  ? px(card.statedLevels.invalidation.value)
-                  : card.statedLevels.invalidation.text
-              }
-              cls="if-lev-stop"
-            />
-          ) : null}
-          {perf ? <FactRow k="PERF" v={perf.text} cls={perf.cls} /> : null}
-          {card?.quote ? <FactRow k="LAST" v={`${px(card.quote.price)} · ${pctFmt(card.quote.chgPct)} today`} cls="" /> : null}
+          {live.target ? <FactRow k="TARGET" v={live.target} cls="if-lev-target" /> : null}
+          {live.stop ? <FactRow k="STOP" v={live.stop} cls="if-lev-stop" /> : null}
         </div>
-        {card && card.statusHistory.length > 0 ? (
-          <ul className="if-sh-hist im-hist">
-            {card.statusHistory.map((h, i) => (
-              <li key={i}>
-                <span className="if-sh-hist-top">
-                  <span>{(LIFE_META[h.state] ?? LIFE_META.CLOSED).label}</span>
-                  {h.price != null && <span>@ {px(h.price)}</span>}
-                </span>
-                <span className="if-sh-hist-reason">{h.reason}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ import {
 
 // WebGL components load only in the browser, and each heavy view owns its own
 // laziness: HomeLanding carries the Presence orb's dynamic import and
-// IntelDeckSurface latches its desk/feed bodies on first visit. The old deck
+// IntelDeckSurface latches the feed body on first visit. The old deck
 // (Deck, WorldSurface/globe, CommsSurface) is GONE — those files were deleted,
 // not parked; recover them from git history if that surface ever returns.
 
@@ -61,6 +61,14 @@ export default function Home() {
   // must not resubscribe per toggle.
   const [railOpen, setRailOpen] = useState(false);
   const railOpenRef = useRef(false);
+  // chore/terminal-cut — phones (≤700px) do not mount the rail sheet at all;
+  // the `ideas` verb opens the terminal there (the book IS the terminal).
+  // The ref mirrors the state for the command switch, which outlives renders.
+  // null = not measured yet (SSR and the first client render) — the rail
+  // mounts only once the breakpoint is known, so a phone never mounts it even
+  // for one commit (that commit fired a discarded /api/ideas request).
+  const [phone, setPhone] = useState<boolean | null>(null);
+  const phoneRef = useRef(false);
   // UX1 — the DESKTOP sidebar's collapse (folds to a thin "IDEAS · N LIVE"
   // edge tab; the desk reflows into the freed width). Persisted; layout.tsx
   // applies the stored data-rail attribute pre-paint, and the mount effect
@@ -146,6 +154,20 @@ export default function Home() {
       if (mq.matches) {
         setRailOpen(false); // drawer → sidebar; clear the drawer flag
       }
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  // chore/terminal-cut — the phone breakpoint (the same query the tab bar and
+  // IdeasFeed use); below it the rail is not mounted
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 700px)");
+    const apply = () => {
+      setPhone(mq.matches);
+      phoneRef.current = mq.matches;
+      if (mq.matches) setRailOpen(false); // nothing to open on a phone
     };
     apply();
     mq.addEventListener("change", apply);
@@ -515,32 +537,15 @@ export default function Home() {
     }
   }, []);
 
-  // Audience for the ticker→terminal jump — fetched once, remembered. The
-  // ?idea= deep link and aug:select-idea are consumed ONLY by the public
-  // IdeasFeed; the owner's desk (IntelDashboard) has no selection seam and is
-  // out of scope, so the owner gets the desk plus an honest card instead of
-  // a silent no-op selection (adversarial-review finding).
-  const isOwnerRef = useRef<boolean | null>(null);
-  const isOwner = useCallback(async (): Promise<boolean> => {
-    if (isOwnerRef.current !== null) return isOwnerRef.current;
-    try {
-      const r = await fetch("/api/intel/role", { cache: "no-store" });
-      const j = (await r.json()) as { owner?: boolean };
-      isOwnerRef.current = j.owner === true;
-    } catch {
-      return false; // unknown → treat as public, don't latch
-    }
-    return isOwnerRef.current;
-  }, []);
-
   const runTicker = useCallback(
     async (symbol: string, gen: number) => {
-      const [ideas, owner] = await Promise.all([liveIdeas(), isOwner()]);
+      const ideas = await liveIdeas();
       if (stale(gen)) return;
       const idea = ideas.find((i) => i.instrument.trim().toUpperCase() === symbol);
-      if (idea && !owner) {
-        // public: open the feed with that idea's chart + row selected via the
-        // existing ?idea= deep link + the re-selection event
+      if (idea) {
+        // open the terminal with that idea's chart + row selected via the
+        // existing ?idea= deep link + the re-selection event — the SAME seam
+        // for every role (chore/terminal-cut: the owner desk is gone)
         try {
           const u = new URL(window.location.href);
           u.searchParams.set("view", "terminal");
@@ -553,14 +558,6 @@ export default function Home() {
         markAugNav();
         switchView("terminal");
         setAnswer(null);
-        return;
-      }
-      if (idea && owner) {
-        // the owner's desk has no deep-select seam — open it and say what's
-        // true rather than claiming a selection that didn't happen
-        markAugNav();
-        switchView("terminal");
-        say(`${symbol} IS LIVE ON THE BOOK — THE DESK IS OPEN.`);
         return;
       }
       // no idea → a quote card via the classified probe; a true miss is NO
@@ -598,7 +595,7 @@ export default function Home() {
         if (!stale(gen)) sayError(`QUOTES UNREACHABLE — TRY ${symbol} AGAIN`);
       }
     },
-    [liveIdeas, isOwner, say, sayError, switchView, stale],
+    [liveIdeas, sayError, switchView, stale],
   );
 
   // arm/close — owner only, write-gated server-side, two-tap in the bar:
@@ -790,6 +787,16 @@ export default function Home() {
           case "terminal":
             return switchView("terminal");
           case "ideas":
+            // phones don't mount the rail sheet (chore/terminal-cut) — there
+            // the book IS the terminal
+            if (phoneRef.current) return switchView("terminal");
+            // ≥1100px the rail is the always-visible sidebar: the drawer flag
+            // would only lock the floor's scroll (html.sheet-open) — un-collapse
+            // the sidebar instead (review finding, pre-existing on main)
+            if (window.matchMedia("(min-width: 1100px)").matches) {
+              setRailCollapsed(false);
+              return;
+            }
             setRailOpen(true);
             return;
           case "inbox":
@@ -862,8 +869,9 @@ export default function Home() {
       </nav>
 
       {/* M1 — the PHONE bottom tab bar (≤700px; the floating center toggle
-          hides there). IDEAS opens the rail sheet — the book-at-a-glance
-          from inside a conversation (the F9 ruling, argued at the gate). */}
+          hides there). Three tabs: AUGUST · TERMINAL · PIT. The IDEAS opener
+          went with the phone rail sheet (chore/terminal-cut, decision 4) —
+          on a phone the book IS the terminal. */}
       <nav className="tab-bar" aria-label="AUGUST views">
         <button
           type="button"
@@ -890,26 +898,20 @@ export default function Home() {
         >
           PIT
         </button>
-        {/* R1 A2 — the IDEAS drawer gets its phone opener back (the audit
-            found it mounted but unreachable ≤700px) */}
-        <button
-          type="button"
-          className={`tab-item${railOpen ? " on" : ""}`}
-          aria-pressed={railOpen}
-          onClick={() => setRailOpen((v) => !v)}
-        >
-          IDEAS
-        </button>
       </nav>
 
       {/* Trade Ideas rail — beside BOTH views: fixed sidebar ≥1100px
-          (collapsible to an edge tab, UX1), drawer below */}
-      <IdeasRail
-        open={railOpen}
-        onClose={() => setRailOpen(false)}
-        collapsed={railCollapsed}
-        onToggleCollapsed={toggleRailCollapsed}
-      />
+          (collapsible to an edge tab, UX1), drawer 701–1099px. Phones do not
+          mount it at all (chore/terminal-cut, decision 4); it mounts only once
+          the breakpoint is measured (phone === false). */}
+      {phone === false ? (
+        <IdeasRail
+          open={railOpen}
+          onClose={() => setRailOpen(false)}
+          collapsed={railCollapsed}
+          onToggleCollapsed={toggleRailCollapsed}
+        />
+      ) : null}
 
       {/* The two-view stack. Both panels STAY MOUNTED once visited (chat always;
           the terminal latches its bodies internally) so chat state and desk
@@ -941,12 +943,9 @@ export default function Home() {
         className={`view-panel${view === "terminal" ? "" : " view-hidden"}`}
         aria-hidden={view !== "terminal"}
       >
-        {/* The embedded intel desk keeps its audience split: owner → the full
-            desk; everyone else → the public ideas feed. */}
-        <IntelDeckSurface
-          active={view === "terminal"}
-          onExitToChat={() => switchView("chat")}
-        />
+        {/* ONE terminal for every role (chore/terminal-cut): the public ideas
+            feed; the owner's only difference is the ADMIN chip inside it. */}
+        <IntelDeckSurface active={view === "terminal"} />
       </section>
       {/* GAME-2 — THE PIT arcade */}
       <section
@@ -960,7 +959,7 @@ export default function Home() {
           on the floor (HomeLanding's ask bar) is the ONLY input — with no
           exceptions. The carve-out that used to sit here ("the desk's
           contextual ASK AUGUST band is its own surface") described a second
-          model input inside IntelDashboard that bypassed the ask cache and the
+          model input inside the (since deleted) owner desk that bypassed the ask cache and the
           per-identity daily cap; fix/p0-live-trust deleted it. */}
     </main>
   );

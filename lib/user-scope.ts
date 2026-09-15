@@ -301,9 +301,9 @@ export async function gateIntelMutationOrRespond(): Promise<Response | null> {
 // "may this caller CHANGE the desk?"; this one answers "may this caller SEE who
 // is watched?" — channel/video attribution, the source roster, the video
 // library, the cited-answer path. This is THE one definition of ownerView:
-// lib/intel/redact.ts's intelOwnerView() is a thin re-export of it, so every
-// attribution surface (overview, briefs, briefs/[date], export, ask, sources,
-// videos) inherits these semantics without restating them.
+// (chore/terminal-cut: the attribution surfaces — overview, briefs, export,
+// sources, videos — went with the owner desk. No production caller remains;
+// the derivation stays pinned by tests/intel.test.ts.)
 //
 // The read gate and the write gate now agree on EVERY input — including auth
 // unconfigured in production, where BOTH fail closed. They share one decision,

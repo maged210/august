@@ -11,8 +11,8 @@
 // WHAT WE VALIDATE AGAINST: Yahoo's chart endpoint, through
 // lib/markets.probeInstrument — the SAME keyless source the desk already
 // grades ideas against, already in this repo, no new dependency and no new
-// spend. Finnhub is wired here only as an earnings calendar (lib/intel/
-// earnings.ts) and exposes no symbol lookup we use; FMP is not integrated at
+// spend. Finnhub is not wired anywhere (its earnings-calendar consumer went
+// with the owner desk, chore/terminal-cut); FMP is not integrated at
 // all (one mention in docs/design/SPEC-wiring.md, saying no FMP/Finnhub key
 // is needed). Validating against the grader's own source has a property the
 // others don't: a symbol the grader can't quote is useless as an idea anyway.

@@ -18,7 +18,7 @@ Three views, one screen, navigated by `?view=`.
 | View | What it is |
 | --- | --- |
 | **the floor** (`/`) | The orb, the command bar, the market regime read, **THE CALL**, NQ levels, sector heat, the desk tape. |
-| **the terminal** (`?view=terminal`) | The owner sees the desk: the idea board, the brief, sources, options. Everyone else sees the public ideas blotter — ticker, side, entry, target, stop, performance. |
+| **the terminal** (`?view=terminal`) | The public ideas blotter, the same for every role — ticker, side, entry, target, stop, evaluated daily at the close. The owner gets one ADMIN link. |
 | **the pit** (`?view=pit`) | THE PIT and the Training floor. Simulated, no real orders. |
 
 **The command bar is the only input.** It has two lanes and they never mix.
@@ -86,11 +86,11 @@ usual reason something works locally and dies in production.
   JWTs carrying only an email; owner status is derived from `OWNER_EMAIL` at
   request time and never stored.
 - **Market data is free and mostly keyless** — Yahoo for quotes and daily bars,
-  FRED for macro, Finnhub for earnings dates, CoinGecko and Coinbase for crypto,
+  FRED for macro, CoinGecko and Coinbase for crypto,
   plus public RSS. Delayed data is labelled as delayed rather than dressed up.
 - **One scheduled job.** `vercel.json` declares exactly one cron,
-  `/api/cron/intel-track` at 22:10 UTC, which settles THE CALL, runs the idea
-  tracker, backfills calendar actuals, and sends the day's one push.
+  `/api/cron/intel-track` at 22:10 UTC, which settles THE CALL, evaluates the
+  live book, backfills calendar actuals, and sends the day's one push.
 - **PWA + Web Push** with VAPID and no third-party push service. The service
   worker does push and notification clicks only — there is no offline caching.
 

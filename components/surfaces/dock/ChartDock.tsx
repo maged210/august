@@ -8,7 +8,6 @@
 // the long/short counts live in the heatmap header, the stats moved to the
 // home brief's DESK LINE.
 
-import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
 import IdeaChartModule, { type ChartSelection } from "./IdeaChartModule";
@@ -23,7 +22,6 @@ export type { ChartSelection };
 export default function ChartDock({
   selection,
   onSelect,
-  cards,
   liveIdeas,
   sourcesAnswered = true,
   tape,
@@ -33,10 +31,9 @@ export default function ChartDock({
   selection: ChartSelection | null;
   /** tile clicks drive the desk's ONE selection (UX2-T4) */
   onSelect: (sel: ChartSelection) => void;
-  cards: FeedCard[];
   liveIdeas: PublicIdea[];
-  /** fix/p0-live-trust — false while either feed source is unread, so the
-   *  heatmap can say so instead of asserting an empty book */
+  /** fix/p0-live-trust — false while the book is unread, so the heatmap can
+   *  say so instead of asserting an empty book */
   sourcesAnswered?: boolean;
   tape: PublicTapeEntry[] | null;
   tapeFailed: boolean;
@@ -46,7 +43,6 @@ export default function ChartDock({
     <div className="if-dock-stack">
       <IdeaChartModule selection={selection} />
       <BookHeatmapModule
-        cards={cards}
         liveIdeas={liveIdeas}
         sourcesAnswered={sourcesAnswered}
         selection={selection}

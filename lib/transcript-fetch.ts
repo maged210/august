@@ -4,9 +4,8 @@
 //
 // SCOPE (feature/ingest-transcripts): this feeds the /admin transcript
 // pipeline (lib/transcripts.ts) and NOTHING else. It is deliberately not wired
-// into the intel/brief pipeline, which has its own older adapter in
-// lib/intel/transcript.ts producing TranscriptSegment[] for the intel store.
-// The two pipelines stay disjoint; this module never imports from lib/intel.
+// into the intel/brief pipeline (deleted with the owner desk, chore/terminal-cut).
+// This module never imports from lib/intel.
 //
 // PROVIDER CONTRACT — verified 2026-09-05 against docs.supadata.ai; `lang`
 // pinning verified live 2026-09-09 (see LANGUAGE PINNING below):

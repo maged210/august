@@ -9,8 +9,9 @@ const nextConfig = {
   devIndicators: false,
   // CORE V2 — retired-surface bookmarks. The globe/feeds/mail surfaces never
   // had these routes in this codebase generation, but old links may exist in
-  // the wild; /intel and /feed redirect via their own page stubs (they carry
-  // the ?view=terminal target).
+  // the wild; /feed redirects via its own page stub (it carries the
+  // ?view=terminal target). /intel is gone since chore/terminal-cut — old
+  // bookmarks 404 by decision.
   async redirects() {
     return [
       { source: "/globe", destination: "/", permanent: true },

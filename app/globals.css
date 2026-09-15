@@ -630,7 +630,7 @@ body::after {
 
 /* ===========================================================================
    Command deck — four horizontally-paginated surfaces behind fixed chrome
-   (Presence · Desk · World · Comms; /intel now just redirects to the Desk)
+   (Presence · Desk · World · Comms; the standalone /intel page is gone)
    =========================================================================== */
 /* tokens consolidated into the design-system :root at the top of this file */
 
@@ -3277,7 +3277,7 @@ body::after {
    behavior): under data-theme="light" the .command-surface re-pins above
    yield to a warm-paper derivation of the same chrome, in the landing's
    family (paper #f5f4f1 / ink #16150f — .home-landing) with the ramp
-   discipline of the intel desk's DAY DESK block (app/intel/tokens.css):
+   discipline of the retired intel desk's DAY DESK block (deleted with it):
    ink text ramp, ink-alpha hairlines, the steel accent deepened to ink
    strength, additive glows becoming soft ink washes. Dark and batman keep
    the defaults above untouched — this block is the ONLY light-mode delta.

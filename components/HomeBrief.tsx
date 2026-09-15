@@ -12,7 +12,6 @@
 // Empty/failed blocks render honest ∅ lines or nothing — never mock rows.
 
 import { useEffect, useMemo, useState } from "react";
-import { isTriggered, type FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicIngest } from "@/lib/transcripts";
 import type { PublicTapeEntry } from "@/lib/tape";
@@ -80,8 +79,6 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
   const [quotesAt, setQuotesAt] = useState<number | null>(null);
   const [live, setLive] = useState<PublicIdea[] | null>(null);
   const [liveErr, setLiveErr] = useState(false);
-  const [cards, setCards] = useState<FeedCard[] | null>(null);
-  const [cardsErr, setCardsErr] = useState(false);
   const [why, setWhy] = useState(false);
   const [nql, setNql] = useState<{ levels: SessionLevels; bias: BiasRead } | null>(null);
   const [ingest, setIngest] = useState<PublicIngest | null | undefined>(undefined); // undefined = pending
@@ -140,14 +137,6 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
         })
         .catch(() => {
           if (!cancelled) setLiveErr(true);
-        });
-      fetch("/api/intel/feed", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { ok?: boolean; ideas?: FeedCard[] }) => {
-          if (!cancelled && j.ok && Array.isArray(j.ideas)) { setCards(j.ideas); setCardsErr(false); }
-        })
-        .catch(() => {
-          if (!cancelled) setCardsErr(true);
         });
       fetch("/api/intel/levels", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
@@ -214,25 +203,9 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
     };
   }, []);
 
-  // — derived desk line (DeskStats semantics, folded here per T3) —
-  const tracked = cards ?? [];
-  // shared predicate — the terminal's TRIG pill and filter read the same one
-  // (lib/intel/publish), so the two surfaces can no longer disagree about the
-  // same /api/intel/feed payload
-  const triggered = tracked.filter((c) => isTriggered(c.status)).length;
-  const called = tracked.filter(
-    (c): c is FeedCard & { pnl: { kind: "since_called"; pct: number } } =>
-      !!c.pnl && c.pnl.kind === "since_called",
-  );
-  const wins = called.filter((c) => c.pnl.pct > 0).length;
-  const winRate = called.length > 0 ? Math.round((wins / called.length) * 100) : null;
-  const mfes = tracked.filter((c) => c.mfeMae);
-  const avgMfe = mfes.length > 0 ? mfes.reduce((s, c) => s + c.mfeMae!.mfePct, 0) / mfes.length : null;
-  const avgMae = mfes.length > 0 ? mfes.reduce((s, c) => s + c.mfeMae!.maePct, 0) / mfes.length : null;
-  // today across the book — tracked rows carry the live quote
-  const quoted = tracked.filter((c) => c.quote && Number.isFinite(c.quote.chgPct));
-  const best = quoted.length > 0 ? quoted.reduce((a, b) => (a.quote!.chgPct >= b.quote!.chgPct ? a : b)) : null;
-  const worst = quoted.length > 0 ? quoted.reduce((a, b) => (a.quote!.chgPct <= b.quote!.chgPct ? a : b)) : null;
+  // — desk line: the live book's count. The tracked statistics (TRACKED /
+  //   TRIGGERED / WIN / MFE-MAE / TODAY) went with the retired TRACKED lane
+  //   (chore/terminal-cut). —
 
   const tiles = PULSE.map((p) => ({ ...p, q: quotes?.[p.sym] })).filter(
     (t) => t.q && Number.isFinite(t.q.price) && t.q.price > 0,
@@ -411,7 +384,7 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
 
       {/* desk line — null-aware: a failed source says so instead of printing
           a fabricated zero (R1 audit fix) */}
-      {live !== null || cards !== null || liveErr || cardsErr ? (
+      {live !== null || liveErr ? (
         <div className="hb-row">
           <span className="hb-label">DESK</span>
           <span className="hb-chips">
@@ -420,47 +393,6 @@ export default function HomeBrief({ askBar, onAsk }: { askBar?: React.ReactNode;
               : liveErr
                 ? chip("LIVE", <DataTag kind="unavail" title="the ideas board is unreachable" />)
                 : null}
-            {cards !== null
-              ? chip("TRACKED", <>{tracked.length}</>)
-              : cardsErr
-                ? chip("TRACKED", <DataTag kind="unavail" title="the tracked feed is unreachable" />)
-                : null}
-            {cards !== null ? chip("TRIGGERED", <>{triggered}</>) : null}
-            {winRate != null
-              ? chip(
-                  "WIN",
-                  <>
-                    {winRate}% <span className="hb-dim">{wins}/{called.length}</span>
-                  </>,
-                )
-              : null}
-            {avgMfe != null && avgMae != null
-              ? chip(
-                  "MFE/MAE",
-                  <>
-                    <span className="hl-up">{fmtPct(avgMfe)}</span> /{" "}
-                    <span className="hl-down">{fmtPct(avgMae)}</span>
-                  </>,
-                )
-              : null}
-            {best?.quote
-              ? chip(
-                  "TODAY",
-                  <>
-                    <span className="hl-up">
-                      {best.ticker} {fmtPct(best.quote.chgPct)}
-                    </span>
-                    {worst && worst !== best && worst.quote ? (
-                      <>
-                        {" · "}
-                        <span className="hl-down">
-                          {worst.ticker} {fmtPct(worst.quote.chgPct)}
-                        </span>
-                      </>
-                    ) : null}
-                  </>,
-                )
-              : null}
           </span>
         </div>
       ) : null}

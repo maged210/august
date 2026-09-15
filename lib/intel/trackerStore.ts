@@ -1,52 +1,49 @@
 // AUGUST Market Intel — Idea Tracker persistence + the snapshot pass. SERVER ONLY.
 // The pure engine lives in tracker.ts; this file owns Redis I/O and orchestration:
-// load tracked set → ingest today's brief ideas → batch quotes → evaluate →
+// load tracked set → fold CLOSE tombstones → batch quotes → evaluate →
 // housekeeping → enforce caps → save. Idempotent and cheap.
 //
-// ACTUAL CADENCE (fix/p0-live-trust): ONE scheduled run per day at 22:10 UTC
-// (vercel.json → /api/cron/intel-track), plus an opportunistic throttled pass
-// on page load (see /api/intel/tracker) that only fires while the owner has
-// the desk open. The "external ~10–15 min pinger during market hours" this
-// file used to describe was never configured — see the route header for what
-// the daily-only cadence costs.
+// chore/terminal-cut: the TRACKED lane is RETIRED. The one-shot in
+// scripts/close-tracked-desk-retired.ts closes every open row with reason
+// "desk retired" (run once per store — preview 2026-09-15; production when
+// the owner runs it), the brief pipeline that fed new ideas in is deleted,
+// and nothing publishes this set any more. The
+// pass keeps running inside the daily cron so the stored rows stay honestly
+// settled (housekeeping, caps, tombstone folding); it no longer INGESTS —
+// the brief store has no writer, so re-folding its last brief every night
+// would only resurrect ideas the desk already retired.
+//
+// ACTUAL CADENCE: ONE scheduled run per day at 22:10 UTC (vercel.json →
+// /api/cron/intel-track). The page-load pass behind GET /api/intel/tracker
+// went with the desk.
 //
 // Storage: ONE JSON blob under the tracked namespace (single GET/SET per pass —
-// atomic enough for the single-writer cron; the page-load pass is throttled by
-// a lastRun key so overlapping writers stay rare, and every pass is a pure
-// function of (stored set, current brief, current quotes) so last-write-wins
-// converges). Bounded by TRACKED_CAP ideas × PRICE_HISTORY_CAP snapshots.
+// atomic enough for the single-writer cron; every pass is a pure function of
+// (stored set, current quotes) so last-write-wins converges). Bounded by
+// TRACKED_CAP ideas × PRICE_HISTORY_CAP snapshots.
 
 import { Redis } from "@upstash/redis";
 import { getQuote } from "@/lib/markets";
-import { getBrief, listBriefDates, logIntel } from "./store";
+import { logIntel } from "./store";
 import {
   applyHousekeeping,
   applySnapshot,
   closeIdea,
   DEFAULT_STALE_DAYS,
   enforceCap,
-  upsertIdeas,
   type TrackedIdea,
 } from "./tracker";
-import type { BriefIdea, DailyBrief } from "./types";
-import { etDateKey } from "./session";
 
 const KEY = "august:intel:tracked:v1";
 const LASTRUN_KEY = "august:intel:tracked:lastrun";
 // INTEGRITY-1 — CLOSE tombstones (Redis hash, id → {at, reason}). A user
-// CLOSE is NOT re-derivable from (stored set, brief, quotes), so plain
+// CLOSE is NOT re-derivable from (stored set, quotes), so plain
 // last-write-wins does NOT converge for it: a pass holding a stale blob
-// across its quote batch would silently resurrect the idea. The tombstone is
-// written atomically per-field (HSET, no read-modify-write), every pass folds
+// across its quote batch would silently resurrect the idea. Every pass folds
 // pending tombstones in after loading, and a tombstone is deleted only once
-// the saved blob durably shows the idea CLOSED.
+// the saved blob durably shows the idea CLOSED. No writer remains after the
+// desk retirement; the fold drains whatever the one-shot close left behind.
 const CLOSED_KEY = "august:intel:tracked:closed:v1";
-
-// fix/p0-live-trust — how many recent brief dates the ingest fallback scans for
-// the newest brief that actually carries ideas. Empty briefs are now storable
-// (an idle day compiles nothing rather than substituting a stale video pool),
-// so the walk-back must be able to step over a run of them.
-const BRIEF_FALLBACK_SCAN = 10;
 
 type CloseTombstone = { at: number; reason: string };
 
@@ -60,9 +57,6 @@ function parseTombstone(raw: unknown): CloseTombstone | null {
     return null;
   }
 }
-
-/** Page-load passes are throttled to this; the cron passes force. */
-const PASS_MIN_GAP_MS = 2 * 60_000;
 
 /** Quote at most this many tickers per pass (respects the shared markets
  * ratelimit budget; getQuote is itself cached). */
@@ -82,17 +76,18 @@ function staleDays(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_STALE_DAYS;
 }
 
+/** The stored set. An ABSENT key is an empty set; a failed read or a
+ * malformed blob THROWS — the pass must never mistake "could not read" for
+ * "nothing there", save `[]` over the retired history and drain its
+ * tombstones (chore/terminal-cut review finding). */
 export async function loadTracked(): Promise<TrackedIdea[]> {
   const redis = getRedis();
   if (!redis) return [];
-  try {
-    const raw = await redis.get<string>(KEY);
-    if (!raw) return [];
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return Array.isArray(parsed) ? (parsed as TrackedIdea[]) : [];
-  } catch {
-    return [];
-  }
+  const raw = await redis.get<string>(KEY);
+  if (raw === null || raw === undefined || raw === "") return [];
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!Array.isArray(parsed)) throw new Error("tracked blob is not an array");
+  return parsed as TrackedIdea[];
 }
 
 async function saveTracked(tracked: TrackedIdea[]): Promise<void> {
@@ -101,73 +96,40 @@ async function saveTracked(tracked: TrackedIdea[]): Promise<void> {
   await redis.set(KEY, JSON.stringify(tracked));
 }
 
-export type CloseTrackedResult =
-  | { ok: true; already: boolean; idea: TrackedIdea }
-  | { ok: false; error: "storage_unconfigured" | "tracked_not_found" | "store_write_failed" };
-
-/** User-initiated CLOSE (INTEGRITY-1) — tombstone first (atomic HSET, the
- * durable record no concurrent pass can clobber), then the blob update for
- * an immediately-consistent read. A pass overlapping this write may briefly
- * resurrect the row in ITS save, but the next pass folds the tombstone back
- * in — the close always converges, never silently disappears. */
-export async function closeTracked(id: string, reason?: string): Promise<CloseTrackedResult> {
-  const redis = getRedis();
-  if (!redis) return { ok: false, error: "storage_unconfigured" };
-  const tracked = await loadTracked();
-  const target = tracked.find((t) => t.id === id);
-  if (!target) return { ok: false, error: "tracked_not_found" };
-  if (target.status === "CLOSED") return { ok: true, already: true, idea: target };
-  const now = Date.now();
-  const closed = closeIdea(target, now, reason);
-  try {
-    await redis.hset(CLOSED_KEY, {
-      [id]: JSON.stringify({
-        at: now,
-        reason: closed.closedReason ?? "closed by the desk",
-      } satisfies CloseTombstone),
-    });
-    await saveTracked(tracked.map((t) => (t.id === id ? closed : t)));
-  } catch {
-    return { ok: false, error: "store_write_failed" };
-  }
-  return { ok: true, already: false, idea: closed };
-}
-
 export type TrackerPassResult = {
   configured: boolean;
   ran: boolean;
   skippedReason?: string;
   tracked: TrackedIdea[];
-  ingested?: { added: number; merged: number; conflicts: number };
   quoted?: number;
   transitions?: number;
   evicted?: number;
 };
 
-/** The snapshot pass. force=true (cron) bypasses the page-load throttle. */
-export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<TrackerPassResult> {
+/** The snapshot pass — the daily cron's tracked-set settle. */
+export async function runTrackerPass(): Promise<TrackerPassResult> {
   const redis = getRedis();
   if (!redis) return { configured: false, ran: false, skippedReason: "storage not configured", tracked: [] };
 
   const now = Date.now();
 
-  // throttle opportunistic (page-load) passes
-  if (!opts.force) {
-    try {
-      const last = await redis.get<number>(LASTRUN_KEY);
-      if (last && now - Number(last) < PASS_MIN_GAP_MS) {
-        return { configured: true, ran: false, skippedReason: "throttled", tracked: await loadTracked() };
-      }
-    } catch {
-      /* proceed */
-    }
+  let tracked: TrackedIdea[];
+  try {
+    tracked = await loadTracked();
+  } catch (err) {
+    // a read we cannot trust is a pass we do not run — never overwrite the
+    // set from a blank the store didn't give us
+    return {
+      configured: true,
+      ran: false,
+      skippedReason: `tracked read failed: ${err instanceof Error ? err.message : String(err)}`,
+      tracked: [],
+    };
   }
 
-  let tracked = await loadTracked();
-
   // ── fold pending CLOSE tombstones in (INTEGRITY-1) ─────────────────────────
-  // A user CLOSE that a concurrent pass clobbered re-applies here; applied
-  // tombstones are pruned only AFTER this pass's save has made them durable.
+  // Applied tombstones are pruned only AFTER this pass's save has made them
+  // durable.
   let appliedTombstones: string[] = [];
   try {
     const stones = (await redis.hgetall<Record<string, unknown>>(CLOSED_KEY)) ?? {};
@@ -186,41 +148,6 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
     }
   } catch {
     appliedTombstones = []; // best-effort — unfolded stones just wait for the next pass
-  }
-
-  // ── ingest: fold the latest brief's ideas into the tracked set ─────────────
-  // Today's brief when it exists, else the most recent stored brief (weekend /
-  // early-morning case). Ingestion is idempotent — contributed idea ids dedupe.
-  // fix/p0-live-trust — an EMPTY brief counts as no brief here. Now that
-  // generateBrief no longer substitutes a stale video pool, an idle day can
-  // store a brief carrying zero ideas; without this guard that empty record
-  // would suppress the weekend/early-morning fallback below and the pass would
-  // ingest nothing. Ingestion is idempotent, so falling back is always safe.
-  const briefHasIdeas = (b: DailyBrief | null): boolean =>
-    !!b && ((b.creatorFavorites?.length ?? 0) > 0 || (b.topIdeas?.length ?? 0) > 0);
-  let brief = await getBrief(etDateKey(new Date(now)));
-  if (!briefHasIdeas(brief)) {
-    // walk back over the recent dates for the newest brief that actually holds
-    // ideas — today's empty record must not shadow a real prior desk run
-    for (const d of await listBriefDates(BRIEF_FALLBACK_SCAN)) {
-      const prior = await getBrief(d);
-      if (briefHasIdeas(prior)) {
-        brief = prior;
-        break;
-      }
-    }
-  }
-  let ingested: TrackerPassResult["ingested"];
-  if (brief) {
-    const seen = new Set<string>();
-    const ideas: BriefIdea[] = [...(brief.creatorFavorites ?? []), ...(brief.topIdeas ?? [])].filter((i) => {
-      if (seen.has(i.id)) return false;
-      seen.add(i.id);
-      return true;
-    });
-    const res = upsertIdeas(tracked, ideas, now);
-    tracked = res.tracked;
-    ingested = { added: res.added, merged: res.merged, conflicts: res.conflicts };
   }
 
   // ── quotes: one batch across the live tickers ───────────────────────────────
@@ -286,9 +213,5 @@ export async function runTrackerPass(opts: { force?: boolean } = {}): Promise<Tr
     /* best-effort */
   }
 
-  if (ingested && (ingested.added || ingested.conflicts)) {
-    await logIntel("tracker_ingest", ingested as unknown as Record<string, unknown>);
-  }
-
-  return { configured: true, ran: true, tracked: kept, ingested, quoted: quotes.size, transitions, evicted };
+  return { configured: true, ran: true, tracked: kept, quoted: quotes.size, transitions, evicted };
 }

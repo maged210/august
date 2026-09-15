@@ -1,54 +1,39 @@
 "use client";
 
-// PANEL 2 — DESK WIRE (G3 round 5; v2 in UX2-T6). Reverse-chronological
-// pipeline activity, assembled ENTIRELY from stores that already exist:
-// transcript ingests (redacted /api/wire — counts + owner label only), ideas
-// going live (/api/ideas), TRIGGERED transitions (the tracked feed's own
-// status history), tape posts (/api/tape). Public-safe wording by
-// construction — every fact here is already on a public wire or reduced to
-// counts.
+// PANEL 2 — DESK WIRE (G3 round 5; v2 in UX2-T6; trimmed in
+// chore/terminal-cut). Reverse-chronological desk activity, assembled
+// ENTIRELY from public stores that already exist: ideas going live
+// (/api/ideas) and tape posts (/api/tape). Public-safe wording by
+// construction — every fact here is already on a public wire.
+//
+// chore/terminal-cut: the INGEST rows (owner-only, /api/wire) and the TRIG
+// rows (the retired tracked feed's status history) are gone — the wire reads
+// the same for every role; ingest status lives in /admin.
 //
 // v2 (T6): digest tone. Same-minute LIVE approvals collapse into ONE
 // expandable batch row ("11 ideas → LIVE") instead of eleven identical
-// lines; individual rows remain only for distinct events (TRIGGERED @ price,
-// ingests, tape posts). ~10 rows visible; the rest sit behind SHOW ALL.
+// lines; individual rows remain only for distinct events (tape posts).
+// ~10 rows visible; the rest sit behind SHOW ALL.
 
 import { useState } from "react";
-import type { FeedCard } from "@/lib/intel/publish";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
-import type { PublicIngest } from "@/lib/transcripts";
 
 const VISIBLE = 10;
 
 export type WireEvent = {
   ts: number;
-  kind: "INGEST" | "LIVE" | "TRIG" | "TAPE";
+  kind: "LIVE" | "TAPE";
   sym?: string;
   text: string;
   /** batch members — present only on collapsed batch rows (T6) */
   batch?: string[];
 };
 
-const px = (v: number) =>
-  v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/** PURE. Merge the four public sources into one reverse-chron wire; bulk
+/** PURE. Merge the two public sources into one reverse-chron wire; bulk
  *  approvals (same-minute LIVE flips) fold into one batch event each. */
-export function buildWire(
-  ingests: PublicIngest[],
-  liveIdeas: PublicIdea[],
-  cards: FeedCard[],
-  tape: PublicTapeEntry[],
-): WireEvent[] {
+export function buildWire(liveIdeas: PublicIdea[], tape: PublicTapeEntry[]): WireEvent[] {
   const out: WireEvent[] = [];
-  for (const g of ingests) {
-    out.push({
-      ts: g.ts,
-      kind: "INGEST",
-      text: `${g.source || "transcript"} → ${g.ideaDrafts} idea draft${g.ideaDrafts === 1 ? "" : "s"} · ${g.tapeDrafts} tape draft${g.tapeDrafts === 1 ? "" : "s"}`,
-    });
-  }
   // LIVE approvals — updatedAt is the approval moment; a bulk approval sweep
   // lands in the same minute and reads as ONE digest row (T6)
   const byMinute = new Map<number, { ts: number; syms: string[] }>();
@@ -67,17 +52,6 @@ export function buildWire(
       out.push({ ts: g.ts, kind: "LIVE", sym: g.syms[0], text: "idea live on the rail" });
     } else {
       out.push({ ts: g.ts, kind: "LIVE", text: `${g.syms.length} ideas → LIVE`, batch: g.syms });
-    }
-  }
-  for (const c of cards) {
-    for (const h of c.statusHistory) {
-      if (h.state !== "TRIGGERED") continue;
-      out.push({
-        ts: h.at,
-        kind: "TRIG",
-        sym: c.ticker,
-        text: h.price != null ? `triggered @ ${px(h.price)}` : "triggered",
-      });
     }
   }
   for (const t of tape) {

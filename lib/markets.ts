@@ -516,8 +516,8 @@ const SECTORS: Array<{ etf: string; name: string }> = [
   { etf: "XLRE", name: "Real Estate" },
   { etf: "XLC", name: "Comm. Svcs." },
 ];
-// Exported for /api/intel/desk (SPEC-wiring §2.6) — same keyless Yahoo fetch,
-// same 15-min cached("sectors") entry; the Markets deck and /intel share it.
+// Sector ETF snapshot — keyless Yahoo fetch behind the 15-min cached("sectors")
+// entry. (Its /api/intel/desk consumer went with the owner desk.)
 export async function getSectors(): Promise<Sector[]> {
   return cached("sectors", 15 * 60_000, async () => {
     const out = await Promise.all(

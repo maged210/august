@@ -5,7 +5,7 @@
 // approved → clean public board in under two minutes, fully doable on a phone.
 //
 // Anatomy:
-//   STATUS STRIP  live · inbox · tracked · tape · last ingest age
+//   STATUS STRIP  live · inbox · tape · last ingest age
 //   LEFT column   intake (transcript drag-drop) · ingest log · new idea ·
 //                 tape quick-add (sentiment inferred from the note)
 //   RIGHT column  THE DESK INBOX (feature/desk-inbox — the one queue: PENDING
@@ -173,8 +173,6 @@ export default function AdminConsole() {
   // AD-E — undo window on live-tape removal (a public-facing deletion)
   const [pendingRemove, setPendingRemove] = useState<Record<string, number>>({});
   const removeTimers = useRef<Map<string, number>>(new Map());
-  // AD-A — status strip extras
-  const [trackedCount, setTrackedCount] = useState<number | null>(null);
   // AD-B — STALE threshold (days), persisted locally
   const [staleDays, setStaleDays] = useState(STALE_DAYS_DEFAULT);
   // ADMIN-1 delta — the idea currently held as the MERGE keeper
@@ -326,13 +324,6 @@ export default function AdminConsole() {
       void loadTape();
       void loadPushLog();
       void loadAskStats();
-      // status strip: the tracked pipeline's count (public feed, cheap)
-      fetch("/api/intel/feed", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { ok?: boolean; ideas?: unknown[] }) => {
-          if (j.ok && Array.isArray(j.ideas)) setTrackedCount(j.ideas.length);
-        })
-        .catch(() => {});
     }
   }, [gate, loadTranscripts, loadTape, loadPushLog, loadAskStats]);
 
@@ -811,7 +802,7 @@ export default function AdminConsole() {
     return (
       <main className="admin-page">
         <div className="adm-shell">
-          <AdminStrip ideas={null} tape={[]} tracked={null} transcripts={[]} />
+          <AdminStrip ideas={null} tape={[]} transcripts={[]} />
           <WidgetState state="loading" rows={5} />
         </div>
       </main>
@@ -822,7 +813,7 @@ export default function AdminConsole() {
     return (
       <main className="admin-page">
         <div className="adm-shell adm-lock">
-          <AdminStrip ideas={null} tape={[]} tracked={null} transcripts={[]} />
+          <AdminStrip ideas={null} tape={[]} transcripts={[]} />
           <form
             className="adm-lockform"
             onSubmit={async (e) => {
@@ -885,7 +876,7 @@ export default function AdminConsole() {
     return (
       <main className="admin-page">
         <div className="adm-shell">
-          <AdminStrip ideas={null} tape={[]} tracked={null} transcripts={[]} />
+          <AdminStrip ideas={null} tape={[]} transcripts={[]} />
           <p className="adm-err">
             Upstash is not configured — UPSTASH_REDIS_REST_URL/TOKEN needed before ideas can be
             stored.
@@ -983,7 +974,7 @@ export default function AdminConsole() {
   return (
     <main className="admin-page">
       <div className="adm-shell">
-        <AdminStrip ideas={rows} tape={tapeLive} tracked={trackedCount} transcripts={transcripts} inboxLive={inboxLive} />
+        <AdminStrip ideas={rows} tape={tapeLive} transcripts={transcripts} inboxLive={inboxLive} />
         {actionError ? (
           <p className="adm-err" role="alert">
             {actionError}
@@ -1516,13 +1507,11 @@ export default function AdminConsole() {
 function AdminStrip({
   ideas,
   tape,
-  tracked,
   transcripts,
   inboxLive = null,
 }: {
   ideas: Idea[] | null;
   tape: TapeEntry[];
-  tracked: number | null;
   transcripts: TranscriptRecord[];
   /** the panel's augmented count (live-detected suspects included) */
   inboxLive?: number | null;
@@ -1548,7 +1537,6 @@ function AdminStrip({
       <span className="adm-strip-mid">
         {live !== null ? chip("LIVE", live) : null}
         {inbox !== null ? chip("INBOX", inbox) : null}
-        {tracked !== null ? chip("TRACKED", tracked) : null}
         {ideas !== null ? chip("TAPE", tape.length) : null}
         {last ? chip("LAST INGEST", relativeTime(last.receivedAt)) : null}
       </span>

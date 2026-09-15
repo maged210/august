@@ -5,7 +5,7 @@ import { listPublicIngests } from "@/lib/transcripts";
 // on a public endpoint. Redacted to counts + the owner-typed source label —
 // raw text, draft contents, and failures never leave the admin surface. The
 // other wire events (idea live / triggered / tape posted) are assembled
-// client-side from /api/ideas, /api/intel/feed, and /api/tape.
+// client-side from /api/ideas and /api/tape.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

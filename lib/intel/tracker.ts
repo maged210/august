@@ -24,9 +24,9 @@ import type { BriefIdea, Direction, Explicitness, TimeHorizon } from "./types";
  * cron cadence during regular hours (~26 snaps/day ≈ 5 trading days of shape).
  *
  * That cadence does not exist (fix/p0-live-trust): the only scheduled job is
- * ONE post-close pass per day (vercel.json, 22:10 UTC), plus the opportunistic
- * throttled pass behind GET /api/intel/tracker while the owner has the desk
- * open. In practice the ring holds ~one point per day, so it spans months and
+ * ONE post-close pass per day (vercel.json, 22:10 UTC); the page-load pass
+ * behind GET /api/intel/tracker went with the owner desk (chore/terminal-cut).
+ * In practice the ring holds ~one point per day, so it spans months and
  * sparklines drawn from it are daily lines, not intraday shape. The cap is
  * left as-is because it is a memory bound, not a promise — but nothing should
  * read "5 trading days" off it.

@@ -16,7 +16,6 @@ import {
   upsertIdeas,
   type TrackedIdea,
 } from "../lib/intel/tracker";
-import { dayAlerted, dayCreated, daySoFar, planPastDays } from "../lib/intel/dayBoard";
 import type { BriefIdea } from "../lib/intel/types";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -347,72 +346,6 @@ test("stale marking is visible, never a deletion; terminal ideas auto-close afte
   const closed = applyHousekeeping(terminal, T0 + (AUTO_CLOSE_TERMINAL_DAYS + 2) * DAY);
   assert.equal(closed.status, "CLOSED");
   assert.match(closed.closedReason ?? "", /auto-closed/);
-});
-
-// ── DAY BOARDS derivations (lib/intel/dayBoard.ts) ───────────────────────────
-// The owner's three questions per day row — CREATED / ALERTED / SO FAR — must
-// come from real fields only, with the basis carried so the UI can label it.
-
-test("dayCreated: tracker ingest wins for the matching idea id; other ids fall back to the desk run; nothing → null", () => {
-  const idea = briefIdea({ ticker: "DBA", entry: { value: 100, text: "$100" } });
-  const t = newTrackedIdea(idea, T0);
-  // this contributing idea id → the tracker's ingest timestamp
-  assert.deepEqual(dayCreated(idea.id, t, T0 + DAY), { at: T0, basis: "tracker_ingest" });
-  // a different idea id (no sourceRef) → the desk run (brief generation) time
-  assert.deepEqual(dayCreated("other-id", t, T0 + DAY), { at: T0 + DAY, basis: "desk_run" });
-  // untracked idea with a brief timestamp → desk run
-  assert.deepEqual(dayCreated(idea.id, null, T0 + DAY), { at: T0 + DAY, basis: "desk_run" });
-  // no tracker record AND no brief timestamp → null, never invented
-  assert.equal(dayCreated(idea.id, null, null), null);
-  assert.equal(dayCreated(idea.id, null, 0), null);
-});
-
-test("dayAlerted: the TRIGGERED transition verbatim (time + observed price + reason); never for ARMED/untracked", () => {
-  const t0 = newTrackedIdea(briefIdea({ ticker: "DBB", entry: { value: 100, text: "$100" } }), T0);
-  assert.equal(dayAlerted(t0), null); // ARMED — no alert yet
-  assert.equal(dayAlerted(null), null); // untracked — absent, not a guess
-  const fired = run(t0, [95, 98, 100.5]);
-  assert.equal(fired.status, "TRIGGERED");
-  const alerted = dayAlerted(fired);
-  assert.ok(alerted);
-  const hist = fired.statusHistory.find((h) => h.state === "TRIGGERED");
-  assert.equal(alerted?.at, hist?.at); // the tracker's own transition time, verbatim
-  assert.equal(alerted?.price, 100.5); // the observed crossing price
-  assert.equal(alerted?.reason, hist?.reason);
-});
-
-test("planPastDays: today excluded, order preserved, eager caps, LOAD OLDER remainder honest", () => {
-  const dates = ["2026-07-15", "2026-07-14", "2026-07-13", "2026-07-12", "2026-07-11", "2026-07-10"];
-  // today excluded; newest-first order preserved; first 3 eager, rest collapsed
-  const p = planPastDays(dates, "2026-07-15", 4, 3);
-  assert.deepEqual(p.days.map((d) => d.date), ["2026-07-14", "2026-07-13", "2026-07-12", "2026-07-11"]);
-  assert.deepEqual(p.days.map((d) => d.eager), [true, true, true, false]);
-  assert.equal(p.older, 1); // 5 past days, 4 visible → 1 behind LOAD OLDER
-  // today absent from the index (no desk run yet) — every date is a past day
-  const q = planPastDays(dates.slice(1), "2026-07-15", 10, 3);
-  assert.equal(q.days.length, 5);
-  assert.equal(q.older, 0); // index exhausted — no LOAD OLDER
-  // visibleCount beyond the index never invents days
-  assert.deepEqual(planPastDays([], "2026-07-15", 14, 3), { days: [], older: 0 });
-  // zero/negative caps degrade to an empty visible list, remainder intact
-  const r = planPastDays(dates, "2026-07-15", 0, 3);
-  assert.equal(r.days.length, 0);
-  assert.equal(r.older, 5);
-  // eagerCount 0 → nothing fetches eagerly (all collapsed headers)
-  assert.ok(planPastDays(dates, "2026-07-15", 5, 0).days.every((d) => !d.eager));
-});
-
-test("daySoFar: the engine's pnlView unchanged; untracked is an explicit none·untracked", () => {
-  const t0 = newTrackedIdea(briefIdea({ ticker: "DBC", entry: { value: 100, text: "$100" } }), T0);
-  // ARMED → the engine's own none-with-reason passes through
-  assert.deepEqual(daySoFar(t0), pnlView(t0));
-  assert.equal(daySoFar(t0).kind, "none");
-  // TRIGGERED → identical to pnlView (since_called from the stated trigger)
-  const fired = run(t0, [95, 100.5, 104]);
-  assert.deepEqual(daySoFar(fired), pnlView(fired));
-  assert.equal(daySoFar(fired).kind, "since_called");
-  // untracked → explicit, labeled absence
-  assert.deepEqual(daySoFar(null), { kind: "none", reason: "untracked" });
 });
 
 // --- INTEGRITY-1 · user-initiated CLOSE --------------------------------------

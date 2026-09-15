@@ -19,6 +19,7 @@ import type { AugustState, Theme } from "@/components/Presence3D";
 import HomeBrief from "@/components/HomeBrief";
 import { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import { suggestFor, type Suggestion } from "@/lib/command-bar";
+import { publishRainSymbols } from "@/lib/rain-symbols";
 import type { AnswerCard } from "@/app/page";
 import type { PushState } from "@/lib/push-client";
 import Disclaimer from "@/components/Disclaimer";
@@ -296,6 +297,9 @@ export default function HomeLanding({
             if (typeof i.instrument === "string" && i.instrument.trim()) seen.add(i.instrument.trim().toUpperCase());
           }
           setBookTickers([...seen]);
+          // UX5 — the rain pool follows the book from HERE too: IdeasRail was
+          // its only publisher and phones no longer mount it (chore/terminal-cut)
+          publishRainSymbols("ideas", [...seen]);
         })
         .catch(() => {});
     };

@@ -1,0 +1,413 @@
+/* ==========================================================================
+   THE TERMINAL FRAME (chore/terminal-cut) — the pieces of the retired desk's
+   tokens.css that the public terminal still rides. Moved here verbatim, in
+   source order, values byte-identical: the --rd-* token scope (feed.css
+   consumes it through .intel-embed-frame), the <=700px .intel-root palette
+   re-pin and scrollbar hide (no palette work in this branch — re-palette
+   is v4-1), the embed frame / embedded root / idle label, and the matrix
+   theme re-pins. Imported by components/surfaces/IntelDeckSurface.tsx, NOT
+   by feed.css: the frame and the idle placeholder paint before IdeasFeed's
+   lazy chunk arrives.
+   ========================================================================== */
+
+.intel-root,
+.intel-embed-frame { /* the embed frame sits OUTSIDE .intel-root but paints the stage color — it shares the token scope so no desk color lives outside the variables */
+  /* ---- P palette (semantic colors, SPEC-desktop §1.4) ---- */
+  --rd-bull: #6fa085;      /* bullish · TRIGGERED · positive */
+  --rd-bear: #cd7e6d;      /* bearish · INVALIDATED · errors */
+  --rd-amber: #bfa05a;     /* ARMED · NEUTRAL dir · warnings */
+  --rd-blue: #6aa0c8;      /* ACTIVE · DIRECT evidence · quoted */
+  --rd-teal: #5fb0ad;      /* EXTRACTED evidence (== Cyan accent) */
+  --rd-inferred: #9a8fb0;  /* INFERRED evidence · ~ glyphs */
+  --rd-lo: #646b73;        /* EXPIRED · low-emphasis */
+  --rd-live: #74b08a;      /* live ◉ dots · tape dot · TODAY tick */
+  --rd-live-rgb: 116, 176, 138;
+
+  /* ---- device safe-area insets (notch / home indicator) ----
+     Defined ONCE here and reused by every desk chrome site below AND by the
+     public feed (feed.css), which inherits this scope via .intel-embed-frame.
+     env() resolves to 0 off-device, so these are inert on desktop. globals.css
+     owns the app-shell insets; this is the /intel + /feed desk-local mirror of
+     the same calc(env(safe-area-inset-*, 0px) + Npx) convention — kept out of
+     globals.css on purpose. Left/right are 0 in portrait but wired for
+     landscape safety. */
+  --rd-safe-top: env(safe-area-inset-top, 0px);
+  --rd-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --rd-safe-left: env(safe-area-inset-left, 0px);
+  --rd-safe-right: env(safe-area-inset-right, 0px);
+
+  /* ---- accent ramp — locked Cyan default (§1.2) ---- */
+  --rd-acc: #5fb0ad;
+  --rd-acc-rgb: 95, 176, 173;
+  --rd-acc-soft06: rgba(95, 176, 173, 0.06);
+  --rd-acc-soft12: rgba(95, 176, 173, 0.12);
+  --rd-acc-soft25: rgba(95, 176, 173, 0.25);
+  --rd-acc-soft40: rgba(95, 176, 173, 0.42); /* named 40, alpha 0.42 per spec */
+
+  /* ---- stage / surface colors (§1.5) ---- */
+  --rd-stage: #050608;          /* page bg */
+  --rd-frame: #08090b;          /* frame · Bar 4 · overview band */
+  --rd-bar1-bg: #0a0c0f;        /* app nav · group headers */
+  --rd-bar3-bg: #070809;        /* status bar · ASK band · inputs */
+  --rd-tape-label-bg: #0b0e12;  /* LIVE TAPE pill */
+  --rd-card: #0b0d10;           /* cards · blotter column header */
+  --rd-legend-bg: #090b0e;      /* legend + loading strips */
+  --rd-btn-bg: #0e1116;         /* neutral buttons · inactive fkey chip */
+  --rd-inset: #0a0c0f;          /* inspector stat strip · chart · rows */
+
+  /* ---- hairlines (§1.5) ---- */
+  --rd-hair-045: rgba(255, 255, 255, 0.045);
+  --rd-hair-05: rgba(255, 255, 255, 0.05);
+  --rd-hair-06: rgba(255, 255, 255, 0.06);
+  --rd-hair-07: rgba(255, 255, 255, 0.07);
+  --rd-hair-08: rgba(255, 255, 255, 0.08);
+  --rd-hair-09: rgba(255, 255, 255, 0.09);
+  --rd-hair-10: rgba(255, 255, 255, 0.1);
+  --rd-hair-12: rgba(255, 255, 255, 0.12);
+  --rd-hair-13: rgba(255, 255, 255, 0.13);
+  --rd-hair-14: rgba(255, 255, 255, 0.14);
+
+  /* ---- text ramp (§1.5) ---- */
+  --rd-t-brightest: #eef1f4;   /* live prices */
+  --rd-t-primary: #e9ebee;     /* tickers · H1 */
+  --rd-t-chip: #dfe3e7;        /* date chip · hero group label */
+  --rd-t-body: #c4cad0;        /* thesis · source titles */
+  --rd-t-secondary: #aeb4bb;   /* setup col */
+  --rd-t-secondary2: #aab1b9;  /* buttons · status values */
+  --rd-t-muted: #9aa1a9;       /* section headers */
+  --rd-t-dim: #8b929a;         /* tape px · sub-labels */
+  --rd-t-dim2: #868d95;
+  --rd-t-dim3: #7e858d;        /* fkey labels · tape badge */
+  --rd-t-dim4: #7a818a;
+  --rd-t-faint: #6b727a;       /* legend · counters */
+  --rd-t-faint2: #646b73;
+  --rd-t-faint3: #5a616a;
+  --rd-t-ghost: #565c63;       /* micro-labels */
+  --rd-t-disabled: #4d535a;    /* absent n/s · disclaimer */
+  --rd-t-absent: #3a4047;      /* ∅ glyph · — */
+  --rd-t-empty: #33393f;       /* big empty-state ∅ */
+
+  /* ---- misc literals (§1.5 Misc row) ---- */
+  --rd-tape-sym: #cdd3d9;      /* tape sym · NOW value */
+  --rd-tape-div: #454b52;      /* tape divider */
+  --rd-val-amber: #cdb892;     /* amber status values */
+  --rd-val-green: #9ec3ab;     /* green DATA value */
+  --rd-accbtn-text: #e3edf6;   /* accent-button text */
+  --rd-retry-text: #e7c2b8;    /* retry button text */
+
+  /* ---- fonts (§1.6) — variables injected by next/font on this node ---- */
+  --rd-mono: var(--rd-font-mono, "IBM Plex Mono"), monospace;
+  --rd-sans: var(--rd-font-sans, "Hanken Grotesk"), sans-serif;
+
+  /* ---- illumination values at Cinematic (§1.3); layers gated below ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(95, 176, 173, 0.16), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(95, 176, 173, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(95, 176, 173, 0.55), 0 0 22px -8px rgba(95, 176, 173, 0.6);
+  --rd-live-wash: rgba(116, 176, 138, 0.045);
+  --rd-status-glow: 0 0 16px -3px rgba(116, 176, 138, 0.85);
+
+  /* ========================================================================
+     DESK PALETTE — themeable (stage A). Every remaining color the desk
+     renders flows through the variables below (values are the CURRENT dark
+     literals, moved verbatim — zero visual change). A later theme overrides
+     exactly this section (plus the ramps above) per palette. Alpha values
+     are part of each token on purpose: rgba() strings are tokenized whole.
+     Ordered by category. -------------------------------------------------- */
+
+  /* ---- stage / surfaces / shadows ---- */
+  --rd-panel-grad: linear-gradient(180deg, #0c0f13, #0a0c0f);  /* bar2 · mobile idea card */
+  --rd-thumb-grad: linear-gradient(135deg, #16202b, #0c1116);  /* source-row thumb placeholder */
+  --rd-scrim: rgba(0, 0, 0, 0.55);                             /* video + contract drawer scrims */
+  --rd-mbar1-bg: rgba(7, 8, 10, 0.86);                         /* mobile sticky bar1 blur tint */
+  --rd-mcard-grad: linear-gradient(180deg, #0d1014, #0a0c10);  /* mobile carousel card */
+  --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(7, 8, 10, 0.96) 70%, rgba(7, 8, 10, 0));
+  --rd-mseg-bg: #0a0c10;
+  --rd-mseg-on-grad: linear-gradient(180deg, #171c23, #11151b);
+  --rd-shadow-70: rgba(0, 0, 0, 0.7);                          /* mobile card drop shadows */
+  --rd-edge-03: rgba(255, 255, 255, 0.03);                     /* inset top-edge highlights */
+  --rd-edge-035: rgba(255, 255, 255, 0.035);
+  --rd-edge-04: rgba(255, 255, 255, 0.04);
+
+  /* ---- text (value renderers + misc literals) ---- */
+  --rd-cell-quoted: #bcd3e6;      /* mkQuoted value text */
+  --rd-cell-inferred: #b3a9c4;    /* mkInferred value text · option ref inf */
+  --rd-cell-narr: #9fb6cc;        /* mkNarr value text */
+  --rd-blue-lt: #8aa6c4;          /* chart TRIG label · option ref value */
+  --rd-px-blue: #a9c1d4;          /* at-the-open condition price · mobile gate px */
+  --rd-tile-label: #c7ccd2;       /* §1.5 misc literal: sector name · map label */
+  --rd-opt-violet: #c9a3d6;       /* option-ticket crumb + chip */
+  --rd-plan-entry-text: #c9e0d3;
+  --rd-plan-exit-text: #e7c2b8;
+  --rd-plan-tp-text: #bcd3e6;
+
+  /* ---- mobile text ramp (SPEC-mobile literals; render <700px only) ---- */
+  --rd-mt-bright: #f0f2f4;        /* mobile ticker · seg control on */
+  --rd-mt-brightest: #f4f6f8;     /* mobile live px */
+  --rd-mt-body2: #b4bac1;         /* mobile brief paragraph */
+  --rd-mt-faint4: #5f6770;        /* mobile delta-none · conf label */
+  --rd-mt-disc: #42474e;          /* mobile disclaimer */
+  --rd-mnew-text: #08110b;        /* NEW pill text (on bull bg) */
+  --rd-mtile-trig-l: #7a8a80;     /* summary tile labels */
+  --rd-mtile-arm-l: #8a8270;
+  --rd-mtile-act-l: #72808a;
+
+  /* ---- hairlines / white overlays / states ---- */
+  --rd-hair-055: rgba(255, 255, 255, 0.055);  /* mobile body/foot separators */
+  --rd-hover-row: rgba(255, 255, 255, 0.02);
+  --rd-hover-item: rgba(255, 255, 255, 0.03);
+  --rd-hover-btn: rgba(255, 255, 255, 0.07);
+  --rd-skel-bg: rgba(255, 255, 255, 0.06);    /* shimmer skeletons */
+  --rd-skel-hi: rgba(255, 255, 255, 0.07);
+  --rd-mdot-bg: rgba(255, 255, 255, 0.2);     /* carousel dot (off) */
+
+  /* ---- accent / selection ---- */
+  --rd-acc-soft04: rgba(95, 176, 173, 0.04);  /* transcript capture card */
+  --rd-sel-ring-flat: inset 0 0 0 1px rgba(95, 176, 173, 0.4); /* non-cinematic row ring */
+
+  /* ---- semantic soft ramps (hue = palette color above, alpha per use) ---- */
+  --rd-bull-soft05: rgba(111, 160, 133, 0.05);
+  --rd-bull-soft08: rgba(111, 160, 133, 0.08);
+  --rd-bull-soft28: rgba(111, 160, 133, 0.28);
+  --rd-bull-soft30: rgba(111, 160, 133, 0.3);
+  --rd-bull-soft32: rgba(111, 160, 133, 0.32);
+  --rd-bull-dim: #5f8a72;                      /* TARGET level label */
+  --rd-bear-soft03: rgba(205, 126, 109, 0.03);
+  --rd-bear-soft05: rgba(205, 126, 109, 0.05);
+  --rd-bear-soft10: rgba(205, 126, 109, 0.1);
+  --rd-bear-soft18: rgba(205, 126, 109, 0.18);
+  --rd-bear-soft28: rgba(205, 126, 109, 0.28);
+  --rd-bear-soft40: rgba(205, 126, 109, 0.4);
+  --rd-bear-soft50: rgba(205, 126, 109, 0.5);  /* mobile INVAL chip border */
+  --rd-bear-dim: #9c6457;                      /* INVALIDATION level label */
+  --rd-amber-soft08: rgba(191, 160, 90, 0.08);
+  --rd-amber-soft25: rgba(191, 160, 90, 0.25);
+  --rd-amber-soft30: rgba(191, 160, 90, 0.3);
+  --rd-amber-soft35: rgba(191, 160, 90, 0.35);
+  --rd-blue-soft05: rgba(106, 160, 200, 0.05);
+  --rd-blue-soft14: rgba(106, 160, 200, 0.14);
+  --rd-blue-soft20: rgba(106, 160, 200, 0.2);  /* mobile ACT tile border */
+  --rd-blue-soft25: rgba(106, 160, 200, 0.25);
+  --rd-blue-soft28: rgba(106, 160, 200, 0.28);
+  --rd-blue-soft30: rgba(106, 160, 200, 0.3);
+  --rd-blue-soft50: rgba(106, 160, 200, 0.5);  /* mobile ACTIVE chip border */
+  --rd-blue-dim: #5f86a3;                      /* ENTRY/CATALYST level label · options CP */
+  --rd-inferred-soft35: rgba(154, 143, 176, 0.35);
+  --rd-inferred-soft50: rgba(154, 143, 176, 0.5);
+  --rd-live-soft05: rgba(116, 176, 138, 0.05); /* mobile row wash */
+  --rd-live-soft12: rgba(116, 176, 138, 0.12); /* TRIGGERED chip fill */
+  --rd-lo-soft50: rgba(100, 107, 115, 0.5);    /* mobile EXPIRED chip border */
+
+  /* ---- mobile bright bull/amber soft ramps (SPEC-mobile §2.1 hues) ---- */
+  --rd-mbull-soft05: rgba(111, 191, 147, 0.05);
+  --rd-mbull-soft06: rgba(111, 191, 147, 0.06);
+  --rd-mbull-soft12: rgba(111, 191, 147, 0.12);
+  --rd-mbull-soft20: rgba(111, 191, 147, 0.2);
+  --rd-mbull-soft32: rgba(111, 191, 147, 0.32);
+  --rd-mbull-soft50: rgba(111, 191, 147, 0.5);
+  --rd-mbull-soft70: rgba(111, 191, 147, 0.7);
+  --rd-mamber-soft05: rgba(199, 154, 82, 0.05);
+  --rd-mamber-soft20: rgba(199, 154, 82, 0.2);
+  --rd-mamber-soft50: rgba(199, 154, 82, 0.5);
+
+  /* ---- charts / sparks (JSX SVG strokes + fills read these) ---- */
+  --rd-chart-grid: rgba(255, 255, 255, 0.035);
+  --rd-chart-trigline: rgba(106, 160, 200, 0.55); /* dashed stated-trigger line */
+  --rd-chart-line-bull: var(--rd-bull);           /* §3.6 favored/direction line colors */
+  --rd-chart-line-amber: var(--rd-amber);
+  --rd-chart-line-bear: var(--rd-bear);
+  --rd-chart-fill-bull: rgba(111, 160, 133, 0.1); /* line color at the design's 0.1 area alpha */
+  --rd-chart-fill-amber: rgba(191, 160, 90, 0.1);
+  --rd-chart-fill-bear: rgba(205, 126, 109, 0.1);
+  --rd-mspark-fill-bull: rgba(111, 191, 147, 0.13); /* mobile spark area (mobile hues, §10) */
+  --rd-mspark-fill-amber: rgba(199, 154, 82, 0.13);
+  --rd-mspark-fill-bear: rgba(205, 126, 109, 0.13);
+  --rd-chart-scrim-72: rgba(10, 12, 15, 0.72);    /* H/L · TRIG · LIVE label backdrops */
+  --rd-chart-scrim-85: rgba(10, 12, 15, 0.85);
+  --rd-chart-scrim-90: rgba(10, 12, 15, 0.9);
+
+  /* ---- map (§2.5d) ---- */
+  --rd-map-state-fill: rgba(106, 160, 200, 0.055);
+  --rd-map-state-stroke: rgba(138, 166, 196, 0.28);
+  --rd-map-dot-up: #6fa085;
+  --rd-map-dot-dn: #c58575;
+
+  /* ---- sentiment gauge + F&G bands (§2.5a) ---- */
+  --rd-gauge-seg-1: #b06a58;
+  --rd-gauge-seg-2: #c68a5e;
+  --rd-gauge-seg-3: #ad9158;
+  --rd-gauge-seg-4: #6fa085;
+  --rd-gauge-seg-5: #74b08a;
+  --rd-gauge-needle: #e9ebee;
+  --rd-fng-xfear: #cd7e6d;
+  --rd-fng-xfear-bd: rgba(205, 126, 109, 0.42);
+  --rd-fng-xfear-bg: rgba(205, 126, 109, 0.09);
+  --rd-fng-fear: #c68a5e;
+  --rd-fng-fear-bd: rgba(198, 138, 94, 0.42);
+  --rd-fng-fear-bg: rgba(198, 138, 94, 0.09);
+  --rd-fng-neutral: #bfa05a;
+  --rd-fng-neutral-bd: rgba(191, 160, 90, 0.42);
+  --rd-fng-neutral-bg: rgba(191, 160, 90, 0.09);
+  --rd-fng-greed: #6fa085;
+  --rd-fng-greed-bd: rgba(111, 160, 133, 0.42);
+  --rd-fng-greed-bg: rgba(111, 160, 133, 0.09);
+  --rd-fng-xgreed: #74b08a;
+  --rd-fng-xgreed-bd: rgba(116, 176, 138, 0.42);
+  --rd-fng-xgreed-bg: rgba(116, 176, 138, 0.09);
+
+  /* ---- sector heat map (§2.6.2b; tile alpha is data-driven at runtime,
+     so the hue ships as an rgb triplet like --rd-acc-rgb/--rd-live-rgb) ---- */
+  --rd-sec-up-rgb: 111, 158, 131;
+  --rd-sec-dn-rgb: 197, 133, 117;
+  --rd-sec-up-text-hi: #c3e4d1;
+  --rd-sec-up-text: #93c1a6;
+  --rd-sec-dn-text-hi: #ecbcb0;
+  --rd-sec-dn-text: #d3a396;
+  --rd-sec-swatch-grad: linear-gradient(90deg, #b06a58, #4a4f55 50%, #5a9e79);
+
+  /* ---- OPTIONS workspace legacy skin (intel.css badges, optx cards, tvchart) ---- */
+  --rd-ows-bull: #7fb88a;
+  --rd-ows-bear: #d98b8b;
+  --rd-ows-watch: #cbb274;
+  --rd-ows-pred: #9aaed8;
+  --rd-ows-stale: #c98b6a;
+  --rd-ows-gold-bd: rgb(216 180 106 / 0.22);   /* candidate-generator cards */
+  --rd-ows-gold-bg: rgb(216 180 106 / 0.025);
+  --rd-tv-bg: rgb(10 11 13 / 1);               /* TradingView chart shell */
+  --rd-tv-overlay: rgb(10 11 13 / 0.92);
+
+  /* ---- publish curation (owner-only; gold = identity, not data) ---- */
+  --rd-pub-gold: #d8b46a;
+  --rd-pub-gold-bd: rgb(216 180 106 / 0.4);
+  --rd-pub-gold-bg: rgb(216 180 106 / 0.06);
+}
+
+/* carried from app/intel/intel.css (retired with the desk): the embedded root
+   paints the stage and sets the text color and face the feed inherits; under
+   the matrix theme the frame goes transparent (below), so this is the one
+   opaque stage layer. min-height/padding were already neutralised by the
+   EMBEDDED DESK rules and are not carried. */
+.intel-root.intel-embedded {
+  background: var(--rd-stage, #050608);
+  color: var(--bone, #e8e6e1);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@media (max-width: 700px) {
+  /* ---- mobile palette + stage (§2.1/§10): the brighter green/amber set is
+     used throughout the phone design; page bg one step darker; ambient 320px
+     with the mobile gradient. Re-pinning the tokens keeps shared chrome
+     (count pills, tape tails, life chips) on the mobile ramp. ---- */
+  .intel-root {
+    --rd-bull: #6fbf93;
+    --rd-amber: #c79a52;
+    --rd-stage: #040506;
+    --rd-ambient-grad: radial-gradient(120% 80% at 82% -16%, rgba(95, 176, 173, 0.16), transparent 62%);
+    /* chart area fills follow the brighter mobile line hues (line colors
+       re-pin automatically via --rd-bull/--rd-amber; fills carry their own
+       alpha so they re-pin here) */
+    --rd-chart-fill-bull: rgba(111, 191, 147, 0.1);
+    --rd-chart-fill-amber: rgba(199, 154, 82, 0.1);
+    background: var(--rd-stage);
+  }
+  /* all scrollbars hidden on mobile (§1) */
+  .intel-root * { scrollbar-width: none; }
+  .intel-root *::-webkit-scrollbar { display: none; }
+}
+
+/* ==========================================================================
+   EMBEDDED DESK — the home deck's second surface renders this same dashboard
+   inside a panel (components/surfaces/IntelDeckSurface.tsx). Two rules here
+   deliberately sit OUTSIDE the .intel-root scope (the frame + its idle label
+   wrap/precede the root): everything else stays .intel-embedded-scoped so the
+   standalone /intel route is pixel-untouched.
+   ========================================================================== */
+
+/* The frame's transform makes it the CONTAINING BLOCK for every
+   position:fixed layer inside the embed (video drawer + scrim, workspace
+   drawer) — they pin to the panel, never to the viewport, so nothing bleeds
+   over Presence/World/Comms or the home shell's chrome. */
+.intel-embed-frame {
+  position: relative;
+  height: 100%;
+  transform: translateZ(0);
+  /* the frame shares the token scope (see the token block selector), so the
+     stage color flows through the variable here too */
+  background: var(--rd-stage, #050608);
+}
+
+/* the embedded root scrolls internally; the deck page's body stays locked
+   (see the :not(.intel-embedded) guard on the scroll fix in intel.css) */
+.intel-root.intel-embedded {
+  /* no dock band is reserved at the bottom of the embedded desk. This used to
+     be sized around the desk's own ASK bar; fix/p0-live-trust deleted that bar
+     (the command bar on the floor is the only input), so the desk simply
+     scrolls to its true bottom edge. */
+  --rd-embed-dock: 0px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
+}
+
+/* pre-visit placeholder: stage color + a mono label — no data, no spinner */
+.intel-embedded .intel-embed-idle {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--rd-mono);
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: var(--rd-t-faint);
+}
+
+/* ============================================================================
+   MATRIX THEME (CORE V2) — the terminal on the code-rain stage. Appended
+   LAST so it wins its equal-specificity siblings by source order (the same
+   contract the light block relies on), and doubled with [data-mood] so the
+   mood axis can never re-tint it. Re-pins ONLY the stage/surface family, the
+   accent ramp, and the accent-derived illumination values — the semantic
+   colors (bull/bear/amber/blue/teal), hairlines, and text ramp keep their
+   dark defaults: data colors never cosplay.
+   ============================================================================ */
+:root[data-theme="matrix"] .intel-root,
+:root[data-theme="matrix"] .intel-embed-frame,
+:root[data-theme="matrix"][data-mood] .intel-root,
+:root[data-theme="matrix"][data-mood] .intel-embed-frame {
+  /* accent ramp — terminal green (matches the app shell's --steel) */
+  --rd-acc: #4ec97a;
+  --rd-acc-rgb: 78, 201, 122;
+  --rd-acc-soft06: rgba(78, 201, 122, 0.06);
+  --rd-acc-soft12: rgba(78, 201, 122, 0.12);
+  --rd-acc-soft25: rgba(78, 201, 122, 0.25);
+  --rd-acc-soft40: rgba(78, 201, 122, 0.42);
+
+  /* stage / surface family — near-black with a green cast. The stage is
+     TRANSLUCENT so the code-rain (fixed at z-0 behind the view panels) reads
+     through the terminal too; cards/bars above stay opaque panels. */
+  --rd-stage: rgba(3, 9, 5, 0.82);
+  --rd-frame: #050d08;
+  --rd-bar1-bg: #071009;
+  --rd-bar3-bg: #050c07;
+  --rd-tape-label-bg: #08120b;
+  --rd-card: #081209;
+  --rd-legend-bg: #06100a;
+  --rd-btn-bg: #0a1710;
+  --rd-inset: #071009;
+
+  /* accent-derived illumination */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(78, 201, 122, 0.13), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(78, 201, 122, 0.55), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(78, 201, 122, 0.55), 0 0 22px -8px rgba(78, 201, 122, 0.6);
+}
+
+/* Both the frame AND the root paint var(--rd-stage); with a translucent stage
+   that would stack to near-opaque. Under matrix the frame stands down and the
+   root carries the one translucent stage layer. */
+:root[data-theme="matrix"] .intel-embed-frame,
+:root[data-theme="matrix"][data-mood] .intel-embed-frame {
+  background: transparent;
+}

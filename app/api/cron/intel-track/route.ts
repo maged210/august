@@ -1,16 +1,16 @@
-// Idea Tracker — the daily settle pass. PROTECTED. It ingests the latest
-// brief's ideas into the tracked set, batches quotes, evaluates honest
-// lifecycle transitions (ARMED → TRIGGERED → TARGET_HIT/INVALIDATED), appends
-// bounded snapshots, and updates MFE/MAE. Idempotent and cheap — snapshot
-// dedupe + throttling make double-pings no-ops.
+// The daily settle pass. PROTECTED. Settles the tracked set (chore/terminal-cut:
+// the TRACKED lane is retired; once the one-shot has closed a store's rows this
+// is housekeeping over a frozen set — it no longer ingests), then evaluates the
+// live book (INTEGRITY-1), warms the FRED actuals, settles THE CALL and
+// flushes the day's push. Idempotent and cheap — snapshot dedupe makes
+// double-pings no-ops.
 //
 // CADENCE, HONESTLY (fix/p0-live-trust): this is the ONLY scheduled job in the
 // app — vercel.json, `"10 22 * * *"`, ONE run per day at 22:10 UTC, after the
 // close in both EST and EDT. The previous comment claimed "an external pinger
 // hits this every ~10–15 min during market hours"; no such pinger exists
-// (confirmed with the owner 2026-09-04). The only other writer is the
-// opportunistic throttled pass behind GET /api/intel/tracker, which runs only
-// while the owner has the desk open.
+// (confirmed with the owner 2026-09-04). The page-load pass behind
+// GET /api/intel/tracker went with the owner desk (chore/terminal-cut).
 //
 // What that costs, so it is not rediscovered later: the tracker records only
 // what it OBSERVES. With one post-close observation per day, an ARMED call
@@ -58,7 +58,15 @@ async function handle(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
   try {
-    const result = await runTrackerPass({ force: true });
+    // chore/terminal-cut — the tracked set is retired (housekeeping only), so
+    // its pass is NON-FATAL like the actuals/call/push steps: an Upstash blip
+    // on the dead lane must never block the live book, THE CALL or the push.
+    let result: Awaited<ReturnType<typeof runTrackerPass>> = { configured: false, ran: false, skippedReason: "not run", tracked: [] };
+    try {
+      result = await runTrackerPass();
+    } catch (err) {
+      console.warn("[cron/intel-track] tracker pass skipped:", err instanceof Error ? err.message : err);
+    }
     // INTEGRITY-1 — the published book (lib/ideas.ts) is evaluated in the SAME
     // daily pass: every LIVE idea's stated trigger vs the daily close, stale
     // marking, and conflict demotion to REVIEW. See lib/ideas-eval.ts.
@@ -105,7 +113,6 @@ async function handle(req: Request): Promise<Response> {
         ok: true,
         configured: result.configured,
         tracked: result.tracked.length,
-        ingested: result.ingested ?? null,
         quoted: result.quoted ?? 0,
         transitions: result.transitions ?? 0,
         evicted: result.evicted ?? 0,
