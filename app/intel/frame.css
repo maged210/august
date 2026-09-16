@@ -482,10 +482,14 @@
   --rd-hair-13: rgba(15, 17, 21, 0.14);
   --rd-hair-14: rgba(15, 17, 21, 0.15);
 
-  /* ---- text ramp — ink to mute. The ramp flattens at the design's mute
-     (#6b7280, 4.6:1 on white): every token that carries COPY (module
-     subtitles, "not stated", empty-state lines) stays AA; only the three
-     glyph tokens at the bottom (∅ marks, never words) go lighter. ---- */
+  /* ---- text ramp — ink to mute. ONE mute grey: --rd-t-dim is defined once
+     and every copy-carrying token below it points at it, so absence text,
+     the live count, the meta line, module subtitles and empty-state lines
+     can never drift apart. #5d636f is the design's #6b7280 hue darkened
+     until it clears AA where it actually sits: 5.6:1 on the paper stage
+     (the design's own grey is 4.4:1 there), 6.1:1 on white, 4.6:1 on the
+     Stale pill's tint. Only the two glyph tokens at the bottom (∅ marks,
+     never words) stay lighter. ---- */
   --rd-t-brightest: #0f1115;
   --rd-t-primary: #0f1115;
   --rd-t-chip: #1a1d23;
@@ -493,15 +497,15 @@
   --rd-t-secondary: #3a3f48;
   --rd-t-secondary2: #444955;
   --rd-t-muted: #545a64;
-  --rd-t-dim: #6b7280;
-  --rd-t-dim2: #6b7280;
-  --rd-t-dim3: #6b7280;
-  --rd-t-dim4: #6b7280;
-  --rd-t-faint: #6b7280;
-  --rd-t-faint2: #6b7280;
-  --rd-t-faint3: #6b7280;
-  --rd-t-ghost: #6b7280;
-  --rd-t-disabled: #7b8290;
+  --rd-t-dim: #5d636f;
+  --rd-t-dim2: var(--rd-t-dim);
+  --rd-t-dim3: var(--rd-t-dim);
+  --rd-t-dim4: var(--rd-t-dim);
+  --rd-t-faint: var(--rd-t-dim);
+  --rd-t-faint2: var(--rd-t-dim);
+  --rd-t-faint3: var(--rd-t-dim);
+  --rd-t-ghost: var(--rd-t-dim);
+  --rd-t-disabled: var(--rd-t-dim);
   --rd-t-absent: #8b929f;
   --rd-t-empty: #a3a9b4;
 
@@ -629,6 +633,6 @@
   --rd-map-dot-dn: #cf3226;
 
   /* ---- the app-shell chip tokens follow the paper ramp ---- */
-  --dim: #6b7280;
+  --dim: var(--rd-t-dim);
   --hair: rgba(15, 17, 21, 0.11);
 }

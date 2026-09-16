@@ -7,9 +7,11 @@
 //   LIVE — the published book (GET /api/ideas): the desk's current calls,
 //          redacted PublicIdea rows, evaluated daily at the close by the book
 //          pass (INTEGRITY-1). They ARE the board.
-//   LAST — a DELAYED quote per instrument (GET /api/intel/quotes, the route
-//          the dock's heatmap already polls; chunked at its 20-symbol cap so
-//          a long book never silently loses its tail).
+//   LAST — a DELAYED quote per instrument (GET /api/intel/quotes), chunked at
+//          the route's 20-symbol cap, merged into ONE quote book with a
+//          per-symbol freshness policy (lib/idea-card mergeQuoteRound /
+//          readQuote). The dock's heatmap reads the same book — one fetch,
+//          one policy, so a failed batch is UNAVAILABLE in both places.
 //   BARS — 1M daily candles for the open idea (GET /api/intel/bars), on the
 //          phone's idea page only; the desktop dock charts the selection.
 //
@@ -61,21 +63,27 @@ import {
   filterIdeas,
   fmtLevel,
   levelIsParsed,
+  mergeQuoteRound,
   progressLabel,
   progressOf,
   progressTone,
   questionOf,
+  readQuote,
   sideOf,
   statusOf,
+  statusText,
   type BookFilter,
+  type QuoteBatch,
+  type QuoteBook,
+  type QuoteRead,
 } from "@/lib/idea-card";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = 60_000; // the book, the tape and the quotes poll together
-
-/** chart symbol → last price, as the quotes route answered */
-type QuoteMap = Record<string, number>;
-type QuotesState = "pending" | "ok" | "unavailable";
+/** a symbol answered longer ago than this reads UNAVAILABLE even if no newer
+ *  round has failed — a stalled poll (a hidden tab) must not keep a price
+ *  standing as DELAYED */
+const QUOTE_MAX_AGE_MS = 3 * REFRESH_MS;
 
 export default function IdeasFeed({
   active = true,
@@ -106,12 +114,9 @@ export default function IdeasFeed({
   // card sits under visibility:hidden while the page is up)
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [filter, setFilter] = useState<BookFilter>("all");
-  // last quotes — DELAYED, chunked at the route's cap; quotesAt is the last
-  // SUCCESSFUL round, and a tick each poll lets a price age into STALE when
-  // the route stops answering (a price never stands as fresh forever)
-  const [quotes, setQuotes] = useState<QuoteMap>({});
-  const [quotesState, setQuotesState] = useState<QuotesState>("pending");
-  const [quotesAt, setQuotesAt] = useState<number | null>(null);
+  // the quote book — per-symbol slots (price, last seen, last asked); a tick
+  // each poll re-reads freshness even when no round has landed
+  const [quotes, setQuotes] = useState<QuoteBook>({});
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -176,29 +181,19 @@ export default function IdeasFeed({
         chunks.map((c) =>
           fetch(`/api/intel/quotes?symbols=${encodeURIComponent(c)}`, { cache: "no-store" })
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((j: { quotes?: Record<string, { price?: number }> }) => j.quotes ?? {}),
+            .then((j: { quotes?: Record<string, { price?: number; chgPct?: number }> }) => j.quotes ?? {}),
         ),
       ).then((results) => {
         if (cancelled) return;
-        const merged: QuoteMap = {};
-        let answered = false;
-        for (const r of results) {
-          if (r.status !== "fulfilled") continue;
-          answered = true;
-          for (const [sym, q] of Object.entries(r.value)) {
-            if (q && Number.isFinite(q.price) && (q.price as number) > 0) merged[sym] = q.price as number;
-          }
-        }
-        if (answered) {
-          // sticky-live: a chunk that failed this round keeps its last prices
-          // (they age into STALE below); a symbol the route never returns
-          // stays absent → DATA UNAVAILABLE on its card
-          setQuotes((prev) => ({ ...prev, ...merged }));
-          setQuotesState("ok");
-          setQuotesAt(Date.now());
-        } else {
-          setQuotesState((prev) => (prev === "ok" ? "ok" : "unavailable"));
-        }
+        // each batch lands on its own symbols: a failed batch nulls exactly
+        // its symbols (UNAVAILABLE), an answered one refreshes exactly its own
+        const batches: QuoteBatch[] = results.map((r, i) => ({
+          symbols: chunks[i].split(","),
+          ok: r.status === "fulfilled",
+          quotes: r.status === "fulfilled" ? r.value : undefined,
+        }));
+        const now = Date.now();
+        setQuotes((prev) => mergeQuoteRound(prev, batches, now));
       });
     };
     pull();
@@ -206,41 +201,67 @@ export default function IdeasFeed({
       setTick((t) => t + 1);
       if (!document.hidden) pull();
     }, REFRESH_MS);
+    // a tab coming back re-asks at once, so a price that aged out while the
+    // poll was paused is replaced within a round-trip instead of a minute
+    const onVisible = () => {
+      if (!document.hidden) {
+        setTick((t) => t + 1);
+        pull();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [symKey]);
 
+  // ONE reader for every surface that shows a price from the book
+  const quoteFor = useCallback(
+    (symbol: string): QuoteRead => readQuote(quotes, symbol, Date.now(), QUOTE_MAX_AGE_MS),
+    // tick re-reads freshness every poll even when no round has landed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [quotes, tick],
+  );
   const lastFor = useCallback(
     (idea: PublicIdea): LastQuote => {
-      if (quotesState === "pending") return NO_QUOTE;
-      const p = quotes[chartSymbolFor(idea.instrument)];
-      if (p == null) return { price: null, state: "unavailable" };
-      // three missed rounds without an answer: the price is shown with its
-      // as-of time and nothing is computed from it
-      const stale = quotesAt != null && Date.now() - quotesAt > 3 * REFRESH_MS;
-      return { price: p, state: stale ? "stale" : "ok", at: quotesAt ?? undefined };
+      const q = quoteFor(chartSymbolFor(idea.instrument));
+      if (q.state === "pending") return NO_QUOTE;
+      if (q.state === "ok") return { price: q.price, state: "ok" };
+      return { price: null, state: "unavailable" };
     },
-    // tick re-evaluates staleness every poll even when nothing else changed
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quotes, quotesState, quotesAt, tick],
+    [quoteFor],
   );
 
   // ── the phone idea page ─────────────────────────────────────────────────────
   // It opens from a tap or a deep-select and closes from its back control /
   // Esc / the OS back gesture / leaving the tab (declared before the effects
-  // that reference it). Opening PUSHES a history entry so the browser/OS back
-  // gesture closes the page instead of leaving the terminal (L8); the shell's
-  // own popstate handler re-derives the view from the URL, which stays
-  // ?view=terminal, so the two never fight.
+  // that reference it).
+  //
+  // THE HISTORY CONTRACT: the ?idea= parameter lives ONLY on the page's own
+  // history entry. Opening strips it from the entry underneath (a deep link
+  // or a command-bar jump arrives carrying it) and PUSHES the page entry
+  // with it, marked { v4idea: true } — so the OS back gesture closes the page
+  // (L8) and lands on a clean list entry. Switching tabs while the page is
+  // open REPLACES the page entry instead of stacking a view on top of it
+  // (app/page.tsx switchView honours the marker and drops the parameter), so
+  // back never lands on a closed page and a reload never reopens one.
   const pageOpenRef = useRef(false);
-  const openPage = useCallback(() => {
+  const liveIdeasRef = useRef<PublicIdea[]>([]);
+  const openPage = useCallback((key: string) => {
     returnFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
     pageOpenRef.current = true;
     setPageOpen(true);
     try {
-      window.history.pushState({ ...(window.history.state ?? {}), v4idea: true }, "", window.location.href);
+      const under = new URL(window.location.href);
+      if (under.searchParams.has("idea")) {
+        under.searchParams.delete("idea");
+        window.history.replaceState({ ...(window.history.state ?? {}), v4idea: false }, "", under.toString());
+      }
+      const page = new URL(window.location.href);
+      page.searchParams.set("idea", key);
+      window.history.pushState({ ...(window.history.state ?? {}), v4idea: true }, "", page.toString());
     } catch {
       /* no-op */
     }
@@ -248,9 +269,8 @@ export default function IdeasFeed({
   const finishClose = useCallback(() => {
     pageOpenRef.current = false;
     setPageOpen(false);
-    // a tap is not a share: drop the ?idea= the tap wrote so a reload or PWA
-    // resume lands on the list, not back inside the page (a real deep link
-    // still opens it — it arrives with the page closed)
+    // the entry we land on is clean by construction; strip defensively in
+    // case the page was opened in a way that never pushed (history API off)
     try {
       const u = new URL(window.location.href);
       if (u.searchParams.has("idea")) {
@@ -277,7 +297,28 @@ export default function IdeasFeed({
   }, [finishClose]);
   useEffect(() => {
     const onPop = () => {
-      if (pageOpenRef.current && !window.history.state?.v4idea) finishClose();
+      const onPageEntry = window.history.state?.v4idea === true;
+      if (pageOpenRef.current && !onPageEntry) {
+        finishClose();
+        return;
+      }
+      // FORWARD onto a page entry (after closing it with back) reopens that
+      // page — the browser's own semantics; no push, the entry exists
+      if (!pageOpenRef.current && onPageEntry && phoneRef.current) {
+        let key: string | null = null;
+        try {
+          key = new URL(window.location.href).searchParams.get("idea");
+        } catch {
+          /* no-op */
+        }
+        const i = key ? liveIdeasRef.current.find((x) => `live:${x.id}` === key) : undefined;
+        if (i) {
+          setSelection(selectionFromLive(i));
+          returnFocusRef.current = null;
+          pageOpenRef.current = true;
+          setPageOpen(true);
+        }
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -302,15 +343,20 @@ export default function IdeasFeed({
       const i = liveIdeas.find((x) => `live:${x.id}` === want);
       if (i) {
         setSelection(selectionFromLive(i));
-        if (phoneRef.current) openPage();
+        if (phoneRef.current) openPage(want);
         return;
       }
     }
     if (liveIdeas.length > 0) setSelection(selectionFromLive(liveIdeas[0]));
   }, [selection, liveIdeas, live, openPage]);
+  useEffect(() => {
+    liveIdeasRef.current = liveIdeas;
+  }, [liveIdeas]);
 
-  // A user selection also lands in the URL (?idea=) so the exact view is
+  // DESKTOP: a user selection lands in the URL (?idea=) so the exact view is
   // shareable — replaceState, not push: card taps must not stack history.
+  // (Phones never write it here: the parameter lives only on the idea page's
+  // own history entry — see openPage.)
   const applySelect = useCallback((sel: ChartSelection) => {
     setSelection(sel);
     try {
@@ -332,7 +378,7 @@ export default function IdeasFeed({
       const i = liveIdeas.find((x) => `live:${x.id}` === key);
       if (i) {
         setSelection(selectionFromLive(i));
-        if (phoneRef.current) openPage();
+        if (phoneRef.current && !pageOpenRef.current) openPage(key);
       }
     };
     window.addEventListener("aug:select-idea", onSelect);
@@ -364,11 +410,23 @@ export default function IdeasFeed({
   }, [pageOpen, selLive]);
   // leaving the terminal tab closes the page: it stays mounted under
   // display:none otherwise, and its html.sheet-open lock would freeze the
-  // floor (review finding)
+  // floor. The shell's switchView has already REPLACED the page's history
+  // entry and dropped ?idea= (the history contract above); the strip here is
+  // the belt to that brace, for a view change that did not go through it.
   useEffect(() => {
     if (!active && pageOpenRef.current) {
       pageOpenRef.current = false;
+      returnFocusRef.current = null;
       setPageOpen(false);
+      try {
+        const u = new URL(window.location.href);
+        if (u.searchParams.has("idea")) {
+          u.searchParams.delete("idea");
+          window.history.replaceState({ ...(window.history.state ?? {}), v4idea: false }, "", u.toString());
+        }
+      } catch {
+        /* no-op */
+      }
     }
   }, [active]);
   const visible = useMemo(() => filterIdeas(liveIdeas, filter), [liveIdeas, filter]);
@@ -388,8 +446,12 @@ export default function IdeasFeed({
             // nothing visible, so no ring
             selected={phone === false && selection?.key === `live:${idea.id}`}
             onOpen={() => {
-              applySelect(selectionFromLive(idea));
-              if (phoneRef.current) openPage();
+              if (phoneRef.current) {
+                setSelection(selectionFromLive(idea));
+                openPage(`live:${idea.id}`);
+              } else {
+                applySelect(selectionFromLive(idea));
+              }
             }}
           />
         ))}
@@ -426,7 +488,10 @@ export default function IdeasFeed({
 
   return (
     <div className="if-feed v4-feed">
-      <div className="if-chrome">
+      {/* while the phone idea page is up, everything behind it is inert: not
+          focusable, not clickable, out of the accessibility tree (the page
+          also traps Tab — see IdeaPage) */}
+      <div className="if-chrome" inert={pageShown || undefined}>
         <div className="if-head">
           <span className="if-brand-dot" aria-hidden="true" />
           <span className="if-wordmark">Terminal</span>
@@ -461,7 +526,7 @@ export default function IdeasFeed({
       ) : phone ? (
         // hidden (not unmounted) under the idea page: no scroll, state
         // preserved for the return
-        <div className="v4-mobile" style={pageShown ? { visibility: "hidden" } : undefined}>
+        <div className="v4-mobile" style={pageShown ? { visibility: "hidden" } : undefined} inert={pageShown || undefined}>
           <BookHeader ideas={liveIdeas} answered={live !== null} filter={filter} onFilter={setFilter} />
           {body}
         </div>
@@ -473,6 +538,7 @@ export default function IdeasFeed({
               onSelect={applySelect}
               liveIdeas={liveIdeas}
               sourcesAnswered={live !== null}
+              quoteFor={quoteFor}
               tape={tapeRows}
               tapeFailed={tapeErr}
               onTapeRetry={load}
@@ -503,8 +569,11 @@ export default function IdeasFeed({
           publishes side / entry / target / stop to every viewer, and it
           closes the whole dock (chart, book heatmap, NQ levels, VIX context,
           tape, wire), so the one row covers the modules inside it as well as
-          the cards above it. */}
-      <Disclaimer />
+          the cards above it. Inert under the phone idea page, which carries
+          its own. */}
+      <div className="v4-feed-disc" inert={pageShown || undefined}>
+        <Disclaimer />
+      </div>
     </div>
   );
 }
@@ -552,9 +621,16 @@ function BookHeader({
         <Stat
           label="Book bias"
           value={answered ? `${stats.long} L · ${stats.short} S` : "—"}
+          // the L / S counts include DERIVED sides; the sub-line marks how
+          // many with the same tilde the cards use, and the legend below
+          // explains it
           sub={
-            answered && (stats.watch > 0 || stats.unsided > 0)
-              ? [stats.watch > 0 ? `${stats.watch} watch` : null, stats.unsided > 0 ? `${stats.unsided} without a side` : null]
+            answered && (stats.derived > 0 || stats.watch > 0 || stats.unsided > 0)
+              ? [
+                  stats.derived > 0 ? `incl. ~${stats.derived} derived` : null,
+                  stats.watch > 0 ? `${stats.watch} watch` : null,
+                  stats.unsided > 0 ? `${stats.unsided} without a side` : null,
+                ]
                   .filter(Boolean)
                   .join(" · ")
               : undefined
@@ -565,6 +641,15 @@ function BookHeader({
             splits into value + unit so the tile never truncates at 390. */}
         <Stat label="Next eval" value={nextEval.value} sub={nextEval.sub} />
       </div>
+      {/* the one legend for the tilde — on the cards' side word and in the
+          Book bias tile — in the idea page's own words. Rendered only while
+          a derived side is on the board (L4: a legend for a mark nobody can
+          see earns nothing). */}
+      {answered && stats.derived > 0 ? (
+        <p className="v4-legend">
+          <span className="v4-legend-mark">~</span> derived from entry vs target
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -628,7 +713,9 @@ function IdeaCard({
               <span className="v4-abs">no side</span>
             )}
             {" · "}
-            <span className={`v4-status v4-status-${chip.tone}`}>{chip.label}</span>
+            {/* the status in words — a triggered row names its crossing
+                ("Triggered below 768") beside the tint that grades it */}
+            <span className={`v4-status v4-status-${chip.tone}`}>{statusText(chip)}</span>
             {" · "}
             {relativeTime(idea.createdAt)}
           </span>
@@ -692,13 +779,41 @@ function FilterMiss({ filter, onAll }: { filter: BookFilter; onAll: () => void }
 
 // ── the phone's idea page (frame 04) ─────────────────────────────────────────
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function IdeaPage({ idea, last, onBack }: { idea: PublicIdea; last: LastQuote; onBack: () => void }) {
   const backRef = useRef<HTMLButtonElement | null>(null);
-  // page scroll locks under the page; Esc goes back (hardware keyboards exist)
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  // page scroll locks under the page; Esc goes back (hardware keyboards
+  // exist); Tab and Shift+Tab cycle inside the page and never reach what is
+  // behind it (the feed's own Terms / Privacy links are also inert)
   useEffect(() => {
     document.documentElement.classList.add("sheet-open");
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onBack();
+      if (e.key === "Escape") {
+        onBack();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const lastItem = items[items.length - 1];
+      const at = document.activeElement as HTMLElement | null;
+      const inside = !!at && root.contains(at);
+      if (e.shiftKey && (!inside || at === first)) {
+        e.preventDefault();
+        lastItem.focus();
+      } else if (!e.shiftKey && (!inside || at === lastItem)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
@@ -713,7 +828,7 @@ function IdeaPage({ idea, last, onBack }: { idea: PublicIdea; last: LastQuote; o
 
   const chip = statusOf(idea);
   return (
-    <div className="v4-page" role="dialog" aria-modal="true" aria-label={`${idea.instrument} idea`}>
+    <div ref={dialogRef} className="v4-page" role="dialog" aria-modal="true" aria-label={`${idea.instrument} idea`}>
       <div className="v4-page-scroll">
         <div className="v4-page-top">
           <button ref={backRef} type="button" className="v4-back" onClick={onBack}>

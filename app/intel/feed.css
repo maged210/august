@@ -445,6 +445,8 @@
   color: var(--rd-t-chip, #dfe3e7);
 }
 :where(.intel-embed-frame) .if-hm-tile.noq .if-hm-pct { color: var(--rd-t-absent, #3a4047); }
+/* a tile whose quote batch failed says so on the tile (feat/v4-1-terminal) */
+:where(.intel-embed-frame) .if-hm-tile .dtag-compact { font-size: 7.5px; }
 
 /* UX2-T5 — the movers strip under the map: top/bottom three today */
 :where(.intel-embed-frame) .if-mv {
@@ -703,10 +705,23 @@
 :where(.intel-embed-frame) .v4-side.derived { border-bottom: 1px dotted currentColor; }
 :where(.intel-embed-frame) .v4-derived-mark { font-weight: 400; opacity: 0.8; }
 :where(.intel-embed-frame) .v4-status { font-weight: 600; }
-:where(.intel-embed-frame) .v4-status-trig { color: var(--rd-bull, #6fa085); }
+/* TRIGGERED grades against the STATED side: fav (the move went the side's
+   way) green, against red, trig (no stated side) ink. The crossing always
+   renders in words beside it (lib/idea-card statusText). */
+:where(.intel-embed-frame) .v4-status-fav { color: var(--rd-bull, #6fa085); }
+:where(.intel-embed-frame) .v4-status-against { color: var(--rd-bear, #cd7e6d); }
+:where(.intel-embed-frame) .v4-status-trig { color: var(--rd-t-secondary, #aeb4bb); }
 :where(.intel-embed-frame) .v4-status-live { color: var(--rd-blue, #6aa0c8); }
 :where(.intel-embed-frame) .v4-status-warn { color: var(--rd-amber, #bfa05a); }
 :where(.intel-embed-frame) .v4-status-mute { color: var(--rd-t-dim, #8b929a); }
+
+/* the one legend for the derived-side tilde (feed header) */
+:where(.intel-embed-frame) .v4-legend {
+  margin: -4px 0 0;
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+  font-size: 11.5px; line-height: 1.3; color: var(--rd-t-dim, #8b929a);
+}
+:where(.intel-embed-frame) .v4-legend-mark { font-weight: 600; color: var(--rd-t-secondary, #aeb4bb); }
 
 /* the status pill (idea page header · last pass · detail header) */
 :where(.intel-embed-frame) .v4-pill {
@@ -715,14 +730,17 @@
   font-size: 11px; font-weight: 600; line-height: 1;
   padding: 6px 10px; border-radius: 999px; white-space: nowrap;
 }
-:where(.intel-embed-frame) .v4-pill-trig { background: var(--rd-live-soft12, rgba(116, 176, 138, 0.12)); color: var(--rd-bull-dim, #5f8a72); }
+:where(.intel-embed-frame) .v4-pill-fav { background: var(--rd-live-soft12, rgba(116, 176, 138, 0.12)); color: var(--rd-bull-dim, #5f8a72); }
+:where(.intel-embed-frame) .v4-pill-against { background: var(--rd-bear-soft10, rgba(205, 126, 109, 0.1)); color: var(--rd-bear-dim, #9c6457); }
+:where(.intel-embed-frame) .v4-pill-trig { background: var(--rd-hair-08, rgba(255, 255, 255, 0.08)); color: var(--rd-t-secondary, #aeb4bb); }
 :where(.intel-embed-frame) .v4-pill-live { background: var(--rd-blue-soft14, rgba(106, 160, 200, 0.14)); color: var(--rd-blue, #6aa0c8); }
 :where(.intel-embed-frame) .v4-pill-warn { background: var(--rd-amber-soft25, rgba(191, 160, 90, 0.25)); color: var(--rd-amber, #bfa05a); }
 :where(.intel-embed-frame) .v4-pill-mute { background: var(--rd-hair-08, rgba(255, 255, 255, 0.08)); color: var(--rd-t-dim, #8b929a); }
 :where(.intel-embed-frame) .v4-pill-xs { font-size: 9px; padding: 3px 7px; }
 :where(.intel-embed-frame) .v4-detail-sub { display: inline-flex; align-items: center; gap: 6px; }
 
-/* the ticker tile — tinted by STATUS (the one thing its colour can mean) */
+/* the ticker tile — tinted by STATUS (the one thing its colour can mean);
+   a triggered tile grades against the stated side, like the pill */
 :where(.intel-embed-frame) .v4-av {
   display: grid; place-items: center; flex: none;
   width: 36px; height: 36px; border-radius: 9px;
@@ -730,7 +748,9 @@
   font-size: 10px; font-weight: 500; letter-spacing: 0.02em; line-height: 1;
 }
 :where(.intel-embed-frame) .v4-av-l { width: 48px; height: 48px; border-radius: 12px; font-size: 12px; }
-:where(.intel-embed-frame) .v4-av-trig { background: var(--rd-live-soft12, rgba(116, 176, 138, 0.12)); color: var(--rd-bull-dim, #5f8a72); }
+:where(.intel-embed-frame) .v4-av-fav { background: var(--rd-live-soft12, rgba(116, 176, 138, 0.12)); color: var(--rd-bull-dim, #5f8a72); }
+:where(.intel-embed-frame) .v4-av-against { background: var(--rd-bear-soft10, rgba(205, 126, 109, 0.1)); color: var(--rd-bear-dim, #9c6457); }
+:where(.intel-embed-frame) .v4-av-trig { background: var(--rd-hair-08, rgba(255, 255, 255, 0.08)); color: var(--rd-t-secondary, #aeb4bb); }
 :where(.intel-embed-frame) .v4-av-live { background: var(--rd-blue-soft14, rgba(106, 160, 200, 0.14)); color: var(--rd-blue, #6aa0c8); }
 :where(.intel-embed-frame) .v4-av-warn { background: var(--rd-amber-soft25, rgba(191, 160, 90, 0.25)); color: var(--rd-amber, #bfa05a); }
 :where(.intel-embed-frame) .v4-av-mute { background: var(--rd-hair-08, rgba(255, 255, 255, 0.08)); color: var(--rd-t-dim, #8b929a); }

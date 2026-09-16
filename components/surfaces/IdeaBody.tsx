@@ -11,17 +11,21 @@
 // Honesty contract (DESIGN_LAWS L2, CLAUDE.md):
 //   - the % of the way is CALCULATED and tagged so; when it cannot be
 //     computed the card says what is missing ("no stop"), never "0%";
-//   - the last price carries its provenance chip (DELAYED, or DATA
-//     UNAVAILABLE when the quote route failed) — a number never stands
-//     alone as if it were the tape;
+//   - the last price carries its provenance chip: DELAYED when its own
+//     symbol was answered by the latest quotes round, DATA UNAVAILABLE
+//     otherwise (lib/idea-card readQuote) — never an older round's price;
+//   - a TRIGGERED tint (green for the stated side, red against it) always
+//     stands beside the crossing in words, so color never carries it alone;
 //   - the chart draws only real bars with stated levels; no bars → the
 //     UNAVAILABLE state, never a placeholder line;
 //   - the store keeps ONE evaluation record per row (the latest pass), not a
 //     history of transitions, so the design's ACTIVITY list does not render.
-//     What does exist — the pass's conclusion, its reason, its price and its
-//     time — renders verbatim as LAST PASS;
+//     What does exist — the pass's reason, its price and its time — renders
+//     as VERDICT; the status itself shows once, in the page's top pill;
+//   - the entry shows once, verbatim, in the meta line; LEVELS carries only
+//     what the entry text is not (the parsed trigger, target, stop);
 //   - a number printed from a zone / ladder / condition ("$37–$40") wears
-//     the parsed mark (~); the verbatim text is in the LEVELS card;
+//     the parsed mark (~);
 //   - ARM (no backend) and ASK (no command-bar prefill seam) are cut, see
 //     docs/design/V4-1-TERMINAL-NOTES.md.
 
@@ -42,6 +46,7 @@ import {
   questionOf,
   sideOf,
   statusOf,
+  statusText,
   windowBars,
   type Bar,
   type StatusChip,
@@ -50,32 +55,28 @@ import { chartSymbolFor } from "@/components/surfaces/dock/derive";
 import DataTag from "@/components/DataTag";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 
-/** the last quote for the idea's instrument, with its honest state:
- *  pending (not asked yet / in flight), ok (a price from the last successful
- *  round), stale (a price, but the route has not answered for a while — it
- *  is shown with its as-of time and nothing is computed from it),
- *  unavailable (the route answered without this symbol, or never answered) */
+/** the last quote for the idea's instrument, as lib/idea-card readQuote
+ *  reads the shared quote book: pending (its batch has not been asked yet),
+ *  ok (answered by the latest round that asked for it), unavailable (its
+ *  batch failed, the route answered without it, or the answer aged out) */
 export type LastQuote = {
   price: number | null;
-  state: "pending" | "ok" | "stale" | "unavailable";
-  /** when the price was fetched (epoch ms) — carried on ok and stale */
-  at?: number;
+  state: "pending" | "ok" | "unavailable";
 };
 export const NO_QUOTE: LastQuote = { price: null, state: "pending" };
-
-const fmtClockET = (ms: number) =>
-  new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/New_York" });
 
 const RISK_WORD = { low: "low risk", medium: "medium risk", high: "high risk" } as const;
 
 // ── shared atoms ──────────────────────────────────────────────────────────────
 
-/** the status pill — "Triggered · SEP 9": the flag plus the pass date that
- *  concluded it; a row the pass has not seen carries the bare word */
+/** the status pill — "Triggered above 106.10 · SEP 9": the flag, the
+ *  crossing in words for a triggered row (and "against the long" when the
+ *  move went against the stated side), and the pass date that concluded it;
+ *  a row the pass has not seen carries the bare word */
 export function StatusPill({ chip, className = "" }: { chip: StatusChip; className?: string }) {
   return (
     <span className={`v4-pill v4-pill-${chip.tone}${className ? ` ${className}` : ""}`}>
-      {chip.label}
+      {statusText(chip)}
       {chip.at != null ? ` · ${fmtDay(chip.at)}` : null}
     </span>
   );
@@ -91,23 +92,16 @@ export function TickerAvatar({ ticker, chip, size = "s" }: { ticker: string; chi
   );
 }
 
-/** the last price with its provenance: DELAYED (a fresh round), STALE with
- *  its as-of time (the route stopped answering), DATA UNAVAILABLE (no price
- *  for this symbol), or the loading skeleton while the first round is out —
- *  a pending dash would be indistinguishable from a stated absence */
+/** the last price with its provenance: DELAYED (answered by the latest
+ *  round), DATA UNAVAILABLE (its batch failed or the route did not carry
+ *  it — no price shown), or the loading skeleton while its first round is
+ *  out — a pending dash would be indistinguishable from a stated absence */
 export function LastValue({ q }: { q: LastQuote }) {
   if (q.state === "pending") return <span className="if-skel-bar v4-last-skel" aria-label="loading last price" />;
   if (q.state === "unavailable" || q.price == null)
     return (
       <>
-        <span className="v4-abs">—</span> <DataTag kind="unavail" title="the quote route did not answer for this symbol" />
-      </>
-    );
-  if (q.state === "stale")
-    return (
-      <>
-        <b className="v4-ink">{fmtLevel(q.price)}</b>{" "}
-        <DataTag kind="stale" detail={q.at ? `as of ${fmtClockET(q.at)} ET` : undefined} title="the quote route has not answered since" />
+        <span className="v4-abs">—</span> <DataTag kind="unavail" title="no quote for this symbol from the latest round" />
       </>
     );
   return (
@@ -296,14 +290,10 @@ export default function IdeaBody({
   const chip = statusOf(idea);
   const q = questionOf(idea);
   const side = sideOf(idea);
-  // only a fresh price computes; a stale one is shown, tagged, never used
+  // only a price answered by the latest round computes
   const prog = progressOf(idea, last.state === "ok" ? last.price : null);
   const tone = progressTone(prog);
   const ev = idea.evaluation;
-  // the meta line prints the entry as the design does — a number; the
-  // verbatim entry text lives in the LEVELS card (no double print)
-  const entryN = entryLevelOf(idea);
-  const entryParsed = ev && ev.level != null && ev.dir ? false : levelIsParsed(idea.entry, entryN);
 
   return (
     <div className={`v4-idea${compact ? " v4-idea-compact" : ""}`}>
@@ -325,15 +315,9 @@ export default function IdeaBody({
               <span className="v4-abs">no side</span>
             )}
             {" · "}
-            {entryN != null ? (
-              <>
-                entry{" "}
-                <b className="v4-ink">
-                  {entryParsed ? "~" : ""}
-                  {fmtLevel(entryN)}
-                </b>
-              </>
-            ) : idea.entry ? (
+            {/* the entry's ONE appearance on the page: verbatim, as the desk
+                stated it (LEVELS below carries the pass's parsed trigger) */}
+            {idea.entry ? (
               <>
                 entry <b className="v4-ink">{idea.entry}</b>
               </>
@@ -361,11 +345,7 @@ export default function IdeaBody({
             ) : prog.why === "no_last" ? (
               // levels exist; a usable quote is what is missing — the meta
               // line above carries the chip that says why
-              last.state === "pending"
-                ? "no last price yet"
-                : last.state === "stale"
-                  ? "last price is stale — nothing computed from it"
-                  : "last price unavailable"
+              last.state === "pending" ? "no last price yet" : "last price unavailable"
             ) : (
               // the odds need both ends of the range; say which is missing in
               // the visitor's language (the owner states levels in the inbox)
@@ -390,10 +370,11 @@ export default function IdeaBody({
         </span>
       </div>
 
-      {/* 4 · stated levels — verbatim, absent stays absent */}
+      {/* 4 · LEVELS (an addition to frame 04) — the parsed trigger and the
+          stated target / stop, verbatim; absent stays absent. The entry text
+          is not repeated here: it shows once, in the meta line above. */}
       <div className="v4-card v4-levels">
         <span className="v4-card-h">Levels</span>
-        <LevelRow k="Entry" v={idea.entry} cls="v4-lv-k-entry" />
         {ev && ev.level != null && ev.dir ? (
           <LevelRow
             k="Trigger"
@@ -406,16 +387,18 @@ export default function IdeaBody({
         <LevelRow k="Stop" v={idea.stop ?? ""} cls="v4-lv-k-stop" />
       </div>
 
-      {/* 5 · the verdict — the one evaluation record the store keeps. Its
-          timestamp is when the pass CONCLUDED this (the record is rewritten
-          only when the conclusion changes; a sticky TRIGGERED keeps its
-          crossing date), so it is dated "concluded", never "last pass". */}
+      {/* 5 · VERDICT (an addition to frame 04) — the one evaluation record
+          the store keeps: its reason, price and time. The status word is not
+          repeated here; it shows once, in the page's top pill (the desktop
+          detail panel's header pill). The timestamp is when the pass
+          CONCLUDED this (the record is rewritten only when the conclusion
+          changes; a sticky TRIGGERED keeps its crossing date), so it is dated
+          "concluded", never "last pass". */}
       <div className="v4-card v4-pass">
         <span className="v4-card-h">Verdict</span>
         {ev ? (
           <>
             <div className="v4-pass-row">
-              <span className={`v4-status v4-status-${chip.tone}`}>{chip.label}</span>
               <span className="v4-pass-when">
                 concluded {fmtDay(ev.at)} · {relativeTime(ev.at)}
               </span>

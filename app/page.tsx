@@ -322,8 +322,15 @@ export default function Home() {
         const u = new URL(window.location.href);
         if (v === "chat") u.searchParams.delete("view");
         else u.searchParams.set("view", v);
+        // feat/v4-1-terminal — the phone idea page pushes its own history
+        // entry ({ v4idea: true }, carrying ?idea=). Leaving the terminal from
+        // that page REPLACES the entry and drops the parameter, so back never
+        // lands on a closed page and a reload never reopens it (IdeasFeed
+        // closes the page when its view goes inactive).
+        const overIdeaPage = window.history.state?.v4idea === true && viewRef.current !== v;
+        if (overIdeaPage) u.searchParams.delete("idea");
         const url = u.toString();
-        if (opts?.replace) window.history.replaceState({}, "", url);
+        if (opts?.replace || overIdeaPage) window.history.replaceState({}, "", url);
         else if (url !== window.location.href) window.history.pushState({}, "", url);
       } catch {
         /* no-op */

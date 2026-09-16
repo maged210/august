@@ -21,15 +21,19 @@ import {
   fmtPct,
   levelIsParsed,
   levelOnScale,
+  mergeQuoteRound,
   numOf,
   progressLabel,
   progressOf,
   progressTone,
   questionOf,
+  readQuote,
   sideOf,
   statusOf,
+  statusText,
   thesisExcerpt,
   windowBars,
+  type QuoteBook,
 } from "../lib/idea-card";
 
 const T0 = 1_757_800_000_000; // 2025-09-13T22:13:20Z — a fixed clock
@@ -160,7 +164,7 @@ test("bookStats: live count, TRIGGERED-today by ET date, bias from stated + deri
     armed({ entry: "holds support" }), // no side, not derivable
   ];
   const s = bookStats(ideas, T0);
-  assert.deepEqual(s, { live: 4, triggeredToday: 1, long: 1, short: 2, watch: 0, unsided: 1 });
+  assert.deepEqual(s, { live: 4, triggeredToday: 1, long: 1, short: 2, watch: 0, derived: 1, unsided: 1 });
   assert.equal(etDateKey(T0), "2025-09-13");
 });
 
@@ -327,4 +331,95 @@ test("chunkSymbols: dedupes, uppercases, sorts, and never exceeds the route's 20
   assert.equal(chunks[0].length, 20);
   assert.equal(chunks[1].length, 13);
   assert.deepEqual(chunkSymbols([]), []);
+});
+
+// --- fix round: triggered rows, side-aware tint, one quote policy -----------
+
+test("questionOf: a TRIGGERED row never asks its trigger question", () => {
+  const ev = armed().evaluation!;
+  const fired = { ...ev, state: "TRIGGERED" as const, level: 106.1, dir: "above" as const, price: 106.24 };
+  // no target + stop pair → the plain ticker + excerpt (INTC today)
+  const intc = armed({ instrument: "INTC", side: "long", target: "107.50 near-term resistance; 120 or higher", evaluation: fired });
+  const q = questionOf(intc);
+  assert.equal(q.tier, "thesis");
+  assert.equal(q.text, "INTC");
+  assert.ok(q.excerpt && q.excerpt.length > 0);
+  // both target and stop → the target/stop question still reads the state
+  const both = questionOf(armed({ instrument: "INTC", side: "long", target: "120", stop: "100", evaluation: fired }));
+  assert.equal(both.tier, "levels");
+  assert.equal(both.text, "INTC reaches 120.00 before 100.00?");
+  // a row that has NOT triggered keeps the trigger question (STALE / ARMED)
+  assert.equal(questionOf(armed({ side: "long", evaluation: { ...ev, state: "STALE" } })).tier, "trigger");
+  assert.equal(questionOf(armed({ side: "long" })).tier, "trigger");
+});
+
+test("statusOf: TRIGGERED tint follows the STATED side, with the crossing in words", () => {
+  const ev = armed().evaluation!;
+  const trig = (dir: "above" | "below", level: number) => ({ ...ev, state: "TRIGGERED" as const, dir, level });
+  // SPY / NOW / UBER: shorts that crossed below — the move favored the side
+  const spy = statusOf({ side: "short", evaluation: trig("below", 768) });
+  assert.equal(spy.tone, "fav");
+  assert.equal(spy.move, "below 768.00");
+  assert.equal(spy.against, null);
+  assert.equal(statusText(spy), "Triggered below 768.00");
+  // a long that crossed above: favored
+  assert.equal(statusOf({ side: "long", evaluation: trig("above", 106.1) }).tone, "fav");
+  // against the side: red, and the words say so
+  const longDown = statusOf({ side: "long", evaluation: trig("below", 34.8) });
+  assert.equal(longDown.tone, "against");
+  assert.equal(statusText(longDown), "Triggered below 34.80 · against the long");
+  assert.equal(statusOf({ side: "short", evaluation: trig("above", 50) }).tone, "against");
+  // no stated side (a derived one does not count), or watch: neutral tint, words kept
+  const unsided = statusOf({ evaluation: trig("below", 34.8) });
+  assert.equal(unsided.tone, "trig");
+  assert.equal(statusText(unsided), "Triggered below 34.80");
+  assert.equal(statusOf({ side: "watch", evaluation: trig("above", 5) }).tone, "trig");
+  // non-triggered states carry no move
+  const stale = statusOf({ side: "long", evaluation: { ...ev, state: "STALE" } });
+  assert.equal(stale.move, null);
+  assert.equal(statusText(stale), "Stale");
+});
+
+test("bookStats: derived sides are counted inside long/short and flagged", () => {
+  const s = bookStats([armed({ side: "long" }), armed({ entry: "34.80", target: "37" }), armed({ entry: "holds" })], T0);
+  assert.equal(s.long, 2);
+  assert.equal(s.derived, 1);
+  assert.equal(s.unsided, 1);
+});
+
+test("quotes: a failed batch makes exactly its own symbols UNAVAILABLE — never an older round's price", () => {
+  const A = Array.from({ length: 20 }, (_, i) => `S${String(i).padStart(2, "0")}`);
+  const B = ["T00", "T01", "T02"];
+  const priced = (syms: string[], px: number) => Object.fromEntries(syms.map((s) => [s, { price: px, chgPct: 1.5 }]));
+  const MAX = 180_000;
+  // round 1: both batches answer
+  let book: QuoteBook = mergeQuoteRound({}, [{ symbols: A, ok: true, quotes: priced(A, 10) }, { symbols: B, ok: true, quotes: priced(B, 20) }], T0);
+  assert.deepEqual(readQuote(book, "T01", T0, MAX), { state: "ok", price: 20, chgPct: 1.5, seenAt: T0 });
+  // round 2: batch A answers, batch B fails (the heatmap's silent tail)
+  const t2 = T0 + 60_000;
+  book = mergeQuoteRound(book, [{ symbols: A, ok: true, quotes: priced(A, 11) }, { symbols: B, ok: false }], t2);
+  assert.equal(readQuote(book, "S05", t2, MAX).state, "ok");
+  const b = readQuote(book, "T01", t2, MAX);
+  assert.equal(b.state, "unavailable");
+  assert.equal(book.T01.price, null); // the round-1 price is gone, not kept around
+  assert.equal(book.T01.seenAt, T0); // its own last-seen time survives
+  // an answered batch that omits a symbol: that symbol alone is unavailable
+  book = mergeQuoteRound(book, [{ symbols: ["X1", "X2"], ok: true, quotes: { X1: { price: 5 } } }], t2);
+  assert.equal(readQuote(book, "X1", t2, MAX).state, "ok");
+  assert.equal(readQuote(book, "x2", t2, MAX).state, "unavailable");
+  // a symbol never asked is pending, not unavailable
+  assert.equal(readQuote(book, "NEVER", t2, MAX).state, "pending");
+  // a stalled poll ages a price out even though no round failed
+  assert.equal(readQuote(book, "S05", t2 + MAX + 1, MAX).state, "unavailable");
+  // the next good round restores it
+  const t3 = t2 + 60_000;
+  book = mergeQuoteRound(book, [{ symbols: B, ok: true, quotes: priced(B, 21) }], t3);
+  assert.equal(readQuote(book, "T01", t3, MAX).state, "ok");
+  // a non-positive or missing price is no price
+  book = mergeQuoteRound(book, [{ symbols: ["Z"], ok: true, quotes: { Z: { price: 0 } } }], t3);
+  assert.equal(readQuote(book, "Z", t3, MAX).state, "unavailable");
+  // an answer without a % keeps chgPct null (the heatmap says so rather than shading zero)
+  book = mergeQuoteRound(book, [{ symbols: ["P"], ok: true, quotes: { P: { price: 3 } } }], t3);
+  const p = readQuote(book, "P", t3, MAX);
+  assert.equal(p.state === "ok" ? p.chgPct : "x", null);
 });

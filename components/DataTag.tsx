@@ -16,15 +16,22 @@ const LABEL: Record<DataTagKind, string> = {
   stale: "STALE",
 };
 
-export default function DataTag({ kind, detail, title }: {
+/** feat/v4-1-terminal — the same vocabulary for a tag that must fit a small
+ *  tile (the dock heatmap): tighter tracking, and DATA UNAVAILABLE drops its
+ *  "DATA" prefix. Same kinds, same colours; only the fit changes. */
+const COMPACT_LABEL: Partial<Record<DataTagKind, string>> = { unavail: "UNAVAILABLE" };
+
+export default function DataTag({ kind, detail, title, compact = false }: {
   kind: DataTagKind;
   /** short suffix, e.g. "60s" or "as of 09:42 ET" */
   detail?: string;
   title?: string;
+  /** tile-sized: tighter tracking, shortest label in the vocabulary */
+  compact?: boolean;
 }) {
   return (
-    <span className={`dtag dtag-${kind}`} title={title}>
-      {LABEL[kind]}
+    <span className={`dtag dtag-${kind}${compact ? " dtag-compact" : ""}`} title={title}>
+      {compact ? COMPACT_LABEL[kind] ?? LABEL[kind] : LABEL[kind]}
       {detail ? <i>{detail}</i> : null}
     </span>
   );

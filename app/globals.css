@@ -5052,6 +5052,8 @@ button.pulse-line:focus-visible {
 .dtag-unavail { color: var(--rd-app-alert); border-color: rgb(224 138 122 / 0.5); }
 .dtag-calc { color: var(--rd-app-calc); border-color: rgb(156 196 228 / 0.4); }
 .dtag-stale { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
+/* feat/v4-1-terminal — a tag that has to fit a small tile (the dock heatmap) */
+.dtag-compact { letter-spacing: 0.04em; padding: 1px 4px; max-width: 100%; white-space: nowrap; }
 
 .hb-regime { margin: 10px 0 4px; }
 .hb-regime-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

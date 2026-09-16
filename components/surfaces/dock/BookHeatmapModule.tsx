@@ -5,11 +5,16 @@
 // occurrence wins — the list arrives newest-first). Equal tile sizing stays
 // the honest layout (no position data exists — a plain filled grid IS the
 // squarified treemap for equal weights; hand-rolled, zero dependencies).
-// Color encodes TODAY's % move off the existing price pipeline: live
-// instruments ride one /api/intel/quotes call (the desk shorthand mapped
-// through chartSymbolFor). No quote → a neutral ∅ tile, never a fabricated
-// zero. Tile click = the desk's ONE selection (chart dock + detail panel +
-// ?idea=). Under the map: today's top/bottom three.
+// Color encodes TODAY's % move. feat/v4-1-terminal: the map no longer fetches
+// its own quotes. It reads the terminal's ONE quote book through the reader
+// the feed passes down (lib/idea-card readQuote) — the same chunked fetch
+// and the same per-symbol freshness the cards use. The old single call asked
+// the route for every symbol at once, the route slices at twenty, and the
+// tail went silently blank. Now: a symbol not yet asked → a neutral pending
+// tile; a symbol whose batch failed or aged out → an UNAVAILABLE chip on the
+// tile, never a blank and never an older round's %. Tile click = the desk's
+// ONE selection (chart dock + detail panel + ?idea=). Under the map: today's
+// top/bottom three, from fresh quotes only.
 //
 // chore/terminal-cut: the tracked cards (the retired desk's publish pipeline)
 // no longer feed the map — the book is the live book.
@@ -17,8 +22,10 @@
 // T3 folded the old Desk Bias here: the header carries the long/short book
 // counts ("BOOK — n LONG · n SHORT · n unset").
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { PublicIdea } from "@/lib/ideas";
+import type { QuoteRead } from "@/lib/idea-card";
+import DataTag from "@/components/DataTag";
 import type { ChartSelection } from "./IdeaChartModule";
 import { chartSymbolFor, selectionFromLive, sideOf } from "./derive";
 
@@ -35,12 +42,15 @@ type Tile = {
   ticker: string;
   side: "LONG" | "SHORT" | null;
   quote: Quote | null;
+  /** why there is no quote: not asked yet, or asked and not answered */
+  quoteState: "ok" | "pending" | "unavailable";
   select: ChartSelection;
 };
 
 export default function BookHeatmapModule({
   liveIdeas,
   sourcesAnswered = true,
+  quoteFor,
   selection,
   onSelect,
 }: {
@@ -50,38 +60,11 @@ export default function BookHeatmapModule({
    *  module cannot tell an empty book from an unread one and states
    *  "0 LONG · 0 SHORT · 0 UNSET" and "nothing on the book yet" as fact. */
   sourcesAnswered?: boolean;
+  /** the terminal's ONE quote reader — see the header note */
+  quoteFor: (symbol: string) => QuoteRead;
   selection: ChartSelection | null;
   onSelect: (sel: ChartSelection) => void;
 }) {
-  // today's % for LIVE instruments — one quotes call over the existing route
-  const [liveQuotes, setLiveQuotes] = useState<Record<string, Quote>>({});
-  const liveSyms = useMemo(
-    () => [...new Set(liveIdeas.map((i) => chartSymbolFor(i.instrument)))].sort().join(","),
-    [liveIdeas],
-  );
-  useEffect(() => {
-    if (!liveSyms) return;
-    let cancelled = false;
-    const pull = () => {
-      fetch(`/api/intel/quotes?symbols=${encodeURIComponent(liveSyms)}`, { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { quotes?: Record<string, Quote> }) => {
-          if (!cancelled && j.quotes) setLiveQuotes(j.quotes);
-        })
-        .catch(() => {
-          /* tiles fall back to their honest ∅ state */
-        });
-    };
-    pull();
-    const id = window.setInterval(() => {
-      if (!document.hidden) pull();
-    }, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [liveSyms]);
-
   const tiles: Tile[] = useMemo(() => {
     // ONE TILE PER TICKER — first occurrence (newest) wins
     const seen = new Set<string>();
@@ -91,12 +74,16 @@ export default function BookHeatmapModule({
       if (seen.has(ticker)) continue;
       seen.add(ticker);
       const s = sideOf(i);
-      const q = liveQuotes[chartSymbolFor(i.instrument)];
+      const r = quoteFor(chartSymbolFor(i.instrument));
+      // a tile's color is today's %: an answered quote with no % carried is
+      // as unusable here as no quote — it says so rather than shading zero
+      const usable = r.state === "ok" && r.chgPct != null && Number.isFinite(r.chgPct);
       out.push({
         key: `live:${i.id}`,
         ticker,
         side: s?.side === "LONG" ? "LONG" : s?.side === "SHORT" ? "SHORT" : null,
-        quote: q && Number.isFinite(q.chgPct) && q.price > 0 ? q : null,
+        quote: usable ? { price: r.price, chgPct: r.chgPct as number } : null,
+        quoteState: usable ? "ok" : r.state === "pending" ? "pending" : "unavailable",
         select: selectionFromLive(i),
       });
     }
@@ -109,7 +96,7 @@ export default function BookHeatmapModule({
       return b.quote.chgPct - a.quote.chgPct;
     });
     return out;
-  }, [liveIdeas, liveQuotes]);
+  }, [liveIdeas, quoteFor]);
 
   const longs = tiles.filter((t) => t.side === "LONG").length;
   const shorts = tiles.filter((t) => t.side === "SHORT").length;
@@ -185,11 +172,19 @@ export default function BookHeatmapModule({
                 aria-selected={sel}
                 className={`if-hm-tile${sel ? " sel" : ""}${t.quote ? "" : " noq"}`}
                 style={tileStyle(t)}
-                title={`${t.ticker}${t.quote ? ` · ${fmtPct(t.quote.chgPct)} today` : " · no quote"} — click to select`}
+                title={`${t.ticker}${
+                  t.quote ? ` · ${fmtPct(t.quote.chgPct)} today` : t.quoteState === "pending" ? " · quote loading" : " · quote unavailable"
+                } — click to select`}
                 onClick={() => onSelect(t.select)}
               >
                 <span className="if-hm-tkr">{t.ticker}</span>
-                <span className="if-hm-pct">{t.quote ? fmtPct(t.quote.chgPct) : "·"}</span>
+                {t.quote ? (
+                  <span className="if-hm-pct">{fmtPct(t.quote.chgPct)}</span>
+                ) : t.quoteState === "unavailable" ? (
+                  <DataTag kind="unavail" compact />
+                ) : (
+                  <span className="if-hm-pct">·</span>
+                )}
               </button>
               );
             })}

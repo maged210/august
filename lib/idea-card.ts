@@ -10,9 +10,12 @@
 //
 //   - the CARD QUESTION is a deterministic template over the row's own
 //     fields, in three tiers: stated numeric TARGET + STOP → the odds
-//     question; else the pass's PARSED TRIGGER (evaluation.level/dir, the
-//     exact number the status chip is judged against) → the trigger
-//     question; else the ticker + a thesis excerpt. No model touches it.
+//     question; else, for a row that has NOT triggered, the pass's PARSED
+//     TRIGGER (evaluation.level/dir) → the trigger question; else the
+//     ticker + a thesis excerpt. No model touches it.
+//   - a LAST PRICE is fresh only when its own symbol was answered by the
+//     latest quotes round that asked for it (readQuote); a symbol whose
+//     batch failed is UNAVAILABLE, never an older round's price.
 //   - "% OF THE WAY" is (last − stop) / (target − stop), clamped 0–100, and
 //     exists ONLY when target, stop and last are all real numbers. The
 //     reason it is absent is returned, so the card can say "no stop"
@@ -124,12 +127,23 @@ export function etDateKey(ms: number): string {
 // ── status chip — INTEGRITY-1 flags, 1:1 ─────────────────────────────────────
 
 export type StatusKey = "LIVE" | "TRIGGERED" | "NEEDS_LEVEL" | "QUOTE_SUSPECT" | "STALE";
-export type StatusTone = "live" | "trig" | "warn" | "mute";
+/** "fav" / "against" exist only for TRIGGERED: green when the crossing moved
+ *  the way the STATED side wanted (long crossing above, short crossing
+ *  below), red when it moved against it. "trig" is a TRIGGERED row with no
+ *  stated long/short side — a neutral tint, since there is no side for the
+ *  move to favor. */
+export type StatusTone = "live" | "fav" | "against" | "trig" | "warn" | "mute";
 export type StatusChip = {
   key: StatusKey;
   /** the rendered word(s) */
   label: string;
   tone: StatusTone;
+  /** TRIGGERED only: the crossing in words ("above 106.10"), so the tint is
+   *  never the only carrier of which way the move went */
+  move: string | null;
+  /** TRIGGERED against a stated side only: "against the long" / "against the
+   *  short" — the words that stand beside the red tint */
+  against: string | null;
   /** the pass's honest cause, when the pass has seen the row */
   reason: string | null;
   /** when the pass concluded it (epoch ms) — absent until the first pass */
@@ -143,9 +157,8 @@ const STATUS_LABEL: Record<StatusKey, string> = {
   QUOTE_SUSPECT: "Quote suspect",
   STALE: "Stale",
 };
-const STATUS_TONE: Record<StatusKey, StatusTone> = {
+const STATUS_TONE: Record<Exclude<StatusKey, "TRIGGERED">, StatusTone> = {
   LIVE: "live",
-  TRIGGERED: "trig",
   NEEDS_LEVEL: "warn",
   QUOTE_SUSPECT: "warn",
   STALE: "mute",
@@ -158,16 +171,25 @@ function keyOfState(state: IdeaEvalState | undefined): StatusKey {
   return state;
 }
 
-export function statusOf(idea: Pick<PublicIdea, "evaluation">): StatusChip {
+export function statusOf(idea: Pick<PublicIdea, "evaluation"> & Partial<Pick<PublicIdea, "side">>): StatusChip {
   const ev = idea.evaluation;
   const key = keyOfState(ev?.state);
-  return {
-    key,
-    label: STATUS_LABEL[key],
-    tone: STATUS_TONE[key],
-    reason: ev?.reason ?? null,
-    at: ev?.at ?? null,
-  };
+  const base = { key, label: STATUS_LABEL[key], reason: ev?.reason ?? null, at: ev?.at ?? null };
+  if (key !== "TRIGGERED" || !ev) return { ...base, tone: STATUS_TONE[key as Exclude<StatusKey, "TRIGGERED">] ?? "live", move: null, against: null };
+  const move = ev.dir && ev.level != null ? `${ev.dir} ${fmtLevel(ev.level)}` : null;
+  // the tint follows the STATED side only — a derived side is an inference,
+  // and the pass's own crossing direction is the move being judged
+  if ((idea.side === "long" || idea.side === "short") && ev.dir) {
+    const favors = (idea.side === "long" && ev.dir === "above") || (idea.side === "short" && ev.dir === "below");
+    return { ...base, tone: favors ? "fav" : "against", move, against: favors ? null : `against the ${idea.side}` };
+  }
+  return { ...base, tone: "trig", move, against: null };
+}
+
+/** the status in words, as it renders next to its tint: "Triggered above
+ *  106.10", "Triggered below 34.80 · against the long", "Stale" */
+export function statusText(chip: StatusChip): string {
+  return [chip.move ? `${chip.label} ${chip.move}` : chip.label, chip.against].filter(Boolean).join(" · ");
 }
 
 // ── the card question — a template, never a rewrite ──────────────────────────
@@ -233,14 +255,17 @@ export function questionOf(
       return { text: `${T} drops under ${fmtLevel(target)} before ${fmtLevel(stop)}?`, tier: "levels", excerpt: null };
   }
   const ev = idea.evaluation;
-  if (ev && ev.level != null && ev.dir && ev.state !== "QUOTE_SUSPECT") {
-    // the pass's own parse of the entry language — the number the LIVE /
-    // TRIGGERED chip is judged against, already on the wire. Not asked when
-    // the pass itself refused to grade the level (QUOTE SUSPECT), and not
-    // asked when it points the opposite way from the row's side (a "drops
-    // under" question on a long idea is the parser reading a stop clause as
-    // the entry — the chip and the LEVELS card still state what the pass
-    // read; the headline does not publish it as the call).
+  if (ev && ev.level != null && ev.dir && ev.state !== "QUOTE_SUSPECT" && ev.state !== "TRIGGERED") {
+    // the pass's own parse of the entry language — the number the LIVE chip
+    // is judged against, already on the wire. Asked ONLY of rows that have
+    // not triggered: a fired trigger is an answered question, and the row
+    // reads its state instead (the target/stop question above when both
+    // exist, else the ticker + excerpt below). Not asked when the pass
+    // refused to grade the level (QUOTE SUSPECT), and not asked when it
+    // points the opposite way from the row's side (a "drops under" question
+    // on a long idea is the parser reading a stop clause as the entry — the
+    // chip and the LEVELS card still state what the pass read; the headline
+    // does not publish it as the call).
     const side = sideOf(idea);
     const wants: "long" | "short" = ev.dir === "above" ? "long" : "short";
     const agrees = !side || side.side === "WATCH" || side.side.toLowerCase() === wants;
@@ -334,6 +359,9 @@ export type BookStats = {
   short: number;
   /** the desk STATED "watch" — a side, not an absence */
   watch: number;
+  /** long/short sides DERIVED from entry vs target — already inside `long`
+   *  and `short`; counted so the tile can mark them (~) */
+  derived: number;
   /** rows with no stated side and no derivable one */
   unsided: number;
 };
@@ -344,6 +372,7 @@ export function bookStats(ideas: readonly PublicIdea[], now: number = Date.now()
   let long = 0;
   let short = 0;
   let watch = 0;
+  let derived = 0;
   let unsided = 0;
   for (const i of ideas) {
     const ev = i.evaluation;
@@ -353,8 +382,9 @@ export function bookStats(ideas: readonly PublicIdea[], now: number = Date.now()
     else if (s?.side === "SHORT") short++;
     else if (s?.side === "WATCH") watch++;
     else unsided++;
+    if (s?.derived) derived++;
   }
-  return { live: ideas.length, triggeredToday, long, short, watch, unsided };
+  return { live: ideas.length, triggeredToday, long, short, watch, derived, unsided };
 }
 
 export type BookFilter = "all" | "triggered" | "live" | "needs_level";
@@ -474,4 +504,66 @@ export function chunkSymbols(symbols: readonly string[], size = 20): string[][] 
   const out: string[][] = [];
   for (let i = 0; i < uniq.length; i += size) out.push(uniq.slice(i, i + size));
   return out;
+}
+
+// ── last quotes — ONE freshness policy for every surface that shows a price ──
+//
+// The card list and the dock heatmap read the same book through readQuote,
+// so a failure can never be honest in one place and silent in the other.
+// Per SYMBOL, not per round: each slot carries its own last-seen time and the
+// time its batch was last asked. A symbol is fresh only when the latest
+// attempt that included it answered with a price, and that answer is recent.
+// A failed batch nulls its symbols' prices — an older round's price is never
+// kept around to be mistaken for a fresh one.
+
+export type QuoteSlot = {
+  price: number | null;
+  /** today's % move, when the route carried one */
+  chgPct: number | null;
+  /** when this symbol last came back with a price (epoch ms) */
+  seenAt: number | null;
+  /** when this symbol's batch was last asked, answered or not (epoch ms) */
+  checkedAt: number;
+};
+export type QuoteBook = Record<string, QuoteSlot>;
+/** one chunk's outcome: ok=false when the request itself failed */
+export type QuoteBatch = {
+  symbols: readonly string[];
+  ok: boolean;
+  quotes?: Record<string, { price?: number; chgPct?: number } | undefined>;
+};
+
+export function mergeQuoteRound(prev: QuoteBook, batches: readonly QuoteBatch[], now: number): QuoteBook {
+  const next: QuoteBook = { ...prev };
+  for (const b of batches) {
+    for (const raw of b.symbols) {
+      const sym = raw.trim().toUpperCase();
+      const q = b.ok ? b.quotes?.[sym] : undefined;
+      const price = q && Number.isFinite(q.price) && (q.price as number) > 0 ? (q.price as number) : null;
+      if (price != null) {
+        next[sym] = { price, chgPct: Number.isFinite(q!.chgPct) ? (q!.chgPct as number) : null, seenAt: now, checkedAt: now };
+      } else {
+        // the batch failed, or answered without this symbol: no price at all
+        next[sym] = { price: null, chgPct: null, seenAt: prev[sym]?.seenAt ?? null, checkedAt: now };
+      }
+    }
+  }
+  return next;
+}
+
+export type QuoteRead =
+  | { state: "pending" }
+  | { state: "ok"; price: number; chgPct: number | null; seenAt: number }
+  | { state: "unavailable"; seenAt: number | null };
+
+/** pending: never asked yet · ok: answered by its latest attempt, within
+ *  maxAgeMs (a poll that stalls — a hidden tab — ages a price out) ·
+ *  unavailable: everything else */
+export function readQuote(book: QuoteBook, symbol: string, now: number, maxAgeMs: number): QuoteRead {
+  const slot = book[symbol.trim().toUpperCase()];
+  if (!slot) return { state: "pending" };
+  if (slot.price != null && slot.seenAt != null && slot.seenAt === slot.checkedAt && now - slot.seenAt <= maxAgeMs) {
+    return { state: "ok", price: slot.price, chgPct: slot.chgPct, seenAt: slot.seenAt };
+  }
+  return { state: "unavailable", seenAt: slot.seenAt };
 }
