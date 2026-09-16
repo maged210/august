@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#eceef1;color:#0f1115;font-family:Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#2456d6;text-decoration:none}a:hover{color:#0f1115}
+::-webkit-scrollbar{width:0;height:0}
+@keyframes augPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<section style="padding:40px 44px 40px;display:flex;flex-direction:column;gap:26px">
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:900px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="width:8px;height:8px;border-radius:50%;background:#2456d6"></span><span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.3em;color:#0f1115">AUGUST · MOBILE · V4 · MARKETS</span></div>
+    <p style="margin:4px 0 0;font:400 13.5px/1.6 Geist,sans-serif;color:#6b7280;max-width:80ch">Prediction-market idiom, original execution: every call is a question with a chance attached, answered by two colored buttons. Light stage, white cards, big bold percentages, category chips, a search-style command bar, activity feeds. No money — the only currency is the record (YOU 0–0 · AUGUST 2–3). Plain sans everywhere, per your edit to v3.</p>
+    <div style="display:flex;gap:6px;margin-top:4px"><span style="width:26px;height:26px;background:#f4f5f7;border:1px solid #e6e8ec;border-radius:6px"></span><span style="width:26px;height:26px;background:#ffffff;border:1px solid #e6e8ec;border-radius:6px"></span><span style="width:26px;height:26px;background:#0f1115;border-radius:6px"></span><span style="width:26px;height:26px;background:#6b7280;border-radius:6px"></span><span style="width:26px;height:26px;background:#2456d6;border-radius:6px"></span><span style="width:26px;height:26px;background:#0e7f41;border-radius:6px"></span><span style="width:26px;height:26px;background:#cf3226;border-radius:6px"></span><span style="width:26px;height:26px;background:#b7791f;border-radius:6px"></span></div>
+  </div>
+
+  <div style="display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap">
+
+    <!-- 01 TODAY -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">01 · TODAY — the calls as markets</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 0 110px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px 0">
+              <span style="font:700 18px/1 Geist,sans-serif;letter-spacing:-.01em">August</span>
+              <span style="display:flex;align-items:center;gap:4px">
+                <span style="display:grid;place-items:center;width:40px;height:40px;color:#0f1115"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a3.5 3.5 0 0 0-3.5 3.5c0 3-1.3 4-1.3 4h9.6s-1.3-1-1.3-4A3.5 3.5 0 0 0 8 2Z"></path><path d="M6.6 12a1.5 1.5 0 0 0 2.8 0"></path></svg></span>
+                <span style="display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#0f1115;color:#fff;font:600 11px/1 'JetBrains Mono',monospace">M</span>
+              </span>
+            </div>
+            <div style="margin:14px 16px 0;display:flex;align-items:center;gap:10px;min-height:48px;padding:0 14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <input value="{{ draft }}" onChange="{{ onDraft }}" placeholder="Search a ticker or ask August" spellcheck="false" style="flex:1;min-width:0;height:46px;border:none;outline:none;background:transparent;font:400 14.5px/1 Geist,sans-serif;color:#0f1115">
+            </div>
+            <div style="display:flex;gap:6px;overflow-x:auto;padding:12px 16px 0">
+              <sc-for list="{{ cats }}" as="c" hint-placeholder-count="5">
+                <button type="button" onClick="{{ c.pick }}" style="flex:none;min-height:34px;padding:0 14px;border-radius:999px;border:1px solid {{ c.bc }};background:{{ c.bg }};color:{{ c.c }};font:500 12.5px/1 Geist,sans-serif;cursor:pointer">{{ c.label }}</button>
+              </sc-for>
+            </div>
+
+            <!-- regime strip -->
+            <div style="margin:14px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px">
+              <span style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/1 Geist,sans-serif;color:#6b7280">Market regime</span><span style="font:600 15px/1 Geist,sans-serif">Neutral <span style="font:400 12px/1 Geist,sans-serif;color:#6b7280">· 2 of 3 inputs agree</span></span></span>
+              <span style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><span style="display:flex;gap:2px"><span style="width:22px;height:6px;border-radius:3px;background:#cf3226;opacity:.35"></span><span style="width:22px;height:6px;border-radius:3px;background:#e6e8ec"></span><span style="width:22px;height:6px;border-radius:3px;background:#0f1115"></span><span style="width:22px;height:6px;border-radius:3px;background:#e6e8ec"></span><span style="width:22px;height:6px;border-radius:3px;background:#0e7f41;opacity:.35"></span></span><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:#6b7280">RISK OFF · ON</span></span>
+            </div>
+
+            <!-- featured call -->
+            <div style="margin:12px 16px 0;display:flex;flex-direction:column;gap:14px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px;box-shadow:0 1px 2px rgba(16,24,40,.05)">
+              <div style="display:flex;align-items:flex-start;gap:12px">
+                <span style="display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:10px;background:#0f1115;color:#fff;font:700 11px/1 'JetBrains Mono',monospace">NQ</span>
+                <span style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0"><span style="font:600 16px/1.3 Geist,sans-serif">NQ closes higher today?</span><span style="font:400 12px/1.3 Geist,sans-serif;color:#6b7280">The call · settles 16:00 ET · vs 29,449</span></span>
+                <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font:700 26px/1 Geist,sans-serif;letter-spacing:-.02em;color:#0e7f41">58%</span><span style="font:500 10.5px/1 Geist,sans-serif;color:#6b7280">chance</span></span>
+              </div>
+              <svg viewBox="0 0 338 56" width="100%" height="56" preserveAspectRatio="none" style="display:block"><polygon points="{{ featArea }}" fill="rgba(14,127,65,.10)"></polygon><polyline points="{{ featLine }}" fill="none" stroke="#0e7f41" stroke-width="1.8" stroke-linejoin="round"></polyline></svg>
+              <sc-if value="{{ callOpen }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;gap:8px">
+                  <button type="button" onClick="{{ pickHigher }}" style="flex:1;min-height:48px;border:none;border-radius:12px;background:rgba(14,127,65,.12);color:#0e7f41;font:600 14px/1 Geist,sans-serif;cursor:pointer">Higher <span style="font-weight:500;opacity:.8">58%</span></button>
+                  <button type="button" onClick="{{ pickLower }}" style="flex:1;min-height:48px;border:none;border-radius:12px;background:rgba(207,50,38,.1);color:#cf3226;font:600 14px/1 Geist,sans-serif;cursor:pointer">Lower <span style="font-weight:500;opacity:.8">42%</span></button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ callTaken }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 14px;border-radius:12px;background:#f4f5f7"><span style="font:600 13px/1 Geist,sans-serif">You: {{ youSide }}</span><span style="font:400 12px/1 Geist,sans-serif;color:#6b7280">settles at the close</span></div>
+              </sc-if>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:400 12px/1 Geist,sans-serif;color:#6b7280">August says <b style="color:#0f1115;font-weight:600">Higher</b> · small</span><span style="font:500 11px/1 'JetBrains Mono',monospace;color:#6b7280">YOU 0–0 · AUG 2–3</span></div>
+            </div>
+
+            <!-- reads -->
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:22px 16px 8px"><span style="font:600 14px/1 Geist,sans-serif">August's reads</span><span style="font:400 11.5px/1 Geist,sans-serif;color:#6b7280">calculated · not advice</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px;padding:0 16px">
+              <sc-for list="{{ reads }}" as="r" hint-placeholder-count="5">
+                <div style="display:flex;flex-direction:column;gap:12px;padding:14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <span style="display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:{{ r.avBg }};color:{{ r.avC }};font:700 10px/1 'JetBrains Mono',monospace">{{ r.t }}</span>
+                    <span style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><span style="font:600 14px/1.3 Geist,sans-serif">{{ r.q }}</span><span style="font:400 11.5px/1.3 Geist,sans-serif;color:#6b7280">{{ r.when }}</span></span>
+                    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font:700 20px/1 Geist,sans-serif;letter-spacing:-.02em;color:{{ r.pc }}">{{ r.p }}</span><span style="font:500 10px/1 Geist,sans-serif;color:#6b7280">{{ r.pl }}</span></span>
+                  </div>
+                  <sc-if value="{{ r.live }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex;gap:8px"><button type="button" style="flex:1;min-height:38px;border:none;border-radius:10px;background:rgba(14,127,65,.12);color:#0e7f41;font:600 13px/1 Geist,sans-serif;cursor:pointer">{{ r.yes }}</button><button type="button" style="flex:1;min-height:38px;border:none;border-radius:10px;background:rgba(207,50,38,.1);color:#cf3226;font:600 13px/1 Geist,sans-serif;cursor:pointer">{{ r.no }}</button></div>
+                  </sc-if>
+                  <sc-if value="{{ r.done }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border-radius:10px;background:#f4f5f7;font:500 12.5px/1 Geist,sans-serif;color:#6b7280"><span style="color:#0f1115;font-weight:600">✓ Resolved · {{ r.result }}</span>· August was right</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;z-index:35;display:flex;align-items:flex-start;justify-content:center;height:84px;padding-top:8px;background:#ffffff;border-top:1px solid #e6e8ec">
+            <sc-for list="{{ tabsHome }}" as="t" hint-placeholder-count="4">
+              <button type="button" style="border:none;background:none;cursor:pointer;flex:1;max-width:110px;min-height:44px;display:flex;flex-direction:column;align-items:center;gap:4px;color:{{ t.c }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.d }}"></path></svg><span style="font:500 10px/1 Geist,sans-serif">{{ t.label }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- 02 THE CALL -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">02 · THE CALL — market page</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 16px 130px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px"><button type="button" style="min-height:44px;padding:0;border:none;background:none;color:#0f1115;font:500 14px/1 Geist,sans-serif;cursor:pointer">‹ Today</button><span style="display:flex;gap:4px"><span style="display:grid;place-items:center;width:40px;height:40px;color:#0f1115"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"></path></svg></span><span style="display:grid;place-items:center;width:40px;height:40px;color:#0f1115"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M12 15V3m0 0-4 4m4-4 4 4"></path></svg></span></span></div>
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <span style="display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:12px;background:#0f1115;color:#fff;font:700 13px/1 'JetBrains Mono',monospace">NQ</span>
+              <span style="display:flex;flex-direction:column;gap:5px"><span style="font:700 21px/1.25 Geist,sans-serif;letter-spacing:-.01em">NQ closes higher today?</span><span style="font:400 12.5px/1.3 Geist,sans-serif;color:#6b7280">Settles 16:00 ET · reference 29,449 (prev close)</span></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <div style="display:flex;align-items:baseline;gap:10px"><span style="font:700 40px/1 Geist,sans-serif;letter-spacing:-.03em;color:#0e7f41">{{ chance }}%</span><span style="font:500 13px/1 Geist,sans-serif;color:#0e7f41">chance · {{ chanceDelta }}</span></div>
+              <div style="position:relative"><svg viewBox="0 0 338 140" width="100%" height="140" preserveAspectRatio="none" style="display:block"><line x1="0" y1="70" x2="338" y2="70" stroke="#e6e8ec" stroke-dasharray="3 4"></line><polygon points="{{ callArea }}" fill="rgba(14,127,65,.10)"></polygon><polyline points="{{ callLine }}" fill="none" stroke="#0e7f41" stroke-width="2" stroke-linejoin="round"></polyline></svg><span style="position:absolute;left:0;top:58px;font:500 9.5px/1 'JetBrains Mono',monospace;color:#9aa1ab;background:#fff;padding:0 4px 0 0">50%</span></div>
+              <div style="display:flex;justify-content:space-between;font:500 10px/1 'JetBrains Mono',monospace;color:#6b7280"><span>{{ rangeStart }}</span><span>now</span></div>
+              <div style="display:flex;gap:4px;padding:3px;background:#f4f5f7;border-radius:10px">
+                <sc-for list="{{ ranges }}" as="g" hint-placeholder-count="4">
+                  <button type="button" onClick="{{ g.pick }}" style="flex:1;min-height:32px;border:none;border-radius:8px;background:{{ g.bg }};color:{{ g.c }};box-shadow:{{ g.sh }};font:600 12px/1 Geist,sans-serif;cursor:pointer">{{ g.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <span style="font:600 14px/1 Geist,sans-serif">August's read</span>
+              <p style="margin:0;font:400 14.5px/1.55 Geist,sans-serif;color:#0f1115">Two of three inputs lean risk-on, but the VIX drift is the tell. Higher — sized small. The book is flat on the index and I'd rather be early than loud.</p>
+              <div style="display:flex;flex-direction:column">
+                <sc-for list="{{ inputs }}" as="i" hint-placeholder-count="3">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:40px;border-top:1px solid #eef0f3;font:400 13px/1.3 Geist,sans-serif"><span style="color:#6b7280">{{ i.k }}</span><span style="display:flex;align-items:center;gap:8px"><span>{{ i.v }}</span><span style="font:600 11px/1 Geist,sans-serif;padding:4px 8px;border-radius:999px;background:{{ i.bg }};color:{{ i.c }}">{{ i.tag }}</span></span></div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <span style="font:600 14px/1 Geist,sans-serif">Rules</span>
+              <p style="margin:0;font:400 13px/1.5 Geist,sans-serif;color:#6b7280">Resolves <b style="color:#0f1115;font-weight:600">Higher</b> if the NQ front-month settles above 29,449 at 16:00 ET. Scored once a day against your pick. Decision support only — August never places orders.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <span style="font:600 14px/1 Geist,sans-serif;padding-bottom:8px">Activity</span>
+              <sc-for list="{{ activity }}" as="a" hint-placeholder-count="4">
+                <div style="display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 0;border-top:1px solid #eef0f3"><span style="font:500 13px/1.3 Geist,sans-serif">{{ a.t }}</span><span style="font:500 11px/1.3 'JetBrains Mono',monospace;color:#6b7280;text-align:right">{{ a.when }}</span><span style="font:400 12px/1.3 Geist,sans-serif;color:#6b7280;grid-column:1 / -1">{{ a.sub }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;z-index:30;padding:12px 16px 44px;display:flex;gap:8px;background:#ffffff;border-top:1px solid #e6e8ec">
+            <button type="button" onClick="{{ pickHigher }}" style="flex:1;min-height:54px;border:none;border-radius:14px;background:#0e7f41;color:#fff;font:600 15px/1 Geist,sans-serif;cursor:pointer">Higher · 58%</button>
+            <button type="button" onClick="{{ pickLower }}" style="flex:1;min-height:54px;border:none;border-radius:14px;background:#cf3226;color:#fff;font:600 15px/1 Geist,sans-serif;cursor:pointer">Lower · 42%</button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- 03 TERMINAL -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">03 · TERMINAL — the book as odds-to-target</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 0 110px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:12px 16px 0"><span style="font:700 22px/1 Geist,sans-serif;letter-spacing:-.01em">Terminal</span><span style="font:500 12px/1 Geist,sans-serif;color:#6b7280">33 live · 7 tracked</span></div>
+            <div style="display:flex;gap:6px;overflow-x:auto;padding:14px 16px 0">
+              <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+                <button type="button" onClick="{{ f.pick }}" style="flex:none;min-height:34px;padding:0 14px;border-radius:999px;border:1px solid {{ f.bc }};background:{{ f.bg }};color:{{ f.c }};font:500 12.5px/1 Geist,sans-serif;cursor:pointer">{{ f.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;padding:14px 16px 0">
+              <span style="flex:1;display:flex;flex-direction:column;gap:4px;padding:12px 14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:12px"><span style="font:400 11px/1 Geist,sans-serif;color:#6b7280">Triggered today</span><span style="font:700 18px/1 Geist,sans-serif;color:#0e7f41">4</span></span>
+              <span style="flex:1;display:flex;flex-direction:column;gap:4px;padding:12px 14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:12px"><span style="font:400 11px/1 Geist,sans-serif;color:#6b7280">Book bias</span><span style="font:700 18px/1 Geist,sans-serif">30 L · 7 S</span></span>
+              <span style="flex:1;display:flex;flex-direction:column;gap:4px;padding:12px 14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:12px"><span style="font:400 11px/1 Geist,sans-serif;color:#6b7280">Next eval</span><span style="font:700 18px/1 Geist,sans-serif">22:10</span></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;padding:14px 16px 0">
+              <sc-for list="{{ visibleIdeas }}" as="i" hint-placeholder-count="7">
+                <button type="button" style="appearance:none;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:12px;padding:14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px;color:inherit;font-family:inherit">
+                  <span style="display:flex;align-items:center;gap:12px;width:100%">
+                    <span style="display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:{{ i.avBg }};color:{{ i.avC }};font:700 10px/1 'JetBrains Mono',monospace">{{ i.t }}</span>
+                    <span style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><span style="font:600 14px/1.3 Geist,sans-serif">{{ i.q }}</span><span style="display:flex;align-items:center;gap:6px;font:400 11.5px/1.3 Geist,sans-serif;color:#6b7280"><span style="color:{{ i.sc }};font-weight:600">{{ i.side }}</span>· <span style="font-weight:600;color:{{ i.stc }}">{{ i.status }}</span>· {{ i.age }}</span></span>
+                    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font:700 20px/1 Geist,sans-serif;letter-spacing:-.02em;color:{{ i.pc }}">{{ i.p }}</span><span style="font:500 10px/1 Geist,sans-serif;color:#6b7280">{{ i.pl }}</span></span>
+                  </span>
+                  <span style="display:flex;flex-direction:column;gap:6px;width:100%">
+                    <span style="position:relative;height:6px;border-radius:3px;background:#eef0f3;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:{{ i.bar }};background:{{ i.pc }};border-radius:3px"></span></span>
+                    <span style="display:flex;justify-content:space-between;font:500 10.5px/1 'JetBrains Mono',monospace;color:#6b7280"><span>stop {{ i.stop }}</span><span style="color:#0f1115">last {{ i.last }}</span><span>target {{ i.target }}</span></span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;z-index:35;display:flex;align-items:flex-start;justify-content:center;height:84px;padding-top:8px;background:#ffffff;border-top:1px solid #e6e8ec">
+            <sc-for list="{{ tabsDesk }}" as="t" hint-placeholder-count="4">
+              <button type="button" style="border:none;background:none;cursor:pointer;flex:1;max-width:110px;min-height:44px;display:flex;flex-direction:column;align-items:center;gap:4px;color:{{ t.c }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.d }}"></path></svg><span style="font:500 10px/1 Geist,sans-serif">{{ t.label }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- 04 IDEA -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">04 · IDEA — target before stop?</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 16px 130px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px"><button type="button" style="min-height:44px;padding:0;border:none;background:none;color:#0f1115;font:500 14px/1 Geist,sans-serif;cursor:pointer">‹ Terminal</button><span style="font:600 11px/1 Geist,sans-serif;padding:6px 10px;border-radius:999px;background:rgba(14,127,65,.12);color:#0e7f41">Triggered · Sep 9</span></div>
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <span style="display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:12px;background:#f0e6cc;color:#7a5a12;font:700 12px/1 'JetBrains Mono',monospace">SEDG</span>
+              <span style="display:flex;flex-direction:column;gap:5px"><span style="font:700 21px/1.25 Geist,sans-serif;letter-spacing:-.01em">SEDG reaches 41.00 before 35.60?</span><span style="font:400 12.5px/1.3 Geist,sans-serif;color:#6b7280">Long · entry 37.35 · last <b style="color:#0f1115;font-weight:600">37.92</b> · medium risk</span></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <div style="display:flex;align-items:baseline;gap:10px"><span style="font:700 40px/1 Geist,sans-serif;letter-spacing:-.03em;color:#0e7f41">64%</span><span style="font:500 13px/1 Geist,sans-serif;color:#6b7280">of the way · +8.1% to target · −6.1% to stop</span></div>
+              <div style="position:relative;height:160px">
+                <svg viewBox="0 0 338 160" width="100%" height="160" preserveAspectRatio="none" style="display:block"><rect x="0" y="0" width="338" height="34" fill="rgba(14,127,65,.07)"></rect><rect x="0" y="136" width="338" height="24" fill="rgba(207,50,38,.07)"></rect><line x1="0" y1="34" x2="338" y2="34" stroke="#0e7f41" stroke-dasharray="3 4"></line><line x1="0" y1="96" x2="338" y2="96" stroke="#2456d6" stroke-dasharray="3 4"></line><line x1="0" y1="136" x2="338" y2="136" stroke="#cf3226" stroke-dasharray="3 4"></line><polyline points="{{ ideaLine }}" fill="none" stroke="#0f1115" stroke-width="1.8" stroke-linejoin="round"></polyline></svg>
+                <span style="position:absolute;right:0;top:20px;font:600 10px/1 'JetBrains Mono',monospace;color:#0e7f41">41.00</span><span style="position:absolute;right:0;top:84px;font:600 10px/1 'JetBrains Mono',monospace;color:#2456d6">37.35</span><span style="position:absolute;right:0;top:140px;font:600 10px/1 'JetBrains Mono',monospace;color:#cf3226">35.60</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font:500 10px/1 'JetBrains Mono',monospace;color:#6b7280"><span>AUG 11</span><span>1M · DAILY</span><span>SEP 10</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <span style="font:600 14px/1 Geist,sans-serif">Thesis</span>
+              <p style="margin:0;font:400 14.5px/1.55 Geist,sans-serif">SolarEdge is close on watch to the upside. A breakout above 37.35 with volume confirms the base; 41 is where the last rally stalled, so that's the first place to take something off.</p>
+              <span style="font:400 12px/1.4 Geist,sans-serif;color:#6b7280">From the desk · Sep 9 · evaluated daily at close</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <span style="font:600 14px/1 Geist,sans-serif;padding-bottom:8px">Activity</span>
+              <sc-for list="{{ hist }}" as="h" hint-placeholder-count="3">
+                <div style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;min-height:40px;border-top:1px solid #eef0f3;font:400 13px/1.3 Geist,sans-serif"><span style="width:8px;height:8px;border-radius:50%;background:{{ h.c }}"></span><span style="font-weight:500">{{ h.s }} <span style="color:#6b7280;font-weight:400">at {{ h.px }}</span></span><span style="font:500 11px/1 'JetBrains Mono',monospace;color:#6b7280">{{ h.when }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;z-index:30;padding:12px 16px 44px;display:flex;gap:8px;background:#ffffff;border-top:1px solid #e6e8ec">
+            <button type="button" style="flex:1;min-height:54px;border:none;border-radius:14px;background:#0f1115;color:#fff;font:600 15px/1 Geist,sans-serif;cursor:pointer">Arm this idea</button>
+            <button type="button" style="min-height:54px;padding:0 18px;border:1px solid #e6e8ec;border-radius:14px;background:#fff;color:#0f1115;font:600 14px/1 Geist,sans-serif;cursor:pointer">Ask</button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- 05 PIT -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">05 · THE PIT — portfolio view of the sim</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 16px 110px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px"><span style="font:700 22px/1 Geist,sans-serif;letter-spacing:-.01em">The Pit</span><span style="font:600 11px/1 Geist,sans-serif;padding:6px 10px;border-radius:999px;background:#f5ecd6;color:#7a5a12">Simulated</span></div>
+            <div style="display:flex;flex-direction:column;gap:14px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start"><span style="display:flex;flex-direction:column;gap:6px"><span style="font:400 12px/1 Geist,sans-serif;color:#6b7280">Career · Week 2 · Day 3</span><span style="font:700 34px/1 Geist,sans-serif;letter-spacing:-.03em">$11,240</span></span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><span style="font:600 14px/1 Geist,sans-serif;color:#0e7f41">+$1,240 · 12.4%</span><span style="font:400 11.5px/1 Geist,sans-serif;color:#6b7280">since $10,000</span></span></div>
+              <svg viewBox="0 0 338 90" width="100%" height="90" preserveAspectRatio="none" style="display:block"><polygon points="{{ pitArea }}" fill="rgba(14,127,65,.10)"></polygon><polyline points="{{ pitLine }}" fill="none" stroke="#0e7f41" stroke-width="2" stroke-linejoin="round"></polyline></svg>
+              <div style="display:flex;gap:4px">
+                <sc-for list="{{ weeks }}" as="w" hint-placeholder-count="8">
+                  <span style="flex:1;height:6px;border-radius:3px;background:{{ w.bg }}"></span>
+                </sc-for>
+              </div>
+              <button type="button" style="min-height:50px;border:none;border-radius:12px;background:#0f1115;color:#fff;font:600 14px/1 Geist,sans-serif;cursor:pointer">Continue · Day 3</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:16px;background:#ffffff;border:1px solid #e6e8ec;border-radius:16px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px"><span style="font:600 14px/1 Geist,sans-serif">Open positions</span><span style="font:400 11.5px/1 Geist,sans-serif;color:#6b7280">from yesterday's tape</span></div>
+              <sc-for list="{{ positions }}" as="p" hint-placeholder-count="2">
+                <div style="display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px;min-height:56px;border-top:1px solid #eef0f3"><span style="display:grid;place-items:center;width:36px;height:36px;border-radius:9px;background:#f4f5f7;font:700 10px/1 'JetBrains Mono',monospace">{{ p.t }}</span><span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 13.5px/1.3 Geist,sans-serif"><span style="color:{{ p.sc }}">{{ p.side }}</span> · {{ p.size }}</span><span style="font:400 11.5px/1.3 Geist,sans-serif;color:#6b7280">in {{ p.in }} · now {{ p.now }}</span></span><span style="font:700 15px/1 Geist,sans-serif;color:{{ p.pc }}">{{ p.pnl }}</span></div>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <button type="button" style="text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px;color:inherit;font-family:inherit"><span style="font:600 14px/1 Geist,sans-serif">Daily Pit</span><span style="display:flex;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#0e7f41"></span><span style="width:8px;height:8px;border-radius:50%;background:#0e7f41"></span><span style="width:8px;height:8px;border-radius:50%;border:1px solid #cfd3da"></span></span><span style="font:400 12px/1.4 Geist,sans-serif;color:#6b7280">2 attempts left · board open</span></button>
+              <button type="button" style="text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px;color:inherit;font-family:inherit"><span style="font:600 14px/1 Geist,sans-serif">Training</span><span style="height:6px;border-radius:3px;background:#eef0f3;overflow:hidden"><span style="display:block;height:100%;width:25%;background:#2456d6"></span></span><span style="font:400 12px/1.4 Geist,sans-serif;color:#6b7280">2 of 8 · next: the stop</span></button>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:0 4px;font:400 12px/1.4 Geist,sans-serif;color:#6b7280"><span>Best run <b style="color:#0f1115;font-weight:600">+18.4%</b></span><span>Rating <b style="color:#0f1115;font-weight:600">B</b></span><span>Streak <b style="color:#0f1115;font-weight:600">3</b></span></div>
+            <span style="font:400 11px/1.5 Geist,sans-serif;color:#6b7280;text-align:center">Entertainment, not investment advice. No real orders.</span>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;z-index:35;display:flex;align-items:flex-start;justify-content:center;height:84px;padding-top:8px;background:#ffffff;border-top:1px solid #e6e8ec">
+            <sc-for list="{{ tabsPit }}" as="t" hint-placeholder-count="4">
+              <button type="button" style="border:none;background:none;cursor:pointer;flex:1;max-width:110px;min-height:44px;display:flex;flex-direction:column;align-items:center;gap:4px;color:{{ t.c }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.d }}"></path></svg><span style="font:500 10px/1 Geist,sans-serif">{{ t.label }}</span></button>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- 06 RESOLVE -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.18em;color:#6b7280">06 · CONTROL ROOM — resolve the inbox</div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+        <div style="height:100%;display:flex;flex-direction:column;background:#f4f5f7;color:#0f1115;position:relative;overflow:hidden;font-family:Geist,sans-serif">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:58px 16px 60px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px"><span style="display:flex;flex-direction:column;gap:4px"><span style="font:700 22px/1 Geist,sans-serif;letter-spacing:-.01em">Inbox</span><span style="font:400 12px/1 Geist,sans-serif;color:#6b7280">15 to resolve · ingest 21h ago</span></span><a href="#" style="font:500 13px/1 Geist,sans-serif;color:#2456d6;min-height:44px;display:inline-flex;align-items:center">Done</a></div>
+            <div style="display:flex;gap:6px">
+              <span style="min-height:34px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;background:#0f1115;color:#fff;font:500 12.5px/1 Geist,sans-serif">Needs level · 14</span>
+              <span style="min-height:34px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;border:1px solid #e6e8ec;background:#fff;color:#0f1115;font:500 12.5px/1 Geist,sans-serif">Review · 1</span>
+              <span style="min-height:34px;display:inline-flex;align-items:center;padding:0 14px;border-radius:999px;border:1px solid #e6e8ec;background:#fff;color:#0f1115;font:500 12.5px/1 Geist,sans-serif">Intake</span>
+            </div>
+            <sc-for list="{{ inbox }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex;flex-direction:column;gap:12px;padding:14px;background:#ffffff;border:1px solid {{ r.bc }};border-radius:14px">
+                <button type="button" onClick="{{ r.open }}" style="appearance:none;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;border:none;background:none;padding:0;color:inherit;font-family:inherit;min-height:36px">
+                  <span style="display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:#f4f5f7;font:700 10px/1 'JetBrains Mono',monospace">{{ r.t }}</span>
+                  <span style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><span style="font:600 14px/1.3 Geist,sans-serif">{{ r.text }}</span><span style="font:400 11.5px/1.3 Geist,sans-serif;color:#6b7280"><span style="font-weight:600;color:{{ r.sc }}">{{ r.side }}</span> · {{ r.src }} · {{ r.age }}</span></span>
+                  <sc-if value="{{ r.suspect }}" hint-placeholder-val="{{ false }}"><span style="font:600 10px/1 Geist,sans-serif;padding:4px 8px;border-radius:999px;background:#f5ecd6;color:#7a5a12;white-space:nowrap">quote?</span></sc-if>
+                </button>
+                <sc-if value="{{ r.isOpen }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid #eef0f3">
+                    <div style="display:flex;justify-content:space-between;font:400 12px/1 Geist,sans-serif;color:#6b7280"><span>Trigger level</span><span>quote <b style="color:#0f1115;font-weight:600">{{ r.quote }}</b></span></div>
+                    <div style="display:flex;gap:8px">
+                      <button type="button" onClick="{{ setAbove }}" style="min-height:48px;padding:0 16px;border-radius:12px;border:none;background:{{ aboveBg }};color:{{ aboveC }};font:600 13px/1 Geist,sans-serif;cursor:pointer">Above</button>
+                      <button type="button" onClick="{{ setBelow }}" style="min-height:48px;padding:0 16px;border-radius:12px;border:none;background:{{ belowBg }};color:{{ belowC }};font:600 13px/1 Geist,sans-serif;cursor:pointer">Below</button>
+                      <input value="{{ levelText }}" onChange="{{ onLevel }}" placeholder="{{ r.quote }}" inputMode="decimal" style="flex:1;min-width:0;min-height:48px;padding:0 14px;border:1px solid #e6e8ec;border-radius:12px;background:#f4f5f7;color:#0f1115;font:600 17px/1 'JetBrains Mono',monospace;outline:none">
+                    </div>
+                    <sc-if value="{{ levelError }}" hint-placeholder-val="{{ false }}"><span role="alert" style="font:400 12px/1.4 Geist,sans-serif;color:#7a5a12">{{ levelError }}</span></sc-if>
+                    <sc-if value="{{ levelSaved }}" hint-placeholder-val="{{ false }}"><span role="status" style="font:500 12px/1.4 Geist,sans-serif;color:#0e7f41">Saved · {{ levelSaved }} → live</span></sc-if>
+                    <div style="display:flex;gap:8px"><button type="button" onClick="{{ saveLevel }}" style="flex:1;min-height:48px;border:none;border-radius:12px;background:#0f1115;color:#fff;font:600 14px/1 Geist,sans-serif;cursor:pointer">Save → live</button><button type="button" style="min-height:48px;padding:0 16px;border:1px solid #e6e8ec;border-radius:12px;background:#fff;color:#cf3226;font:600 13px/1 Geist,sans-serif;cursor:pointer">Deny</button></div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <div style="display:flex;flex-direction:column;gap:12px;padding:14px;background:#ffffff;border:1px solid #e6e8ec;border-radius:14px">
+              <div style="display:flex;align-items:center;gap:12px"><span style="display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:#f4f5f7;font:700 10px/1 'JetBrains Mono',monospace">SPY</span><span style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><span style="font:600 14px/1.3 Geist,sans-serif">Holding below 768 · entry reads long</span><span style="font:400 11.5px/1.3 Geist,sans-serif;color:#6b7280"><span style="font-weight:600;color:#cf3226">Short</span> · review · side conflict</span></span></div>
+              <div style="display:flex;gap:8px"><button type="button" style="flex:1;min-height:44px;border:none;border-radius:12px;background:rgba(14,127,65,.12);color:#0e7f41;font:600 13px/1 Geist,sans-serif;cursor:pointer">Keep short</button><button type="button" style="flex:1;min-height:44px;border:none;border-radius:12px;background:#f4f5f7;color:#0f1115;font:600 13px/1 Geist,sans-serif;cursor:pointer">Flip to long</button></div>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.2em;color:#2456d6">HOW THE IDIOM MAPS</div>
+    <p style="margin:0;font:400 13px/1.6 Geist,sans-serif;color:#6b7280">Market → a question with a chance (THE CALL, plus August's reads on the week's events). Yes/No → Higher/Lower, scored against the record, never priced. Market page → the call page with chart, read, rules, activity. Positions → the Pit's sim book. Resolution → the owner's inbox, where each idea gets its trigger level. Ideas show "% of the way" between stop and target instead of odds.</p>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { youSide: null, draft: "", cat: "All", filter: "All", range: "1D", openId: "ENPH", levelDir: "ABOVE", levelText: "", levelError: null, levelSaved: null };
+
+  series(n, seed, w, h, amp, base) {
+    let s = seed; const r = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; }; let v = base;
+    return Array.from({ length: n }, (_, i) => { v += (r() - 0.46) * amp; v = Math.min(0.92, Math.max(0.1, v)); return [((i / (n - 1)) * w), (v * h)]; });
+  }
+  pts(a) { return a.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "); }
+  area(a, w, h) { return `${this.pts(a)} ${w},${h} 0,${h}`; }
+
+  renderVals() {
+    const st = this.state, set = (p) => this.setState(p);
+    const INK = "#0f1115", MUTE = "#6b7280", UP = "#0e7f41", DN = "#cf3226", BLUE = "#2456d6", GOLD = "#7a5a12";
+    const ICON = { home: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z", desk: "M4 6h16M4 12h16M4 18h10", pit: "M4 19h16M7 16V9M12 16V5M17 16v-4", ideas: "M6 3h12v18l-6-4-6 4z" };
+    const tabs = (on) => [["Today", "home"], ["Terminal", "desk"], ["Pit", "pit"], ["Ideas", "ideas"]].map(([label, k]) => ({ label, d: ICON[k], c: k === on ? BLUE : MUTE }));
+
+    const catNames = ["All", "Indices", "Macro", "Crypto", "Volatility"];
+    const cats = catNames.map(c => ({ label: c, bc: st.cat === c ? INK : "#e6e8ec", bg: st.cat === c ? INK : "#ffffff", c: st.cat === c ? "#ffffff" : INK, pick: () => set({ cat: c }) }));
+    const av = { SPY: ["#e3ecfb", "#1d4ed8"], CPI: ["#f5ecd6", GOLD], VIX: ["#fbe3e1", "#a3261c"], BTC: ["#fdebd3", "#9a5b0a"], PPI: ["#f5ecd6", GOLD], FOMC: ["#eee9fb", "#5b3fb5"] };
+    const readsAll = [
+      { cat: "Macro", t: "CPI", q: "Core CPI m/m prints above 0.2%?", when: "Fri 08:30 ET · expected 0.2% · prior 0.2%", p: 34, live: true, yes: "Yes 34%", no: "No 66%" },
+      { cat: "Indices", t: "SPY", q: "SPY closes above pivot 758.90?", when: "Settles 16:00 ET · last 758.42", p: 41, live: true, yes: "Above 41%", no: "Below 59%" },
+      { cat: "Volatility", t: "VIX", q: "VIX settles above 18?", when: "Settles 16:00 ET · last 17.70 · +7.5%", p: 62, live: true, yes: "Yes 62%", no: "No 38%" },
+      { cat: "Crypto", t: "BTC", q: "BTC above $77,000 at 16:00 ET?", when: "Last 76,997 · flat on the day", p: 49, live: true, yes: "Yes 49%", no: "No 51%" },
+      { cat: "Macro", t: "PPI", q: "Core PPI m/m printed above 0.3%?", when: "Thu 08:30 ET · printed 0.2%", p: 0, live: false, result: "No" },
+      { cat: "Macro", t: "FOMC", q: "Minutes read more hawkish than July?", when: "Wed 14:00 ET · 4d", p: 45, live: true, yes: "Yes 45%", no: "No 55%" },
+    ];
+    const reads = readsAll.filter(r => st.cat === "All" || r.cat === st.cat).map(r => ({ ...r, done: !r.live, avBg: av[r.t][0], avC: av[r.t][1], p: r.live ? `${r.p}%` : "—", pl: r.live ? "chance" : "resolved", pc: !r.live ? MUTE : r.p >= 50 ? UP : DN }));
+
+    const seeds = { "1H": 5, "6H": 9, "1D": 13, "1W": 21 };
+    const chance = 58; const targetY = 140 * (1 - chance / 100);
+    const raw = this.series(48, seeds[st.range], 338, 140, 0.12, 0.5); const shift = targetY - raw[raw.length - 1][1];
+    const callS = raw.map(([x, y]) => [x, Math.min(132, Math.max(14, y + shift))]);
+    const firstC = Math.round(100 - (callS[0][1] / 140) * 100); const d = chance - firstC;
+    const ranges = ["1H", "6H", "1D", "1W"].map(g => ({ label: g, bg: st.range === g ? "#ffffff" : "transparent", c: st.range === g ? INK : MUTE, sh: st.range === g ? "0 1px 2px rgba(16,24,40,.08)" : "none", pick: () => set({ range: g }) }));
+    const feat = this.series(40, 13, 338, 56, 0.1, 0.55);
+    const inputs = [
+      { k: "Index trend · 5d", v: "SPY +0.6% · QQQ +0.9%", tag: "Risk on", bg: "rgba(14,127,65,.12)", c: UP },
+      { k: "VIX", v: "17.70 · +7.5% today", tag: "Risk off", bg: "rgba(207,50,38,.1)", c: DN },
+      { k: "Book bias", v: "30 long · 7 short", tag: "Leans on", bg: "rgba(14,127,65,.12)", c: UP },
+    ];
+    const activity = [
+      { t: "August called Higher", sub: "Sized small · VIX drift noted", when: "09:30 ET" },
+      { t: "Regime recalculated · Neutral", sub: "2 of 3 inputs agree", when: "09:00 ET" },
+      { t: "Yesterday resolved · Lower", sub: "NQ 29,449 vs 29,571 · August 2–3", when: "Sep 9 · 16:00" },
+      { t: "Reference set · 29,449", sub: "Previous close", when: "Sep 9 · 16:00" },
+    ];
+
+    const filters = ["All", "Triggered", "Live", "Needs level"].map(f => ({ label: f, bc: st.filter === f ? INK : "#e6e8ec", bg: st.filter === f ? INK : "#ffffff", c: st.filter === f ? "#ffffff" : INK, pick: () => set({ filter: f }) }));
+    const STC = { Triggered: UP, Live: BLUE, "Needs level": GOLD, "Quote suspect": GOLD, Stale: MUTE };
+    const iav = { AGI: ["#f5ecd6", GOLD], SEDG: ["#f0e6cc", GOLD], ENPH: ["#e3f3e9", UP], INTC: ["#e3ecfb", "#1d4ed8"], LITE: ["#fbe3e1", "#a3261c"], BTG: ["#f5ecd6", GOLD], CRWD: ["#eef0f3", MUTE] };
+    const mk = (t, side, status, q, stop, last, target, pct, age) => ({ t, side, sc: side === "Long" ? UP : DN, status, stc: STC[status], q, stop, last, target, age, p: pct == null ? "—" : `${pct}%`, pl: pct == null ? "no level" : "to target", pc: pct == null ? MUTE : pct >= 50 ? UP : DN, bar: `${pct == null ? 0 : pct}%`, avBg: iav[t][0], avC: iav[t][1] });
+    const ideas = [
+      mk("SEDG", "Long", "Triggered", "SEDG reaches 41.00 before 35.60?", "35.60", "37.92", "41.00", 64, "21h"),
+      mk("INTC", "Long", "Triggered", "INTC reaches 107.50 before 103.20?", "103.20", "100.96", "107.50", 0, "21h"),
+      mk("AGI", "Long", "Live", "AGI clears the $37–40 shelf?", "34.20", "36.10", "40.00", 51, "21h"),
+      mk("ENPH", "Long", "Needs level", "ENPH holds the $35 double bottom?", "—", "35.83", "—", null, "21h"),
+      mk("BTG", "Long", "Live", "BTG breaks above $5.70?", "5.10", "5.48", "6.20", 47, "4d"),
+      mk("LITE", "Short", "Quote suspect", "LITE breaks below $8.40?", "—", "—", "—", null, "4d"),
+      mk("CRWD", "Short", "Stale", "CRWD drops under $197.25?", "205.00", "201.30", "185.00", 12, "3w"),
+    ];
+    const visibleIdeas = st.filter === "All" ? ideas : ideas.filter(i => i.status === st.filter);
+    const ideaLine = this.pts(this.series(60, 11, 338, 160, 0.1, 0.62).map(([x, y]) => [x, Math.min(130, Math.max(40, y))]));
+    const hist = [{ s: "Triggered", c: UP, when: "Sep 9 · 10:12", px: "37.41" }, { s: "Armed", c: GOLD, when: "Sep 8 · 22:10", px: "36.40" }, { s: "Live", c: BLUE, when: "Sep 8 · 22:10", px: "36.40" }];
+
+    const pitS = this.series(50, 7, 338, 90, 0.08, 0.6).map(([x, y]) => [x, Math.min(82, Math.max(12, y))]);
+    const weeks = Array.from({ length: 8 }, (_, i) => ({ bg: i < 1 ? INK : i === 1 ? BLUE : "#e6e8ec" }));
+    const positions = [
+      { t: "HLTH", side: "Long", sc: UP, size: "100%", in: "41.02", now: "42.18", pnl: "+$283", pc: UP },
+      { t: "TECQ", side: "Short", sc: DN, size: "50%", in: "88.10", now: "88.94", pnl: "−$84", pc: DN },
+    ];
+
+    const inboxRaw = [
+      ["ENPH", "Long", "Double bottom off $35 support", "Something Different · Sep 9", "21h", false, "35.83"],
+      ["OKLO", "Long", "Double bottom confirmed", "Crude Approaches $100 · Sep 5", "4d", false, "62.10"],
+      ["LITE", "Short", "Break below $8.40", "Crude Approaches $100 · Sep 5", "4d", true, "8.52"],
+      ["XLE", "Long", "Current breakout; watch on pullbacks", "Crude Approaches $100 · Sep 5", "4d", false, "94.12"],
+      ["BMNU", "Long", "Watch for continued breakout", "Crude Approaches $100 · Sep 5", "4d", false, "27.40"],
+    ];
+    const inbox = inboxRaw.map(([t, side, text, src, age, suspect, quote]) => ({ t, side, sc: side === "Long" ? UP : DN, text, src, age, suspect, quote, isOpen: st.openId === t, bc: st.openId === t ? INK : "#e6e8ec", open: () => set({ openId: st.openId === t ? null : t, levelText: "", levelError: null, levelSaved: null, levelDir: side === "Short" ? "BELOW" : "ABOVE" }) }));
+    const saveLevel = () => { const n = Number(st.levelText.replace(/[$,\s]/g, "")); if (!Number.isFinite(n) || n <= 0) return set({ levelError: "A positive number, please.", levelSaved: null }); set({ levelError: null, levelSaved: `${st.levelDir.toLowerCase()} ${n.toFixed(2)}` }); };
+    const on = st.levelDir === "ABOVE";
+
+    return {
+      tabsHome: tabs("home"), tabsDesk: tabs("desk"), tabsPit: tabs("pit"),
+      draft: st.draft, onDraft: (e) => set({ draft: e.target.value }), cats, reads,
+      featLine: this.pts(feat), featArea: this.area(feat, 338, 56),
+      callOpen: !st.youSide, callTaken: !!st.youSide, youSide: st.youSide, pickHigher: () => set({ youSide: "Higher" }), pickLower: () => set({ youSide: "Lower" }),
+      chance, chanceDelta: `${d >= 0 ? "+" : ""}${d} pts ${st.range}`, callLine: this.pts(callS), callArea: this.area(callS, 338, 140), ranges, rangeStart: st.range === "1H" ? "08:50" : st.range === "6H" ? "03:50" : st.range === "1D" ? "Sep 9" : "Sep 3",
+      inputs, activity, filters, visibleIdeas, ideaLine, hist,
+      pitLine: this.pts(pitS), pitArea: this.area(pitS, 338, 90), weeks, positions,
+      inbox, levelText: st.levelText, onLevel: (e) => set({ levelText: e.target.value, levelError: null, levelSaved: null }), saveLevel, levelError: st.levelError, levelSaved: st.levelSaved,
+      setAbove: () => set({ levelDir: "ABOVE" }), setBelow: () => set({ levelDir: "BELOW" }),
+      aboveBg: on ? "rgba(14,127,65,.12)" : "#f4f5f7", aboveC: on ? UP : MUTE, belowBg: !on ? "rgba(207,50,38,.1)" : "#f4f5f7", belowC: !on ? DN : MUTE,
+    };
+  }
+}
+</script>
+</body>
+</html>

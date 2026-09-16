@@ -57,7 +57,9 @@ export default function IntelDeckSurface({ active }: { active: boolean }) {
     // token scope.
     <div className="intel-embed-frame">
       <div className={`intel-root intel-embedded ${rdMono.variable} ${rdSans.variable}`}>
-        {visited ? <IdeasFeed /> : <IdleStage />}
+        {/* v4-1: the feed closes its phone idea page when the view goes
+            inactive, so the page's scroll lock never outlives the tab */}
+        {visited ? <IdeasFeed active={active} /> : <IdleStage />}
       </div>
     </div>
   );
