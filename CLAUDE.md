@@ -82,8 +82,8 @@ Guidance for Claude Code working in this repo.
   `/api/cron/intel`, the `/intel` stub) is DELETED,
   not parked — tag `archive/owner-desk` on main is the rebuild point. The
   TRACKED lane is retired with it: every open tracked row was closed with
-  reason "desk retired" (`scripts/close-tracked-desk-retired.ts` — ran against
-  the preview store 2026-09-15; run it ONCE against production, then delete it),
+  reason "desk retired" (one-shot, ran 2026-09-15 against the single Upstash
+  database that preview and production share; the script is deleted),
   `/api/intel/feed` and the publish store are gone, and the daily cron's
   tracker pass no longer ingests. The live book (DESK INBOX → live,
   INTEGRITY-1) is the only lane: one header, one list, no sub-nav row.

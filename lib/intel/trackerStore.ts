@@ -3,11 +3,10 @@
 // load tracked set → fold CLOSE tombstones → batch quotes → evaluate →
 // housekeeping → enforce caps → save. Idempotent and cheap.
 //
-// chore/terminal-cut: the TRACKED lane is RETIRED. The one-shot in
-// scripts/close-tracked-desk-retired.ts closes every open row with reason
-// "desk retired" (run once per store — preview 2026-09-15; production when
-// the owner runs it), the brief pipeline that fed new ideas in is deleted,
-// and nothing publishes this set any more. The
+// chore/terminal-cut: the TRACKED lane is RETIRED. Every open row was closed
+// with reason "desk retired" on 2026-09-15 (one-shot, since deleted; preview
+// and production share the one Upstash database), the brief pipeline that
+// fed new ideas in is deleted, and nothing publishes this set any more. The
 // pass keeps running inside the daily cron so the stored rows stay honestly
 // settled (housekeeping, caps, tombstone folding); it no longer INGESTS —
 // the brief store has no writer, so re-folding its last brief every night

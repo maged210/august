@@ -1,6 +1,6 @@
 // The daily settle pass. PROTECTED. Settles the tracked set (chore/terminal-cut:
-// the TRACKED lane is retired; once the one-shot has closed a store's rows this
-// is housekeeping over a frozen set — it no longer ingests), then evaluates the
+// the TRACKED lane is retired and every row is CLOSED, so this is housekeeping
+// over a frozen set — it no longer ingests), then evaluates the
 // live book (INTEGRITY-1), warms the FRED actuals, settles THE CALL and
 // flushes the day's push. Idempotent and cheap — snapshot dedupe makes
 // double-pings no-ops.
