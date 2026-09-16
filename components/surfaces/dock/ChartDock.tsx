@@ -10,6 +10,7 @@
 
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
+import type { QuoteRead } from "@/lib/idea-card";
 import IdeaChartModule, { type ChartSelection } from "./IdeaChartModule";
 import BookHeatmapModule from "./BookHeatmapModule";
 import MarketPulseModule from "./MarketPulseModule";
@@ -24,6 +25,7 @@ export default function ChartDock({
   onSelect,
   liveIdeas,
   sourcesAnswered = true,
+  quoteFor,
   tape,
   tapeFailed,
   onTapeRetry,
@@ -35,6 +37,9 @@ export default function ChartDock({
   /** fix/p0-live-trust — false while the book is unread, so the heatmap can
    *  say so instead of asserting an empty book */
   sourcesAnswered?: boolean;
+  /** the feed's ONE quote reader (lib/idea-card readQuote over the shared
+   *  book) — the heatmap shows exactly what the cards show */
+  quoteFor: (symbol: string) => QuoteRead;
   tape: PublicTapeEntry[] | null;
   tapeFailed: boolean;
   onTapeRetry: () => void;
@@ -45,6 +50,7 @@ export default function ChartDock({
       <BookHeatmapModule
         liveIdeas={liveIdeas}
         sourcesAnswered={sourcesAnswered}
+        quoteFor={quoteFor}
         selection={selection}
         onSelect={onSelect}
       />

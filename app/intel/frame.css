@@ -3,11 +3,12 @@
    tokens.css that the public terminal still rides. Moved here verbatim, in
    source order, values byte-identical: the --rd-* token scope (feed.css
    consumes it through .intel-embed-frame), the <=700px .intel-root palette
-   re-pin and scrollbar hide (no palette work in this branch — re-palette
-   is v4-1), the embed frame / embedded root / idle label, and the matrix
-   theme re-pins. Imported by components/surfaces/IntelDeckSurface.tsx, NOT
-   by feed.css: the frame and the idle placeholder paint before IdeasFeed's
-   lazy chunk arrives.
+   re-pin and scrollbar hide, the embed frame / embedded root / idle label,
+   and the matrix theme re-pins. Imported by components/surfaces/
+   IntelDeckSurface.tsx, NOT by feed.css: the frame and the idle placeholder
+   paint before IdeasFeed's lazy chunk arrives.
+   feat/v4-1-terminal appended the PAPER STAGE block at the end: the light
+   theme's re-pin of every token here (the re-palette deferred from the cut).
    ========================================================================== */
 
 .intel-root,
@@ -94,6 +95,12 @@
   --rd-val-green: #9ec3ab;     /* green DATA value */
   --rd-accbtn-text: #e3edf6;   /* accent-button text */
   --rd-retry-text: #e7c2b8;    /* retry button text */
+
+  /* ---- app-shell chip tokens (feat/v4-1-terminal) — components/DataTag.tsx
+     paints .dtag with --dim / --hair, which only the home landing defines;
+     inside the terminal they follow the terminal ramp ---- */
+  --dim: var(--rd-t-dim);
+  --hair: var(--rd-hair-12);
 
   /* ---- fonts (§1.6) — variables injected by next/font on this node ---- */
   --rd-mono: var(--rd-font-mono, "IBM Plex Mono"), monospace;
@@ -410,4 +417,222 @@
 :root[data-theme="matrix"] .intel-embed-frame,
 :root[data-theme="matrix"][data-mood] .intel-embed-frame {
   background: transparent;
+}
+
+/* ============================================================================
+   PAPER STAGE (feat/v4-1-terminal) — the terminal on the app's default light
+   theme: the palette re-pin deferred from chore/terminal-cut, from design
+   frames 03/04 (docs/design/August Mobile v4 Markets.dc.html). Paper stage,
+   white cards, ink text, ONE green, ONE red, ONE blue; amber stays the warn
+   colour (L1). Values only — every rule in feed.css and every dock module
+   reads these tokens, so the whole terminal re-themes here and nowhere
+   else. Doubled with [data-mood] so the mood axis can never re-tint it.
+   The dark / batman / matrix themes never resolve this block and keep the
+   dark ramps above (the PIT stays dark on every theme by its own rules).
+   Specificity (0,2,1) also beats the <=700px .intel-root re-pin above, so
+   phones get the paper stage too.
+   ============================================================================ */
+:root[data-theme="light"] .intel-root,
+:root[data-theme="light"] .intel-embed-frame,
+:root[data-theme="light"][data-mood] .intel-root,
+:root[data-theme="light"][data-mood] .intel-embed-frame {
+  /* ---- P palette: one green, one red, one blue, amber warns. Amber is the
+     design's dark ochre (#7a5a12 — its NEEDS LEVEL / QUOTE SUSPECT text),
+     not the swatch orange: the orange reads 3.3:1 on white, under AA. ---- */
+  --rd-bull: #0e7f41;
+  --rd-bear: #cf3226;
+  --rd-amber: #7a5a12;
+  --rd-blue: #2456d6;
+  --rd-teal: #2456d6;
+  --rd-inferred: #6b7280;
+  --rd-lo: #6b7280;
+  --rd-live: #0e7f41;
+  --rd-live-rgb: 14, 127, 65;
+
+  /* ---- accent ramp — the one blue ---- */
+  --rd-acc: #2456d6;
+  --rd-acc-rgb: 36, 86, 214;
+  --rd-acc-soft04: rgba(36, 86, 214, 0.04);
+  --rd-acc-soft06: rgba(36, 86, 214, 0.06);
+  --rd-acc-soft12: rgba(36, 86, 214, 0.12);
+  --rd-acc-soft25: rgba(36, 86, 214, 0.25);
+  --rd-acc-soft40: rgba(36, 86, 214, 0.42);
+
+  /* ---- stage / surfaces ---- */
+  --rd-stage: #f4f5f7;
+  --rd-frame: #f4f5f7;
+  --rd-bar1-bg: #ffffff;
+  --rd-bar3-bg: #ffffff;
+  --rd-tape-label-bg: #ffffff;
+  --rd-card: #ffffff;
+  --rd-legend-bg: #ffffff;
+  --rd-btn-bg: #ffffff;
+  --rd-inset: #f4f5f7;
+
+  /* ---- hairlines — ink at low alpha (the design's #e6e8ec / #eef0f3) ---- */
+  --rd-hair-045: rgba(15, 17, 21, 0.05);
+  --rd-hair-05: rgba(15, 17, 21, 0.06);
+  --rd-hair-055: rgba(15, 17, 21, 0.06);
+  --rd-hair-06: rgba(15, 17, 21, 0.07);
+  --rd-hair-07: rgba(15, 17, 21, 0.08);
+  --rd-hair-08: rgba(15, 17, 21, 0.09);
+  --rd-hair-09: rgba(15, 17, 21, 0.1);
+  --rd-hair-10: rgba(15, 17, 21, 0.11);
+  --rd-hair-12: rgba(15, 17, 21, 0.13);
+  --rd-hair-13: rgba(15, 17, 21, 0.14);
+  --rd-hair-14: rgba(15, 17, 21, 0.15);
+
+  /* ---- text ramp — ink to mute. ONE mute grey: --rd-t-dim is defined once
+     and every copy-carrying token below it points at it, so absence text,
+     the live count, the meta line, module subtitles and empty-state lines
+     can never drift apart. #5d636f is the design's #6b7280 hue darkened
+     until it clears AA where it actually sits: 5.6:1 on the paper stage
+     (the design's own grey is 4.4:1 there), 6.1:1 on white, 4.6:1 on the
+     Stale pill's tint. Only the two glyph tokens at the bottom (∅ marks,
+     never words) stay lighter. ---- */
+  --rd-t-brightest: #0f1115;
+  --rd-t-primary: #0f1115;
+  --rd-t-chip: #1a1d23;
+  --rd-t-body: #2b2f37;
+  --rd-t-secondary: #3a3f48;
+  --rd-t-secondary2: #444955;
+  --rd-t-muted: #545a64;
+  --rd-t-dim: #5d636f;
+  --rd-t-dim2: var(--rd-t-dim);
+  --rd-t-dim3: var(--rd-t-dim);
+  --rd-t-dim4: var(--rd-t-dim);
+  --rd-t-faint: var(--rd-t-dim);
+  --rd-t-faint2: var(--rd-t-dim);
+  --rd-t-faint3: var(--rd-t-dim);
+  --rd-t-ghost: var(--rd-t-dim);
+  --rd-t-disabled: var(--rd-t-dim);
+  --rd-t-absent: #8b929f;
+  --rd-t-empty: #a3a9b4;
+
+  /* ---- misc literals ---- */
+  --rd-tape-sym: #0f1115;
+  --rd-tape-div: #d8dbe1;
+  --rd-val-amber: #7a5a12;
+  --rd-val-green: #0e7f41;
+  --rd-accbtn-text: #ffffff;
+  --rd-retry-text: #cf3226;
+
+  /* ---- illumination — quiet on paper ---- */
+  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(36, 86, 214, 0.06), transparent 60%);
+  --rd-topline: linear-gradient(90deg, transparent, rgba(36, 86, 214, 0.45), transparent);
+  --rd-sel-ring: inset 0 0 0 1px rgba(36, 86, 214, 0.55), 0 0 22px -8px rgba(36, 86, 214, 0.35);
+  --rd-live-wash: rgba(14, 127, 65, 0.04);
+  --rd-status-glow: 0 0 16px -3px rgba(14, 127, 65, 0.35);
+
+  /* ---- surfaces / shadows ---- */
+  --rd-panel-grad: #ffffff;
+  --rd-thumb-grad: linear-gradient(135deg, #eef0f3, #e6e8ec);
+  --rd-scrim: rgba(15, 17, 21, 0.35);
+  --rd-mbar1-bg: rgba(244, 245, 247, 0.86);
+  --rd-mcard-grad: #ffffff;
+  --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(244, 245, 247, 0.96) 70%, rgba(244, 245, 247, 0));
+  --rd-mseg-bg: #ffffff;
+  --rd-mseg-on-grad: #ffffff;
+  --rd-shadow-70: rgba(15, 17, 21, 0.14);
+  --rd-edge-03: rgba(15, 17, 21, 0.03);
+  --rd-edge-035: rgba(15, 17, 21, 0.035);
+  --rd-edge-04: rgba(15, 17, 21, 0.04);
+
+  /* ---- text (value renderers) ---- */
+  --rd-cell-quoted: #1d47b3;
+  --rd-cell-inferred: #5b3fb5;
+  --rd-cell-narr: #3a4f6b;
+  --rd-blue-lt: #1d47b3;
+  --rd-px-blue: #1d47b3;
+  --rd-tile-label: #2b2f37;
+  --rd-opt-violet: #5b3fb5;
+  --rd-plan-entry-text: #0b6a36;
+  --rd-plan-exit-text: #a8281e;
+  --rd-plan-tp-text: #1d47b3;
+
+  /* ---- mobile text ramp ---- */
+  --rd-mt-bright: #0f1115;
+  --rd-mt-brightest: #0f1115;
+  --rd-mt-body2: #2b2f37;
+  --rd-mt-faint4: #7b8290;
+  --rd-mt-disc: #6b7280;
+  --rd-mnew-text: #ffffff;
+  --rd-mtile-trig-l: #6b7280;
+  --rd-mtile-arm-l: #6b7280;
+  --rd-mtile-act-l: #6b7280;
+
+  /* ---- overlays / states ---- */
+  --rd-hover-row: rgba(15, 17, 21, 0.025);
+  --rd-hover-item: rgba(15, 17, 21, 0.035);
+  --rd-hover-btn: rgba(15, 17, 21, 0.06);
+  --rd-skel-bg: rgba(15, 17, 21, 0.06);
+  --rd-skel-hi: rgba(15, 17, 21, 0.09);
+  --rd-mdot-bg: rgba(15, 17, 21, 0.2);
+  --rd-sel-ring-flat: inset 0 0 0 1px rgba(36, 86, 214, 0.4);
+
+  /* ---- semantic soft ramps ---- */
+  --rd-bull-soft05: rgba(14, 127, 65, 0.05);
+  --rd-bull-soft08: rgba(14, 127, 65, 0.08);
+  --rd-bull-soft28: rgba(14, 127, 65, 0.28);
+  --rd-bull-soft30: rgba(14, 127, 65, 0.3);
+  --rd-bull-soft32: rgba(14, 127, 65, 0.32);
+  --rd-bull-dim: #0b6a36;
+  --rd-bear-soft03: rgba(207, 50, 38, 0.03);
+  --rd-bear-soft05: rgba(207, 50, 38, 0.05);
+  --rd-bear-soft10: rgba(207, 50, 38, 0.1);
+  --rd-bear-soft18: rgba(207, 50, 38, 0.18);
+  --rd-bear-soft28: rgba(207, 50, 38, 0.28);
+  --rd-bear-soft40: rgba(207, 50, 38, 0.4);
+  --rd-bear-soft50: rgba(207, 50, 38, 0.5);
+  --rd-bear-dim: #a8281e;
+  --rd-amber-soft08: rgba(122, 90, 18, 0.08);
+  --rd-amber-soft25: rgba(122, 90, 18, 0.16);
+  --rd-amber-soft30: rgba(122, 90, 18, 0.3);
+  --rd-amber-soft35: rgba(122, 90, 18, 0.35);
+  --rd-blue-soft05: rgba(36, 86, 214, 0.05);
+  --rd-blue-soft14: rgba(36, 86, 214, 0.14);
+  --rd-blue-soft20: rgba(36, 86, 214, 0.2);
+  --rd-blue-soft25: rgba(36, 86, 214, 0.25);
+  --rd-blue-soft28: rgba(36, 86, 214, 0.28);
+  --rd-blue-soft30: rgba(36, 86, 214, 0.3);
+  --rd-blue-soft50: rgba(36, 86, 214, 0.5);
+  --rd-blue-dim: #1d47b3;
+  --rd-inferred-soft35: rgba(107, 114, 128, 0.35);
+  --rd-inferred-soft50: rgba(107, 114, 128, 0.5);
+  --rd-live-soft05: rgba(14, 127, 65, 0.05);
+  --rd-live-soft12: rgba(14, 127, 65, 0.12);
+  --rd-lo-soft50: rgba(107, 114, 128, 0.5);
+  --rd-mbull-soft05: rgba(14, 127, 65, 0.05);
+  --rd-mbull-soft06: rgba(14, 127, 65, 0.06);
+  --rd-mbull-soft12: rgba(14, 127, 65, 0.12);
+  --rd-mbull-soft20: rgba(14, 127, 65, 0.2);
+  --rd-mbull-soft32: rgba(14, 127, 65, 0.32);
+  --rd-mbull-soft50: rgba(14, 127, 65, 0.5);
+  --rd-mbull-soft70: rgba(14, 127, 65, 0.7);
+  --rd-mamber-soft05: rgba(122, 90, 18, 0.05);
+  --rd-mamber-soft20: rgba(122, 90, 18, 0.2);
+  --rd-mamber-soft50: rgba(122, 90, 18, 0.5);
+
+  /* ---- charts / sparks ---- */
+  --rd-chart-grid: rgba(15, 17, 21, 0.06);
+  --rd-chart-trigline: rgba(36, 86, 214, 0.55);
+  --rd-chart-fill-bull: rgba(14, 127, 65, 0.1);
+  --rd-chart-fill-amber: rgba(122, 90, 18, 0.1);
+  --rd-chart-fill-bear: rgba(207, 50, 38, 0.1);
+  --rd-mspark-fill-bull: rgba(14, 127, 65, 0.13);
+  --rd-mspark-fill-amber: rgba(122, 90, 18, 0.13);
+  --rd-mspark-fill-bear: rgba(207, 50, 38, 0.13);
+  --rd-chart-scrim-72: rgba(255, 255, 255, 0.72);
+  --rd-chart-scrim-85: rgba(255, 255, 255, 0.85);
+  --rd-chart-scrim-90: rgba(255, 255, 255, 0.9);
+
+  /* ---- map ---- */
+  --rd-map-state-fill: rgba(36, 86, 214, 0.06);
+  --rd-map-state-stroke: rgba(36, 86, 214, 0.28);
+  --rd-map-dot-up: #0e7f41;
+  --rd-map-dot-dn: #cf3226;
+
+  /* ---- the app-shell chip tokens follow the paper ramp ---- */
+  --dim: var(--rd-t-dim);
+  --hair: rgba(15, 17, 21, 0.11);
 }
