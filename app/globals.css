@@ -36,7 +36,7 @@
   /* — TYPE — one scale, real separation between tiers (feat/v4-2-today).
      figure: the ONE big number that carries a card · headline: the words that
      carry a card when there is no number · title: a card question / row
-     heading · body: prose · foot: a card's closing line · meta: the secondary
+     heading · row: a data row · body: prose · foot: a card's closing line · meta: the secondary
      line under a title · label: the small mono caps name of a card. The
      terminal's literals ride these unchanged (feed.css). */
   --type-figure: 40px;
@@ -45,6 +45,7 @@
   --type-headline-weight: 600;
   --type-title: 14px;
   --type-title-weight: 600;
+  --type-row: 13px; /* a data row inside a card: a key, a value, a number */
   --type-body: 14.5px;
   --type-foot: 12px;
   --type-meta: 11.5px;
