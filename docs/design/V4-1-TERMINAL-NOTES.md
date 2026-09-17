@@ -175,6 +175,9 @@ pass price renders under VERDICT with its date instead.
   parses as a BELOW 34.80 entry trigger on a long idea — a stop-out would mark it
   sticky TRIGGERED. INTEGRITY-1's parser and its evaluations are out of this branch's
   scope; the terminal refuses to headline that trigger (see the conflict rule).
+  **Fixed in feat/v4-1b-integrity** (docs/design/V4-1B-INTEGRITY-NOTES.md): the pass reads
+  stop language as a stop, refuses crossings against the stated side, and withdraws AGI's
+  SEP 16 TRIGGERED; the terminal's question guard is retired with it.
 - `/api/intel/bars` is rate-limited at 30/min per IP; a burst of chart opens (or a
   screenshot probe) turns the dock chart's "no chart data" on — the honest state for
   a 429, but easy to misread as a missing symbol.

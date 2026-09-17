@@ -15,8 +15,9 @@
 //   BARS — 1M daily candles for the open idea (GET /api/intel/bars), on the
 //          phone's idea page only; the desktop dock charts the selection.
 //
-// Every derived value (the question, % of the way, the status chip, the
-// header stats, the filters) is a pure function in lib/idea-card.ts.
+// Every derived value (the question, the headline metric — distance to
+// trigger / % of the way — the status chip, the header stats, the filters)
+// is a pure function in lib/idea-card.ts.
 //
 // Honesty rules (the law):
 // - absent data renders as absent (— / "no stop") — never a dash-as-zero,
@@ -62,11 +63,11 @@ import {
   filterCounts,
   filterIdeas,
   fmtLevel,
+  headlineOf,
+  headlineTone,
   levelIsParsed,
   mergeQuoteRound,
-  progressLabel,
   progressOf,
-  progressTone,
   questionOf,
   readQuote,
   sideOf,
@@ -84,6 +85,9 @@ const REFRESH_MS = 60_000; // the book, the tape and the quotes poll together
  *  round has failed — a stalled poll (a hidden tab) must not keep a price
  *  standing as DELAYED */
 const QUOTE_MAX_AGE_MS = 3 * REFRESH_MS;
+/** a quotes batch still out after this is a failed batch — its symbols read
+ *  UNAVAILABLE instead of sitting on "loading" until the platform times out */
+const QUOTE_TIMEOUT_MS = 20_000;
 
 export default function IdeasFeed({
   active = true,
@@ -176,25 +180,38 @@ export default function IdeasFeed({
     if (!symKey) return;
     const chunks = symKey.split("|");
     let cancelled = false;
+    const inflight = new Set<AbortController>();
     const pull = () => {
-      Promise.allSettled(
-        chunks.map((c) =>
-          fetch(`/api/intel/quotes?symbols=${encodeURIComponent(c)}`, { cache: "no-store" })
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((j: { quotes?: Record<string, { price?: number; chgPct?: number }> }) => j.quotes ?? {}),
-        ),
-      ).then((results) => {
-        if (cancelled) return;
-        // each batch lands on its own symbols: a failed batch nulls exactly
-        // its symbols (UNAVAILABLE), an answered one refreshes exactly its own
-        const batches: QuoteBatch[] = results.map((r, i) => ({
-          symbols: chunks[i].split(","),
-          ok: r.status === "fulfilled",
-          quotes: r.status === "fulfilled" ? r.value : undefined,
-        }));
-        const now = Date.now();
-        setQuotes((prev) => mergeQuoteRound(prev, batches, now));
-      });
+      // feat/v4-1b-integrity — every batch merges ON ITS OWN, stamped with
+      // the time its round was ASKED: a slow batch never holds the rest of
+      // the book at "loading", a batch that hangs past the timeout is a
+      // failed batch (UNAVAILABLE on its own symbols), and a batch from an
+      // older round that lands after a newer one is dropped by
+      // mergeQuoteRound rather than stamped fresh
+      const askedAt = Date.now();
+      for (const c of chunks) {
+        const ctl = new AbortController();
+        inflight.add(ctl);
+        const timer = window.setTimeout(() => ctl.abort(), QUOTE_TIMEOUT_MS);
+        fetch(`/api/intel/quotes?symbols=${encodeURIComponent(c)}`, { cache: "no-store", signal: ctl.signal })
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+          .then(
+            (j: { quotes?: Record<string, { price?: number; chgPct?: number }> }): QuoteBatch => ({
+              symbols: c.split(","),
+              ok: true,
+              quotes: j.quotes ?? {},
+            }),
+            (): QuoteBatch => ({ symbols: c.split(","), ok: false }),
+          )
+          .then((batch) => {
+            window.clearTimeout(timer);
+            inflight.delete(ctl);
+            if (cancelled) return;
+            // a failed batch nulls exactly its symbols (UNAVAILABLE), an
+            // answered one refreshes exactly its own
+            setQuotes((prev) => mergeQuoteRound(prev, [batch], askedAt));
+          });
+      }
     };
     pull();
     const id = window.setInterval(() => {
@@ -214,6 +231,7 @@ export default function IdeasFeed({
       cancelled = true;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
+      for (const ctl of inflight) ctl.abort();
     };
   }, [symKey]);
 
@@ -686,8 +704,12 @@ function IdeaCard({
   const chip = statusOf(idea);
   const q = questionOf(idea);
   const side = sideOf(idea);
+  // the ONE headline metric (lib/idea-card headlineOf) — the idea page and the
+  // desktop detail read the same resolver; only a price answered by the
+  // latest round computes
+  const head = headlineOf(idea, last.state === "ok" ? last.price : null);
+  const tone = headlineTone(head);
   const prog = progressOf(idea, last.state === "ok" ? last.price : null);
-  const tone = progressTone(prog);
   return (
     // aria-current, not aria-pressed: the card is the current selection (it
     // drives the dock chart / detail on desktop and opens the page on phones),
@@ -721,17 +743,18 @@ function IdeaCard({
           </span>
         </span>
         <span className="v4-ic-right">
-          <span className={`v4-ic-pct ${tone ? `v4-${tone}` : "v4-mute"}`}>{prog.pct != null ? `${prog.pct}%` : "—"}</span>
-          <span className="v4-ic-pl">{progressLabel(prog)}</span>
-          {prog.pct != null ? <DataTag kind="calc" title="(last − stop) / (target − stop), clamped 0–100" /> : null}
+          <span className={`v4-ic-pct v4-${tone}`}>{head.big}</span>
+          <span className={`v4-ic-pl${head.kind === "beyond" ? " v4-ic-pl-wrap" : ""}`}>{head.label}</span>
+          {head.calc ? <DataTag kind="calc" title={head.calc} /> : null}
         </span>
       </span>
       <span className="v4-ic-bottom">
-        {/* the track exists only when there is progress to show — an empty
-            track under "—" would read as 0% (L2: absent stays absent) */}
-        {prog.pct != null ? (
+        {/* the track exists only for % of the way — a distance is not a
+            fraction of anything, and an empty track under "—" would read as
+            0% (L2: absent stays absent) */}
+        {head.kind === "progress" && head.pct != null ? (
           <span className="v4-bar" aria-hidden="true">
-            <span className={`v4-bar-fill v4-bar-${tone}`} style={{ width: `${prog.pct}%` }} />
+            <span className={`v4-bar-fill v4-bar-${tone}`} style={{ width: `${head.pct}%` }} />
           </span>
         ) : null}
         <span className="v4-ic-mono">

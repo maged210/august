@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import type { PublicIdea } from "../lib/ideas";
 import {
   BOOK_FILTERS,
+  DISTANCE_FORMULA,
+  PROGRESS_FORMULA,
   bookStats,
   bucketOf,
   chartGeometry,
@@ -19,6 +21,9 @@ import {
   fmtDay,
   fmtLevel,
   fmtPct,
+  headlineOf,
+  headlineReason,
+  headlineTone,
   levelIsParsed,
   levelOnScale,
   mergeQuoteRound,
@@ -32,7 +37,10 @@ import {
   statusOf,
   statusText,
   thesisExcerpt,
+  triggerOf,
   windowBars,
+  type HeadlineKind,
+  type HeadlineWhy,
   type QuoteBook,
 } from "../lib/idea-card";
 
@@ -258,7 +266,12 @@ test("numOf: unit-qualified and year-like numerals are not price levels (the pas
 test("entryLevelOf: the pass's parsed trigger wins over the entry text's first numeral", () => {
   const ev = armed().evaluation!;
   assert.equal(entryLevelOf({ entry: "confirmation candle above $150 tomorrow, stop 140", evaluation: { ...ev, level: 150, dir: "above" } }), 150);
-  assert.equal(entryLevelOf({ entry: "current levels; stop consideration under $34.80" }), 34.8);
+  // feat/v4-1b-integrity — a stop clause's number is never drawn as the ENTRY
+  assert.equal(entryLevelOf({ entry: "current levels; stop consideration under $34.80" }), null);
+  assert.equal(entryLevelOf({ entry: "near $40; stop below 36.70" }), 40);
+  // …and never derives a side as if it were the entry
+  assert.equal(sideOf({ entry: "current levels; stop consideration under $34.80", target: "$37–$40 resistance zone" }), null);
+  assert.deepEqual(sideOf({ entry: "near $40; stop below 36.70", target: "46" }), { side: "LONG", derived: true });
   assert.equal(entryLevelOf({ entry: "holds support", evaluation: { ...ev, level: null, dir: null, state: "NEEDS_LEVEL" } }), null);
 });
 
@@ -271,26 +284,33 @@ test("fmtDay stamps in ET, the same calendar TRIGGERED TODAY counts in", () => {
 
 test("questionOf: a stated side that contradicts the level ordering asks no odds question", () => {
   // a SHORT whose target sits above its stop is a conflicted row → no odds
-  // question; its ABOVE trigger disagrees with the side too → the excerpt form
-  const q = questionOf(armed({ side: "short", target: "41", stop: "35.6" }));
-  assert.equal(q.tier, "thesis");
+  // question; with no parsed trigger it falls to the excerpt form
   const q2 = questionOf({ ...base, side: "short", target: "41", stop: "35.6" });
   assert.equal(q2.tier, "thesis");
-  // agreement still asks it
+  // …and with the pass's (agreeing) trigger, to the trigger question
+  const ev = armed().evaluation!;
+  const q = questionOf(armed({ side: "short", target: "41", stop: "35.6", evaluation: { ...ev, level: 30, dir: "below" } }));
+  assert.equal(q.tier, "trigger");
+  // agreement still asks the odds question
   assert.equal(questionOf({ ...base, side: "long", target: "41", stop: "35.6" }).tier, "levels");
 });
 
-test("questionOf: the trigger question is never asked against the row's side, nor for QUOTE SUSPECT", () => {
+test("questionOf: asks the pass's trigger — never after NEEDS LEVEL (AGI after v4-1b), never for QUOTE SUSPECT", () => {
   const ev = armed().evaluation!;
-  // a long idea whose entry text parsed as a BELOW trigger (a stop clause read as the entry)
-  const agi = armed({ side: "long", evaluation: { ...ev, level: 34.8, dir: "below", state: "STALE" } });
+  // AGI once the pass reads its stop clause as a stop: no level on the record
+  const agi = armed({
+    instrument: "AGI",
+    entry: "current levels; stop consideration under $34.80",
+    target: "$37–$40 resistance zone",
+    evaluation: { ...ev, state: "NEEDS_LEVEL", level: null, dir: null, reason: "no crossable entry trigger: below 34.8 is stop language, and a stop never arms an entry trigger" },
+  });
   assert.equal(questionOf(agi).tier, "thesis");
-  // a derived side disagrees too
-  const derived = armed({ entry: "34.80", target: "37", evaluation: { ...ev, level: 34.8, dir: "below" } });
-  assert.equal(questionOf(derived).tier, "thesis");
-  // agreement asks it; WATCH never blocks it
+  // the pass is the only parser: an ARMED / STALE record is asked as stored,
+  // for any side (feat/v4-1b-integrity retires the terminal's own side guard —
+  // the pass refuses a crossing against the stated side at the source)
   assert.equal(questionOf(armed({ side: "long" })).tier, "trigger");
   assert.equal(questionOf(armed({ side: "watch" })).tier, "trigger");
+  assert.equal(questionOf(armed({ evaluation: { ...ev, state: "STALE" } })).text, "SEDG breaks above 37.35?");
   // the pass refused to grade the level: no headline question
   const lite = armed({ side: "short", evaluation: { ...ev, level: 8.4, dir: "below", state: "QUOTE_SUSPECT" } });
   assert.equal(questionOf(lite).tier, "thesis");
@@ -422,4 +442,171 @@ test("quotes: a failed batch makes exactly its own symbols UNAVAILABLE — never
   book = mergeQuoteRound(book, [{ symbols: ["P"], ok: true, quotes: { P: { price: 3 } } }], t3);
   const p = readQuote(book, "P", t3, MAX);
   assert.equal(p.state === "ok" ? p.chgPct : "x", null);
+});
+
+// --- feat/v4-1b-integrity · THE HEADLINE METRIC -------------------------------
+
+const ev0 = armed().evaluation!;
+const withEv = (over: Partial<NonNullable<PublicIdea["evaluation"]>>, idea: Partial<PublicIdea> = {}): PublicIdea =>
+  armed({ ...idea, evaluation: { ...ev0, ...over } });
+
+test("headline: before the pass fires — distance to the parsed trigger, either direction, one decimal, CALCULATED", () => {
+  // SEDG: long, break above 37.35, last 34.68 → 7.7% of price to travel up
+  const sedg = headlineOf(withEv({ state: "STALE", level: 37.35, dir: "above" }, { side: "long" }), 34.68);
+  assert.equal(sedg.kind, "distance");
+  assert.equal(sedg.pct, 7.7); // (37.35 − 34.68) / 34.68 = 7.699…
+  assert.equal(sedg.big, "7.7%");
+  // the same kind of figure as "to target" — a share of price to travel; the
+  // direction lives beside it (the question, the idea page's trigger line)
+  assert.equal(sedg.label, "to trigger");
+  assert.equal(sedg.calc, DISTANCE_FORMULA);
+  assert.deepEqual(sedg.trigger, { dir: "above", level: 37.35 });
+  assert.equal(sedg.last, 34.68);
+  assert.equal(headlineTone(sedg), "ink");
+  // CRWD: short, drop under 197.25, last 241.36 → 18.3% of price to travel down
+  const crwd = headlineOf(withEv({ level: 197.25, dir: "below" }, { instrument: "CRWD", side: "short" }), 241.36);
+  assert.equal(crwd.pct, 18.3); // (241.36 − 197.25) / 241.36 = 18.27…
+  assert.equal(crwd.big, "18.3%");
+  assert.equal(crwd.label, "to trigger");
+  assert.deepEqual(crwd.trigger, { dir: "below", level: 197.25 });
+  // ARMED measures exactly like STALE
+  assert.equal(headlineOf(withEv({ state: "ARMED", level: 37.35, dir: "above" }), 34.68).big, "7.7%");
+  // a hair away is still a distance, printed at one decimal — never "beyond"
+  const hair = headlineOf(withEv({ level: 100, dir: "above" }), 99.99);
+  assert.equal(hair.kind, "distance");
+  assert.equal(hair.big, "0.0%");
+  assert.equal(hair.label, "to trigger");
+  // a target + stop pair does NOT turn an untriggered row into % of the way
+  const paired = headlineOf(withEv({ level: 37.35, dir: "above" }, { target: "41", stop: "35.6" }), 36);
+  assert.equal(paired.kind, "distance");
+  assert.equal(paired.progress, null);
+});
+
+test("headline: last already past the trigger while not TRIGGERED → beyond trigger · awaiting pass, no percent", () => {
+  const cases: Array<["above" | "below", number, number]> = [
+    ["above", 37.35, 38.1],
+    ["above", 37.35, 37.35], // the pass's own test: ≥ is crossed
+    ["below", 197.25, 190],
+    ["below", 197.25, 197.25], // ≤ is crossed
+  ];
+  for (const [dir, level, last] of cases) {
+    for (const state of ["ARMED", "STALE"] as const) {
+      const h = headlineOf(withEv({ state, level, dir }), last);
+      assert.equal(h.kind, "beyond", `${state} ${dir} ${level} last ${last}`);
+      assert.equal(h.label, "beyond trigger · awaiting pass");
+      assert.equal(h.pct, null);
+      assert.equal(h.big, "—");
+      assert.equal(h.calc, null); // no number, no CALCULATED chip
+      assert.deepEqual(h.trigger, { dir, level });
+      assert.equal(headlineTone(h), "mute");
+    }
+  }
+});
+
+test("headline: TRIGGERED with a stated target and stop → % of the way, as built", () => {
+  const fired = (last: number) => headlineOf(withEv({ state: "TRIGGERED", level: 37.35, dir: "above" }, { side: "long", target: "41", stop: "35.6" }), last);
+  const h = fired(37.92);
+  assert.equal(h.kind, "progress");
+  assert.equal(h.pct, 43); // (37.92 − 35.6) / (41 − 35.6) = 42.96
+  assert.equal(h.big, "43%");
+  assert.equal(h.label, "to target");
+  assert.equal(h.calc, PROGRESS_FORMULA);
+  assert.equal(h.trigger, null); // a fired trigger is never measured to
+  assert.equal(h.progress?.pct, 43);
+  assert.equal(headlineTone(h), "down");
+  assert.equal(headlineTone(fired(39)), "up");
+  // a short's range reads the same formula
+  const short = headlineOf(withEv({ state: "TRIGGERED", level: 197.25, dir: "below" }, { side: "short", target: "185", stop: "205" }), 201.4);
+  assert.equal(short.pct, 18);
+});
+
+test("headline: everything else is — with the reason named", () => {
+  const trig = { state: "TRIGGERED" as const, level: 37.35, dir: "above" as const };
+  const cases: Array<[string, PublicIdea, number | null, HeadlineWhy, string]> = [
+    ["triggered, no target or stop", withEv(trig), 38, "no_levels", "no target or stop"],
+    ["triggered, no stop", withEv(trig, { target: "41" }), 38, "no_stop", "no stop"],
+    ["triggered, no target", withEv(trig, { stop: "35" }), 38, "no_target", "no target"],
+    ["triggered, target = stop", withEv(trig, { target: "41", stop: "41" }), 38, "degenerate", "target = stop"],
+    ["triggered, no fresh last", withEv(trig, { target: "41", stop: "35.6" }), null, "no_last", "no last price"],
+    ["pre-trigger, no fresh last", withEv({ level: 37.35, dir: "above" }), null, "no_last", "no last price"],
+    ["needs level", withEv({ state: "NEEDS_LEVEL", level: null, dir: null }), 36, "no_trigger", "no trigger"],
+    // a stated target + stop never computes before the pass fires
+    ["needs level with target + stop", withEv({ state: "NEEDS_LEVEL", level: null, dir: null }, { target: "41", stop: "35.6" }), 36, "no_trigger", "no trigger"],
+    ["quote suspect", withEv({ state: "QUOTE_SUSPECT", level: 8.4, dir: "below" }), 919.4, "quote_suspect", "level not graded"],
+    ["not yet evaluated", base, 36, "unevaluated", "not yet evaluated"],
+    ["armed with no usable level", withEv({ state: "ARMED", level: null, dir: null }), 36, "no_trigger", "no trigger"],
+  ];
+  for (const [name, idea, last, why, label] of cases) {
+    const h = headlineOf(idea, last);
+    assert.equal(h.kind, "absent", name);
+    assert.equal(h.why, why, name);
+    assert.equal(h.label, label, name);
+    assert.equal(h.big, "—", name);
+    assert.equal(h.pct, null, name);
+    assert.equal(h.calc, null, name);
+    assert.equal(headlineTone(h), "mute", name);
+    if (why !== "ok" && why !== "beyond_trigger") assert.equal(headlineReason(why), label, name);
+  }
+  // a non-positive or non-finite last is no last
+  assert.equal(headlineOf(withEv({ level: 37.35, dir: "above" }), 0).why, "no_last");
+  assert.equal(headlineOf(withEv({ level: 37.35, dir: "above" }), Number.NaN).why, "no_last");
+});
+
+test("headline, question, filters and tiles read ONE record — beyond never counts as Triggered", () => {
+  const today = T0 - 60_000;
+  const rows: Array<[string, PublicIdea, number | null, HeadlineKind, "triggered" | "live" | "needs_level" | "stale"]> = [
+    ["pre-trigger", withEv({ state: "ARMED", level: 37.35, dir: "above", at: today }), 36, "distance", "live"],
+    ["beyond, awaiting pass", withEv({ state: "ARMED", level: 37.35, dir: "above", at: today }), 38, "beyond", "live"],
+    ["stale pre-trigger", withEv({ state: "STALE", level: 37.35, dir: "above", at: today }), 36, "distance", "stale"],
+    ["stale beyond", withEv({ state: "STALE", level: 37.35, dir: "above", at: today }), 38, "beyond", "stale"],
+    ["triggered today", withEv({ state: "TRIGGERED", level: 37.35, dir: "above", at: today }, { target: "41", stop: "35.6" }), 38, "progress", "triggered"],
+    ["refused trigger (AGI)", withEv({ state: "NEEDS_LEVEL", level: null, dir: null, at: today }), 35, "absent", "needs_level"],
+    ["quote suspect", withEv({ state: "QUOTE_SUSPECT", level: 8.4, dir: "below", at: today }), 919, "absent", "needs_level"],
+    ["unevaluated", base, 36, "absent", "live"],
+  ];
+  for (const [name, idea, last, kind, bucket] of rows) {
+    const h = headlineOf(idea, last);
+    assert.equal(h.kind, kind, name);
+    assert.equal(bucketOf(idea), bucket, name);
+    // the question asks exactly the trigger the headline measures
+    const q = questionOf(idea);
+    if (h.trigger) assert.equal(q.tier, "trigger", name);
+    if (q.tier === "trigger") assert.deepEqual(triggerOf(idea), h.trigger, name);
+    // a percent exists exactly when a CALCULATED formula is named
+    assert.equal(h.pct != null, h.calc != null, name);
+  }
+  const ideas = rows.map((r) => r[1]);
+  // only the pass's TRIGGERED counts — the two "beyond" rows are not triggered today
+  assert.equal(bookStats(ideas, T0).triggeredToday, 1);
+  assert.deepEqual(filterCounts(ideas), { all: 8, triggered: 1, live: 3, needs_level: 2 });
+  assert.deepEqual(
+    filterIdeas(ideas, "needs_level").map((i) => headlineOf(i, 36).why),
+    ["no_trigger", "quote_suspect"],
+  );
+});
+
+test("quotes: batches merge as they land — an OLDER round landing late never overwrites a newer answer", () => {
+  const MAX = 180_000;
+  const t1 = T0;
+  const t2 = T0 + 60_000;
+  // round 2 (asked at t2) lands first
+  let book: QuoteBook = mergeQuoteRound({}, [{ symbols: ["AGI", "SEDG"], ok: true, quotes: { AGI: { price: 35.4, chgPct: 0.3 }, SEDG: { price: 34.9 } } }], t2);
+  // round 1 (asked at t1) lands late, with older prices: dropped per symbol
+  book = mergeQuoteRound(book, [{ symbols: ["AGI", "SEDG"], ok: true, quotes: { AGI: { price: 34.1 }, SEDG: { price: 33 } } }], t1);
+  assert.deepEqual(readQuote(book, "AGI", t2, MAX), { state: "ok", price: 35.4, chgPct: 0.3, seenAt: t2 });
+  assert.equal(book.SEDG.price, 34.9);
+  // a newer FAILURE is not resurrected by an older success landing late
+  book = mergeQuoteRound(book, [{ symbols: ["AGI"], ok: false }], t2 + 60_000);
+  book = mergeQuoteRound(book, [{ symbols: ["AGI"], ok: true, quotes: { AGI: { price: 36 } } }], t2);
+  assert.equal(readQuote(book, "AGI", t2 + 60_000, MAX).state, "unavailable");
+  assert.equal(book.AGI.price, null);
+  // sibling batches of ONE round (same ask time) merge independently
+  const t4 = t2 + 120_000;
+  book = mergeQuoteRound(book, [{ symbols: ["AGI"], ok: true, quotes: { AGI: { price: 36.2 } } }], t4);
+  book = mergeQuoteRound(book, [{ symbols: ["SEDG"], ok: false }], t4);
+  assert.equal(readQuote(book, "AGI", t4, MAX).state, "ok");
+  assert.equal(readQuote(book, "SEDG", t4, MAX).state, "unavailable");
+  // a symbol never asked before merges whatever its round
+  book = mergeQuoteRound(book, [{ symbols: ["NEW"], ok: true, quotes: { NEW: { price: 1 } } }], t1);
+  assert.equal(book.NEW.price, 1);
 });

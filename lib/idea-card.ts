@@ -20,13 +20,16 @@
 //     exists ONLY when target, stop and last are all real numbers. The
 //     reason it is absent is returned, so the card can say "no stop"
 //     instead of a dash-as-zero.
+//   - THE HEADLINE (feat/v4-1b-integrity, headlineOf) is the one big number
+//     every surface shows: distance to the parsed trigger before a row
+//     triggers, % of the way after, "—" with its reason otherwise.
 //   - the STATUS CHIP maps 1:1 onto INTEGRITY-1's conclusions. REVIEW never
 //     reaches this wire (review rows are not served), so it has no mapping.
 //
 // numOf / liveSide / sideOf moved here from components/surfaces/dock/derive.ts
 // (which re-exports them) so lib code never imports a component file.
 
-import type { IdeaEvalState, PublicIdea } from "@/lib/ideas";
+import { entryLanguage, type IdeaEvalState, type PublicIdea } from "@/lib/ideas";
 
 // ── level parsing + side (moved from dock/derive.ts, unchanged semantics) ─────
 
@@ -51,18 +54,21 @@ export function numOf(s: string | null | undefined): number | null {
 
 /** the ENTRY level a chart draws: the daily pass's PARSED TRIGGER when the
  *  pass has read one (the number the LIVE / TRIGGERED chip is judged
- *  against), else the first price-like numeral of the entry text */
+ *  against), else the first price-like numeral of the entry LANGUAGE — the
+ *  entry with its stop clauses cut out (feat/v4-1b-integrity: AGI's "stop
+ *  consideration under $34.80" drew 34.80 as its ENTRY line) */
 export function entryLevelOf(idea: Pick<PublicIdea, "entry" | "evaluation">): number | null {
   const ev = idea.evaluation;
   if (ev && ev.level != null && ev.dir && Number.isFinite(ev.level) && ev.level > 0) return ev.level;
-  return numOf(idea.entry);
+  return numOf(entryLanguage(idea.entry));
 }
 
 /** SIDE derived from entry vs target numerals — the fallback when the desk
  *  never stated one; callers render it in the derived style; null when not
- *  derivable (∅) */
+ *  derivable (∅). The entry numeral is read from the entry language: a stop's
+ *  number is not the entry (feat/v4-1b-integrity). */
 export function liveSide(idea: Pick<PublicIdea, "entry" | "target">): "LONG" | "SHORT" | null {
-  const e = numOf(idea.entry);
+  const e = numOf(entryLanguage(idea.entry));
   const t = numOf(idea.target);
   if (e == null || t == null || e === t) return null;
   return t > e ? "LONG" : "SHORT";
@@ -254,28 +260,38 @@ export function questionOf(
     if (dir === "short")
       return { text: `${T} drops under ${fmtLevel(target)} before ${fmtLevel(stop)}?`, tier: "levels", excerpt: null };
   }
-  const ev = idea.evaluation;
-  if (ev && ev.level != null && ev.dir && ev.state !== "QUOTE_SUSPECT" && ev.state !== "TRIGGERED") {
-    // the pass's own parse of the entry language — the number the LIVE chip
-    // is judged against, already on the wire. Asked ONLY of rows that have
-    // not triggered: a fired trigger is an answered question, and the row
-    // reads its state instead (the target/stop question above when both
-    // exist, else the ticker + excerpt below). Not asked when the pass
-    // refused to grade the level (QUOTE SUSPECT), and not asked when it
-    // points the opposite way from the row's side (a "drops under" question
-    // on a long idea is the parser reading a stop clause as the entry — the
-    // chip and the LEVELS card still state what the pass read; the headline
-    // does not publish it as the call).
-    const side = sideOf(idea);
-    const wants: "long" | "short" = ev.dir === "above" ? "long" : "short";
-    const agrees = !side || side.side === "WATCH" || side.side.toLowerCase() === wants;
-    if (agrees) {
-      const text =
-        ev.dir === "above" ? `${T} breaks above ${fmtLevel(ev.level)}?` : `${T} drops under ${fmtLevel(ev.level)}?`;
-      return { text, tier: "trigger", excerpt: null };
-    }
+  // the pass's own parse of the entry language — the number the LIVE chip is
+  // judged against, already on the wire. Asked ONLY of rows that have not
+  // triggered (a fired trigger is an answered question, and the row reads
+  // its state instead: the target/stop question above when both exist, else
+  // the ticker + excerpt below), and not when the pass refused to grade the
+  // level (QUOTE SUSPECT). feat/v4-1b-integrity: this reads the SAME trigger
+  // the headline metric measures (triggerOf). The old guard here — refusing a
+  // trigger that pointed against a stated or derived side — was the terminal
+  // covering for the parser reading AGI's stop clause as its entry. The pass
+  // now refuses stop language and side-contradicting crossings at the source,
+  // so a trigger on the wire IS the pass's trigger, and every surface reads
+  // it the one way.
+  const trig = triggerOf(idea);
+  if (trig) {
+    const text =
+      trig.dir === "above" ? `${T} breaks above ${fmtLevel(trig.level)}?` : `${T} drops under ${fmtLevel(trig.level)}?`;
+    return { text, tier: "trigger", excerpt: null };
   }
   return { text: T, tier: "thesis", excerpt: thesisExcerpt(idea.thesis) };
+}
+
+/** feat/v4-1b-integrity — THE TRIGGER, as every surface reads it: the pass's
+ *  parsed level for a row the pass graded and that has NOT triggered (ARMED,
+ *  or STALE — parsed but uncrossed past the horizon). A TRIGGERED row's level
+ *  is history, a QUOTE SUSPECT level was refused, a NEEDS LEVEL row has none,
+ *  and a row the pass has not seen yet has not been parsed. */
+export type TriggerLevel = { dir: "above" | "below"; level: number };
+export function triggerOf(idea: Pick<PublicIdea, "evaluation">): TriggerLevel | null {
+  const ev = idea.evaluation;
+  if (!ev || (ev.state !== "ARMED" && ev.state !== "STALE")) return null;
+  if (ev.level == null || !Number.isFinite(ev.level) || ev.level <= 0 || !ev.dir) return null;
+  return { dir: ev.dir, level: ev.level };
 }
 
 /** true when a stated level string is more than its first numeral — a zone
@@ -349,6 +365,145 @@ export function progressTone(p: Progress): "up" | "down" | null {
   return p.pct >= 50 ? "up" : "down";
 }
 
+// ── THE HEADLINE METRIC (feat/v4-1b-integrity) — one resolver, every surface ──
+//
+// The big number on a card, on the idea page and in the desktop detail. Two
+// states, both CALCULATED, and everything else honestly absent:
+//
+//   - NOT TRIGGERED, with the pass's parsed trigger (triggerOf) and a fresh
+//     last: DISTANCE TO TRIGGER — |trigger − last| ÷ last, one decimal, the
+//     move from here to the level. "7.7% to trigger" — the same kind of
+//     figure as the idea page's "to target": a share of price to travel.
+//     The direction stays where it was built, beside it (the question's
+//     "breaks above 37.35?", the idea page's "trigger above 37.35").
+//   - last ALREADY PAST the trigger while the row is not TRIGGERED: "beyond
+//     trigger · awaiting pass", no percent. The crossing test is the pass's
+//     own (≥ for above, ≤ for below); only the pass fires a trigger, so the
+//     row stays LIVE / STALE in every filter and tile until it does.
+//   - TRIGGERED with a stated target and stop: % OF THE WAY (progressOf), as
+//     built.
+//   - anything else: "—" with the reason named.
+
+export type HeadlineKind = "distance" | "beyond" | "progress" | "absent";
+export type HeadlineWhy =
+  | "ok"
+  | "beyond_trigger"
+  | Exclude<ProgressWhy, "ok">
+  | "no_trigger"
+  | "quote_suspect"
+  | "unevaluated";
+export type Headline = {
+  kind: HeadlineKind;
+  /** distance: the percent at one decimal (≥ 0) · progress: integer 0–100 ·
+   *  otherwise null */
+  pct: number | null;
+  /** the big number as it renders ("7.7%", "64%", "—") */
+  big: string;
+  /** the words beside it ("to trigger", "to target", "no stop") */
+  label: string;
+  why: HeadlineWhy;
+  /** the formula a CALCULATED chip states — present exactly when `pct` is */
+  calc: string | null;
+  /** the trigger measured against (distance / beyond) */
+  trigger: TriggerLevel | null;
+  /** the % of the way read, for TRIGGERED rows */
+  progress: Progress | null;
+  /** the fresh last the number used, when one did */
+  last: number | null;
+};
+
+export const DISTANCE_FORMULA = "|trigger − last| ÷ last — the move from last to the parsed trigger";
+export const PROGRESS_FORMULA = "(last − stop) / (target − stop), clamped 0–100";
+
+const HEADLINE_LABEL: Record<Exclude<HeadlineWhy, "ok">, string> = {
+  beyond_trigger: "beyond trigger · awaiting pass",
+  no_levels: PROGRESS_LABEL.no_levels,
+  no_target: PROGRESS_LABEL.no_target,
+  no_stop: PROGRESS_LABEL.no_stop,
+  degenerate: PROGRESS_LABEL.degenerate,
+  no_last: PROGRESS_LABEL.no_last,
+  no_trigger: "no trigger",
+  quote_suspect: "level not graded",
+  unevaluated: "not yet evaluated",
+};
+
+/** the words under "—" for a headline that has no number */
+export function headlineReason(why: Exclude<HeadlineWhy, "ok">): string {
+  return HEADLINE_LABEL[why];
+}
+
+export function headlineOf(
+  idea: Pick<PublicIdea, "target" | "stop" | "evaluation">,
+  last: number | null | undefined,
+): Headline {
+  const l = last != null && Number.isFinite(last) && last > 0 ? last : null;
+  const absent = (why: Exclude<HeadlineWhy, "ok">, extra: Partial<Headline> = {}): Headline => ({
+    kind: why === "beyond_trigger" ? "beyond" : "absent",
+    pct: null,
+    big: "—",
+    label: HEADLINE_LABEL[why],
+    why,
+    calc: null,
+    trigger: null,
+    progress: null,
+    last: l,
+    ...extra,
+  });
+  const ev = idea.evaluation;
+  const state = ev?.state;
+
+  if (state === "TRIGGERED") {
+    const p = progressOf(idea, l);
+    if (p.why !== "ok" || p.pct == null) {
+      // progressOf names what is missing whenever it has no number
+      return absent(p.why === "ok" ? "no_last" : p.why, { progress: p });
+    }
+    return {
+      kind: "progress",
+      pct: p.pct,
+      big: `${p.pct}%`,
+      label: PROGRESS_LABEL.ok,
+      why: "ok",
+      calc: PROGRESS_FORMULA,
+      trigger: null,
+      progress: p,
+      last: l,
+    };
+  }
+
+  const trig = triggerOf(idea);
+  if (trig) {
+    if (l == null) return absent("no_last", { trigger: trig });
+    const crossed = trig.dir === "above" ? l >= trig.level : l <= trig.level;
+    if (crossed) return absent("beyond_trigger", { trigger: trig });
+    const pct = Number(((Math.abs(trig.level - l) / l) * 100).toFixed(1));
+    return {
+      kind: "distance",
+      pct,
+      big: `${pct.toFixed(1)}%`,
+      label: "to trigger",
+      why: "ok",
+      calc: DISTANCE_FORMULA,
+      trigger: trig,
+      progress: null,
+      last: l,
+    };
+  }
+
+  if (state === "QUOTE_SUSPECT") return absent("quote_suspect");
+  if (!ev) return absent("unevaluated");
+  // NEEDS_LEVEL — or an ARMED / STALE record with no usable level
+  return absent("no_trigger");
+}
+
+/** the headline's big-number tone: % of the way keeps its green / red halves;
+ *  a distance is not good or bad, so it reads in ink; absent is muted */
+export function headlineTone(h: Headline): "up" | "down" | "ink" | "mute" {
+  if (h.kind === "progress" && h.progress) return progressTone(h.progress) ?? "mute";
+  if (h.kind === "distance") return "ink";
+  return "mute";
+}
+
 // ── header stats + filters — computed from the feed, nothing else ────────────
 
 export type BookStats = {
@@ -397,7 +552,13 @@ export const BOOK_FILTERS: ReadonlyArray<{ key: BookFilter; label: string }> = [
 
 /** the filter bucket a row belongs to. QUOTE SUSPECT sits under NEEDS LEVEL:
  *  the pass refused to grade it and asks for the level to be restated, which
- *  is the same human action. STALE belongs to no bucket but ALL. */
+ *  is the same human action. STALE belongs to no bucket but ALL.
+ *
+ *  feat/v4-1b-integrity — the filters, the stat tiles and the headline read
+ *  the SAME pass record: a row the pass refused a trigger for is NEEDS LEVEL
+ *  here and "no trigger" on its card; a row whose last is past its trigger
+ *  ("beyond trigger · awaiting pass") stays in LIVE (or STALE) and never counts
+ *  as Triggered or Triggered today — only the pass fires a trigger. */
 export function bucketOf(idea: Pick<PublicIdea, "evaluation">): "triggered" | "live" | "needs_level" | "stale" {
   const k = statusOf(idea).key;
   if (k === "TRIGGERED") return "triggered";
@@ -533,11 +694,18 @@ export type QuoteBatch = {
   quotes?: Record<string, { price?: number; chgPct?: number } | undefined>;
 };
 
+/** `now` is when the batch was ASKED (feat/v4-1b-integrity), not when it
+ *  landed: batches merge one at a time as they settle, so a slow batch never
+ *  holds the rest of the book back, and a batch from an OLDER round that lands
+ *  after a newer round has already asked for a symbol is dropped for that
+ *  symbol — an older round's price can never overwrite a newer answer (or a
+ *  newer failure) and be stamped fresh. */
 export function mergeQuoteRound(prev: QuoteBook, batches: readonly QuoteBatch[], now: number): QuoteBook {
   const next: QuoteBook = { ...prev };
   for (const b of batches) {
     for (const raw of b.symbols) {
       const sym = raw.trim().toUpperCase();
+      if (prev[sym] && prev[sym].checkedAt > now) continue; // a newer round already asked — this one is history
       const q = b.ok ? b.quotes?.[sym] : undefined;
       const price = q && Number.isFinite(q.price) && (q.price as number) > 0 ? (q.price as number) : null;
       if (price != null) {

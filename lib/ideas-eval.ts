@@ -21,8 +21,8 @@ import { getQuote } from "@/lib/markets";
 import { etDate } from "@/lib/pit";
 import {
   BOOK_STALE_DAYS,
+  bookPassConflict,
   demoteIdeaToReview,
-  entryConflict,
   evaluateLiveIdea,
   listIdeas,
   setIdeaEvaluation,
@@ -71,7 +71,11 @@ export async function runBookPass(now: number = Date.now()): Promise<BookPassRes
 
   let demoted = 0;
   for (const idea of live) {
-    const conflict = entryConflict(idea.side, idea.entry);
+    // feat/v4-1b-integrity — two-sided entries and side-contradicting entry
+    // LANGUAGE still demote; a crossing that points against the stated side
+    // is a parse failure and stays live as NEEDS_LEVEL (evaluateLiveIdea
+    // records the refusal)
+    const conflict = bookPassConflict(idea.side, idea.entry);
     if (conflict) {
       const reason =
         conflict === "two_sided"
@@ -83,13 +87,18 @@ export async function runBookPass(now: number = Date.now()): Promise<BookPassRes
     const price = quotes.get(idea.instrument.trim().toUpperCase()) ?? null;
     const evaluation = evaluateLiveIdea(idea, price, now, staleDays());
     // write only real changes — the evaluation record is compared without
-    // its timestamps so an unchanged conclusion doesn't rewrite 22 blobs
+    // its timestamps so an unchanged conclusion doesn't rewrite 22 blobs.
+    // Direction and reason are part of the conclusion (feat/v4-1b-integrity):
+    // a row that stays NEEDS_LEVEL for a NEW cause — stop language, a refused
+    // crossing — must have that cause recorded.
     const prior = idea.evaluation;
     const changed =
       !prior ||
       prior.state !== evaluation.state ||
       prior.level !== evaluation.level ||
-      prior.price !== evaluation.price;
+      prior.dir !== evaluation.dir ||
+      prior.price !== evaluation.price ||
+      prior.reason !== evaluation.reason;
     if (changed) await setIdeaEvaluation(idea.id, evaluation);
     counts[evaluation.state]++;
   }

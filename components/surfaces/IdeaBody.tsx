@@ -9,8 +9,10 @@
 // a pure function in lib/idea-card.ts; this file only lays it out.
 //
 // Honesty contract (DESIGN_LAWS L2, CLAUDE.md):
-//   - the % of the way is CALCULATED and tagged so; when it cannot be
-//     computed the card says what is missing ("no stop"), never "0%";
+//   - the headline number (lib/idea-card headlineOf — the card's resolver) is
+//     the distance to the parsed trigger before the pass fires it, the % of
+//     the way after; both are CALCULATED and tagged so; when neither can be
+//     computed the card says why ("no stop", "no trigger"), never "0%";
 //   - the last price carries its provenance chip: DELAYED when its own
 //     symbol was answered by the latest quotes round, DATA UNAVAILABLE
 //     otherwise (lib/idea-card readQuote) — never an older round's price;
@@ -38,11 +40,10 @@ import {
   fmtDay,
   fmtLevel,
   fmtPct,
+  headlineOf,
+  headlineTone,
   levelIsParsed,
   numOf,
-  progressLabel,
-  progressOf,
-  progressTone,
   questionOf,
   sideOf,
   statusOf,
@@ -290,9 +291,11 @@ export default function IdeaBody({
   const chip = statusOf(idea);
   const q = questionOf(idea);
   const side = sideOf(idea);
-  // only a price answered by the latest round computes
-  const prog = progressOf(idea, last.state === "ok" ? last.price : null);
-  const tone = progressTone(prog);
+  // THE headline metric — the same resolver the card uses (feat/v4-1b-
+  // integrity); only a price answered by the latest round computes
+  const head = headlineOf(idea, last.state === "ok" ? last.price : null);
+  const tone = headlineTone(head);
+  const prog = head.progress;
   const ev = idea.evaluation;
 
   return (
@@ -332,30 +335,48 @@ export default function IdeaBody({
         </div>
       </div>
 
-      {/* 2 · the odds card: % of the way (CALCULATED) + the phone's chart */}
+      {/* 2 · the headline card: distance to trigger before the pass fires,
+          % of the way after (both CALCULATED), "—" with its reason otherwise
+          — the same resolver as the card (lib/idea-card headlineOf) — plus
+          the phone's chart */}
       <div className="v4-card v4-odds">
         <div className="v4-odds-row">
-          <span className={`v4-odds-pct${tone ? ` v4-${tone}` : " v4-mute"}`}>{prog.pct != null ? `${prog.pct}%` : "—"}</span>
+          <span className={`v4-odds-pct v4-${tone}`}>{head.big}</span>
           <span className="v4-odds-sub">
-            {prog.pct != null && prog.toTargetPct != null && prog.toStopPct != null ? (
+            {head.kind === "progress" && prog && prog.toTargetPct != null && prog.toStopPct != null ? (
               <>
                 of the way · {fmtPct(prog.toTargetPct)} to target · {fmtPct(prog.toStopPct)} to stop{" "}
-                <DataTag kind="calc" title="(last − stop) / (target − stop), clamped 0–100" />
+                <DataTag kind="calc" title={head.calc ?? undefined} />
               </>
-            ) : prog.why === "no_last" ? (
-              // levels exist; a usable quote is what is missing — the meta
+            ) : head.kind === "distance" && head.trigger ? (
+              <>
+                {head.label} · trigger {head.trigger.dir} {fmtLevel(head.trigger.level)}{" "}
+                <DataTag kind="calc" title={head.calc ?? undefined} />
+              </>
+            ) : head.kind === "beyond" && head.trigger ? (
+              // last is past the level, but only the pass fires a trigger
+              `${head.label} · last is past the trigger ${head.trigger.dir} ${fmtLevel(head.trigger.level)}; the ${SETTLE_UTC_LABEL} pass decides`
+            ) : head.why === "no_last" ? (
+              // a level exists; a usable quote is what is missing — the meta
               // line above carries the chip that says why
               last.state === "pending" ? "no last price yet" : "last price unavailable"
+            ) : head.why === "no_trigger" ? (
+              `${head.label} · the pass found no crossable entry level (see Verdict)`
+            ) : head.why === "quote_suspect" ? (
+              `${head.label} · the quote is more than 3× from the stated level (see Verdict)`
+            ) : head.why === "unevaluated" ? (
+              `${head.label} · the first pass runs at ${SETTLE_UTC_LABEL}`
             ) : (
-              // the odds need both ends of the range; say which is missing in
-              // the visitor's language (the owner states levels in the inbox)
-              `${progressLabel(prog)} · the odds need a stated target and stop`
+              // a triggered row's odds need both ends of the range; say which
+              // is missing in the visitor's language (the owner states levels
+              // in the inbox)
+              `${head.label} · the odds need a stated target and stop`
             )}
           </span>
         </div>
-        {prog.pct != null ? (
+        {head.kind === "progress" && head.pct != null ? (
           <span className="v4-bar" aria-hidden="true">
-            <span className={`v4-bar-fill v4-bar-${tone}`} style={{ width: `${prog.pct}%` }} />
+            <span className={`v4-bar-fill v4-bar-${tone}`} style={{ width: `${head.pct}%` }} />
           </span>
         ) : null}
         {chart}

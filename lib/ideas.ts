@@ -607,9 +607,11 @@ const SHORT_ENTRY_RE =
   /\b(break(s|ing)? below|breakdown|loses?|below|rejection( at)?|fails? at|resistance holds?|puts?\b|short\b|sell(s|ing)?\b|fade(s)?\b)/i;
 
 /** PURE. Suggest a side from stated entry language; null when ambiguous
- *  (both patterns, neither pattern, or no entry at all — never guess). */
+ *  (both patterns, neither pattern, or no entry at all — never guess). Stop
+ *  clauses are not entry language (feat/v4-1b-integrity): "reclaims 190; cut
+ *  it below 182" suggests long, not "ambiguous". */
 export function suggestSide(entry: string): IdeaSide | null {
-  const e = entry.trim();
+  const e = entryLanguage(entry ?? "");
   if (!e) return null;
   const long = LONG_ENTRY_RE.test(e);
   const short = SHORT_ENTRY_RE.test(e);
@@ -644,6 +646,27 @@ const K_AFTER_RE = /^\s*k\b(?![\w.])/i;
 // "long above 9,450; stop below 9,400" is one-directional with its risk
 // inline. ("out" is deliberately absent — "break out above X" is an entry.)
 const STOP_BEFORE_RE = /\b(?:stop(?:s|ped)?|cut(?:\s+it)?|risk(?:ing)?|invalid\w*|exit\w*)\s*(?:it\s+|is\s+|at\s+)?$/i;
+// feat/v4-1b-integrity — STOP / INVALIDATION LANGUAGE NEVER YIELDS AN ENTRY
+// TRIGGER. The adjacency rule above missed words in between: AGI's "current
+// levels; stop consideration under $34.80" read as a BELOW 34.80 entry on a
+// long, and the stop-out marked it TRIGGERED. A stop word now claims the
+// FIRST price-like number after it in its own clause, however many words sit
+// between ("stop consideration under X", "invalidated if it closes below X",
+// "cut it at X", "stop-loss $X"). "no stop" / "without a stop" claim nothing,
+// and "non-stop" / "unstoppable" are not the word.
+const STOP_LEAD_RE =
+  /(?<![\w-])(?:stop(?:s|ped|ping)?(?:[-\s]?loss(?:es)?)?|invalidat\w*|invalid|cut(?:s|ting)?\s+(?:it|losses?|the\s+(?:trade|position)))\b/gi;
+const STOP_NEGATED_RE = /\b(?:no|not|without(?:\s+a)?)\s+$/i;
+// A clause ends at ';' ')' a newline, a comma or spaced dash followed by
+// space, or a SENTENCE period — never the '.' inside "$34.80" or the ',' in
+// "$1,117.50" (the extractor's own clause rule, lib/transcripts.ts).
+const CLAUSE_END_RE = /[;)\n|]|,\s|\s[–—-]\s|\.(?:\s|$)/;
+// …and the trailing shape: a crossing + number that is itself NAMED the stop
+// ("under 34.80 is the stop", "below $30 invalidates the setup"). The stop
+// word must not carry a level of its own — in "above 50 stop below 45" the
+// stop belongs to 45, and 50 stays the entry.
+const STOP_AFTER_RE =
+  /^\s*(?:[:=]\s*)?(?:(?:is|would\s+be|will\s+be|as)\s+)?(?:(?:the|my|our|a|an)\s+)?(?:stop(?:s|ped)?(?:[-\s]?loss)?|invalidat\w*|invalid)\b(?!\s*(?:loss\s*)?(?:[:=]\s*)?(?:at\b|@|above\b|over\b|under\b|below\b|loses?\b|clears?\b|reclaims?\b|\$|\d))/i;
 // Bare 19xx/20xx integers (no $, no comma, no decimals) read as YEARS, not
 // prices — "loses 2024 support". A real four-digit price is written $2,024 /
 // 2,024 / 2024.50 in this book's idiom.
@@ -658,45 +681,176 @@ export type ParsedTrigger =
   | { kind: "level"; dir: "above" | "below"; level: number }
   | { kind: "two_sided" };
 
+/** feat/v4-1b-integrity — a level the entry states as its STOP. `dir` is null
+ *  when the stop names no crossing ("cut it at 182", "stop-loss $30"). */
+export type StopRead = { dir: "above" | "below" | null; level: number };
+
+/** feat/v4-1b-integrity — a crossing the entry states that the parser REFUSED
+ *  as a trigger: it points against the row's stated side ("below 34.80" on a
+ *  long). A parse failure, never an evaluable level. */
+export type RejectedTrigger = { dir: "above" | "below"; level: number; side: "long" | "short" };
+
+/** The pass's whole read of one entry string. `trigger` is the only thing
+ *  that can ever be evaluated; `stop` and `rejected` exist so the pass can
+ *  record WHY a row has no trigger. */
+export type EntryRead = {
+  trigger: ParsedTrigger | null;
+  stop: StopRead | null;
+  rejected: RejectedTrigger | null;
+};
+
 const toNum = (s: string): number => Number(s.replace(/,/g, ""));
 
-/** PURE. Read the crossable trigger the entry language states. A range takes
- *  its far edge (fully cleared: above 772–772.50 → 772.50; below 766–767 →
- *  766). Unit-qualified numbers ($100M, 50-day, 30%, 200dma, bare years) are
- *  NOT price levels and never match — inventing a trigger is worse than
- *  NEEDS_LEVEL. Inline risk language ("…; stop below 9,400") is a stop, not a
- *  second entry. Both entry directions present → two_sided. Nothing crossable
- *  → null. */
-export function parseEntryTrigger(entry: string): ParsedTrigger | null {
-  const e = entry.trim();
-  if (!e) return null;
-  const hits: Array<{ dir: "above" | "below"; level: number }> = [];
+// Every number in a string, under the SAME grammar parseEntryTrigger uses —
+// the direction-keyword requirement is what's dropped, nothing else.
+const BARE_NUM_RE = new RegExp(LEVEL_NUM, "gi");
+
+type Span = { start: number; end: number };
+type DirHit = Span & { dir: "above" | "below"; level: number; stop: boolean };
+
+/** every direction + number the text states, unit/year guards applied (the
+ *  grammar INTEGRITY-1 established — unchanged) */
+function dirHits(e: string): DirHit[] {
+  const hits: DirHit[] = [];
   for (const m of e.matchAll(DIR_NUM_RE)) {
     const word = m[1].toLowerCase();
     const dir: "above" | "below" = ABOVE_WORDS.has(word) ? "above" : "below";
+    const start = m.index ?? 0;
+    const end = start + m[0].length;
     // the text right after the LAST number of this match decides the unit test
-    const after = e.slice((m.index ?? 0) + m[0].length);
+    const after = e.slice(end);
     const kMult = K_AFTER_RE.test(after) ? 1000 : 1;
     if (kMult === 1 && UNIT_AFTER_RE.test(after)) continue; // "$100M", "50-day", "30%" — not a price
-    if (STOP_BEFORE_RE.test(e.slice(0, m.index ?? 0))) continue; // inline stop, not an entry
     const a = toNum(m[2]);
     const b = m[3] != null ? toNum(m[3]) : null;
     if (!Number.isFinite(a) || a <= 0) continue;
     if (b == null && kMult === 1 && YEAR_LIKE(m[2], a)) continue; // "loses 2024 support" — a year
     const level =
       (b != null && Number.isFinite(b) && b > 0 ? (dir === "above" ? Math.max(a, b) : Math.min(a, b)) : a) * kMult;
-    hits.push({ dir, level });
+    // inline stop (adjacent risk word) or a crossing NAMED the stop after it
+    const stop = STOP_BEFORE_RE.test(e.slice(0, start)) || STOP_AFTER_RE.test(after);
+    hits.push({ start, end, dir, level, stop });
   }
-  const dirs = new Set(hits.map((h) => h.dir));
-  if (dirs.size > 1) return { kind: "two_sided" };
-  if (BREAK_ABOVE_RE.test(e) && BREAK_BELOW_RE.test(e)) return { kind: "two_sided" };
-  if (hits.length === 0) return null;
-  return { kind: "level", dir: hits[0].dir, level: hits[0].level };
+  return hits;
 }
 
-// Every number in a string, under the SAME grammar parseEntryTrigger uses —
-// the direction-keyword requirement is what's dropped, nothing else.
-const BARE_NUM_RE = new RegExp(LEVEL_NUM, "gi");
+/** the first price-like number in [from, to) — the same unit / year guards
+ *  as statedPriceNumbers, with the $ exception for the year band */
+function firstPriceIn(e: string, from: number, to: number): (Span & { value: number }) | null {
+  const slice = e.slice(from, to);
+  for (const m of slice.matchAll(BARE_NUM_RE)) {
+    const start = from + (m.index ?? 0);
+    const end = start + m[0].length;
+    const after = e.slice(end);
+    const kMult = K_AFTER_RE.test(after) ? 1000 : 1;
+    if (kMult === 1 && UNIT_AFTER_RE.test(after)) continue;
+    const v = toNum(m[1]);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    if (kMult === 1 && YEAR_LIKE(m[1], v) && !/\$/.test(m[0])) continue;
+    return { start, end, value: v * kMult };
+  }
+  return null;
+}
+
+/** stop spans claimed by a leading stop word: the word through the first
+ *  price-like number after it, inside the word's own clause */
+function leadStopSpans(e: string): Array<Span & { value: number }> {
+  const spans: Array<Span & { value: number }> = [];
+  for (const m of e.matchAll(STOP_LEAD_RE)) {
+    const start = m.index ?? 0;
+    if (STOP_NEGATED_RE.test(e.slice(Math.max(0, start - 12), start))) continue; // "no stop", "without a stop"
+    const from = start + m[0].length;
+    const rest = e.slice(from);
+    const cut = rest.search(CLAUSE_END_RE);
+    const to = cut === -1 ? e.length : from + cut;
+    const num = firstPriceIn(e, from, to);
+    if (num) spans.push({ start, end: num.end, value: num.value });
+  }
+  return spans;
+}
+
+const overlaps = (a: Span, b: Span) => a.start < b.end && b.start < a.end;
+
+/** PURE (feat/v4-1b-integrity). The pass parser's whole read of an entry.
+ *
+ *  STOP / INVALIDATION LANGUAGE NEVER YIELDS AN ENTRY TRIGGER: a crossing a
+ *  stop word claims ("stop consideration under $34.80", "stop below X",
+ *  "invalidated below X", "cut it at X"), one an adjacent risk word marks
+ *  ("risk below X", "exit under X"), and one named the stop after it ("under
+ *  34.80 is the stop") all populate `stop`, never `trigger`.
+ *
+ *  A candidate trigger that POINTS AGAINST THE STATED SIDE (a long whose only
+ *  crossing is below, a short whose only crossing is above) is a PARSE
+ *  FAILURE: `trigger` is null and `rejected` says what was refused. A watch
+ *  row, or a row with no stated side, has nothing to contradict.
+ *
+ *  Everything else is INTEGRITY-1 unchanged: ranges take the far edge,
+ *  unit-qualified numbers and bare years are not prices, both entry
+ *  directions → two_sided, nothing crossable → null. */
+export function readEntry(entry: string, side?: IdeaSide): EntryRead {
+  const e = (entry ?? "").trim();
+  if (!e) return { trigger: null, stop: null, rejected: null };
+  const lead = leadStopSpans(e);
+  const hits = dirHits(e).map((h) => (h.stop || lead.some((s) => overlaps(s, h)) ? { ...h, stop: true } : h));
+
+  // the stop, in text order: a claimed crossing carries its direction; a bare
+  // claimed number ("cut it at 182") carries none
+  const stops: Array<{ at: number; read: StopRead }> = [
+    ...hits.filter((h) => h.stop).map((h) => ({ at: h.start, read: { dir: h.dir, level: h.level } })),
+    ...lead
+      .filter((s) => !hits.some((h) => h.stop && overlaps(s, h)))
+      .map((s) => ({ at: s.start, read: { dir: null, level: s.value } })),
+  ].sort((a, b) => a.at - b.at);
+  const stop = stops[0]?.read ?? null;
+
+  const entryHits = hits.filter((h) => !h.stop);
+  // the keyword-only two-sided check reads the ENTRY language — the text with
+  // its stop clauses removed ("break above 50; stop on a break below 45" is
+  // one direction with its risk stated)
+  const language = entryLanguage(e);
+  const dirs = new Set(entryHits.map((h) => h.dir));
+  if (dirs.size > 1 || (BREAK_ABOVE_RE.test(language) && BREAK_BELOW_RE.test(language))) {
+    return { trigger: { kind: "two_sided" }, stop, rejected: null };
+  }
+  if (entryHits.length === 0) return { trigger: null, stop, rejected: null };
+  const { dir, level } = entryHits[0];
+  if ((side === "long" && dir === "below") || (side === "short" && dir === "above")) {
+    return { trigger: null, stop, rejected: { dir, level, side } };
+  }
+  return { trigger: { kind: "level", dir, level }, stop, rejected: null };
+}
+
+/** PURE. The entry text with every stop clause cut out — what the entry-
+ *  language rules (side suggestion, two-sided keywords) are allowed to read.
+ *  A direction word inside a stop clause is the stop's, never the entry's. */
+export function entryLanguage(entry: string): string {
+  const e = (entry ?? "").trim();
+  if (!e) return "";
+  const lead = leadStopSpans(e);
+  // a claimed crossing extends the cut to its whole match ("under $33–$34")
+  const spans: Span[] = [...lead, ...dirHits(e).filter((h) => h.stop || lead.some((s) => overlaps(s, h)))];
+  if (spans.length === 0) return e;
+  spans.sort((a, b) => a.start - b.start);
+  let out = "";
+  let at = 0;
+  for (const s of spans) {
+    // an adjacent risk word sits just before its crossing — take it too
+    let start = s.start;
+    const before = e.slice(at, start).match(/\b(?:stop(?:s|ped)?|cut(?:\s+it)?|risk(?:ing)?|invalid\w*|exit\w*)\s*(?:it\s+|is\s+|at\s+)?$/i);
+    if (before) start -= before[0].length;
+    if (start < at) start = at;
+    out += `${e.slice(at, start)} ; `;
+    at = Math.max(at, s.end);
+  }
+  return `${out}${e.slice(at)}`.replace(/\s+/g, " ").trim();
+}
+
+/** PURE. Read the crossable trigger the entry language states — readEntry's
+ *  `trigger`. Pass the row's stated side wherever one exists: without it, a
+ *  crossing against the side cannot be refused. */
+export function parseEntryTrigger(entry: string, side?: IdeaSide): ParsedTrigger | null {
+  return readEntry(entry, side).trigger;
+}
 
 /** PURE. Every number in `text` that could be a price level, as numbers.
  *  Unit-wearing and year-like numbers are rejected exactly as the trigger
@@ -736,17 +890,36 @@ export type EntryConflict = "two_sided" | "side_mismatch";
 
 /** PURE. Side and trigger direction must agree (INTEGRITY-1): a two-sided
  *  entry, or a stated side that contradicts the entry language, is a conflict
- *  — such a row belongs in REVIEW, never LIVE. */
+ *  — such a row belongs in REVIEW, never LIVE. Stop clauses are cut out
+ *  before the language is read (feat/v4-1b-integrity): "long above 9,450;
+ *  stop below 9,400" is one direction with its risk stated, not two-sided.
+ *
+ *  The read here is side-BLIND on purpose, so the extractor still sends a
+ *  draft whose crossing contradicts its side to REVIEW. The daily pass asks
+ *  the side-aware question instead (bookPassConflict): on a LIVE row that
+ *  crossing is a parse failure recorded as NEEDS_LEVEL. */
 export function entryConflict(side: IdeaSide | undefined, entry: string): EntryConflict | null {
   const parsed = parseEntryTrigger(entry);
   if (parsed?.kind === "two_sided") return "two_sided";
-  if (LONG_ENTRY_RE.test(entry) && SHORT_ENTRY_RE.test(entry)) return "two_sided";
+  const language = entryLanguage(entry);
+  if (LONG_ENTRY_RE.test(language) && SHORT_ENTRY_RE.test(language)) return "two_sided";
   if (side === "long" || side === "short") {
     const impliedSide: IdeaSide | null =
       parsed?.kind === "level" ? (parsed.dir === "above" ? "long" : "short") : suggestSide(entry);
     if (impliedSide && impliedSide !== side) return "side_mismatch";
   }
   return null;
+}
+
+/** PURE (feat/v4-1b-integrity). The daily pass's conflict question for a LIVE
+ *  row. A two-sided entry, or entry LANGUAGE that contradicts the side, still
+ *  demotes to REVIEW. A crossing that points against the stated side does not:
+ *  it is a parse failure, and the row stays live as NEEDS_LEVEL with the
+ *  refusal recorded in its evaluation. */
+export function bookPassConflict(side: IdeaSide | undefined, entry: string): EntryConflict | null {
+  const conflict = entryConflict(side, entry);
+  if (conflict === "side_mismatch" && readEntry(entry, side).rejected) return null;
+  return conflict;
 }
 
 // --- DESK-INBOX — the one queue of everything a human must resolve ----------
@@ -791,7 +964,9 @@ export function inboxBuckets(ideas: Idea[]): InboxBuckets {
       const ev = i.evaluation;
       if (ev?.state === "NEEDS_LEVEL" || ev?.state === "QUOTE_SUSPECT") return true;
       if (ev) return false; // the pass has a real read (ARMED/TRIGGERED/STALE)
-      const parsed = parseEntryTrigger(i.entry);
+      // side-aware, like the pass: a crossing against the stated side is not
+      // a level, so the row needs one
+      const parsed = parseEntryTrigger(i.entry, i.side);
       return parsed === null || parsed.kind === "two_sided";
     })
     .sort(newest);
@@ -809,29 +984,72 @@ export function inboxCount(ideas: Idea[]): number {
 export const BOOK_STALE_DAYS = 3;
 const DAY_MS = 86_400_000;
 
+/** The plain NEEDS_LEVEL cause — nothing crossable, nothing refused. */
+export const NO_TRIGGER_REASON = "no crossable trigger stated in the entry";
+/** Marks the part of a reason recording a TRIGGERED the pass withdrew. It is
+ *  carried forward while the row stays NEEDS_LEVEL, so the public record of a
+ *  published-then-withdrawn call does not vanish on the next night's rewrite. */
+export const WITHDRAWN_MARK = " · withdrawn: ";
+
+/** PURE. Why a row has no evaluable trigger, in words the Verdict card shows. */
+export function needsLevelReason(read: EntryRead): string {
+  const stopWords = read.stop
+    ? `${read.stop.dir ? `${read.stop.dir} ` : ""}${read.stop.level} is stop language, and a stop never arms an entry trigger`
+    : null;
+  if (read.rejected) {
+    const r = read.rejected;
+    return `trigger ${r.dir} ${r.level} points against the stated ${r.side} — a parse failure, not evaluated (restate the level in the inbox)${stopWords ? `; ${stopWords}` : ""}`;
+  }
+  if (read.trigger?.kind === "two_sided") return "two-sided entry — no single crossable trigger";
+  if (stopWords) return `no crossable entry trigger: ${stopWords}`;
+  return NO_TRIGGER_REASON;
+}
+
 /** PURE. One live idea vs one daily close (INTEGRITY-1). Precedence:
  *  TRIGGERED is sticky (a fired call is performance history and never
  *  un-fires) → NEEDS_LEVEL (nothing crossable — the tile must say so, not
  *  "LIVE") → STALE (crossable but uncrossed past the horizon; STALE narrows
- *  to the untriggered book) → ARMED. */
+ *  to the untriggered book) → ARMED.
+ *
+ *  feat/v4-1b-integrity — the entry is read SIDE-AWARE (readEntry), and the
+ *  stickiness holds only while the entry still STATES the trigger that fired.
+ *  A TRIGGERED concluded from a level the parser no longer reads as the entry
+ *  (AGI: its STOP, read as a below-34.80 entry, fired on the stop-out) was
+ *  never an entry crossing, so it is withdrawn and the row re-evaluates — the
+ *  reason names what was withdrawn. The entry text is unchanged in that case
+ *  (a human restatement already clears the evaluation in updateIdea), so only
+ *  a parser correction can release a sticky verdict. */
 export function evaluateLiveIdea(
-  idea: Pick<Idea, "entry" | "updatedAt" | "evaluation">,
+  idea: Pick<Idea, "entry" | "updatedAt" | "evaluation"> & Partial<Pick<Idea, "side">>,
   price: number | null,
   now: number,
   staleDays: number = BOOK_STALE_DAYS,
 ): IdeaEvaluation {
   const prior = idea.evaluation;
-  if (prior?.state === "TRIGGERED") return prior; // sticky — performance history
+  const read = readEntry(idea.entry, idea.side);
+  const parsed = read.trigger;
+  let withdrawn = "";
+  if (prior?.state === "TRIGGERED") {
+    const stillStated = parsed?.kind === "level" && parsed.dir === prior.dir && parsed.level === prior.level;
+    if (stillStated) return prior; // sticky — performance history
+    const day = new Date(prior.at).toISOString().slice(0, 10);
+    withdrawn = `${WITHDRAWN_MARK}the TRIGGERED ${prior.dir ?? ""} ${prior.level ?? ""} of ${day} judged a trigger the entry does not state`.replace(/\s{2,}/g, " ");
+  }
 
-  const parsed = parseEntryTrigger(idea.entry);
   if (!parsed || parsed.kind !== "level") {
+    // a withdrawal recorded on an earlier night stays on the record while the
+    // row remains without a trigger
+    const carried =
+      !withdrawn && prior?.state === "NEEDS_LEVEL" && prior.reason.includes(WITHDRAWN_MARK)
+        ? prior.reason.slice(prior.reason.indexOf(WITHDRAWN_MARK))
+        : withdrawn;
     return {
       state: "NEEDS_LEVEL",
       level: null,
       dir: null,
       price,
       at: now,
-      reason: "no crossable trigger stated in the entry",
+      reason: `${needsLevelReason(read)}${carried}`,
     };
   }
   const { dir, level } = parsed;
@@ -848,7 +1066,7 @@ export function evaluateLiveIdea(
       dir,
       price,
       at: now,
-      reason: `quote ${price} is more than 3× away from the stated level ${level} — split, delisting, or symbol mismatch; not evaluated (restate the level in the inbox)`,
+      reason: `quote ${price} is more than 3× away from the stated level ${level} — split, delisting, or symbol mismatch; not evaluated (restate the level in the inbox)${withdrawn}`,
     };
   }
   if (price != null) {
@@ -862,7 +1080,7 @@ export function evaluateLiveIdea(
         at: now,
         // "close-pass price", not "daily close" — for 24/7 instruments (BTC)
         // the 22:10 UTC snapshot is a pass price, not an exchange close
-        reason: `close-pass price ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)`,
+        reason: `close-pass price ${price} ${dir === "above" ? "≥" : "≤"} stated trigger ${level} (crossing between passes not directly observed)${withdrawn}`,
       };
     }
   }
@@ -873,13 +1091,14 @@ export function evaluateLiveIdea(
     dir,
     price,
     at: now,
-    reason:
+    reason: `${
       price == null
         ? stale
           ? `no quote resolved — crossing unconfirmed; no re-statement in ${staleDays}d`
           : "no quote resolved — crossing unevaluated this pass"
         : stale
           ? `trigger uncrossed and no re-statement in ${staleDays}d`
-          : "stated trigger not yet crossed",
+          : "stated trigger not yet crossed"
+    }${withdrawn}`,
   };
 }
