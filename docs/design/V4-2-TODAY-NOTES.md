@@ -185,4 +185,31 @@ reactions + FRED actuals, and the orphan heatmap comment (deleted — it named n
 
 ## Gate
 
-(filled in below by the gate run)
+Run on `d831e1f`. **No local run touched production data**: both builds (main `226262a` and the
+branch) were served from scratch git worktrees with no `.env*` file and a scrubbed environment,
+and every `/api/*` request in the browser was fulfilled from fixtures (an unmatched request is
+failed at the interception layer, never sent). Fixtures were recorded once as anonymous GETs
+against production (`/api/pit` GET was checked read-only first; no POST, and no admin, account,
+push, chat, watchlist or feeds route was ever forwarded). The clock is frozen at the capture time
+(2026-09-17 14:52:20Z, America/New_York), reduced motion on.
+
+- **Suite** 389/389 (387 + the regime gauge test + the quote-book closes test; the quote-book
+  tests moved with the code into `tests/quote-book.test.ts`, listed in `npm test`).
+- **Type check** `npx tsc --noEmit` clean. **Production build** green.
+- **Determinism**: main captured three times (a rerun, an 8s settle, a server restart): 0 changed
+  pixels on all ten PNGs, no masks — the orb included.
+- **Terminal, unchanged**: 390 and 1280, main vs branch — **0 changed pixels** outside the shared
+  chrome decision 3 moved (the phone tab bar; the desktop rail and the view bar with its 2px
+  shadow). Unmasked at 390 the entire change is the tab bar's own 390×54 box (21,060 px).
+- **PIT, unchanged inside the arena**: the same result — 0 changed pixels outside the tab bar
+  (390) and the rail + view bar (1280).
+- **/login** at 390, before/after: the warm paper → the cool paper (the unconfigured-instance
+  branch is the only one a keyless local run can render).
+- **/welcome**: code review only (it server-redirects when auth is unconfigured).
+- **Front page** 390 (top + every card by scroll) and 1280, from production data, plus STAGED
+  states through interception, labelled as staged in the evidence page: every source failing
+  (UNAVAILABLE on each card), THE CALL open (Higher / Lower), THE CALL settled (a stored
+  close / prev close), WHY open (all four inputs, Book bias included), and signed in (the phone
+  Account card with Delete account; the desktop header with the ADMIN chip and the delete
+  confirmation).
+- The branch front page fixes main's 1280 header collision (the clock ran under the view bar).
