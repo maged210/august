@@ -5,11 +5,25 @@
 > silently. Distilled 2026-08-15 from the settled decisions of CORE V2 → GAME-5;
 > AUTH-1a is the first build gated on this file.
 
-## L1 — TERMINAL LANGUAGE
-Near-black grounds, deep green, terminal mono type, thin borders, chips,
-data density, subtle grids, glow used sparingly. Amber warns, red is downside,
-green is upside — semantic color is not decoration. Never casino, never arcade,
-no rounded-candy UI. New surfaces adopt the language; they don't invent one.
+## L1 — PAPER LANGUAGE
+*Amended 2026-09-17 (feat/v4-2-today); replaces TERMINAL LANGUAGE. The terminal
+went paper in v4-1; the front page, app shell, /login and /welcome follow in v4-2.*
+
+One theme. Cool paper ground, white cards with one hairline border and rounded
+corners, ink text — no theme switcher, no second palette. One card per module,
+real boundaries, generous spacing; each card is carried by one big number or
+one headline, a small label, and at most one accent with one job. Geist sets
+text; mono is for labels, tickers and numbers. Headline, label and body sit on
+distinct tiers of the shared type scale. Green is upside, red is downside,
+amber warns, blue is the interface accent — semantic color is not decoration,
+and copy grey meets AA on paper. Market data wears its provenance chip at every
+width; August's own stored records wear an as-of time. Never casino, never
+arcade: a call is a question with a side, never odds. Paper is the desk; dark
+is the arena. Every intelligence surface — front page, terminal, docs, legal,
+account — is paper. A surface that is a game, not a desk, may hold a dark arena,
+and THE PIT is the one that does today. /admin is the operator's back room and
+keeps its own dark shell; it is not a customer surface and is exempt. New
+surfaces adopt the language; they don't invent one.
 
 ## L2 — HONEST STATES
 Every surface renders real loading / empty / error / stale states. No mock
