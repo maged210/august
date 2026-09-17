@@ -107,6 +107,19 @@ export function computeRegime(i: RegimeInputs): RegimeRead {
   };
 }
 
+/** PURE (feat/v4-2-today). The regime card's five-step gauge: the vote sum the
+ *  label is read from, clamped to the label thresholds — ≤-2 RISK OFF, -1 and
+ *  +1 a neutral lean, 0 dead even, ≥+2 RISK ON. It shows which way the inputs
+ *  lean, not how hard (every sum past ±2 reads the same step, exactly as the
+ *  label does). null when the read is UNAVAILABLE: no position, never a
+ *  centred needle standing in for "no data". Kept OUT of RegimeRead on
+ *  purpose — that shape is built literally elsewhere and pinned whole. */
+export function regimeGauge(read: RegimeRead): -2 | -1 | 0 | 1 | 2 | null {
+  if (read.label === "UNAVAILABLE") return null;
+  const sum = read.because.reduce((a, b) => a + b.vote, 0);
+  return sum >= 2 ? 2 : sum <= -2 ? -2 : (sum as -1 | 0 | 1);
+}
+
 /** PURE. % move across a spark-close series (first → last). null when thin. */
 export function sparkTrendPct(closes: number[] | undefined | null): number | null {
   if (!closes || closes.length < 2) return null;

@@ -2,7 +2,8 @@
 
 // DELETE ACCOUNT (chore/ship-ready) — confirm-then-delete, never one tap.
 //
-// It lives beside SIGN OUT rather than on a new surface. Three states: the
+// It lives beside Sign out (the header on desktop, the Account card on phones —
+// feat/v4-2-today made it reachable there) rather than on a new surface. Three states: the
 // quiet link, the armed confirmation, and the result. The result is NOT a
 // green tick: it reports what was removed AND what the server said it cannot
 // reach, verbatim, because a deletion that quietly leaves records behind is
@@ -48,25 +49,25 @@ export default function DeleteAccount({ email }: { email: string }) {
 
   if (done) {
     return (
-      <div className="hl-del-done" role="status">
-        <p className="hl-del-head">ACCOUNT DELETED</p>
-        <p className="hl-del-line">
+      <div className="td-del td-del-done" role="status">
+        <p className="td-del-head">Account deleted</p>
+        <p className="td-del-line">
           {done.deletedKeys} record{done.deletedKeys === 1 ? "" : "s"} removed
           {done.membersRemoved ? `, ${done.membersRemoved} membership${done.membersRemoved === 1 ? "" : "s"} cleared` : ""}
           . You are signed out.
         </p>
         {done.unreachable.length ? (
           <>
-            <p className="hl-del-line">What this could not reach:</p>
-            <ul className="hl-del-list">
+            <p className="td-del-line">What this could not reach:</p>
+            <ul className="td-del-list">
               {done.unreachable.map((u) => (
                 <li key={u}>{u}</li>
               ))}
             </ul>
           </>
         ) : null}
-        <button type="button" className="hl-signout" onClick={() => window.location.assign("/")}>
-          DONE
+        <button type="button" className="td-btn" onClick={() => window.location.assign("/")}>
+          Done
         </button>
       </div>
     );
@@ -76,28 +77,28 @@ export default function DeleteAccount({ email }: { email: string }) {
     return (
       <button
         type="button"
-        className="hl-del-link"
+        className="td-textbtn td-del-link"
         onClick={() => setArmed(true)}
         aria-label={`Delete the account ${email}`}
       >
-        DELETE ACCOUNT
+        Delete account
       </button>
     );
   }
 
   return (
-    <div className="hl-del-arm">
-      <p className="hl-del-line">
+    <div className="td-del td-del-arm">
+      <p className="td-del-line">
         Delete <strong>{email}</strong> and everything on it — your CALL record and picks, your PIT
         and Training progress, your watchlist, preferences and notifications. This cannot be undone.
       </p>
-      {err ? <p className="hl-del-err">{err}</p> : null}
-      <span className="hl-del-acts">
-        <button type="button" className="hl-del-go" disabled={busy} onClick={run}>
-          {busy ? "DELETING…" : "DELETE FOREVER"}
+      {err ? <p className="td-del-err" role="alert">{err}</p> : null}
+      <span className="td-del-acts">
+        <button type="button" className="td-btn td-btn-danger" disabled={busy} onClick={run}>
+          {busy ? "Deleting…" : "Delete forever"}
         </button>
-        <button type="button" className="hl-signout" disabled={busy} onClick={() => setArmed(false)}>
-          KEEP IT
+        <button type="button" className="td-btn" disabled={busy} onClick={() => setArmed(false)}>
+          Keep it
         </button>
       </span>
     </div>

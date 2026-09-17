@@ -345,6 +345,9 @@ test("loop: open → take → POST refused after lock → settle → both record
 
   const settled = await readCallState("v:me", { kv, now: passAt(TUE) + 60_000, readRegime: riskOn, thesisGen: gen });
   assert.equal(settled.settled?.forDate, TUE);
+  // the reference is read back from the stored settle — the exact bars it scored
+  assert.equal(settled.settled?.close, 101);
+  assert.equal(settled.settled?.prevClose, 100);
   assert.equal(settled.settled?.augustWin, true);
   assert.equal(settled.settled?.youWin, false);
   assert.equal(settled.settled?.disagree, "INDEX TREND and VIX sided with AUGUST");

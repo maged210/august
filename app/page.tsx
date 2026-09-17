@@ -3,15 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 import IdeasRail from "@/components/IdeasRail";
-import MatrixRain, { RAIN_PRESETS, type RainPreset } from "@/components/MatrixRain";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import PitSurface from "@/components/surfaces/PitSurface";
 import { resolveView, type ViewId } from "@/lib/screens";
-import { MOODS, type Mood } from "@/lib/tools";
 import { parseCommand } from "@/lib/command-bar";
 import { deskSymbolFor } from "@/lib/desk-symbols";
-import type { AugustState, Theme } from "@/components/Presence3D";
+import type { AugustState } from "@/components/Presence3D";
 import { latMark, latReset } from "@/lib/latency";
 import {
   disablePush,
@@ -78,16 +76,9 @@ export default function Home() {
   const railSyncedRef = useRef(false);
   // (F9 removed the desktop IDEAS-tab behavior — the media-query effect below
   // now only clears stale drawer flags when crossing up past 1100px.)
-  // Matrix / dark / light / gotham theme — persisted; the toggle flips the
-  // whole token system. Matrix is the CORE V2 default stage.
-  const [theme, setTheme] = useState<Theme>("matrix");
-  // Accent mood (steel | ember | phosphor | graphite) — persisted; orthogonal to
-  // the theme, it re-tints only the accent family.
-  const [mood, setMood] = useState<Mood>("steel");
-  // R1-REDO — the rain intensity dial (off | faint | visible | loud), persisted;
-  // VISIBLE (~80% of the original loudness) is the default. Lives beside the
-  // theme control; applies live to the page-level canvas behind both views.
-  const [rainPreset, setRainPreset] = useState<RainPreset>("visible");
+  // (feat/v4-2-today — the theme / mood / rain-dial state is retired: ONE
+  //  paper theme, set on <html> in app/layout.tsx. Rebuild point: tag
+  //  archive/theme-menu.)
   // Web-push enablement state for the (deliberate, never auto-prompted) bell control.
   // Starts "unsupported" so SSR + first client render match; the mount effect resolves it.
   // "unknown" until the async real-subscription check resolves — the bell
@@ -97,7 +88,6 @@ export default function Home() {
   // Mirror of `view` for callbacks that outlive a render (switchView reads it
   // to decide whether a switch actually changes anything).
   const viewRef = useRef<ViewId>("chat");
-  const themingTimerRef = useRef(0);
   // COMMAND BAR — the two-tap confirm for the owner verbs (arm/close): the
   // first submission arms; an identical submission inside 12s executes.
   const pendingConfirmRef = useRef<{ key: string; at: number; run: (gen: number) => Promise<void> } | null>(null);
@@ -340,96 +330,6 @@ export default function Home() {
     },
     [dismissAnswer],
   );
-
-  // Theme: load the persisted choice once, then keep <html data-theme> + storage
-  // in sync (layout.tsx sets the attribute pre-paint to avoid a flash).
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("aug-theme");
-      if (saved === "light" || saved === "dark" || saved === "batman" || saved === "matrix")
-        setTheme(saved);
-    } catch {
-      /* private mode */
-    }
-  }, []);
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    try {
-      window.localStorage.setItem("aug-theme", theme);
-    } catch {
-      /* private mode */
-    }
-  }, [theme]);
-
-  // Set the theme with a transient app-wide colour cross-fade — the brief
-  // [data-theming] window applies a one-off transition to everything, then
-  // clears (no permanent transition cost). F7: the old cycle button became a
-  // menu, so this takes the target theme directly.
-  const applyTheme = useCallback((t: Theme) => {
-    const root = document.documentElement;
-    root.setAttribute("data-theming", "");
-    window.clearTimeout(themingTimerRef.current);
-    themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    setTheme(t);
-  }, []);
-
-  // Mood: same persistence contract as the theme — load the saved choice once,
-  // then keep <html data-mood> + storage in sync (layout.tsx sets the attribute
-  // pre-paint, so a saved mood boots without a flash, exactly like the theme).
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("aug-mood");
-      if ((MOODS as readonly string[]).includes(saved ?? "")) setMood(saved as Mood);
-    } catch {
-      /* private mode */
-    }
-  }, []);
-  useEffect(() => {
-    document.documentElement.setAttribute("data-mood", mood);
-    try {
-      window.localStorage.setItem("aug-mood", mood);
-    } catch {
-      /* private mode */
-    }
-  }, [mood]);
-
-  // Rain dial: same persistence contract as theme/mood — load once, then keep
-  // storage in sync on every change. No pre-paint step needed: the canvas is
-  // client-mounted anyway, so the stored preset applies before it first draws.
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("aug-rain-level");
-      if ((RAIN_PRESETS as readonly string[]).includes(saved ?? "")) {
-        setRainPreset(saved as RainPreset);
-      }
-    } catch {
-      /* private mode */
-    }
-  }, []);
-  const applyRainPreset = useCallback((p: RainPreset) => {
-    setRainPreset(p);
-    try {
-      window.localStorage.setItem("aug-rain-level", p);
-    } catch {
-      /* private mode — won't persist */
-    }
-  }, []);
-
-  // Set the accent mood — the ONE path any mood control would use. The token
-  // swap rides the same transient cross-fade as the theme flip. (No control
-  // calls it today; see the note below applyMood.)
-  const applyMood = useCallback((m: Mood) => {
-    const root = document.documentElement;
-    root.setAttribute("data-theming", "");
-    window.clearTimeout(themingTimerRef.current);
-    themingTimerRef.current = window.setTimeout(() => root.removeAttribute("data-theming"), 460);
-    setMood(m);
-  }, []);
-
-  // (The conversation cluster's mood-cycle button retired with the composer;
-  //  the persisted mood still applies via the storage adoption above, and
-  //  applyMood remains the one path for any future control.)
-  void applyMood;
 
   // A ?brief=1 push arrival just lands home (the home IS the brief now); the
   // param is stripped so a reload doesn't linger.
@@ -686,7 +586,7 @@ export default function Home() {
         if (j.ok) {
           // the fourth copy of the settle claim — bound to the cron like the card
           say(`TAKEN: ${side} — SETTLES ON THE ${SETTLE_UTC_LABEL} PASS.`);
-          scrollFloorTo(".callcard");
+          scrollFloorTo(".td-call");
         } else if (j.error === "locked") sayError("LOCKED — 09:30 ET HAS PASSED. TOMORROW'S CALL OPENS TONIGHT.");
         else if (j.error === "already_taken") sayError("ALREADY TAKEN TODAY — ONE SIDE PER TRADING DAY.");
         else if (j.error === "no_active_call") sayError("NO ACTIVE CALL RIGHT NOW.");
@@ -782,9 +682,9 @@ export default function Home() {
       case "nav":
         switch (parsed.target) {
           case "call":
-            return scrollFloorTo(".callcard");
+            return scrollFloorTo(".td-call");
           case "coming":
-            return scrollFloorTo(".cdr");
+            return scrollFloorTo(".td-next");
           case "why":
             if (viewRef.current !== "chat") switchView("chat");
             window.dispatchEvent(new CustomEvent("aug:open-why"));
@@ -831,9 +731,6 @@ export default function Home() {
     >
       {/* BootHud / FrameTicks / PresenceTelemetry retired from the landing —
           the home design's minimalism is the point; the components remain. */}
-      {/* the code-rain — the matrix theme's stage layer, behind everything;
-          the intensity dial (R1-REDO) can switch it off entirely */}
-      {theme === "matrix" && rainPreset !== "off" ? <MatrixRain preset={rainPreset} /> : null}
 
       {/* CORE V2 — the top-bar view toggle, in the deck dots' old top-center
           slot. Two views only; the segmented control is the page's whole nav. */}
@@ -886,6 +783,7 @@ export default function Home() {
           aria-pressed={view === "chat"}
           onClick={() => switchView("chat")}
         >
+          <TabGlyph d={TAB_ICON.home} />
           AUGUST
         </button>
         <button
@@ -894,6 +792,7 @@ export default function Home() {
           aria-pressed={view === "terminal"}
           onClick={() => switchView("terminal")}
         >
+          <TabGlyph d={TAB_ICON.terminal} />
           TERMINAL
         </button>
         {/* GAME-2 — IDEAS → PIT: the arcade replaced the rail-sheet slot */}
@@ -903,6 +802,7 @@ export default function Home() {
           aria-pressed={view === "pit"}
           onClick={() => switchView("pit")}
         >
+          <TabGlyph d={TAB_ICON.pit} />
           PIT
         </button>
       </nav>
@@ -932,16 +832,12 @@ export default function Home() {
         <div className="presence-surface">
           <HomeLanding
             state={state}
-            theme={theme}
             active={view === "chat"}
             onSend={runInput}
             answer={answer}
             onClearAnswer={dismissAnswer}
             pushState={pushState}
             onNotify={handleNotify}
-            onSetTheme={applyTheme}
-            rainPreset={rainPreset}
-            onSetRainPreset={applyRainPreset}
           />
           {/* HomeBrief owns the home state (UX2-T2) */}
         </div>
@@ -1036,33 +932,20 @@ function FrameTicks() {
 }
 
 // ---------------------------------------------------------------------------
-// Theme toggle icons — the control lives in the landing's top-bar cluster.
+// The phone tab bar's glyphs (feat/v4-2-today, frame 01's stroke icons): the
+// home, the terminal's rows, the PIT's bars. Decorative — the label names it.
 // ---------------------------------------------------------------------------
 
-function SunIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
-  );
-}
+const TAB_ICON = {
+  home: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
+  terminal: "M4 6h16M4 12h16M4 18h10",
+  pit: "M4 19h16M7 16V9M12 16V5M17 16v-4",
+} as const;
 
-function MoonIcon() {
+function TabGlyph({ d }: { d: string }) {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-    </svg>
-  );
-}
-
-/* Signal icon — a beam ring, the third theme's cue. Same stroke language as
-   Sun/Moon; monochrome (currentColor), no decoration. */
-function SignalIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden>
-      <circle cx="12" cy="12" r="4" />
-      <circle cx="12" cy="12" r="8.5" opacity="0.45" />
+    <svg className="tab-glyph" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
     </svg>
   );
 }

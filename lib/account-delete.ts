@@ -16,7 +16,7 @@
 // WHAT IT CANNOT REACH, stated rather than silently skipped (see the return
 // value's `unreachable`): anything held in the user's own browser. The
 // aug_vid cookie is cleared by the route on the way out, but localStorage
-// (theme, an in-progress PIT run, the `aug-claimed` marker that holds the raw
+// (sidebar state, an in-progress PIT run, the `aug-claimed` marker that holds the raw
 // email) is the browser's, not the server's. Host request logs at Vercel are
 // likewise outside this application.
 
@@ -218,7 +218,7 @@ export async function deleteAccount(
 
     // ── 6. what this cannot reach, said out loud ───────────────────────────
     report.unreachable.push(
-      "your browser's own storage (theme, an in-progress PIT run, and the 'aug-claimed' marker that holds your email) — clear your browser data for this site",
+      "your browser's own storage (sidebar state, an in-progress PIT run, and the 'aug-claimed' marker that holds your email) — clear your browser data for this site",
     );
     report.unreachable.push(
       "host request logs at Vercel (IP and user agent), which expire on Vercel's schedule and are outside this application",

@@ -77,9 +77,8 @@ export default function PrivacyPage() {
           including your IP address and user agent, in its logs.
         </p>
         <p>
-          Some preferences never leave your browser at all: your theme, accent, sidebar state,
-          rain density, practice balance, and an in-progress PIT run are kept in your
-          browser&apos;s own storage.
+          Some preferences never leave your browser at all: your sidebar state, practice
+          balance, and an in-progress PIT run are kept in your browser&apos;s own storage.
         </p>
 
         <h2>Who else receives anything</h2>

@@ -5,7 +5,10 @@ import * as THREE from "three";
 import type { Mood } from "@/lib/tools";
 
 export type AugustState = "boot" | "idle" | "thinking";
-export type Theme = "dark" | "light" | "batman" | "matrix";
+/** feat/v4-2-today — ONE theme (DESIGN_LAWS L1): the paper room. The night,
+ *  Gotham and matrix looks were retired with the theme menu (tag
+ *  archive/theme-menu is the rebuild point). */
+export type Theme = "light";
 export type { Mood };
 
 type Props = {
@@ -40,42 +43,6 @@ const CRYSTAL_TINT = 0x2f62b4;
 // the night stage (additive), gold ink on the day's off-white stage (normal
 // blending). Batman keeps its own searchlight-gold signature untouched.
 const LOOK = {
-  // NIGHT (design applyTheme() night values): warm gold light on near-black.
-  // These intensities are the gold palette's own tuning — the earlier "+15-20%
-  // brightness pass" numbers were tuned against the retired steel palette and
-  // would over-drive gold, which already reads hotter. Tune HERE, not inline.
-  dark: {
-    crystalTint: CRYSTAL_TINT,
-    crystalMetalness: 0.95, // near-metal: the env IS the material
-    crystalRoughness: 0.14, // crisp specular streaks along the facet edges
-    crystalIridescence: 0.3, // a cheap gem shimmer on the grazing facets
-    crystalSpike: 1.0, // shard reach into the body→rim headroom: 1 = CRYSTAL_TIP_FILL
-    rim: new THREE.Color(0xe8c27a),
-    corona: new THREE.Color(0xc9a96a),
-    glow: new THREE.Color(0x8a744a),
-    additive: true,
-    rimIntensity: 0.72,
-    glowOpacity: 0.45,
-    coronaOpacity: 0.52,
-    envIntensity: 2.6,
-    exposure: 1.12,
-    // The night room: the mood's own ambient top (MOOD_LIGHT.envTop, hence
-    // `top: null`) over the existing searchlight-on-black falloff, PLUS a softbox.
-    // The old room had no source in the band the front facets actually reflect,
-    // which was fine for a near-black sphere but leaves a mirror-finish stone
-    // reflecting pure black — a murky, unreadable lump. The box is the searchlight
-    // itself: it lets the facets show while the gold rim/corona/halo keep the
-    // signature. A faint cool bounce stops the underside going to a dead pit.
-    envRoom: {
-      top: null,
-      mid: "#131922",
-      floor: "#04060a",
-      bounce: "36,44,58",
-      bounceA: 0.5,
-      box: { a: 0.85, r: 96, squash: 0.46, dx: -66, dy: -50 },
-      shade: null,
-    },
-  },
   // DAY: the PAPER ROOM. A mirror-finish body shows whatever surrounds it, so on
   // the off-white stage the surround must be the page: bright warm-white above,
   // paper mid-tones around, and a real floor bounce off the page itself. That is
@@ -123,63 +90,6 @@ const LOOK = {
       bounceA: 0.85,
       box: { a: 1, r: 92, squash: 0.42, dx: -70, dy: -54 },
       shade: { c: "58,54,46", a: 0.9, r: 150 },
-    },
-  },
-  // Gotham: the same dark-stage physics with the energy in signal gold —
-  // a searchlight against black, slightly dimmer than the steel look.
-  batman: {
-    crystalTint: CRYSTAL_TINT,
-    crystalMetalness: 0.97,
-    crystalRoughness: 0.07, // the sharpest, hardest read of the three
-    crystalIridescence: 0.16,
-    crystalSpike: 1.06, // Gotham runs its shards a hair longer — the sharpest read (tips ~98%)
-    rim: new THREE.Color(0xe8d08a),
-    corona: new THREE.Color(0xd6b25a),
-    glow: new THREE.Color(0xa8905e),
-    additive: true,
-    rimIntensity: 0.68,
-    glowOpacity: 0.45,
-    coronaOpacity: 0.5,
-    envIntensity: 2.5,
-    exposure: 1.1,
-    // Gotham's room rides a hair colder and darker than night's, per its brief.
-    envRoom: {
-      top: null,
-      mid: "#0f141b",
-      floor: "#030304",
-      bounce: "30,36,48",
-      bounceA: 0.42,
-      box: { a: 0.82, r: 90, squash: 0.44, dx: -66, dy: -50 },
-      shade: null,
-    },
-  },
-  // Matrix (CORE V2): the night rig re-lit in terminal green — phosphor rim
-  // and corona over a green-cast near-black room. Same dark-stage physics;
-  // the greens sit with the theme's --steel (#4ec97a family), deliberately
-  // apart from the market --pos and the phosphor mood.
-  matrix: {
-    crystalTint: CRYSTAL_TINT,
-    crystalMetalness: 0.95,
-    crystalRoughness: 0.12,
-    crystalIridescence: 0.26,
-    crystalSpike: 1.0,
-    rim: new THREE.Color(0x8fe6ab),
-    corona: new THREE.Color(0x4ec97a),
-    glow: new THREE.Color(0x2f6b45),
-    additive: true,
-    rimIntensity: 0.7,
-    glowOpacity: 0.45,
-    coronaOpacity: 0.5,
-    envIntensity: 2.55,
-    exposure: 1.1,
-    envRoom: {
-      top: null,
-      mid: "#0d1a12",
-      floor: "#020604",
-      bounce: "34,58,42",
-      bounceA: 0.46,
-      box: { a: 0.82, r: 94, squash: 0.45, dx: -66, dy: -50 },
-      shade: null,
     },
   },
 } as const;
@@ -545,7 +455,7 @@ const KEY_POS = new THREE.Vector3(
 
 export default function Presence3D({
   state,
-  theme = "dark",
+  theme = "light",
   mood = "steel",
   orbFraction,
 }: Props) {

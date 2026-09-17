@@ -9,6 +9,10 @@
    paint before IdeasFeed's lazy chunk arrives.
    feat/v4-1-terminal appended the PAPER STAGE block at the end: the light
    theme's re-pin of every token here (the re-palette deferred from the cut).
+   feat/v4-2-today: the app has ONE theme (paper). The shared paper values were
+   PROMOTED to app/globals.css :root (--paper-*), and the paper block below
+   points its --rd-* names at them — same values, one source. The matrix block
+   retired with the theme menu (tag archive/theme-menu).
    ========================================================================== */
 
 .intel-root,
@@ -372,54 +376,6 @@
 }
 
 /* ============================================================================
-   MATRIX THEME (CORE V2) — the terminal on the code-rain stage. Appended
-   LAST so it wins its equal-specificity siblings by source order (the same
-   contract the light block relies on), and doubled with [data-mood] so the
-   mood axis can never re-tint it. Re-pins ONLY the stage/surface family, the
-   accent ramp, and the accent-derived illumination values — the semantic
-   colors (bull/bear/amber/blue/teal), hairlines, and text ramp keep their
-   dark defaults: data colors never cosplay.
-   ============================================================================ */
-:root[data-theme="matrix"] .intel-root,
-:root[data-theme="matrix"] .intel-embed-frame,
-:root[data-theme="matrix"][data-mood] .intel-root,
-:root[data-theme="matrix"][data-mood] .intel-embed-frame {
-  /* accent ramp — terminal green (matches the app shell's --steel) */
-  --rd-acc: #4ec97a;
-  --rd-acc-rgb: 78, 201, 122;
-  --rd-acc-soft06: rgba(78, 201, 122, 0.06);
-  --rd-acc-soft12: rgba(78, 201, 122, 0.12);
-  --rd-acc-soft25: rgba(78, 201, 122, 0.25);
-  --rd-acc-soft40: rgba(78, 201, 122, 0.42);
-
-  /* stage / surface family — near-black with a green cast. The stage is
-     TRANSLUCENT so the code-rain (fixed at z-0 behind the view panels) reads
-     through the terminal too; cards/bars above stay opaque panels. */
-  --rd-stage: rgba(3, 9, 5, 0.82);
-  --rd-frame: #050d08;
-  --rd-bar1-bg: #071009;
-  --rd-bar3-bg: #050c07;
-  --rd-tape-label-bg: #08120b;
-  --rd-card: #081209;
-  --rd-legend-bg: #06100a;
-  --rd-btn-bg: #0a1710;
-  --rd-inset: #071009;
-
-  /* accent-derived illumination */
-  --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(78, 201, 122, 0.13), transparent 60%);
-  --rd-topline: linear-gradient(90deg, transparent, rgba(78, 201, 122, 0.55), transparent);
-  --rd-sel-ring: inset 0 0 0 1px rgba(78, 201, 122, 0.55), 0 0 22px -8px rgba(78, 201, 122, 0.6);
-}
-
-/* Both the frame AND the root paint var(--rd-stage); with a translucent stage
-   that would stack to near-opaque. Under matrix the frame stands down and the
-   root carries the one translucent stage layer. */
-:root[data-theme="matrix"] .intel-embed-frame,
-:root[data-theme="matrix"][data-mood] .intel-embed-frame {
-  background: transparent;
-}
-
-/* ============================================================================
    PAPER STAGE (feat/v4-1-terminal) — the terminal on the app's default light
    theme: the palette re-pin deferred from chore/terminal-cut, from design
    frames 03/04 (docs/design/August Mobile v4 Markets.dc.html). Paper stage,
@@ -439,18 +395,18 @@
   /* ---- P palette: one green, one red, one blue, amber warns. Amber is the
      design's dark ochre (#7a5a12 — its NEEDS LEVEL / QUOTE SUSPECT text),
      not the swatch orange: the orange reads 3.3:1 on white, under AA. ---- */
-  --rd-bull: #0e7f41;
-  --rd-bear: #cf3226;
-  --rd-amber: #7a5a12;
-  --rd-blue: #2456d6;
-  --rd-teal: #2456d6;
+  --rd-bull: var(--paper-up);
+  --rd-bear: var(--paper-down);
+  --rd-amber: var(--paper-warn);
+  --rd-blue: var(--paper-accent);
+  --rd-teal: var(--paper-accent);
   --rd-inferred: #6b7280;
   --rd-lo: #6b7280;
-  --rd-live: #0e7f41;
+  --rd-live: var(--paper-up);
   --rd-live-rgb: 14, 127, 65;
 
   /* ---- accent ramp — the one blue ---- */
-  --rd-acc: #2456d6;
+  --rd-acc: var(--paper-accent);
   --rd-acc-rgb: 36, 86, 214;
   --rd-acc-soft04: rgba(36, 86, 214, 0.04);
   --rd-acc-soft06: rgba(36, 86, 214, 0.06);
@@ -459,15 +415,15 @@
   --rd-acc-soft40: rgba(36, 86, 214, 0.42);
 
   /* ---- stage / surfaces ---- */
-  --rd-stage: #f4f5f7;
-  --rd-frame: #f4f5f7;
-  --rd-bar1-bg: #ffffff;
-  --rd-bar3-bg: #ffffff;
-  --rd-tape-label-bg: #ffffff;
-  --rd-card: #ffffff;
-  --rd-legend-bg: #ffffff;
-  --rd-btn-bg: #ffffff;
-  --rd-inset: #f4f5f7;
+  --rd-stage: var(--paper-stage);
+  --rd-frame: var(--paper-stage);
+  --rd-bar1-bg: var(--paper-card);
+  --rd-bar3-bg: var(--paper-card);
+  --rd-tape-label-bg: var(--paper-card);
+  --rd-card: var(--paper-card);
+  --rd-legend-bg: var(--paper-card);
+  --rd-btn-bg: var(--paper-card);
+  --rd-inset: var(--paper-stage);
 
   /* ---- hairlines — ink at low alpha (the design's #e6e8ec / #eef0f3) ---- */
   --rd-hair-045: rgba(15, 17, 21, 0.05);
@@ -475,7 +431,7 @@
   --rd-hair-055: rgba(15, 17, 21, 0.06);
   --rd-hair-06: rgba(15, 17, 21, 0.07);
   --rd-hair-07: rgba(15, 17, 21, 0.08);
-  --rd-hair-08: rgba(15, 17, 21, 0.09);
+  --rd-hair-08: var(--paper-hair); /* THE card border */
   --rd-hair-09: rgba(15, 17, 21, 0.1);
   --rd-hair-10: rgba(15, 17, 21, 0.11);
   --rd-hair-12: rgba(15, 17, 21, 0.13);
@@ -490,14 +446,14 @@
      (the design's own grey is 4.4:1 there), 6.1:1 on white, 4.6:1 on the
      Stale pill's tint. Only the two glyph tokens at the bottom (∅ marks,
      never words) stay lighter. ---- */
-  --rd-t-brightest: #0f1115;
-  --rd-t-primary: #0f1115;
+  --rd-t-brightest: var(--paper-ink);
+  --rd-t-primary: var(--paper-ink);
   --rd-t-chip: #1a1d23;
   --rd-t-body: #2b2f37;
   --rd-t-secondary: #3a3f48;
   --rd-t-secondary2: #444955;
   --rd-t-muted: #545a64;
-  --rd-t-dim: #5d636f;
+  --rd-t-dim: var(--paper-mute);
   --rd-t-dim2: var(--rd-t-dim);
   --rd-t-dim3: var(--rd-t-dim);
   --rd-t-dim4: var(--rd-t-dim);
@@ -510,12 +466,12 @@
   --rd-t-empty: #a3a9b4;
 
   /* ---- misc literals ---- */
-  --rd-tape-sym: #0f1115;
+  --rd-tape-sym: var(--paper-ink);
   --rd-tape-div: #d8dbe1;
-  --rd-val-amber: #7a5a12;
-  --rd-val-green: #0e7f41;
+  --rd-val-amber: var(--paper-warn);
+  --rd-val-green: var(--paper-up);
   --rd-accbtn-text: #ffffff;
-  --rd-retry-text: #cf3226;
+  --rd-retry-text: var(--paper-down);
 
   /* ---- illumination — quiet on paper ---- */
   --rd-ambient-grad: radial-gradient(120% 100% at 80% -30%, rgba(36, 86, 214, 0.06), transparent 60%);
@@ -525,14 +481,14 @@
   --rd-status-glow: 0 0 16px -3px rgba(14, 127, 65, 0.35);
 
   /* ---- surfaces / shadows ---- */
-  --rd-panel-grad: #ffffff;
+  --rd-panel-grad: var(--paper-card);
   --rd-thumb-grad: linear-gradient(135deg, #eef0f3, #e6e8ec);
   --rd-scrim: rgba(15, 17, 21, 0.35);
   --rd-mbar1-bg: rgba(244, 245, 247, 0.86);
-  --rd-mcard-grad: #ffffff;
+  --rd-mcard-grad: var(--paper-card);
   --rd-mseg-wrap-grad: linear-gradient(180deg, rgba(244, 245, 247, 0.96) 70%, rgba(244, 245, 247, 0));
-  --rd-mseg-bg: #ffffff;
-  --rd-mseg-on-grad: #ffffff;
+  --rd-mseg-bg: var(--paper-card);
+  --rd-mseg-on-grad: var(--paper-card);
   --rd-shadow-70: rgba(15, 17, 21, 0.14);
   --rd-edge-03: rgba(15, 17, 21, 0.03);
   --rd-edge-035: rgba(15, 17, 21, 0.035);
@@ -551,8 +507,8 @@
   --rd-plan-tp-text: #1d47b3;
 
   /* ---- mobile text ramp ---- */
-  --rd-mt-bright: #0f1115;
-  --rd-mt-brightest: #0f1115;
+  --rd-mt-bright: var(--paper-ink);
+  --rd-mt-brightest: var(--paper-ink);
   --rd-mt-body2: #2b2f37;
   --rd-mt-faint4: #7b8290;
   --rd-mt-disc: #6b7280;
@@ -629,10 +585,26 @@
   /* ---- map ---- */
   --rd-map-state-fill: rgba(36, 86, 214, 0.06);
   --rd-map-state-stroke: rgba(36, 86, 214, 0.28);
-  --rd-map-dot-up: #0e7f41;
-  --rd-map-dot-dn: #cf3226;
+  --rd-map-dot-up: var(--paper-up);
+  --rd-map-dot-dn: var(--paper-down);
 
   /* ---- the app-shell chip tokens follow the paper ramp ---- */
   --dim: var(--rd-t-dim);
   --hair: rgba(15, 17, 21, 0.11);
+
+  /* ---- feat/v4-2-today — THE TERMINAL'S OWN SHELL VALUES, pinned. The warm
+     light set retired from :root (the shell went cool), but the terminal's
+     chips (.dtag), disclaimer (.aug-disc), dock condition pills (the nql and vixc
+     rules) and base text colour read those SHELL names. They are pinned here
+     to exactly what the terminal rendered, so its output does not move. ---- */
+  --bone: #16150f;
+  --line: rgba(0, 0, 0, 0.1);
+  --amber: #7e6119;
+  --amber-rgb: 126 97 25;
+  --rd-app-live: #1b7f4d;
+  --rd-app-alert: #b4483e;
+  --rd-app-calc: #3f5670;
+  --chip-live-edge: rgb(127 224 165 / 0.5);
+  --chip-alert-edge: rgb(224 138 122 / 0.5);
+  --chip-calc-edge: rgb(156 196 228 / 0.4);
 }

@@ -15,7 +15,7 @@
 //     computed the card says why ("no stop", "no trigger"), never "0%";
 //   - the last price carries its provenance chip: DELAYED when its own
 //     symbol was answered by the latest quotes round, DATA UNAVAILABLE
-//     otherwise (lib/idea-card readQuote) — never an older round's price;
+//     otherwise (lib/quote-book readQuote) — never an older round's price;
 //   - a TRIGGERED tint (green for the stated side, red against it) always
 //     stands beside the crossing in words, so color never carries it alone;
 //   - the chart draws only real bars with stated levels; no bars → the
@@ -56,7 +56,7 @@ import { chartSymbolFor } from "@/components/surfaces/dock/derive";
 import DataTag from "@/components/DataTag";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 
-/** the last quote for the idea's instrument, as lib/idea-card readQuote
+/** the last quote for the idea's instrument, as lib/quote-book readQuote
  *  reads the shared quote book: pending (its batch has not been asked yet),
  *  ok (answered by the latest round that asked for it), unavailable (its
  *  batch failed, the route answered without it, or the answer aged out) */

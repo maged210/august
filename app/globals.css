@@ -4,11 +4,61 @@
 
 /* ============================================================================
    AUGUST · DESIGN SYSTEM — one source of truth.
-   Near-monochrome dark + ONE cold accent (steel). The luxury is restraint,
-   precision and consistency — not glow-on-everything. Every value here is a
-   token; surfaces inherit, never reinvent.
+   ONE theme (DESIGN_LAWS L1, PAPER LANGUAGE, amended 2026-09-17): cool paper
+   ground, white cards with one hairline border, ink text, one green, one red,
+   one blue, amber warns. Every value here is a token; surfaces inherit, never
+   reinvent. The dark ARENA (the PIT) and /admin's back room re-pin their own
+   values below (.admin-page, .trn, .pit2) — they never read the paper set.
    ============================================================================ */
 :root {
+  /* — PAPER — the shared set (feat/v4-2-today). Promoted out of
+     app/intel/frame.css so the front page, the app shell, /login, /welcome
+     and the terminal read ONE source; frame.css's paper block now points its
+     --rd-* names at these. Values are the terminal's v4-1 paper, unchanged. */
+  --paper-stage: #f4f5f7; /* the ground */
+  --paper-card: #ffffff; /* every card */
+  --paper-ink: #0f1115; /* primary text */
+  --paper-mute: #5d636f; /* THE copy grey — 5.5:1 on the stage, 6.0:1 on a card (AA) */
+  --paper-hair: rgba(15, 17, 21, 0.09); /* THE border — one hairline token (≈#e9eaea on a card) */
+  --paper-rule: rgba(15, 17, 21, 0.06); /* a divider INSIDE a card */
+  --paper-up: #0e7f41;
+  --paper-up-rgb: 14 127 65;
+  --paper-down: #cf3226;
+  --paper-down-rgb: 207 50 38;
+  --paper-accent: #2456d6; /* blue — the one interface accent */
+  --paper-accent-rgb: 36 86 214;
+  --paper-warn: #7a5a12; /* amber as ink — 6.4:1 on white */
+  --paper-warn-rgb: 122 90 18;
+  --paper-radius: 14px; /* a module card */
+  --paper-radius-lg: 16px; /* a page-level card (the terminal's idea page) */
+  --paper-radius-sm: 12px; /* a stat tile, a button, a strip inside a card */
+
+  /* — TYPE — one scale, real separation between tiers (feat/v4-2-today).
+     figure: the ONE big number that carries a card · headline: the words that
+     carry a card when there is no number · title: a card question / row
+     heading · body: prose · foot: a card's closing line · meta: the secondary
+     line under a title · label: the small mono caps name of a card. The
+     terminal's literals ride these unchanged (feed.css). */
+  --type-figure: 40px;
+  --type-figure-weight: 600;
+  --type-headline: 20px;
+  --type-headline-weight: 600;
+  --type-title: 14px;
+  --type-title-weight: 600;
+  --type-body: 14.5px;
+  --type-foot: 12px;
+  --type-meta: 11.5px;
+  --type-label: 10.5px;
+  --type-label-weight: 500;
+  --type-label-track: 0.08em;
+
+  /* — PROVENANCE CHIP edges (components/DataTag.tsx · .dtag). Global: the
+     front page, the shell and the terminal share one chip; the terminal pins
+     its own pre-v4-2 values in app/intel/frame.css so its output is unchanged. */
+  --chip-live-edge: rgb(var(--paper-up-rgb) / 0.35);
+  --chip-alert-edge: rgb(var(--paper-down-rgb) / 0.35);
+  --chip-calc-edge: rgb(var(--paper-accent-rgb) / 0.3);
+
   /* — Palette — graphite stage, monochrome ink, one restrained accent ------- */
   --charcoal: #13151a; /* the stage — THE tunable dark-stage value; lift/lower dark mode here */
   --charcoal-2: #0c0d11; /* a half-step up — raised surface base */
@@ -115,48 +165,48 @@
 }
 
 /* ----------------------------------------------------------------------------
-   LIGHT THEME — the reference look: off-white stage, near-black glossy orb,
-   telemetry in dark ink, a calmer steel accent. The toggle flips ONE source of
-   truth: only token VALUES change here, every class inherits. (Tokens keep their
-   dark-semantic names — --charcoal is the stage, --bone the primary ink — so the
-   whole app re-themes without touching a single rule.)
+   THE PAPER SHELL — the app's one theme. <html data-theme="light"> is set in
+   app/layout.tsx and never changes (the theme menu, MatrixRain, the batman and
+   matrix stages and the mood axis were retired in feat/v4-2-today; rebuild
+   point: tag archive/theme-menu). The attribute stays because the terminal's
+   paper block keys on it. Tokens keep their dark-semantic names — --charcoal is
+   the stage, --bone the primary ink — and point at the PAPER set above.
+   (Was the warm paper: #f5f4f1 / #16150f / #6e685c / #756f63 — retired.)
    ---------------------------------------------------------------------------- */
 :root[data-theme="light"] {
-  --charcoal: #f5f4f1; /* THE PAPER STAGE */
-  --charcoal-2: #ffffff; /* cards — paper white */
-  --bone: #16150f; /* primary ink — the paper set */
-  --ash: #6e685c; /* dim — the paper set */
-  --ink-mute: #756f63; /* dimmer — darkened from #a39c8b, 2.48:1 -> 4.53:1 */
-  --graphite: #cfcec7; /* dividers */
-  --steel: #3f5670; /* the accent — calmer on white, not loud cyan */
-  --steel-rgb: 63 86 112;
-  --pos: #1b7f4d; /* up — the paper set */
-  --pos-rgb: 27 127 77;
-  --neg: #b4483e; /* down — the paper set */
-  --neg-rgb: 180 72 62;
-  --amber: #7e6119; /* catalyst amber as ink — #c9a24a is ~2.1:1 on the off-white stage */
-  /* feature/paper-theme — the three app-shell status colours that had no
-     light re-pin, following --amber above. They are NOT new colours: each
-     re-points at a value already in the paper set, so the stage gains nothing
-     to maintain. The dark surfaces (terminal, pit, admin, training) keep the
-     originals, because they never resolve this block. */
-  --rd-app-live: #1b7f4d;  /* was #7fe0a5 — 1.46:1 on paper. The paper set s up. */
-  --rd-app-alert: #b4483e; /* was #e08a7a — 2.36:1 on paper. The paper set s down. */
-  --rd-app-calc: #3f5670;  /* was #9cc4e4 — 1.67:1 on paper. The paper set s steel. */
-  --amber-rgb: 126 97 25;
+  --charcoal: var(--paper-stage);
+  --charcoal-2: var(--paper-card);
+  --bone: var(--paper-ink);
+  --ash: var(--paper-mute);
+  --ink-mute: var(--paper-mute);
+  --graphite: #d8dbe1; /* dividers */
+  --steel: var(--paper-accent);
+  --steel-rgb: var(--paper-accent-rgb);
+  --pos: var(--paper-up);
+  --pos-rgb: var(--paper-up-rgb);
+  --neg: var(--paper-down);
+  --neg-rgb: var(--paper-down-rgb);
+  --amber: var(--paper-warn);
+  --rd-app-live: var(--paper-up);
+  --rd-app-alert: var(--paper-down);
+  --rd-app-calc: var(--paper-accent);
+  --amber-rgb: var(--paper-warn-rgb);
   --gauge-green: #557a48;
 
-  --wash-rgb: 22 24 30; /* near-black wash on the off-white stage */
-  --line: rgba(0, 0, 0, 0.1);
-  --line-strong: rgba(0, 0, 0, 0.17);
-  --panel: rgba(0, 0, 0, 0.022);
-  --glass: rgba(243, 242, 237, 0.72);
-  --glass-strong: rgba(247, 246, 241, 0.86);
+  --wash-rgb: 15 17 21; /* ink wash on the paper stage */
+  --line: var(--paper-hair);
+  --line-strong: rgba(15, 17, 21, 0.15);
+  --panel: rgba(15, 17, 21, 0.022);
+  --glass: rgba(244, 245, 247, 0.8);
+  --glass-strong: rgba(255, 255, 255, 0.92);
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.07);
-  --shadow-2: 0 8px 24px rgba(20, 22, 28, 0.1);
-  --shadow-3: 0 16px 44px rgba(20, 22, 28, 0.13);
+  --shadow-1: 0 1px 2px rgba(15, 17, 21, 0.06);
+  --shadow-2: 0 8px 24px rgba(15, 17, 21, 0.1);
+  --shadow-3: 0 16px 44px rgba(15, 17, 21, 0.13);
 
+  /* the stage vignette + film grain are drawn over EVERY view, the PIT's dark
+     arena included — these two values are unchanged on purpose (the arena's
+     rendered output is not this branch's to move) */
   --vignette: radial-gradient(
     130% 130% at 50% 46%,
     transparent 52%,
@@ -165,145 +215,6 @@
   );
   --grain-opacity: 0.03;
 }
-
-/* ----------------------------------------------------------------------------
-   BATMAN THEME — Gotham grade, same restraint. A token swap, not a skin:
-   blacker stage, warm searchlight text, and THE accent flips from steel-blue
-   to muted signal gold. Bull/bear semantics (pos/neg) inherit the dark values
-   untouched — data colors never cosplay. No logos, no new effects.
-   ---------------------------------------------------------------------------- */
-:root[data-theme="batman"] {
-  --charcoal: #050505; /* Gotham black stage */
-  --charcoal-2: #0a0a0c;
-  --bone: #e9e4d6; /* warm searchlight white */
-  --ash: #99938a;
-  --ink-mute: #6b675f;
-  --graphite: #38352e;
-  --steel: #d6b25a; /* THE accent — signal gold */
-  --steel-rgb: 214 178 90;
-
-  --wash-rgb: 255 244 220; /* warm wash for hairlines/fills */
-  --glass: rgba(7, 7, 8, 0.78);
-  --glass-strong: rgba(5, 5, 6, 0.88);
-  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.2);
-
-  --vignette: radial-gradient(
-    125% 125% at 50% 44%,
-    transparent 36%,
-    rgba(0, 0, 0, 0.42) 74%,
-    rgba(0, 0, 0, 0.72) 100%
-  );
-  --grain-opacity: 0.05;
-}
-
-/* ----------------------------------------------------------------------------
-   MATRIX THEME (CORE V2) — the code-rain stage. Same token-swap discipline as
-   Gotham: near-black green-cast stage, pale phosphor ink, THE accent flips to
-   terminal green. Bull/bear semantics (pos/neg) and the catalyst amber inherit
-   untouched — data colors never cosplay, and the accent green (#4ec97a, cold
-   and saturated) is deliberately apart from both the --pos market green
-   (#7fb0a3, teal-leaning) and the phosphor mood (#82a878, leaf-muted).
-
-   The [data-mood] twin selector out-specifies every mood block below
-   REGARDLESS of source order: Matrix's identity IS its green, so the mood
-   axis stands down while this theme is active (a saved ember/graphite mood
-   resumes the moment the theme cycles off matrix).
-
-   The rain reads its own --rain-* tokens — never --steel — so nothing can
-   re-tint the rain, and the canvas component picks them up per theme flip.
-   ---------------------------------------------------------------------------- */
-:root[data-theme="matrix"],
-:root[data-theme="matrix"][data-mood] {
-  --charcoal: #030905; /* near-black stage, green cast */
-  --charcoal-2: #060d08;
-  --bone: #d8ecd9; /* pale phosphor white */
-  --ash: #8aa78f;
-  --ink-mute: #5c7261;
-  --graphite: #29392d;
-  --steel: #4ec97a; /* THE accent — terminal green */
-  --steel-rgb: 78 201 122;
-
-  --wash-rgb: 190 255 205; /* green wash for hairlines/fills */
-  --glass: rgba(4, 12, 7, 0.78);
-  --glass-strong: rgba(3, 9, 5, 0.9);
-  --glow-accent: 0 0 18px rgb(var(--steel-rgb) / 0.22);
-
-  --vignette: radial-gradient(
-    125% 125% at 50% 44%,
-    transparent 36%,
-    rgba(0, 0, 0, 0.44) 74%,
-    rgba(0, 0, 0, 0.74) 100%
-  );
-  --grain-opacity: 0.05;
-
-  /* rain-only tokens — the canvas layer's color, glyph alpha and overall
-     strength (kept off the accent so moods/set_mood can never touch the rain) */
-  --rain-rgb: 64 220 110;
-  /* UX5/R1 — v1 was 0.11; the first quiet pass (0.07 + halved glyph alphas)
-     overshot to invisible. Midway: noticed at a glance, forgotten while
-     reading. Tuned WITH the canvas head/trail alphas in MatrixRain. */
-  --rain-opacity: 0.09;
-}
-
-/* ----------------------------------------------------------------------------
-   MOOD — a second axis, orthogonal to the light/dark theme above. <html> carries
-   data-mood (steel | ember | phosphor | graphite); each mood re-tints ONLY the
-   accent family — --steel / --steel-rgb — and everything accent-derived
-   (--accent-line, --glow-accent, every rgb(var(--steel-rgb) / …)) follows via
-   var(). The neutrals, the --pos/--neg market colours and the amber catalyst
-   semantics never move, in any mood. STEEL is the default and has no block: the
-   :root values above ARE steel. Each mood keeps the reference relationship — a
-   fuller accent on the dark stage, a calmer ink variant on the light one.
-
-   The mood axis stays orthogonal to BATMAN too: these blocks sit AFTER the
-   batman block at equal specificity, so a chosen mood re-tints Gotham's accent
-   as well. Batman on the default (steel) mood has no block to override it and
-   keeps its signal gold — exactly as designed.
-   ---------------------------------------------------------------------------- */
-/* EMBER — warm workshop gold. Copper-leaning, so it never reads as the semantic
-   catalyst amber (#c9a24a), which keeps its meaning in every mood. */
-:root[data-mood="ember"] {
-  --steel: #c08d5f;
-  --steel-rgb: 192 141 95;
-}
-:root[data-theme="light"][data-mood="ember"] {
-  --steel: #875f33;
-  --steel-rgb: 135 95 51;
-}
-/* PHOSPHOR — muted CRT phosphor green. Leaf-leaning (never teal, never neon) so
-   it stays clearly apart from the --pos market green. */
-:root[data-mood="phosphor"] {
-  --steel: #82a878;
-  --steel-rgb: 130 168 120;
-}
-:root[data-theme="light"][data-mood="phosphor"] {
-  --steel: #4d6140;
-  --steel-rgb: 77 97 64;
-}
-/* GRAPHITE — cool gray-blue, near-mono; the accent recedes into the instrument. */
-:root[data-mood="graphite"] {
-  --steel: #8b95a3;
-  --steel-rgb: 139 149 163;
-}
-:root[data-theme="light"][data-mood="graphite"] {
-  --steel: #49525e;
-  --steel-rgb: 73 82 94;
-}
-/* The World surface re-pins the DARK accent for its dark-glass chrome in both
-   themes (see .command-surface below) — keep that pin mood-true. */
-:root[data-mood="ember"] .command-surface {
-  --steel: #c08d5f;
-  --steel-rgb: 192 141 95;
-}
-:root[data-mood="phosphor"] .command-surface {
-  --steel: #82a878;
-  --steel-rgb: 130 168 120;
-}
-:root[data-mood="graphite"] .command-surface {
-  --steel: #8b95a3;
-  --steel-rgb: 139 149 163;
-}
-
 html,
 body {
   height: 100%;
@@ -833,22 +744,7 @@ body::after {
   z-index: 1;
 }
 
-/* the code-rain canvas — behind the view panels (z-1), under the vignette
-   (z-5) and grain (z-6); mounted only while data-theme="matrix". The layer's
-   overall strength is the theme's --rain-opacity token. */
-.matrix-rain {
-  position: fixed;
-  inset: 0;
-  /* a canvas is a REPLACED element: inset alone doesn't stretch it (the used
-     width stays intrinsic 300×150), so the explicit size is load-bearing —
-     it also keeps writing canvas.width from feeding back into layout size */
-  display: block;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  pointer-events: none;
-  opacity: var(--rain-opacity, 0.11);
-}
+
 /* display:none, not unmount — the hidden view keeps its React state (chat
    thread, desk tabs/selection); the orb's IntersectionObserver and the desk's
    visited latch park their own background work while hidden */
@@ -2711,17 +2607,6 @@ body::after {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
 .ctl-round {
   height: 38px;
   width: 38px;
@@ -2760,8 +2645,6 @@ body::after {
   border-color: rgb(var(--wash-rgb) / 0.1);
   background: rgb(var(--wash-rgb) / 0.03);
 }
-
-
 
 
 /* ---- World surface — live intelligence globe + intel wires ---- */
@@ -3271,63 +3154,6 @@ body::after {
   margin-bottom: 8px;
 }
 
-/* ==========================================================================
-   DAY WORLD — light-theme palette for the World surface. The globe follows
-   the app theme (user decision — supersedes the old "dark in both themes"
-   behavior): under data-theme="light" the .command-surface re-pins above
-   yield to a warm-paper derivation of the same chrome, in the landing's
-   family (paper #f5f4f1 / ink #16150f — .home-landing) with the ramp
-   discipline of the retired intel desk's DAY DESK block (deleted with it):
-   ink text ramp, ink-alpha hairlines, the steel accent deepened to ink
-   strength, additive glows becoming soft ink washes. Dark and batman keep
-   the defaults above untouched — this block is the ONLY light-mode delta.
-   The basemap swap (dark-matter ↔ positron) lives in CommandGlobe.tsx.
-   ========================================================================== */
-:root[data-theme="light"] .command-surface {
-  /* text ramp — ink on paper (micro-mono ≥3:1, body ≥4.5:1 on paper glass) */
-  --bone: #1c1b17;
-  --ash: #57534a;
-  --ink-mute: #7b7870;
-  --graphite: #cfcec7;
-  --charcoal: #f2f1ec;
-  /* accent — steel deepened for paper (the app light theme's own steel) */
-  --steel: #3f5670;
-  --steel-rgb: 63 86 112;
-  /* hairlines — ink-alpha; direction flips, slightly stronger for the same
-     perceived weight on paper */
-  --wash-rgb: 30 28 22;
-  --line: rgb(var(--wash-rgb) / 0.14);
-  /* stage + glass — warm paper family over the positron basemap */
-  --cmd-stage: #e9e7e1;
-  --cmd-vignette: radial-gradient(circle at 50% 46%, transparent 50%, rgba(20, 22, 28, 0.12) 100%);
-  --cmd-chip-bg: rgba(247, 246, 241, 0.78);
-  --cmd-hud-bg: rgba(247, 246, 241, 0.78);
-  --cmd-panel-bg: rgba(247, 246, 241, 0.76);
-}
-/* Shared-global classes rendered inside the surface that carry dark literals —
-   day values are scoped here so the dark "look closer" overlay (Globe.tsx uses
-   the same .aug-marker) and the dark-panel feeds keep theirs. */
-:root[data-theme="light"] .command-surface .aug-marker-label {
-  background: rgba(250, 249, 246, 0.9);
-}
-:root[data-theme="light"] .command-surface .feed-link:hover {
-  text-decoration-color: rgba(28, 27, 23, 0.35);
-}
-:root[data-theme="light"] .command-surface .feed-list li {
-  /* wash at 0.04 is a dark-glass hairline; on paper it vanishes */
-  border-bottom-color: rgb(var(--wash-rgb) / 0.1);
-}
-:root[data-theme="light"] .command-surface .widget-state {
-  /* the dark literal is a white-family gray — illegible on paper */
-  color: rgba(87, 83, 74, 0.85);
-}
-:root[data-theme="light"] .command-surface .feed-time,
-:root[data-theme="light"] .command-surface .synth-meta {
-  /* ash at 0.45 lands under 3:1 on paper — trade the heavy fade for a
-     deeper ink at a light fade (same quiet register, legible) */
-  color: var(--ink-mute);
-  opacity: 0.9;
-}
 
 /* ======================================================================
    SHELL POLISH — one motion system, sound-adjacent states, mobile pass.
@@ -3406,8 +3232,6 @@ body::after {
 .ctl-round.off {
   opacity: 0.45;
 }
-
-
 
 
 html,
@@ -3528,9 +3352,6 @@ body {
   box-shadow: 0 0 0 2px var(--charcoal), 0 0 0 3px var(--accent-line);
   border-radius: var(--r-sm);
 }
-
-
-
 
 
 /* Panels: a barely-lit top edge for premium depth — glass without the blur cost
@@ -3973,10 +3794,6 @@ button.pulse-line:focus-visible {
 }
 
 
-
-
-
-
 /* Mobile: tighten the centre type so it stays clear of the lattice. */
 @media (max-width: 760px) {
   .presence-center-t1 {
@@ -4008,688 +3825,8 @@ button.pulse-line:focus-visible {
   }
 }
 
-/* Smooth theme flip — page.tsx sets [data-theming] on <html> for ~460ms during a
-   toggle; everything cross-fades its colours, then the attribute clears so there's
-   no permanent transition cost. Gated to no-preference so reduced-motion users get
-   an instant flip. */
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-theming] *,
-  :root[data-theming] *::before,
-  :root[data-theming] *::after {
-    transition:
-      background-color 0.42s var(--ease),
-      color 0.42s var(--ease),
-      border-color 0.42s var(--ease),
-      fill 0.42s var(--ease),
-      stroke 0.42s var(--ease),
-      box-shadow 0.42s var(--ease) !important;
-  }
-}
-
-/* ======================================================================
-   HOME LANDING — the ask-first landing on the Presence panel.
-   Ported verbatim from docs/design/AUGUST Home.dc.html: the DAY palette is
-   the default; the applyTheme() NIGHT values apply under the app's dark AND
-   batman themes. Everything is scoped to .home-landing — global tokens and
-   the other three surfaces are untouched.
-   ====================================================================== */
-.home-landing {
-  --bg: #f5f4f1;
-  --ink: #16150f;
-  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
-  --body2: #6e685c;
-  --hair: #e8e4da;
-  --hair2: #eae6dc;
-  --card: #ffffff;
-  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
-  --thread: #16150f;
-  --up: #1b7f4d;
-  --down: #b4483e;
-  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
-  /* DAY: NOTHING behind the crystal. .hl-orb-core sits BEHIND the transparent
-     WebGL canvas, so whatever it paints shows through every gap in the stone's
-     silhouette. It used to be the design's near-black sphere gradient
-     (#3a332a → #060505) with hard black inset shadows: on #f5f4f1 paper that IS
-     the hole, and no amount of crystal can rescue a black disc drawn around it.
-     A softer warm pool was tried and is also wrong — any box-shadow on a
-     border-radius:50% element paints a blurred copy of the circle, i.e. a filled
-     disc, which reads as a saucer parked under the jewel. The page itself is the
-     ground the stone lies on (that is the whole point of a body that reflects the
-     room), and .hl-orb-halo/.hl-orb-ring still carry the design's gold bloom and
-     circle. So: no body, no shadow.
-     (NIGHT keeps the design's sphere gradient below — on the dark stage the disc
-     IS the stage, not a hole in it, and the orb reads right there.) */
-  --orb-bg: none;
-  --orb-glow: none;
-  /* No --ring / --halo on DAY: both elements are night-only now (see .hl-orb-ring
-     and .hl-orb-halo), so a value here would be a dead token inviting someone to
-     "fix" the missing ring by re-lighting it. NIGHT/GOTHAM declare their own. */
-  --chip-hover: #c9a96a;
-
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--bg);
-  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
-  transition: background 0.5s ease;
-}
-:root[data-theme="dark"] .home-landing,
-:root[data-theme="batman"] .home-landing {
-  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
-  --ink: #f2efe8;
-  --dim: rgba(255, 255, 255, 0.4);
-  --body2: rgba(255, 255, 255, 0.55);
-  --hair: rgba(255, 255, 255, 0.13);
-  --hair2: rgba(255, 255, 255, 0.08);
-  --card: rgba(255, 255, 255, 0.04);
-  --label: #c9a96a;
-  --thread: rgba(255, 255, 255, 0.82);
-  --up: #57a97f;
-  --down: #c97064;
-  --cardshadow: none;
-  --orb-bg: radial-gradient(circle at 36% 32%, #282218 0%, #12100c 46%, #050504 74%);
-  --orb-glow:
-    0 0 90px rgba(201, 169, 106, 0.28),
-    0 0 32px rgba(201, 169, 106, 0.2),
-    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
-    inset 9px 12px 42px rgba(201, 169, 106, 0.12);
-  --ring: rgba(201, 169, 106, 0.13);
-  --halo: rgba(201, 169, 106, 0.14);
-}
-/* MATRIX: a third night palette in phosphor green. --bg is TRANSPARENT by
-   design — the code-rain canvas is fixed at z-0 behind the view panels, and
-   main.stage-vignette already paints the --charcoal (#030905) stage, so the
-   landing lets the rain read through while its cards stay translucent glass
-   ("content sits on translucent dark panels over the rain"). */
-:root[data-theme="matrix"] .home-landing {
-  --bg: transparent;
-  --ink: #d8ecd9;
-  --dim: rgba(216, 236, 217, 0.42);
-  --body2: rgba(216, 236, 217, 0.58);
-  --hair: rgba(190, 255, 205, 0.14);
-  --hair2: rgba(190, 255, 205, 0.08);
-  --card: rgba(190, 255, 205, 0.045);
-  --label: #4ec97a;
-  --thread: rgba(216, 236, 217, 0.84);
-  --up: #57a97f;
-  --down: #c97064;
-  --cardshadow: none;
-  --orb-bg: radial-gradient(circle at 36% 32%, #12241a 0%, #0a140e 46%, #030905 74%);
-  --orb-glow:
-    0 0 90px rgba(78, 201, 122, 0.26),
-    0 0 32px rgba(78, 201, 122, 0.18),
-    inset -20px -28px 60px rgba(0, 0, 0, 0.85),
-    inset 9px 12px 42px rgba(78, 201, 122, 0.12);
-  --ring: rgba(78, 201, 122, 0.13);
-  --halo: rgba(78, 201, 122, 0.14);
-}
-
-/* — top bar: wordmark · clock + state · quiet control cluster ------------- */
-.hl-top {
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 26px 44px;
-  flex: none;
-}
-.hl-brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-.hl-brand-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--rd-app-gold);
-  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
-}
-.hl-wordmark {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.32em;
-  color: var(--ink);
-}
-.hl-top-right {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-.hl-clock {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11.5px;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  color: var(--dim);
-  white-space: nowrap;
-}
-.hl-ctls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.hl-ctl {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dim);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-snappy);
-}
-.hl-ctl:hover {
-  color: var(--ink);
-}
-.hl-ctl.on {
-  color: var(--label);
-}
-.hl-ctl:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
-
-/* R1-REDO — the rain intensity dial's little menu (matrix theme only) */
-.hl-rainwrap {
-  position: relative;
-}
-.hl-rainmenu {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  z-index: 45;
-  display: flex;
-  flex-direction: column;
-  min-width: 136px;
-  padding: 4px;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  background: var(--glass-strong, rgba(6, 12, 8, 0.92));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-2, 0 10px 30px rgba(0, 0, 0, 0.4));
-}
-.hl-rainopt {
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  padding: 7px 12px;
-  border-radius: 7px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  color: var(--dim);
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    background var(--dur-fast) var(--ease-snappy);
-}
-.hl-rainopt:hover {
-  color: var(--ink);
-  background: var(--hair2);
-}
-.hl-rainopt.on {
-  color: var(--label);
-}
-.hl-rainopt:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 1px;
-}
-/* F7 — the menu's little section labels + option glyphs */
-.hl-menu-k {
-  padding: 7px 12px 3px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  color: var(--label);
-}
-.hl-menu-k + .hl-menu-k,
-.hl-rainopt + .hl-menu-k {
-  margin-top: 5px;
-  border-top: 1px solid var(--hair2);
-}
-.hl-rainopt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.hl-opt-glyph {
-  display: inline-flex;
-  color: inherit;
-  opacity: 0.75;
-}
-
-/* — session chip: quiet SIGN IN link / dim account email + sign-out ------- */
-.hl-session {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.hl-signin,
-.hl-signout {
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  color: var(--dim);
-  text-decoration: none;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-snappy);
-}
-.hl-signin:hover,
-.hl-signout:hover {
-  color: var(--label);
-}
-.hl-signin:focus-visible,
-.hl-signout:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
-.hl-account-email {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  color: var(--dim);
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* — the orb ---------------------------------------------------------------
-   NIGHT/GOTHAM: halo + ring + gradient circle behind the living WebGL crystal —
-   the design's searchlight stage, and it reads right, because a glow needs a void
-   to glow into.
-   DAY: none of it. Just the stone on the page, plus its contact shadow. Every
-   layer here is a light SOURCE faked in CSS, and you cannot light a white page
-   with one — on paper they detached from a stone that (unlike the old sphere)
-   doesn't fill the circle, and read as a saucer under a floating jewel. Each is
-   gated to the dark stages below rather than dimmed to near-zero: a transparent
-   halo still burns an animated composite layer, and a dead --halo/--ring token
-   just invites someone to switch it back on. --------------------------------- */
-.hl-orb {
-  /* R2 — no top offset: the orb rides the vertically-centered group now */
-  margin-top: 0;
-  width: 190px;
-  height: 190px;
-  position: relative;
-  flex: none;
-}
-/* DAY: the stone's CONTACT SHADOW — the only thing on the page besides the stone,
-   and the only one that survives the question "would this exist if you put a real
-   gem on a real sheet of paper?". Everything else the old glowing sphere left
-   behind (the halo annulus, the bloom disc, the corona hairs) answers no, and is
-   gone. Deliberately NOT a box-shadow on a border-radius:50% element: that paints
-   a blurred copy of the CIRCLE, i.e. the filled saucer this whole pass exists to
-   kill. It's an ink ellipse, wider than it is tall, sitting BELOW the mass and
-   under-hanging it — a diffuse pool, not a halo. ::before (not ::after) so it
-   paints under the canvas in tree order without touching z-index.
-
-   `top` IS THE CONTACT. A contact shadow's whole job is contact: detached, it
-   stops grounding the stone and starts reading as a hovering jewel over an
-   unrelated smudge — the same optical failure as the saucer, just smaller. This
-   was measured, not eyeballed. The gradient (closest-side ellipse on a 132×28
-   box → radii 66×14, fading out at 78%) puts its first visible ink 91.9px below
-   `top`, i.e. at `top - 91.9` from the orb centre. The stone's underside, swept
-   over 120 tumble orientations, sits at a median of 67px from centre (p25 64,
-   p75 69; it ranges 60→93 because a shard can point straight down, so no single
-   anchor touches at EVERY pose). At the old top:166px the ink began at dy 75 —
-   below the stone in 95% of poses, leaving a band of clean 243 paper between the
-   stone and its own shadow. 156px puts the onset at dy≈64: in contact at the
-   median pose, tucked under (harmlessly hidden — the ellipse paints behind the
-   canvas) when a shard points down, and short only in the ~16% narrowest poses.
-   The visible crescent stays the same size (~19px); it just touches now. */
-.hl-orb::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 156px;
-  width: 132px;
-  height: 28px;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    closest-side ellipse at 50% 50%,
-    rgba(28, 24, 16, 0.16) 0%,
-    rgba(28, 24, 16, 0.08) 44%,
-    rgba(28, 24, 16, 0) 78%
-  );
-  pointer-events: none;
-}
-/* NIGHT/GOTHAM: no contact shadow — an ink pool on a black stage is invisible at
-   best, and there the stone is lit in a void, not lying on anything. */
-:root[data-theme="dark"] .home-landing .hl-orb::before,
-:root[data-theme="batman"] .home-landing .hl-orb::before,
-:root[data-theme="matrix"] .home-landing .hl-orb::before {
-  display: none;
-}
-/* THE HALO IS NIGHT-ONLY. It is an OUTSET box-shadow on a 202px border-box with
-   no background of its own, so what it actually paints is an ANNULUS: the shadow
-   is clipped out of the very circle it surrounds. On the dark stage the black
-   sphere filled that circle, so the ring read as a bloom coming off the body and
-   the trick worked. The crystal doesn't fill it — it reflects the room through
-   the gaps — so the annulus detached and read as a warm gold plate rim with a
-   jewel floating over it (measured on paper at rgb ~228,220,202: R−B +26 of gold
-   on ground that is supposed to be #f5f4f1 paper). And a bloom is a dark-stage
-   idea anyway: nothing glows on white. So on DAY there is no halo element at all
-   — not a transparent one still burning an animated composite layer. */
-.hl-orb-halo {
-  display: none;
-}
-:root[data-theme="dark"] .home-landing .hl-orb-halo,
-:root[data-theme="batman"] .home-landing .hl-orb-halo,
-:root[data-theme="matrix"] .home-landing .hl-orb-halo {
-  display: block;
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  box-shadow: 0 0 90px 34px var(--halo);
-  animation: hl-halo 7s ease-in-out infinite;
-}
-@keyframes hl-halo {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-/* THE RING IS NIGHT-ONLY TOO. Same story as the halo: a 234px gold hairline
-   circle was the outline of the glowing sphere's stage, and it survives the
-   crystal as a hoop drawn 22px off a stone that doesn't touch it — a plate rim
-   with a jewel sitting in the middle of it, or a target reticle. Measured on
-   paper it is the last warm thing left on the ground (R−B +22 against the page's
-   own +4). The reference is the stone and nothing else, so on DAY: gone. */
-.hl-orb-ring {
-  display: none;
-}
-:root[data-theme="dark"] .home-landing .hl-orb-ring,
-:root[data-theme="batman"] .home-landing .hl-orb-ring,
-:root[data-theme="matrix"] .home-landing .hl-orb-ring {
-  display: block;
-  position: absolute;
-  inset: -22px;
-  border: 1px solid var(--ring);
-  border-radius: 50%;
-}
-.hl-orb-core {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--orb-bg);
-  box-shadow: var(--orb-glow);
-}
-/* The canvas bleeds 65px past the circle so the corona can reach beyond the
-   rim; Presence3D orbFraction pins the sphere itself to the 190px circle. */
-.hl-orb-gl {
-  position: absolute;
-  inset: -65px;
-}
-
-/* — heading + ask bar + chips --------------------------------------------- */
-.hl-heading {
-  margin: 44px 0 0;
-  padding: 0 24px;
-  text-align: center;
-  font-family: inherit;
-  font-size: clamp(30px, 4.6vw, 42px);
-  font-weight: 500;
-  line-height: 1.15;
-  color: var(--ink);
-}
-.hl-bar {
-  margin-top: 16px; /* F8 — pulled up (was 30px) */
-  /* UX6 — the idle ask bar rides the same centered column as the transcript
-     and composer (was 760px/88vw) */
-  width: min(var(--chat-col, 720px), 88%);
-  min-height: 62px;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px 0 20px;
-  background: var(--card);
-  border: 1px solid var(--hair);
-  border-radius: 16px;
-  box-shadow: var(--cardshadow);
-  flex: none;
-}
-.hl-input {
-  flex: 1;
-  min-width: 0;
-  height: 60px;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--ink);
-}
-.hl-input::placeholder {
-  color: var(--dim);
-}
-.hl-chip:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
-.hl-kbd {
-  flex: none;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--dim);
-  border: 1px solid var(--hair);
-  border-radius: 6px;
-  padding: 4px 8px;
-}
 
 /* — THE COMMAND BAR (feature/command-bar) ---------------------------------- */
-/* wrapper: the suggestions dropUP + the bar + the one answer card, one
-   column. Rides the brief's column (.hb already sizes to --chat-col). */
-.cb-wrap {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-}
-.cb-wrap .hl-bar {
-  width: 100%;
-}
-/* the bar speaks command: mono caps placeholder (the command set, stated) */
-.cb-input::placeholder {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  color: var(--dim);
-}
-/* suggestions render ABOVE the input so the mobile keyboard never covers them */
-.cb-sugs {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--hair);
-  border-radius: 12px;
-  box-shadow: var(--cardshadow);
-  overflow: hidden;
-}
-.cb-sug {
-  border: none;
-  background: transparent;
-  text-align: left;
-  padding: 9px 16px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11.5px;
-  letter-spacing: 0.05em;
-  color: var(--body2);
-  cursor: pointer;
-}
-.cb-sug:hover {
-  background: var(--wash);
-  color: var(--ink);
-}
-.cb-sug + .cb-sug {
-  border-top: 1px solid var(--hair);
-}
-/* the one answer card — replaced by the next input, dismissed by Esc/✕ */
-.cb-card {
-  margin-top: 10px;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--card);
-  border: 1px solid var(--hair);
-  border-left: 2px solid var(--steel);
-  border-radius: 12px;
-  box-shadow: var(--cardshadow);
-  animation: cb-card-in 180ms var(--ease-snappy);
-}
-@keyframes cb-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.cb-card.cb-error {
-  border-left-color: var(--down, #c0504d);
-}
-.cb-card.cb-info .cb-text,
-.cb-card.cb-error .cb-text {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-.cb-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--body2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.cb-caret {
-  display: inline-block;
-  margin-left: 2px;
-  animation: cb-blink 1s steps(2) infinite;
-}
-@keyframes cb-blink {
-  50% {
-    opacity: 0;
-  }
-}
-.cb-x {
-  flex: none;
-  border: none;
-  background: transparent;
-  color: var(--dim);
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px 4px;
-  cursor: pointer;
-}
-.cb-x:hover {
-  color: var(--ink);
-}
-/* the quote card — price, day change, day range; all real or absent */
-.cb-quote {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-}
-.cb-quote-sym {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--ink);
-}
-.cb-quote-px {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.cb-quote-range {
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  color: var(--dim);
-}
-.hl-chips {
-  margin-top: 16px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  padding: 0 24px;
-}
-.hl-chip {
-  border: 1px solid var(--hair);
-  background: transparent;
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--body2);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-snappy),
-    border-color var(--dur-fast) var(--ease-snappy);
-}
-.hl-chip:hover {
-  border-color: var(--chip-hover);
-  color: var(--ink);
-}
-/* R2/F8 — the frame between the top bar and the ticker strip. F8 pulled the
-   group UP (flex-start, compact padding) and the frame no longer grows to pin
-   the strip to the bottom — the strip rides directly under the content, so no
-   dead band can open above it. Short viewports still just scroll. */
-.hl-main {
-  flex: 0 0 auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 6px 0 0;
-}
-
 
 
 /* — UX2-T2 · THE DAILY BRIEF — the chat view's home state -------------------
@@ -4702,306 +3839,7 @@ button.pulse-line:focus-visible {
   margin-top: 16px;
   padding-bottom: 16px;
 }
-.hb-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--hair);
-}
-.hb-date {
-  font-size: 15.5px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.hb-session {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  color: var(--dim);
-  white-space: nowrap;
-}
-.hb-session-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--dim);
-}
-.hb-session.live {
-  color: var(--up);
-}
-.hb-session.live .hb-session-dot {
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up);
-}
-.hb-pulse {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.hb-tile {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  background: var(--card);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-}
-.hb-tile-l {
-  color: var(--dim);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-}
-.hb-tile-px {
-  color: var(--ink);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.hb-tile-chg {
-  font-variant-numeric: tabular-nums;
-}
-.hb-spark {
-  flex: none;
-}
-.hb-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px 14px;
-  flex-wrap: wrap;
-}
-.hb-label {
-  flex: none;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.26em;
-  color: var(--label);
-}
-.hb-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--ink);
-  min-width: 0;
-}
-.hb-chip {
-  white-space: nowrap;
-}
-.hb-chip-k {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: var(--dim);
-  margin-right: 2px;
-}
-.hb-dim {
-  color: var(--dim);
-}
-.hb-absent {
-  font-size: 12.5px;
-  font-style: italic;
-  color: var(--dim);
-}
-.hb-ingest {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--body2);
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.hb-news {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.hb-news-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.hb-news-list li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--hair2);
-}
-.hb-news-list li:last-child {
-  border-bottom: none;
-}
-.hb-news-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13.5px;
-  color: var(--thread);
-  text-decoration: none;
-}
-.hb-news-title:hover {
-  color: var(--label);
-}
-.hb-news-title:focus-visible {
-  outline: 1px solid var(--label);
-  outline-offset: 2px;
-}
-.hb-news-meta {
-  flex: none;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10.5px;
-  color: var(--dim);
-}
-@media (max-width: 700px) {
-  .hb-news-title {
-    white-space: normal; /* phones: wrap instead of ellipsing away the story */
-  }
-  .hb-news-list li {
-    flex-direction: column;
-    gap: 3px;
-  }
-}
 
-/* R5 — WATCHING: thin full-width bottom ticker strip, static chips */
-.hl-tape {
-  flex: none;
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 10px 28px calc(env(safe-area-inset-bottom, 0px) + 10px);
-  border-top: 1px solid var(--hair2);
-}
-.hl-tape-label {
-  flex: none;
-}
-.hl-tape-chips {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-}
-.hl-label {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.26em;
-  color: var(--label);
-}
-.hl-pill {
-  border: 1px solid var(--hair);
-  background: var(--card);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.hl-up {
-  color: var(--up);
-}
-.hl-down {
-  color: var(--down);
-}
-
-/* — mobile: 44px targets, tighter chrome ----------------------------------- */
-@media (max-width: 700px) {
-  .hl-top {
-    /* Draw under the notch (viewportFit:cover) but keep the wordmark, clock,
-       SIGN IN and controls clear of the iOS status bar. */
-    padding: calc(env(safe-area-inset-top, 0px) + 18px)
-      calc(env(safe-area-inset-right, 0px) + 20px) 18px
-      calc(env(safe-area-inset-left, 0px) + 20px);
-  }
-  /* Declutter (mobile chrome): the header used to stack clock / SIGN IN /
-     controls into THREE right-aligned rows, which pushed .hl-top to ~133px and
-     dropped the bell and moon onto the orb's corona. One row instead — the
-     header shrinks to a single line and the orb gets the space back. The clock
-     is the flexible child so a long account chip shortens the clock rather
-     than wrapping the row. */
-  .hl-top-right {
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 14px;
-    min-width: 0;
-  }
-  /* quieter identity on the small screen: the wordmark keeps its face and
-     weight, loses some of its 0.32em swagger so it stops shouting next to a
-     6px orb-gold dot. Subtraction of spacing, not of the mark. */
-  .hl-wordmark {
-    letter-spacing: 0.22em;
-  }
-  .hl-brand {
-    gap: 9px;
-  }
-  .hl-clock {
-    letter-spacing: 0.12em;
-    min-width: 0;
-    flex: 0 1 auto;
-  }
-  /* the resting state word ("SYSTEMS STEADY") folds on phones — it reports
-     that nothing is happening. THINKING (.on) is real news and stays. */
-  .hl-state {
-    display: none;
-  }
-  .hl-state.on {
-    display: inline;
-  }
-  .hl-ctl {
-    width: 44px;
-    height: 44px;
-  }
-  .hl-signin,
-  .hl-signout {
-    min-height: 44px;
-  }
-  .hl-account-email {
-    max-width: 110px;
-  }
-  .hl-kbd {
-    display: none;
-  }
-  .hl-chip {
-    min-height: 44px;
-  }
-  .hl-thread {
-    align-items: center;
-    min-height: 44px;
-  }
-  .hl-pill {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* Must out-specify the night/gotham halo rule above, which is where the
-     animation is now declared — a bare .hl-orb-halo here would lose to it. */
-  :root[data-theme="dark"] .home-landing .hl-orb-halo,
-  :root[data-theme="batman"] .home-landing .hl-orb-halo,
-  :root[data-theme="matrix"] .home-landing .hl-orb-halo {
-    animation: none;
-  }
-}
 
 /* ======================================================================
    CORE V2 P5 — the conversation transcript. While a conversation is live the
@@ -5012,152 +3850,27 @@ button.pulse-line:focus-visible {
    without another palette. ============================================== */
 
 
-
-
-/* The orb compacts to a quiet presence above the conversation. transform:
-   scale keeps the WebGL canvas geometry true (the sphere fraction is sized
-   against the 190px circle); the negative margin reclaims the layout height
-   the scale gives up (190px → ~80px visible). */
-.home-landing .hl-orb {
-  transition:
-    transform 0.45s var(--ease-snappy),
-    margin-top 0.45s var(--ease-snappy),
-    margin-bottom 0.45s var(--ease-snappy);
-  /* F8 — the front-page orb compacts ~30%; the reclaimed height pulls the
-     bar and the brief up. (Was the :not(.convo) rule — the conversation
-     layout is gone, so this is now the orb's one steady state; it outranks
-     .hl-orb-mini's 0.38 exactly as before.) */
-  transform: scale(0.7);
-  transform-origin: 50% 0;
-  margin-bottom: -54px;
-}
-
-
-
-
-
-
 /* COMMAND CENTER R1 — data integrity tags + the regime apex */
 .dtag {
   display: inline-flex; align-items: center; gap: 4px;
   font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.16em;
-  padding: 2px 6px; border: 1px solid var(--hair); border-radius: var(--r-full);
-  color: var(--dim); vertical-align: middle;
+  padding: 2px 6px; border: 1px solid var(--hair, var(--paper-hair)); border-radius: var(--r-full);
+  color: var(--dim, var(--paper-mute)); vertical-align: middle;
 }
 .dtag i { font-style: normal; font-weight: 600; letter-spacing: 0.04em; opacity: 0.8; }
-.dtag-live { color: var(--rd-app-live); border-color: rgb(127 224 165 / 0.5); }
-.dtag-delayed { color: var(--dim); }
+.dtag-live { color: var(--rd-app-live); border-color: var(--chip-live-edge); }
+.dtag-delayed { color: var(--dim, var(--paper-mute)); }
 .dtag-sim { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
 .dtag-proxy { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
-.dtag-unavail { color: var(--rd-app-alert); border-color: rgb(224 138 122 / 0.5); }
-.dtag-calc { color: var(--rd-app-calc); border-color: rgb(156 196 228 / 0.4); }
+.dtag-unavail { color: var(--rd-app-alert); border-color: var(--chip-alert-edge); }
+.dtag-calc { color: var(--rd-app-calc); border-color: var(--chip-calc-edge); }
 .dtag-stale { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
 /* feat/v4-1-terminal — a tag that has to fit a small tile (the dock heatmap) */
 .dtag-compact { letter-spacing: 0.04em; padding: 1px 4px; max-width: 100%; white-space: nowrap; }
 
-.hb-regime { margin: 10px 0 4px; }
-.hb-regime-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.hb-regime-read { font-family: var(--font-mono); font-size: 15px; font-weight: 800; letter-spacing: 0.18em; }
-.hb-regime-read.r-riskon { color: var(--rd-app-live); }
-.hb-regime-read.r-riskoff { color: var(--rd-app-alert); }
-.hb-regime-read.r-neutral { color: var(--ink, #d8ecd9); }
-.hb-regime-agree { font-family: var(--font-mono); font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
-.hb-why {
-  font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.16em;
-  background: none; border: 1px solid var(--hair); color: var(--dim); padding: 2px 8px; cursor: pointer;
-}
-.hb-why:hover { color: var(--ink); }
-.hb-because { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.hb-because li { display: flex; gap: 8px; align-items: baseline; font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); }
-.hb-because li i { font-style: normal; width: 12px; }
-.hb-because li.up i { color: var(--rd-app-live); }
-.hb-because li.down i { color: var(--rd-app-alert); }
-.hb-because-k { letter-spacing: 0.1em; min-width: 150px; color: var(--body2, var(--dim)); }
-.hb-pulsehead { align-items: center; gap: 8px; margin-bottom: 2px; }
+
 .hb-pending { font-family: var(--font-mono); font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
 
-/* R4 — THE FRONT PAGE: mini orb, countdown row, heatmap, feed cards, desk report */
-.hl-orb-mini { transform: scale(0.38); transform-origin: top center; margin-bottom: -110px; opacity: 0.9; transition: transform 300ms, margin 300ms; }
-@media (prefers-reduced-motion: reduce) { .hl-orb-mini { transition: none; } }
-
-.cdr { margin: 10px 0; }
-.cdr-quiet { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); margin: 8px 0; }
-.cdr-quietline { font-size: 10.5px; color: var(--dim); letter-spacing: 0.06em; }
-.cdr-head { margin-bottom: 6px; }
-.cdr-cards { display: flex; gap: 10px; flex-wrap: wrap; }
-.cdr-card {
-  display: flex; flex-direction: column; gap: 3px; min-width: 200px; flex: 1 1 200px; max-width: 320px;
-  border: 1px solid var(--hair); padding: 10px 12px; font-family: var(--font-mono);
-}
-.cdr-released { border-style: dashed; }
-.cdr-name { font-size: 13px; font-weight: 800; letter-spacing: 0.18em; }
-.cdr-count { font-size: 22px; font-weight: 800; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
-.cdr-when, .cdr-exp, .cdr-printed { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
-.cdr-react { font-size: 11px; font-weight: 700; }
-.cdr-noact { font-size: 9px; color: var(--dim); font-style: italic; }
-.cdr-impact { font-size: 8px; font-weight: 700; letter-spacing: 0.18em; padding: 2px 6px; border: 1px solid var(--hair); width: fit-content; }
-.cdr-impact.im-high { color: var(--amber, #ffd27a); border-color: rgb(var(--amber-rgb, 255 210 122) / 0.5); }
-.cdr-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
-.cdr-ask {
-  font-family: inherit; font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
-  background: none; border: 1px solid var(--hair); color: var(--ink, #d8ecd9); padding: 4px 8px; cursor: pointer; width: fit-content;
-}
-.cdr-ask:hover { border-color: var(--up, var(--rd-app-live)); }
-.cdr-desk { font-size: 9px; letter-spacing: 0.1em; color: var(--up, var(--rd-app-live)); text-decoration: none; border: 1px dashed rgb(127 224 165 / 0.4); padding: 4px 8px; }
-.cdr-strip { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
-.cdr-stripitem { font-family: var(--font-mono); font-size: 9.5px; color: var(--dim); letter-spacing: 0.08em; }
-
-/* ── THE CALL (feature/the-call) — one card, directly under the regime line.
-      Data lines are mono caps; the thesis is the serif-italic register (the
-      one deliberate register shift on the floor — Georgia, no webfont). ── */
-.callcard {
-  display: flex; flex-direction: column; gap: 5px;
-  border: 1px solid var(--hair); padding: 10px 12px; margin: 8px 0 2px;
-  font-family: var(--font-mono);
-}
-.call-block { display: flex; flex-direction: column; gap: 4px; }
-.call-thesis {
-  font-family: Georgia, "Times New Roman", serif; font-style: italic;
-  font-size: 13.5px; line-height: 1.45; color: var(--ink, #d8ecd9);
-  letter-spacing: 0.01em; margin: 0 0 2px;
-}
-.call-head { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.22em; color: var(--label); }
-.call-line { font-size: 12.5px; font-weight: 800; letter-spacing: 0.14em; }
-.call-quiet { color: var(--dim); font-weight: 700; }
-.call-why { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; }
-.call-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-.call-btn {
-  font-family: inherit; font-size: 10px; font-weight: 800; letter-spacing: 0.16em;
-  background: none; border: 1px solid var(--hair); color: var(--ink, #d8ecd9);
-  padding: 5px 12px; cursor: pointer;
-}
-.call-btn:hover:not(:disabled) { border-color: var(--up, var(--rd-app-live)); }
-.call-btn:disabled { opacity: 0.5; cursor: default; }
-.call-note { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; }
-.call-record { font-size: 10px; color: var(--dim); letter-spacing: 0.14em; margin-top: 2px; }
-
-
-.hb-deskreport { border: 1px solid var(--hair); padding: 8px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
-.hb-terminal-link { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--up, var(--rd-app-live)); text-decoration: none; width: fit-content; }
-.hb-news-cards { display: flex; flex-direction: column; gap: 8px; }
-.hb-news-card { position: relative; border: 1px solid var(--hair); padding: 8px 64px 8px 12px; }
-/* PUBLIC-LANGUAGE P2 — attribution in the label voice: smallest muted mono,
-   card corner, no chrome. Never removed while third-party headlines render. */
-.hb-news-src {
-  position: absolute;
-  top: 5px;
-  right: 8px;
-  font-style: normal;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 8px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-  opacity: 0.55;
-}
-.hb-news-tkr { font-size: 9px; letter-spacing: 0.1em; color: var(--up, var(--rd-app-live)); border: 1px dashed rgb(127 224 165 / 0.4); padding: 1px 5px; margin-left: 6px; }
-.hb-news-ask { font-family: var(--font-mono); font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em; background: none; border: 0; color: var(--dim); cursor: pointer; margin-left: 10px; text-decoration: underline dotted; }
-.hb-news-ask:hover { color: var(--ink, #d8ecd9); }
 
 /* COMMAND CENTER R3 — PIT trade review */
 .pit8-review {
@@ -5198,68 +3911,22 @@ button.pulse-line:focus-visible {
 .vixc-bucket.vb-elevated { color: var(--amber, #ffd27a); }
 .vixc-bucket.vb-high { color: var(--rd-app-alert); }
 .vixc-line { font-family: var(--font-mono); font-size: 11px; color: var(--body2, var(--dim)); font-style: italic; margin: 0; }
-.hb-nql .nql-bias { font-size: 9px; padding: 1px 6px; }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-@keyframes hl-think {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
-    transform: none;
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
-}
-
-
-
-@media (prefers-reduced-motion: reduce) {
-  .home-landing .hl-orb {
-    transition: none;
-  }
-  
-  
-}
 
 /* ======================================================================
-   LOGIN — /login. The home landing's face (Geist, gold-dot wordmark,
-   day/night palettes) reduced to one decision. Tokens are duplicated from
-   .home-landing and scoped to .login-page — no global leaks.
+   LOGIN — /login, reduced to one decision. feat/v4-2-today: the warm copy of
+   the palette retired — the page reads the shared PAPER set (app/globals.css
+   :root) under its own short local names. No global leaks.
    ====================================================================== */
 .login-page {
-  --bg: #f5f4f1;
-  --ink: #16150f;
-  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
-  --body2: #6e685c;
-  --hair: #e8e4da;
-  --card: #ffffff;
-  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
-  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+  --bg: var(--paper-stage);
+  --ink: var(--paper-ink);
+  --dim: var(--paper-mute);
+  --body2: var(--paper-mute);
+  --hair: var(--paper-hair);
+  --card: var(--paper-card);
+  --label: var(--paper-accent);
+  --cardshadow: none;
 
   position: fixed;
   inset: 0;
@@ -5270,27 +3937,8 @@ button.pulse-line:focus-visible {
   background: var(--bg);
   font-family: var(--font-geist), "Geist", system-ui, sans-serif;
 }
-:root[data-theme="dark"] .login-page,
-:root[data-theme="batman"] .login-page {
-  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
-  --ink: #f2efe8;
-  --dim: rgba(255, 255, 255, 0.4);
-  --body2: rgba(255, 255, 255, 0.55);
-  --hair: rgba(255, 255, 255, 0.13);
-  --card: rgba(255, 255, 255, 0.04);
-  --label: #c9a96a;
-  --cardshadow: none;
-}
-:root[data-theme="matrix"] .login-page {
-  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
-  --ink: #d8ecd9;
-  --dim: rgba(216, 236, 217, 0.42);
-  --body2: rgba(216, 236, 217, 0.58);
-  --hair: rgba(190, 255, 205, 0.14);
-  --card: rgba(190, 255, 205, 0.045);
-  --label: #4ec97a;
-  --cardshadow: none;
-}
+
+
 .lp-card {
   display: flex;
   flex-direction: column;
@@ -5306,8 +3954,7 @@ button.pulse-line:focus-visible {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--rd-app-gold);
-  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+  background: var(--paper-accent); /* was the retired gold + glow */
 }
 .lp-wordmark {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -5326,15 +3973,13 @@ button.pulse-line:focus-visible {
 .lp-mail { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }
 .lp-mail input {
   font-family: var(--font-mono); font-size: 13px; padding: 11px 12px;
-  background: rgb(255 255 255 / 0.03); border: 1px solid var(--line); color: var(--fg);
+  background: var(--card); border: 1px solid var(--hair); color: var(--ink);
 }
-.lp-mail input:focus-visible { outline: 1px solid var(--green); outline-offset: 1px; }
+/* feat/v4-2-today — --fg / --green are defined nowhere, so this field had no
+   visible focus ring at all; it reads the page's own tokens now */
+.lp-mail input:focus-visible { outline: 2px solid var(--label); outline-offset: 1px; }
 .lp-err { color: var(--amber); }
-.hl-owner-badge {
-  font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.18em;
-  padding: 2px 6px; margin-left: 6px; color: var(--amber);
-  border: 1px solid rgb(var(--amber-rgb) / 0.55); border-radius: var(--r-full);
-}
+
 .pit7-nudge {
   display: flex; align-items: center; gap: 10px; justify-content: center;
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--steel);
@@ -5365,7 +4010,7 @@ button.pulse-line:focus-visible {
     color 0.18s ease;
 }
 .lp-google:hover {
-  border-color: var(--rd-app-gold);
+  border-color: var(--label);
   color: var(--label);
 }
 .lp-google:focus-visible {
@@ -5388,21 +4033,21 @@ button.pulse-line:focus-visible {
 
 /* ======================================================================
    WELCOME — /welcome, the one-screen setup ("Set up AUGUST" first time,
-   "Your setup" thereafter). The home landing's face: Geist + mono, gold
-   label accent, day/night palettes. Tokens duplicated from .home-landing
-   and scoped to .welcome-page — no global leaks (same pattern as /login).
+   "Your setup" thereafter). feat/v4-2-today: the warm copy of the palette
+   retired — the page reads the shared PAPER set under its own short local
+   names (same pattern as /login). No global leaks.
    ====================================================================== */
 .welcome-page {
-  --bg: #f5f4f1;
-  --ink: #16150f;
-  --dim: #756f63;   /* was #a39c8b — 2.48:1 on the paper stage, under AA. Same hue, scaled toward black: 4.53:1. */
-  --body2: #6e685c;
-  --hair: #e8e4da;
-  --card: #ffffff;
-  --label: #876c35; /* was #a2823f — 3.29:1, large-text-only, and section labels are 10px. Same hue: 4.52:1. */
-  --up: #1b7f4d;
-  --down: #b4483e;
-  --cardshadow: 0 2px 14px rgba(20, 18, 12, 0.05);
+  --bg: var(--paper-stage);
+  --ink: var(--paper-ink);
+  --dim: var(--paper-mute);
+  --body2: var(--paper-mute);
+  --hair: var(--paper-hair);
+  --card: var(--paper-card);
+  --label: var(--paper-accent);
+  --up: var(--paper-up);
+  --down: var(--paper-down);
+  --cardshadow: none;
 
   position: fixed;
   inset: 0;
@@ -5414,31 +4059,8 @@ button.pulse-line:focus-visible {
   font-family: var(--font-geist), "Geist", system-ui, sans-serif;
   color: var(--ink);
 }
-:root[data-theme="dark"] .welcome-page,
-:root[data-theme="batman"] .welcome-page {
-  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #14120e 0%, #0a0a0b 62%) #0a0a0b;
-  --ink: #f2efe8;
-  --dim: rgba(255, 255, 255, 0.4);
-  --body2: rgba(255, 255, 255, 0.55);
-  --hair: rgba(255, 255, 255, 0.13);
-  --card: rgba(255, 255, 255, 0.04);
-  --label: #c9a96a;
-  --up: #57a97f;
-  --down: #c97064;
-  --cardshadow: none;
-}
-:root[data-theme="matrix"] .welcome-page {
-  --bg: radial-gradient(ellipse 900px 620px at 50% 30%, #0a1a10 0%, #030905 62%) #030905;
-  --ink: #d8ecd9;
-  --dim: rgba(216, 236, 217, 0.42);
-  --body2: rgba(216, 236, 217, 0.58);
-  --hair: rgba(190, 255, 205, 0.14);
-  --card: rgba(190, 255, 205, 0.045);
-  --label: #4ec97a;
-  --up: #57a97f;
-  --down: #c97064;
-  --cardshadow: none;
-}
+
+
 .wp-card {
   width: min(560px, 100%);
   display: flex;
@@ -5460,8 +4082,7 @@ button.pulse-line:focus-visible {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--rd-app-gold);
-  box-shadow: 0 0 8px rgba(201, 169, 106, 0.7);
+  background: var(--paper-accent); /* was the retired gold + glow */
 }
 .wp-wordmark {
   font-family: var(--font-mono), ui-monospace, monospace;
@@ -5495,7 +4116,7 @@ button.pulse-line:focus-visible {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.26em;
-  color: var(--label);
+  color: var(--dim); /* a section label, not the accent (L1: one accent, one job) */
 }
 .wp-hint {
   margin: 0;
@@ -5609,7 +4230,7 @@ button.pulse-line:focus-visible {
     border-color var(--dur-fast) var(--ease-snappy);
 }
 .wp-ghost:hover:not(:disabled) {
-  border-color: var(--rd-app-gold);
+  border-color: var(--label);
   color: var(--ink);
 }
 .wp-ghost:disabled {
@@ -5672,8 +4293,8 @@ button.pulse-line:focus-visible {
     background var(--dur-fast) var(--ease-snappy);
 }
 .wp-toggle.on .wp-switch {
-  border-color: var(--rd-app-gold);
-  background: rgba(201, 169, 106, 0.18);
+  border-color: var(--paper-accent);
+  background: rgb(var(--paper-accent-rgb) / 0.12);
 }
 .wp-toggle.on .wp-switch-dot {
   transform: translateX(14px);
@@ -5723,7 +4344,7 @@ button.pulse-line:focus-visible {
     color var(--dur-fast) var(--ease-snappy);
 }
 .wp-start:hover:not(:disabled) {
-  border-color: var(--rd-app-gold);
+  border-color: var(--label);
   color: var(--label);
 }
 .wp-start:disabled {
@@ -5790,6 +4411,13 @@ button.pulse-line:focus-visible {
    light theme sets can reach inside these scopes now, by construction: if a
    token is in the light block it is in this block.
    ────────────────────────────────────────────────────────────────────────── */
+.admin-page {
+  /* feat/v4-2-today — --accent-line / --glow-accent are computed at :root from
+     the SHELL's --steel-rgb, so this re-pin block never reached them; they are
+     pinned here to what /admin rendered before the shell went cool */
+  --accent-line: rgb(63 86 112 / 0.5);
+  --glow-accent: 0 0 18px rgb(63 86 112 / 0.22);
+}
 .admin-page,
 .trn,
 .pit2 {
@@ -6740,15 +5368,23 @@ button.pulse-line:focus-visible {
     flex: 1;
     max-width: 160px;
     min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
     font-family: var(--font-mono);
     font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.16em;
+    font-weight: 500;
+    letter-spacing: 0.12em;
     color: var(--ash);
   }
+  .tab-glyph {
+    flex: none;
+  }
+  /* feat/v4-2-today — frame 01: the active tab is the one blue accent */
   .tab-item.on {
-    color: var(--bone);
-    box-shadow: inset 0 2px 0 var(--steel);
+    color: var(--steel);
   }
   .tab-item:focus-visible {
     outline: 1px solid var(--steel);
@@ -6766,88 +5402,24 @@ button.pulse-line:focus-visible {
     bottom: var(--tabbar-h);
   }
 
-  /* — M1 · header simplifies: menu · wordmark · status/clock. The control
-     cluster folds into the moon menu (see .hl-menu-mobile rows) — EXCEPT the
-     bell (feature/pwa-push): the only push control renders in the header row
-     beside the moon at every width, same component, same states. — */
-  .hl-top {
-    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
-    gap: 8px;
-  }
-  .hl-ctls > .hl-ctl:not(.hl-menu-trigger):not(.hl-ctl-bell),
-  .hl-ctls > a.hl-ctl {
-    display: none;
-  }
-  .hl-session {
-    display: none; /* account chip lives in the menu on phones */
-  }
-  .hl-clock {
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  
+  
+  
+  
 
-  /* — M4 · WATCHING pinned above the tab bar, safe-area aware — */
-  .hl-tape {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: var(--tabbar-h);
-    z-index: 20;
-    background: var(--glass-strong);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: 8px 14px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .hl-tape-chips {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-  }
-  .hl-tape-label {
-    display: none; /* the chips speak for themselves at this width */
-  }
+  
+  
+  
 
-  /* the landing content clears the pinned strip + tab bar */
-  .home-landing .hl-main {
-    padding-bottom: calc(var(--tabbar-h) + 56px);
-  }
+  
 
-  /* — M4 · pulse tiles: two per row — */
-  .hb-pulse {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .hb-tile {
-    justify-content: space-between;
-    min-height: 44px;
-    min-width: 0;
-    overflow: hidden;
-  }
-  .hb-tile .hb-spark {
-    display: none; /* the % already tells the story at this width */
-  }
+  
+  
+  
 }
 
-/* the menu's phone-only control rows (hidden on desktop, where the cluster
-   carries them) */
-.hl-menu-mobile {
-  display: none;
-}
-@media (max-width: 700px) {
-  .hl-menu-mobile {
-    display: contents;
-  }
-  .hl-rainopt {
-    min-height: 44px;
-  }
-}
 
 /* — M3 · sheets: scroll-lock behind, slide + scrim everywhere <1100px — */
-html.sheet-open .home-landing,
 html.sheet-open .view-panel {
   overflow: hidden !important;
 }
@@ -7374,68 +5946,4 @@ html.sheet-open .view-panel {
 .legal a { color: inherit; text-underline-offset: 3px; }
 .aug-disc-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 
-/* ── delete account (chore/ship-ready) — beside SIGN OUT, never one tap ──── */
-.hl-del-link {
-  background: none; border: none; cursor: pointer; padding: 2px 0;
-  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.1em;
-  color: color-mix(in srgb, var(--bone) 55%, transparent);
-  text-decoration: underline; text-underline-offset: 3px;
-}
-.hl-del-link:hover { color: var(--amber); }
-.hl-del-arm, .hl-del-done {
-  margin-top: 10px; padding: 12px; max-width: 46ch;
-  border: 1px solid var(--line-strong); border-radius: 8px;
-  background: var(--glass, rgb(255 255 255 / 0.04));
-}
-.hl-del-head { margin: 0 0 6px; font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: 0.12em; }
-.hl-del-line { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--bone); }
-.hl-del-list { margin: 0 0 8px; padding-left: 18px; font-size: 11.5px; line-height: 1.5; color: color-mix(in srgb, var(--bone) 70%, transparent); }
-.hl-del-err { margin: 0 0 8px; font-size: 11.5px; color: var(--amber); }
-.hl-del-acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.hl-del-go {
-  appearance: none; cursor: pointer; padding: 6px 12px; border-radius: 6px;
-  border: 1px solid var(--amber); background: none; color: var(--amber);
-  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.1em;
-}
-.hl-del-go:disabled { opacity: 0.5; cursor: default; }
 
-/* ── feature/density-pass ──────────────────────────────────────────────────
-   THE CALL as a question: the question is the loud line, THE CALL becomes a
-   quiet kicker above it. Structure only — same tokens, same weights. */
-.callcard .call-head-sub {
-  order: -1;
-  font-size: 9.5px;
-  letter-spacing: 0.16em;
-  color: color-mix(in srgb, var(--bone) 52%, transparent);
-}
-.callcard .call-head-tags { display: inline-flex; gap: 6px; align-items: center; }
-/* the regime WHY drops the glyph column; the rows carry themselves */
-.hb-because-more {
-  margin: 4px 0 0;
-  font-family: var(--font-mono), monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--bone) 55%, transparent);
-}
-
-/* ── feature/density-pass · the floor pulse as plain rows ──────────────────
-   Replaces the tile grid. Same tokens, no palette change: symbol left, last
-   and change right, hairline between, dropped on the last row. */
-.hb-pulserows { list-style: none; margin: 0; padding: 0; }
-.hb-pulserow {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding: 7px 0; border-bottom: 1px solid var(--line);
-}
-.hb-pulserow:last-child { border-bottom: 0; }
-.hb-pulserow-l {
-  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: 0.1em;
-  color: color-mix(in srgb, var(--bone) 62%, transparent);
-}
-.hb-pulserow-v {
-  font-family: var(--font-mono), monospace; font-size: 12.5px;
-  font-variant-numeric: tabular-nums; margin-left: auto;
-}
-.hb-pulserow-c {
-  font-family: var(--font-mono), monospace; font-size: 11.5px;
-  font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right;
-}

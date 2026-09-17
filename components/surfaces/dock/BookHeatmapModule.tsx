@@ -7,7 +7,7 @@
 // squarified treemap for equal weights; hand-rolled, zero dependencies).
 // Color encodes TODAY's % move. feat/v4-1-terminal: the map no longer fetches
 // its own quotes. It reads the terminal's ONE quote book through the reader
-// the feed passes down (lib/idea-card readQuote) — the same chunked fetch
+// the feed passes down (lib/quote-book readQuote) — the same chunked fetch
 // and the same per-symbol freshness the cards use. The old single call asked
 // the route for every symbol at once, the route slices at twenty, and the
 // tail went silently blank. Now: a symbol not yet asked → a neutral pending
@@ -24,7 +24,7 @@
 
 import { useMemo } from "react";
 import type { PublicIdea } from "@/lib/ideas";
-import type { QuoteRead } from "@/lib/idea-card";
+import type { QuoteRead } from "@/lib/quote-book";
 import DataTag from "@/components/DataTag";
 import type { ChartSelection } from "./IdeaChartModule";
 import { chartSymbolFor, selectionFromLive, sideOf } from "./derive";

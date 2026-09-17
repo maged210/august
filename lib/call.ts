@@ -610,6 +610,11 @@ export type CallState = {
     side: CallSide;
     result: CallResult;
     closePct: number | null;
+    /** feat/v4-2-today — the two values the settle actually scored, read back
+     *  from the stored settle record (never re-fetched): NQ's close on forDate
+     *  and the prior daily close it was graded against. null on a void day. */
+    close: number | null;
+    prevClose: number | null;
     augustWin: boolean | null;
     youSide: CallSide | null;
     youWin: boolean | null;
@@ -737,6 +742,10 @@ export async function readCallState(
         side: sday.side,
         result: sday.settle.result,
         closePct: sday.settle.closePct,
+        // the settle blob is not shape-checked on read (asDayCall) — only a real
+        // stored number is ever shown as the reference
+        close: Number.isFinite(sday.settle.close) ? sday.settle.close : null,
+        prevClose: Number.isFinite(sday.settle.prevClose) ? sday.settle.prevClose : null,
         augustWin: sday.settle.augustWin,
         youSide,
         youWin,

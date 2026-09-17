@@ -1,13 +1,12 @@
 "use client";
 
-// NEXT (feature/density-pass) — ONE LINE: the next high-impact event, when it
-// prints, and a live countdown. The state cards (distant / imminent /
-// released), the reaction line, the ask buttons, the desk chip and the distant
-// strip are gone. This row states the next thing and nothing else.
+// NEXT (feature/density-pass; reskinned feat/v4-2-today) — ONE card: the next
+// high-impact print, when it lands, and a live countdown. The countdown is the
+// card's one big number; the event is its title.
 //
 // /api/calendar still computes the released reaction and the FRED actual
-// backfill. Nothing renders them now; the route is out of scope for a
-// structure pass, so it is left alone rather than half-trimmed.
+// backfill. Nothing renders them; the route is out of scope for a reskin, so it
+// is left alone rather than half-trimmed.
 
 import { useEffect, useState } from "react";
 import DataTag from "@/components/DataTag";
@@ -21,7 +20,6 @@ type Row = CalEvent & {
   actual: string | null;
 };
 
-
 function countdown(ts: number, now: number): string {
   const s = Math.max(0, Math.floor((ts - now) / 1000));
   const d = Math.floor(s / 86400);
@@ -31,10 +29,6 @@ function countdown(ts: number, now: number): string {
   return d > 0 ? `${d}d ${h}h ${String(m).padStart(2, "0")}m` : `${h}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
 }
 
-// feature/density-pass — the cards carried the ASK buttons and the desk chip,
-// so `liveIdeas` and `onAsk` have no consumer left here. The per-event ask
-// cache in lib/calendar-feed is untouched and still serves the bar's own
-// calendar asks; only this component stopped dispatching them.
 export default function CountdownRow() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [err, setErr] = useState(false);
@@ -57,40 +51,48 @@ export default function CountdownRow() {
     return () => { cancelled = true; window.clearInterval(id); window.clearInterval(tick); };
   }, []);
 
-  if (err && !rows) {
+  const head = (chip: React.ReactNode) => (
+    <div className="td-head">
+      <h2 className="td-label">Next high-impact print</h2>
+      {chip}
+    </div>
+  );
+
+  if (!rows) {
     return (
-      <div className="cdr cdr-quiet">
-        <span className="hb-label">CALENDAR</span>
-        <DataTag kind="unavail" title="the calendar feed is unreachable" />
-      </div>
+      <section className="td-card td-next" aria-label="Next high-impact print">
+        {head(err ? <DataTag kind="unavail" title="the calendar feed is unreachable" /> : null)}
+        <p className="td-meta">{err ? "The calendar feed can't be reached right now." : "loading…"}</p>
+      </section>
     );
   }
-  if (!rows) return null;
 
-  const imminent = rows.filter((e) => eventNow(e) === "imminent" && (e.cls !== null || e.impact === "High"));
-  const distant = rows.filter((e) => eventNow(e) === "distant" && (e.cls !== null || e.impact === "High"));
   function eventNow(e: Row): EventState {
     const dt = e.ts - now;
     if (dt <= 0) return now - e.ts <= 12 * 3600_000 ? "released" : "past";
     return dt < 48 * 3600_000 ? "imminent" : "distant";
   }
-
-  // feature/density-pass — ONE LINE. The cards and the distant strip are gone.
+  const imminent = rows.filter((e) => eventNow(e) === "imminent" && (e.cls !== null || e.impact === "High"));
+  const distant = rows.filter((e) => eventNow(e) === "distant" && (e.cls !== null || e.impact === "High"));
   // The next event is the first one still AHEAD of now: released rows carry a
   // past ts and sort first, so rows[0] would name a print that already
   // happened. imminent then distant is exactly that ordering.
   const next = imminent[0] ?? distant[0] ?? null;
+
   return (
-    <div className="cdr cdr-quiet">
-      <span className="hb-label">NEXT</span>
+    <section className="td-card td-next" aria-label="Next high-impact print">
+      {head(<DataTag kind="delayed" detail="weekly feed" title="free economic calendar · vetted against known release schedules" />)}
       {next ? (
-        <span className="cdr-quietline">
-          {next.title.toUpperCase()} · {fmtEt(next.ts)} · in {countdown(next.ts, now)}
-        </span>
+        <>
+          <span className="td-figure td-countdown">{countdown(next.ts, now)}</span>
+          <span className="td-next-event">
+            <span className="td-title">{next.title}</span>
+            <span className="td-meta">{fmtEt(next.ts)}</span>
+          </span>
+        </>
       ) : (
-        <span className="cdr-quietline">nothing high-impact on this week&apos;s tape</span>
+        <p className="td-meta">Nothing high-impact left on this week&apos;s feed.</p>
       )}
-      <DataTag kind="delayed" detail="weekly feed" title="free economic calendar · vetted against known release schedules" />
-    </div>
+    </section>
   );
 }
