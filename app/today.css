@@ -856,11 +856,19 @@
 }
 
 /* — the disclaimers on the page -------------------------------------------- */
+/* both blocks span their column: the brief's inside the card column, the
+   landing's in the page gutter (the global rule caps them at 68ch) */
 .home-landing .td > .aug-disc-block,
 .home-landing > .aug-disc-block {
-  width: min(var(--chat-col, 720px), calc(100% - 32px));
   box-sizing: border-box;
+  max-width: none;
   border-top-color: var(--paper-rule);
+}
+.home-landing .td > .aug-disc-block {
+  width: 100%;
+}
+.home-landing > .aug-disc-block {
+  width: min(var(--chat-col, 720px), calc(100% - 32px));
 }
 
 /* — WATCHING ---------------------------------------------------------------- */
