@@ -63,6 +63,14 @@ const LEVELS_MAX_AGE_MS = 3 * POLL_MS;
 /** headlines poll every 5 min; a list older than this is no longer shown */
 const NEWS_MAX_AGE_MS = 20 * 60_000;
 
+/** the colour of a % move follows what is PRINTED: a move that rounds to 0.0%
+ *  is neither up nor down (a red "0.0%" would claim a fall the number denies) */
+export const chgTone = (pct: number | null): "" | "up" | "down" => {
+  if (pct === null || !Number.isFinite(pct)) return "";
+  const r = Number(pct.toFixed(1));
+  return r > 0 ? "up" : r < 0 ? "down" : "";
+};
+
 export const fmtPx = (n: number) =>
   n >= 1000
     ? Math.round(n).toLocaleString("en-US")
@@ -355,7 +363,7 @@ export default function HomeBrief({
               <span className="td-headline">{REGIME_WORD[regime.label]}</span>
               <span className="td-meta">
                 {regime.agreement
-                  ? `${regime.agreement.agree} of ${regime.agreement.voting} voting input${regime.agreement.voting === 1 ? "" : "s"} lean ${gauge !== null && gauge > 0 ? "risk-on" : "risk-off"}`
+                  ? `${regime.agreement.agree} of ${regime.agreement.voting} voting input${regime.agreement.voting === 1 ? "" : "s"} ${regime.agreement.agree === 1 ? "leans" : "lean"} ${gauge !== null && gauge > 0 ? "risk-on" : "risk-off"}`
                   : "The inputs are dead even"}
               </span>
             </div>
@@ -412,7 +420,7 @@ export default function HomeBrief({
               {q.state === "ok" ? (
                 <span className="td-row-v">
                   <span className="td-num">{fmtPx(q.price)}</span>
-                  <span className={`td-num td-chg ${q.chgPct === null ? "" : q.chgPct >= 0 ? "up" : "down"}`}>
+                  <span className={`td-num td-chg ${chgTone(q.chgPct)}`}>
                     {q.chgPct === null ? "—" : fmtPct(q.chgPct)}
                   </span>
                 </span>

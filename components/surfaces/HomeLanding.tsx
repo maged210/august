@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
 import type { AugustState } from "@/components/Presence3D";
-import HomeBrief, { PULSE, REGIME_SYMBOLS, fmtPx } from "@/components/HomeBrief";
+import HomeBrief, { PULSE, REGIME_SYMBOLS, chgTone, fmtPx } from "@/components/HomeBrief";
 import { suggestFor, type Suggestion } from "@/lib/command-bar";
 import { fmtPct } from "@/lib/idea-card";
 import { useQuoteBook } from "@/lib/use-quote-book";
@@ -423,7 +423,7 @@ export default function HomeLanding({
                       </span>
                       <span className="td-answer-px">
                         <span className="td-num td-answer-last">{fmtPx(answer.price)}</span>
-                        <span className={`td-num td-chg ${answer.chgPct >= 0 ? "up" : "down"}`}>
+                        <span className={`td-num td-chg ${chgTone(answer.chgPct)}`}>
                           {fmtPct(answer.chgPct)}
                         </span>
                       </span>
@@ -495,7 +495,7 @@ export default function HomeLanding({
                 <>
                   <span className="td-num">{fmtPx(q.price)}</span>
                   {q.chgPct !== null ? (
-                    <span className={`td-num td-chg ${q.chgPct >= 0 ? "up" : "down"}`}>{fmtPct(q.chgPct)}</span>
+                    <span className={`td-num td-chg ${chgTone(q.chgPct)}`}>{fmtPct(q.chgPct)}</span>
                   ) : null}
                 </>
               ) : (

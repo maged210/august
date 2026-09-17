@@ -858,7 +858,7 @@
 /* — the disclaimers on the page -------------------------------------------- */
 .home-landing .td > .aug-disc-block,
 .home-landing > .aug-disc-block {
-  width: min(var(--chat-col, 720px), 100%);
+  width: min(var(--chat-col, 720px), calc(100% - 32px));
   box-sizing: border-box;
   border-top-color: var(--paper-rule);
 }
