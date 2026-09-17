@@ -18,7 +18,6 @@ import { useEffect, useRef, useState } from "react";
 import DataTag from "@/components/DataTag";
 import Disclaimer from "@/components/Disclaimer";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
-import { fmtLevel } from "@/lib/idea-card";
 
 type Tally = { wins: number; losses: number; pushes: number };
 type Side = "HIGHER" | "LOWER";
@@ -62,6 +61,9 @@ function fmtPct(pct: number): string {
 const weekdayShort = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
 const sideWord = (side: Side) => (side === "HIGHER" ? "Higher" : "Lower");
+/** NQ closes as the settle stored them — both at two decimals, so the close and
+ *  the prior close always read as the same kind of number */
+const fmtClose = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const etToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 export default function TheCallCard() {
@@ -252,8 +254,8 @@ export default function TheCallCard() {
               // the two values the settle actually scored, read back from the
               // stored record — the reference is never re-fetched or estimated
               <>
-                NQ closed <span className="td-num">{fmtLevel(s.close as number)}</span> · prev close{" "}
-                <span className="td-num">{fmtLevel(s.prevClose as number)}</span>
+                NQ closed <span className="td-num">{fmtClose(s.close as number)}</span> · prev close{" "}
+                <span className="td-num">{fmtClose(s.prevClose as number)}</span>
                 {settledDay}
               </>
             ) : s.result === "FLAT" ? (
