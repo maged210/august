@@ -64,6 +64,10 @@ Guidance for Claude Code working in this repo.
   the pivot and went with the chain. `lib/intel/brief.ts` was NOT this — it
   was the owner desk's brief compiler, deleted with the desk (chore/terminal-cut).
 - The MapLibre globe. The dep is gone too; the code went several releases ago.
+- The theme menu (MATRIX / DARK / LIGHT / GOTHAM), MatrixRain + its rain dial,
+  the mood axis, and the orb's night looks — retired feat/v4-2-today (tag
+  `archive/theme-menu` on main is the rebuild point). ONE paper theme; do not
+  reintroduce a theme switcher or a second palette (DESIGN_LAWS L1).
 
 ## Kept deliberately, after being proposed for deletion
 
@@ -74,6 +78,23 @@ Guidance for Claude Code working in this repo.
   beats an import graph.
 
 ## Decided
+
+- THE PAPER SHELL + TODAY (feat/v4-2-today, 2026-09-17) — DESIGN_LAWS L1 is
+  PAPER LANGUAGE: paper is the desk, dark is the arena (THE PIT holds a dark
+  arena as a class; /admin is exempt). The shared palette and the type scale
+  live ONCE in `app/globals.css` :root (`--paper-*`, `--type-*`, chip edges);
+  `app/intel/frame.css`'s paper block points its `--rd-*` names at them, and
+  the terminal pins its own pre-v4-2 shell values (chips, disclaimer, base
+  text) so its output did not move. `<html data-theme="light">` is
+  server-rendered and never changes. The front page is `app/today.css` +
+  `td-*` cards: one card per module, a provenance chip on market data, an
+  as-of time on August's stored records (desk, tape), UNAVAILABLE instead of
+  blank. ONE QUOTE BOOK: `lib/quote-book.ts` (pure policy) +
+  `lib/use-quote-book.ts` (the loop) are imported by the terminal AND the
+  front page — never copy the functions. STALE is retired for prices. THE
+  CALL shows no reference while open; a settled call reads the stored close
+  and prev close it was scored against. LATEST INGEST is /admin-only (owner
+  parity on the floor too: the ADMIN chip is the only owner difference).
 
 - THE TERMINAL CUT (chore/terminal-cut, 2026-09-15) — ONE terminal for every
   role: `IntelDeckSurface` renders `IdeasFeed`, and the July owner desk
