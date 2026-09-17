@@ -821,6 +821,11 @@
 :where(.intel-embed-frame) .v4-ic-pl {
   font-size: 10px; font-weight: 500; line-height: 1; color: var(--rd-t-dim, #8b929a); white-space: nowrap;
 }
+/* v4-1b — "beyond trigger · awaiting pass" is two phrases; it breaks at the
+   dot rather than squeezing the question column at 390 */
+:where(.intel-embed-frame) .v4-ic-pl-wrap {
+  white-space: normal; text-align: right; max-width: 84px; line-height: 1.25;
+}
 :where(.intel-embed-frame) .v4-ic-bottom { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 :where(.intel-embed-frame) .v4-ic-mono {
   display: flex; justify-content: space-between; align-items: center; gap: 4px 8px; flex-wrap: wrap;

@@ -15,9 +15,16 @@ import {
   MAX_INSTRUMENT_CHARS,
   MAX_LEVEL_CHARS,
   MAX_THESIS_CHARS,
+  NO_TRIGGER_REASON,
+  WITHDRAWN_MARK,
+  bookPassConflict,
   createIdea,
   entryConflict,
+  entryLanguage,
   evaluateLiveIdea,
+  inboxBuckets,
+  needsLevelReason,
+  readEntry,
   getIdea,
   ideasConfigured,
   listIdeas,
@@ -619,4 +626,232 @@ test("clearSymbolNote: rides alongside a real edit without disturbing it", () =>
     assert.equal(r.value.status, "live");
     assert.equal(r.value.clearSymbolNote, true);
   }
+});
+
+// --- feat/v4-1b-integrity · THE PASS PARSER ---------------------------------
+// Stop / invalidation language never yields an entry trigger, and a crossing
+// that points against the stated side is a parse failure. AGI's entry is the
+// known case: "stop consideration under $34.80" read as a BELOW 34.80 entry
+// on a long, and the stop-out marked it TRIGGERED on SEP 16.
+
+const AGI_ENTRY = "current levels; stop consideration under $34.80";
+const lvl = (dir: "above" | "below", level: number) => ({ kind: "level", dir, level });
+
+test("readEntry: stop clauses populate stop, never trigger — every stated form", () => {
+  // the known case, verbatim from the live book
+  assert.deepEqual(readEntry(AGI_ENTRY), { trigger: null, stop: { dir: "below", level: 34.8 }, rejected: null });
+  assert.equal(parseEntryTrigger(AGI_ENTRY), null);
+  // with the words in between, or none
+  const stops: Array<[string, "above" | "below" | null, number]> = [
+    ["stop consideration under $34.80", "below", 34.8],
+    ["stop under $30", "below", 30],
+    ["stop below 9,400", "below", 9400],
+    ["stops under 12.50", "below", 12.5],
+    ["stopped out under 30", "below", 30],
+    ["invalidated below $30", "below", 30],
+    ["invalidation below 28.50", "below", 28.5],
+    ["invalidated if it closes below $30", "below", 30],
+    ["cut it at 182", null, 182],
+    ["cut it below 182", "below", 182],
+    ["cut losses under 12", "below", 12],
+    ["cut the position below 12", "below", 12],
+    ["stop-loss $30", null, 30],
+    ["stop loss at 28", null, 28],
+    ["risk below 45", "below", 45],
+    ["exit under 40", "below", 40],
+    // named the stop AFTER the crossing
+    ["under 34.80 is the stop", "below", 34.8],
+    ["below 30 would be the stop", "below", 30],
+    ["below $30 invalidates the setup", "below", 30],
+    // a stop range takes the far edge, like a trigger range
+    ["stop consideration under $33–$34", "below", 33],
+    // a short's stop sits above
+    ["stop above $52", "above", 52],
+  ];
+  for (const [entry, dir, level] of stops) {
+    const r = readEntry(entry);
+    assert.equal(r.trigger, null, `${entry} must not yield a trigger`);
+    assert.deepEqual(r.stop, { dir, level }, `${entry} → stop`);
+    assert.equal(parseEntryTrigger(entry), null, entry);
+  }
+});
+
+test("readEntry: a stop clause beside a real entry takes only its own level", () => {
+  const both: Array<[string, "above" | "below", number, "above" | "below" | null, number]> = [
+    ["long above 9,450; stop below 9,400", "above", 9450, "below", 9400],
+    ["long above 9,450 stop below 9,400", "above", 9450, "below", 9400], // no delimiter
+    ["stop below 9,400 then long above 9,450", "above", 9450, "below", 9400], // stop first
+    ["break above 50 stop below 45", "above", 50, "below", 45], // "stop" is 45's, not 50's
+    ["reclaims 190; cut it at 182", "above", 190, null, 182],
+    ["break above $50, stop $47", "above", 50, null, 47],
+    ["stop at $47 — break above $50", "above", 50, null, 47],
+    ["stop-loss $30, entry above $35", "above", 35, null, 30],
+    ["break above $50; below $45 invalidates the setup", "above", 50, "below", 45],
+    ["break above $50; stop on a break below 45", "above", 50, "below", 45],
+    ["risk below 45; break above 50", "above", 50, "below", 45],
+  ];
+  for (const [entry, tDir, tLevel, sDir, sLevel] of both) {
+    const r = readEntry(entry);
+    assert.deepEqual(r.trigger, lvl(tDir, tLevel), `${entry} → trigger`);
+    assert.deepEqual(r.stop, { dir: sDir, level: sLevel }, `${entry} → stop`);
+  }
+  // the extractor's contested shape still reads its trigger, so
+  // stopMasqueradingAsEntry can still send it to REVIEW
+  assert.deepEqual(parseEntryTrigger("above 36.70 support (stop below 36.70)"), lvl("above", 36.7));
+});
+
+test("readEntry: 'no stop', 'non-stop' and 'cuts through' are not stop language", () => {
+  assert.deepEqual(readEntry("no stop; break above $50"), { trigger: lvl("above", 50), stop: null, rejected: null });
+  assert.deepEqual(readEntry("break above $50 with no stop"), { trigger: lvl("above", 50), stop: null, rejected: null });
+  assert.deepEqual(parseEntryTrigger("non-stop rally above $50"), lvl("above", 50));
+  assert.deepEqual(parseEntryTrigger("cuts through resistance above $50"), lvl("above", 50));
+  // a stop word whose clause names no price claims nothing past the clause
+  assert.deepEqual(readEntry("stop at the 50-day, above 45 entry"), { trigger: lvl("above", 45), stop: null, rejected: null });
+});
+
+test("readEntry: every trigger form still parses (INTEGRITY-1's grammar, unchanged)", () => {
+  const forms: Array<[string, "above" | "below", number]> = [
+    ["above 37.35", "above", 37.35],
+    ["over $5.70", "above", 5.7],
+    ["over the 21.5k", "above", 21500],
+    ["clears $1,117.50", "above", 1117.5],
+    ["clear 88", "above", 88],
+    ["reclaims 190", "above", 190],
+    ["reclaim 190 to 192", "above", 192], // range with "to": the far edge
+    ["break above 772–772.50", "above", 772.5],
+    ["break out above $15.37", "above", 15.37],
+    ["breaking above $9.24–$9.25 resistance", "above", 9.25],
+    ["under $197.25", "below", 197.25],
+    ["below 72", "below", 72],
+    ["below the $8.40", "below", 8.4],
+    ["loses 600", "below", 600],
+    ["lose 600", "below", 600],
+    ["loses $766 to $767", "below", 766],
+    ["break below 766–767", "below", 766],
+    ["holding below 768", "below", 768],
+  ];
+  for (const [entry, dir, level] of forms) {
+    assert.deepEqual(parseEntryTrigger(entry), lvl(dir, level), entry);
+    // …and with the side it agrees with
+    assert.deepEqual(parseEntryTrigger(entry, dir === "above" ? "long" : "short"), lvl(dir, level), `${entry} + side`);
+    assert.deepEqual(parseEntryTrigger(entry, "watch"), lvl(dir, level), `${entry} + watch`);
+  }
+  // the unit / year guards are unchanged
+  for (const e of ["above the 200dma", "reclaims the 50-day moving average", "above 5% yield", "loses 2024 support"]) {
+    assert.equal(parseEntryTrigger(e), null, e);
+  }
+});
+
+test("readEntry: a crossing against the STATED side is a parse failure, not a trigger", () => {
+  assert.deepEqual(readEntry("falls under $95.30", "long"), {
+    trigger: null,
+    stop: null,
+    rejected: { dir: "below", level: 95.3, side: "long" },
+  });
+  assert.deepEqual(readEntry("break above $50", "short"), {
+    trigger: null,
+    stop: null,
+    rejected: { dir: "above", level: 50, side: "short" },
+  });
+  assert.equal(parseEntryTrigger("falls under $95.30", "long"), null);
+  // no stated side, or a watch: nothing to contradict
+  assert.deepEqual(parseEntryTrigger("falls under $95.30"), lvl("below", 95.3));
+  assert.deepEqual(parseEntryTrigger("falls under $95.30", "watch"), lvl("below", 95.3));
+  // a two-sided entry stays two-sided whatever the side (it still goes to REVIEW)
+  assert.deepEqual(parseEntryTrigger("Break above 772–772.50 for bulls; break below 766–767 for bears", "long"), {
+    kind: "two_sided",
+  });
+  // a stop clause never makes the refusal: AGI with a stated long is plain stop language
+  assert.deepEqual(readEntry(AGI_ENTRY, "long"), { trigger: null, stop: { dir: "below", level: 34.8 }, rejected: null });
+});
+
+test("entry language: stop clauses are cut before the side / two-sided rules read it", () => {
+  assert.equal(entryLanguage(AGI_ENTRY).includes("34.80"), false);
+  assert.equal(entryLanguage("stop consideration under $33–$34").includes("34"), false);
+  assert.equal(entryLanguage("break above $50"), "break above $50");
+  // INTEGRITY-1 read "long above 9,450; stop below 9,400" as two-sided (the
+  // stop's "below") and would have demoted a clean long to REVIEW
+  assert.equal(entryConflict("long", "long above 9,450; stop below 9,400"), null);
+  assert.equal(entryConflict(undefined, "break above $50; stop on a break below 45"), null);
+  assert.equal(suggestSide("reclaims 190; cut it below 182"), "long");
+  assert.equal(suggestSide(AGI_ENTRY), null);
+  // real two-sidedness is untouched
+  assert.equal(entryConflict(undefined, "Break above 772–772.50 for bulls; break below 766–767 for bears"), "two_sided");
+});
+
+test("bookPassConflict: a refused crossing stays live for NEEDS_LEVEL; language conflicts still demote", () => {
+  // the extractor's side-blind rule is unchanged: a contradicting draft goes to REVIEW
+  assert.equal(entryConflict("short", "break above $50"), "side_mismatch");
+  // the pass does not demote it — the parser refused the crossing
+  assert.equal(bookPassConflict("short", "break above $50"), null);
+  assert.equal(bookPassConflict("long", "falls under $95.30"), null);
+  // entry LANGUAGE against the side, with no crossable level, still demotes
+  assert.equal(bookPassConflict("short", "breakout continuation"), "side_mismatch");
+  // two-sided still demotes
+  assert.equal(bookPassConflict("long", "Break above 772–772.50 for bulls; break below 766–767 for bears"), "two_sided");
+  // agreement is clean
+  assert.equal(bookPassConflict("short", "Drop under $197.25"), null);
+});
+
+const PASS_NOW = Date.UTC(2026, 8, 17, 22, 12);
+
+test("evaluateLiveIdea: the pass records WHY a row has no trigger", () => {
+  const agi = evaluateLiveIdea({ entry: AGI_ENTRY, updatedAt: PASS_NOW - 86_400_000 }, 35.1, PASS_NOW);
+  assert.equal(agi.state, "NEEDS_LEVEL");
+  assert.equal(agi.level, null);
+  assert.equal(agi.dir, null);
+  assert.equal(agi.price, 35.1);
+  assert.equal(agi.reason, "no crossable entry trigger: below 34.8 is stop language, and a stop never arms an entry trigger");
+  // a crossing against the stated side — even one the price has crossed —
+  // never evaluates; the refusal is the reason
+  const hood = evaluateLiveIdea({ entry: "falls under $95.30", side: "long", updatedAt: PASS_NOW }, 90, PASS_NOW);
+  assert.equal(hood.state, "NEEDS_LEVEL");
+  assert.equal(hood.reason, "trigger below 95.3 points against the stated long — a parse failure, not evaluated (restate the level in the inbox)");
+  // nothing crossable at all keeps the INTEGRITY-1 wording
+  assert.equal(evaluateLiveIdea({ entry: "holds support around $25", updatedAt: PASS_NOW }, 24, PASS_NOW).reason, NO_TRIGGER_REASON);
+  assert.equal(needsLevelReason(readEntry("")), NO_TRIGGER_REASON);
+  // the agreeing side evaluates as before
+  assert.equal(evaluateLiveIdea({ entry: "falls under $95.30", side: "short", updatedAt: PASS_NOW }, 90, PASS_NOW).state, "TRIGGERED");
+});
+
+test("evaluateLiveIdea: a sticky TRIGGERED stands only while the entry still states that trigger", () => {
+  // AGI as stored on SEP 16: its stop read as the entry, fired on the stop-out
+  const fired = { state: "TRIGGERED" as const, level: 34.8, dir: "below" as const, price: 34.45, at: Date.UTC(2026, 8, 16, 22, 12), reason: "close-pass price 34.45 ≤ stated trigger 34.8" };
+  const agi = { entry: AGI_ENTRY, updatedAt: PASS_NOW - 3 * 86_400_000, evaluation: fired };
+  const night1 = evaluateLiveIdea(agi, 35.1, PASS_NOW);
+  assert.equal(night1.state, "NEEDS_LEVEL");
+  assert.equal(night1.at, PASS_NOW);
+  assert.ok(night1.reason.startsWith("no crossable entry trigger: below 34.8 is stop language"));
+  assert.ok(night1.reason.includes(`${WITHDRAWN_MARK}the TRIGGERED below 34.8 of 2026-09-16 judged a trigger the entry does not state`), night1.reason);
+  // the next night rewrites the price; the withdrawal stays on the record
+  const night2 = evaluateLiveIdea({ ...agi, evaluation: night1 }, 35.4, PASS_NOW + 86_400_000);
+  assert.equal(night2.state, "NEEDS_LEVEL");
+  assert.equal(night2.reason, night1.reason);
+  // …and a stop-out price can never re-fire it
+  assert.equal(evaluateLiveIdea({ ...agi, evaluation: night1 }, 30, PASS_NOW + 86_400_000).state, "NEEDS_LEVEL");
+
+  // a real crossing stays sticky — same record, untouched, whatever the price
+  const intcFired = { state: "TRIGGERED" as const, level: 106.1, dir: "above" as const, price: 106.24, at: Date.UTC(2026, 8, 9, 22, 12), reason: "x" };
+  const intc = evaluateLiveIdea({ entry: "break above 106.10", side: "long", updatedAt: 0, evaluation: intcFired }, 90, PASS_NOW);
+  assert.equal(intc, intcFired);
+  // a withdrawn trigger whose entry now reads a DIFFERENT level re-evaluates
+  // against it, carrying the withdrawal note
+  const moved = evaluateLiveIdea(
+    { entry: "break above $40; stop consideration under $34.80", updatedAt: PASS_NOW, evaluation: fired },
+    41,
+    PASS_NOW,
+  );
+  assert.equal(moved.state, "TRIGGERED");
+  assert.equal(moved.level, 40);
+  assert.ok(moved.reason.includes(WITHDRAWN_MARK));
+});
+
+test("inbox buckets: a crossing refused against the stated side lands in NEEDS LEVEL before the pass sees it", () => {
+  const row = (id: string, over: Partial<Idea>): Idea => ({ ...FULL, id, status: "live", evaluation: undefined, ...over });
+  const b = inboxBuckets([
+    row("refused", { side: "long", entry: "falls under $95.30" }),
+    row("agrees", { side: "short", entry: "falls under $95.30" }),
+    row("stop", { entry: AGI_ENTRY }),
+  ]);
+  assert.deepEqual(new Set(b.needsLevel.map((i) => i.id)), new Set(["refused", "stop"]));
 });

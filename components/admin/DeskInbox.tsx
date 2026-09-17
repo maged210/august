@@ -81,7 +81,7 @@ export default function DeskInbox({
   const symbols = useMemo(() => {
     const prioritized = [
       ...buckets.needsLevel,
-      ...ideas.filter((i) => i.status === "live" && parseEntryTrigger(i.entry)?.kind === "level"),
+      ...ideas.filter((i) => i.status === "live" && parseEntryTrigger(i.entry, i.side)?.kind === "level"),
     ];
     return [...new Set(prioritized.map((i) => deskSymbolFor(i.instrument.trim().toUpperCase())))].slice(0, 20);
   }, [ideas, buckets]);
@@ -110,7 +110,9 @@ export default function DeskInbox({
     const inNeeds = new Set(buckets.needsLevel.map((i) => i.id));
     return ideas.filter((i) => {
       if (i.status !== "live" || inNeeds.has(i.id)) return false;
-      const parsed = parseEntryTrigger(i.entry);
+      // side-aware like the pass: a crossing against the stated side is not
+      // a level to grade a quote against
+      const parsed = parseEntryTrigger(i.entry, i.side);
       if (!parsed || parsed.kind !== "level") return false;
       const price = quoteFor(i);
       return price !== null && suspectGap(price, parsed.level);
@@ -166,7 +168,14 @@ export default function DeskInbox({
     // formatted string the parser reads differently would grade a level
     // nobody stated (the never-fabricate law)
     const entry = buildLevelEntry(levelDir, n);
-    const back = parseEntryTrigger(entry);
+    // the round trip reads the entry the way the pass will — SIDE-AWARE
+    // (feat/v4-1b-integrity): a crossing against the stated side is a parse
+    // failure there, so it would land straight back in NEEDS LEVEL
+    const back = parseEntryTrigger(entry, idea.side);
+    if (!back && parseEntryTrigger(entry)?.kind === "level") {
+      setLevelError(`${levelDir} points against the stated ${idea.side} — the pass would refuse it; not saved`);
+      return;
+    }
     if (!back || back.kind !== "level" || back.level !== n) {
       setLevelError("that level doesn't survive formatting — not saved");
       return;
