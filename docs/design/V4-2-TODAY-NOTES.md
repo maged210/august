@@ -183,6 +183,38 @@ reactions + FRED actuals, and the orphan heatmap comment (deleted — it named n
   bounce `226,218,198`).
 - The quotes route never calls its declared rate limiter.
 
+## Strikes and fixes after the first gate (the owner's call)
+
+1. **The orb is deleted** — `components/Presence3D.tsx`, the `three` +
+   `@types/three` dependencies, its CSS and the `.presence-3d` shell rules.
+   `AugustState` moved to `lib/screens.ts` (the shell still tracks boot / idle /
+   thinking; THINKING renders in the header). The regime card is now the first
+   card under the day line.
+2. **The calendar's unrendered computation is deleted** — the route no longer
+   fetches NQ 5m bars or computes `reaction15m` / `reactionWhy`, and the FRED
+   `actual` backfill is gone with `lib/calendar-actuals.ts`, its test, and the
+   daily pass's warm step (the pass line no longer prints `actuals=`).
+   **What still renders, and where:** `getCalendarWeek` → `/api/calendar` →
+   `CountdownRow` (the NEXT card: title, ET stamp, countdown), which is the only
+   calendar consumer in the app. Also deleted, and reported as a judgement call:
+   the **calendar-ask seam** — `/api/chat`'s `calendarAsk` branch with its
+   shared per-event answer cache, the canonical prompts and their key builder in
+   `lib/calendar-feed`, and the client parameter that fed them. No rendered
+   control has sent one since the density pass removed the ask buttons; it was a
+   model-spend path reachable only by a hand-made POST.
+3. **The EARNINGS row is deleted.** It was market-wide by design and had no
+   provider at all (it rendered a hard-coded DATA UNAVAILABLE; "earnings"
+   appears in no data path in the repo). Nothing in the app knows which symbols
+   in the live book report when, so the book-scoped version the owner would
+   keep cannot be built without a new source.
+4. **A store read that throws never prints a record.** `readCallState` sets
+   `readFailed`; the card then renders `YOU — · AUG —` with DATA UNAVAILABLE,
+   says the call and the record can't be read, and carries the chip in its
+   header. Pinned by a test with a kv whose `get` throws.
+5. **A take from the command bar refreshes THE CALL card.** `runCallSide`
+   dispatches `aug:call-taken` on success and the card re-reads, so it never
+   sits on OPEN buttons it can no longer honour.
+
 ## Gate
 
 Run on `d831e1f`. **No local run touched production data**: both builds (main `226262a` and the

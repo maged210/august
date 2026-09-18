@@ -547,3 +547,26 @@ test("settle time: an unreadable schedule names the pass instead of inventing a 
   assert.equal(parseDailyCron("not a cron"), null);
   assert.deepEqual(parseDailyCron("10 22 * * *"), { hour: 22, minute: 10 });
 });
+
+test("a store read that throws never prints a record: readFailed, empty tallies", async () => {
+  // Upstash unreachable mid-read — the old behaviour answered ok:true with a
+  // 0–0 record, which the card showed as a real one.
+  const kv: CallKv = {
+    get: async () => {
+      throw new Error("ECONNRESET");
+    },
+    set: async () => {},
+    sadd: async () => {},
+    srem: async () => {},
+    scard: async () => 0,
+    smembers: async () => [],
+    expire: async () => {},
+    del: async () => {},
+  };
+  const s = await readCallState("v:me", { kv, now: Date.parse("2026-09-16T14:00:00.000Z"), readonly: true });
+  assert.equal(s.readFailed, true);
+  assert.equal(s.active, null);
+  assert.equal(s.settled, null);
+  assert.deepEqual(s.record.august, EMPTY_TALLY); // empty, and FLAGGED as unread
+  assert.deepEqual(s.record.you, EMPTY_TALLY);
+});

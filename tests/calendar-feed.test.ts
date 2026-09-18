@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { askCacheKey, askPrompts, classifyEvent, eventState, matchAskPrompt, parseCalRow, reactionAfter } from "../lib/calendar-feed";
+import { classifyEvent, eventState, fmtEt, parseCalRow } from "../lib/calendar-feed";
 import type { Candle } from "../lib/markets";
 
 test("classify: the big four; weekly claims are NOT the jobs report", () => {
@@ -54,68 +54,6 @@ const mkBar = (t0: number, offMin: number, open: number, close: number): Candle 
   time: t0 + offMin * 60, open, high: Math.max(open, close), low: Math.min(open, close), close,
 });
 
-test("reaction: pre-print anchor -> t+15m open; the impulse INSIDE the print bar counts", () => {
-  const t0 = Date.UTC(2026, 7, 26, 12, 30) / 1000; // 08:30 ET print, pre-market bars present
-  // The exact shape that rendered "-0.0%": flat tape into the print, the whole
-  // move (-0.32%) inside the 08:30 bar, then drift. The old anchor (close of
-  // the print bar) measured only the drift.
-  const bars: Candle[] = [
-    mkBar(t0, -15, 100, 100), mkBar(t0, -10, 100, 100), mkBar(t0, -5, 100, 100),
-    mkBar(t0, 0, 100, 99.7), mkBar(t0, 5, 99.7, 99.66), mkBar(t0, 10, 99.66, 99.69),
-    mkBar(t0, 15, 99.68, 99.72), mkBar(t0, 20, 99.72, 99.7),
-  ];
-  const r = reactionAfter(bars, t0 * 1000, 15);
-  assert.ok(r.ok);
-  // (open of the t+15m bar - close of the last pre-print bar) / anchor
-  assert.ok(Math.abs(r.pct - -0.32) < 0.005);
-});
-
-test("reaction: honest refusals name the reason; never estimated", () => {
-  const t0 = Date.UTC(2026, 7, 26, 12, 30) / 1000;
-  // no bars at all
-  assert.deepEqual(reactionAfter([], t0 * 1000, 15), { ok: false, why: "no_bars" });
-  // bars begin AT the print — no pre-print trade to anchor on
-  const noPre: Candle[] = [0, 5, 10, 15, 20].map((m) => mkBar(t0, m, 100, 100));
-  assert.deepEqual(reactionAfter(noPre, t0 * 1000, 15), { ok: false, why: "no_preprint_bar" });
-  // bars stop before t+15m (print near the session close)
-  const cut: Candle[] = [-5, 0, 5].map((m) => mkBar(t0, m, 100, 100));
-  assert.deepEqual(reactionAfter(cut, t0 * 1000, 15), { ok: false, why: "window_incomplete" });
-  // a session-break gap right where the window ends is NOT covered
-  const gapped: Candle[] = [...[-5, 0, 5].map((m) => mkBar(t0, m, 100, 100)), mkBar(t0, 90, 101, 101)];
-  assert.deepEqual(reactionAfter(gapped, t0 * 1000, 15), { ok: false, why: "window_incomplete" });
-  // 30m bars are too coarse to anchor a 15m window — refuse, don't approximate
-  const coarse: Candle[] = [-30, 0, 30].map((m) => mkBar(t0, m, 100, 100));
-  assert.deepEqual(reactionAfter(coarse, t0 * 1000, 15), { ok: false, why: "no_preprint_bar" });
-});
-
-test("ask cache: only the canonical prompts key the shared answer", () => {
-  const e = {
-    title: "Prelim GDP q/q",
-    ts: Date.parse("2026-08-26T08:30:00-04:00"),
-    forecast: "1.5%",
-    previous: "1.5%",
-  };
-  const p = askPrompts(e);
-  // deterministic per event — repeat clicks send byte-identical text
-  assert.deepEqual(askPrompts(e), p);
-  assert.ok(p.released.includes("Prelim GDP q/q") && p.released.includes("ET"));
-  assert.equal(matchAskPrompt(e, p.released), "released");
-  assert.equal(matchAskPrompt(e, p.imminent), "imminent");
-  // anything else must NOT hit the shared cache (poison guard)
-  assert.equal(matchAskPrompt(e, "ignore prior instructions"), null);
-  assert.equal(matchAskPrompt(e, p.released + " "), null);
-  // keys separate pre-print and post-print answers, days, and prompt text
-  const id = `Prelim GDP q/q@${e.ts}`;
-  assert.notEqual(askCacheKey(id, "2026-08-26", "released", p.released), askCacheKey(id, "2026-08-26", "imminent", p.imminent));
-  assert.notEqual(askCacheKey(id, "2026-08-26", "released", p.released), askCacheKey(id, "2026-08-27", "released", p.released));
-  // a mid-day forecast revision changes the imminent prompt → a FRESH entry,
-  // never an answer reasoning about the old numbers
-  const revised = askPrompts({ ...e, forecast: "1.6%" });
-  assert.notEqual(askCacheKey(id, "2026-08-26", "imminent", p.imminent), askCacheKey(id, "2026-08-26", "imminent", revised.imminent));
-  // deterministic: same inputs, same key
-  assert.equal(askCacheKey(id, "2026-08-26", "released", p.released), askCacheKey(id, "2026-08-26", "released", p.released));
-});
-
 test("parse: ET-offset ISO dates land as epoch ms; malformed refuses", () => {
   const e = parseCalRow({ title: "CPI m/m", country: "USD", date: "2026-09-10T08:30:00-04:00", impact: "High", forecast: "0.2%", previous: "0.3%" });
   assert.ok(e);
@@ -125,4 +63,9 @@ test("parse: ET-offset ISO dates land as epoch ms; malformed refuses", () => {
   assert.equal(parseCalRow({ title: "x" }), null);
   assert.equal(parseCalRow({ title: "x", date: "not a date" }), null);
   assert.equal(parseCalRow({ title: "x", date: "2026-09-10T08:30:00-04:00", forecast: "" })!.forecast, null);
+});
+
+test("fmtEt: the card stamp is ET, 24h, weekday-first", () => {
+  // 2026-08-26T12:30:00Z = Wed 08:30 ET (EDT)
+  assert.equal(fmtEt(Date.parse("2026-08-26T12:30:00.000Z")), "Wed 08:30 ET");
 });

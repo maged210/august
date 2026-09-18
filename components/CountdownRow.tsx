@@ -4,21 +4,15 @@
 // high-impact print, when it lands, and a live countdown. The countdown is the
 // card's one big number; the event is its title.
 //
-// /api/calendar still computes the released reaction and the FRED actual
-// backfill. Nothing renders them; the route is out of scope for a reskin, so it
-// is left alone rather than half-trimmed.
+// feat/v4-2-today deleted what nothing rendered: the route no longer computes
+// the 15-minute NQ reaction or the FRED actual, and lib/calendar-actuals is
+// gone with the daily pass step that warmed it.
 
 import { useEffect, useState } from "react";
 import DataTag from "@/components/DataTag";
 import { fmtEt, type CalEvent, type EventState } from "@/lib/calendar-feed";
 
-type Row = CalEvent & {
-  state: EventState;
-  reaction15m: number | null;
-  reactionWhy: string | null;
-  /** the printed value, backfilled from FRED for the mapped majors */
-  actual: string | null;
-};
+type Row = CalEvent & { state: EventState };
 
 function countdown(ts: number, now: number): string {
   const s = Math.max(0, Math.floor((ts - now) / 1000));

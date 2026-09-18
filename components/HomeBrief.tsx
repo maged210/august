@@ -509,12 +509,6 @@ export default function HomeBrief({
             );
           })()
         )}
-        <ul className="td-rows">
-          <li className="td-row">
-            <span className="td-row-k">Earnings calendar</span>
-            <DataTag kind="unavail" compact title="the earnings calendar needs a keyed provider tier — recorded under data still required" />
-          </li>
-        </ul>
         <div className="td-foot">
           {liveAt !== null ? <span>as of {fmtEtClock(liveAt)}</span> : <span />}
           <a className="td-link" href="/?view=terminal">

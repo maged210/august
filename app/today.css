@@ -259,7 +259,7 @@
   color: var(--paper-accent);
 }
 
-/* — the orb: the stone on the page and its contact shadow, nothing else ---- */
+/* — the column ------------------------------------------------------------- */
 .td-main {
   width: 100%;
   box-sizing: border-box;
@@ -269,40 +269,6 @@
   align-items: center;
   padding: 0 16px;
 }
-.td-orb {
-  position: relative;
-  flex: none;
-  width: 190px;
-  height: 190px;
-  /* the canvas geometry is sized against the 190px circle; the transform keeps
-     it true while the page gives the stone ~95px */
-  transform: scale(0.5);
-  transform-origin: 50% 0;
-  margin-bottom: -95px;
-}
-/* contact shadow — an ink ellipse under the stone, not a halo (the 156px top
-   puts its first visible ink at the stone's median underside) */
-.td-orb::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 156px;
-  width: 132px;
-  height: 28px;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    closest-side ellipse at 50% 50%,
-    rgba(15, 17, 21, 0.14) 0%,
-    rgba(15, 17, 21, 0.07) 44%,
-    rgba(15, 17, 21, 0) 78%
-  );
-  pointer-events: none;
-}
-.td-orb-gl {
-  position: absolute;
-  inset: -65px;
-}
-
 /* — the column of cards ---------------------------------------------------- */
 .td {
   width: min(var(--chat-col, 720px), 100%);

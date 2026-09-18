@@ -595,6 +595,10 @@ export async function runCallPass(deps?: CallPassDeps): Promise<CallPassResult> 
 export type CallState = {
   configured: boolean;
   now: number;
+  /** feat/v4-2-today — the store read threw. The tallies below are EMPTY, not
+   *  real: a 0–0 record is exactly the fabricated number the integrity chips
+   *  exist to prevent, so the card renders the record UNAVAILABLE instead. */
+  readFailed: boolean;
   record: { august: CallTally; you: CallTally };
   active: {
     forDate: string;
@@ -671,6 +675,7 @@ export async function readCallState(
   const empty: CallState = {
     configured: kv !== null,
     now,
+    readFailed: false,
     record: { august: { ...EMPTY_TALLY }, you: { ...EMPTY_TALLY } },
     active: null,
     noCall: null,
@@ -766,6 +771,7 @@ export async function readCallState(
     }
   } catch (err) {
     console.warn("[call] read failed:", err instanceof Error ? err.message : err);
+    state.readFailed = true;
   }
   return state;
 }

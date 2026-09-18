@@ -1243,13 +1243,6 @@ body::after {
   width: 100%;
   height: 100%;
 }
-.presence-3d {
-  position: absolute;
-  inset: 0;
-}
-.presence-3d canvas {
-  display: block;
-}
 
 /* the brief — AUGUST's per-surface synthesis, lower-left of Presence */
 .brief {
@@ -3411,26 +3404,6 @@ body {
 .feed-list > li:nth-child(n + 7) {
   animation-delay: 270ms;
 }
-
-/* ======================================================================
-   PRESENCE HOME — radial telemetry around the hero orb, summonable brief,
-   theme-aware composer. (Stage A of the Presence rebuild.)
-   ====================================================================== */
-
-/* The orb canvas fills the surface; telemetry + center sit above it. */
-.presence-3d {
-  z-index: 1;
-}
-
-/* The old optical-centring lift (translateY on .presence-3d + .telemetry) is
-   GONE. It was written for the retired full-surface presence composition, where
-   the canvas and the telemetry lattice were the whole surface and had to rise
-   together above a bottom-heavy chrome. .telemetry is no longer mounted at all
-   (see app/page.tsx — BootHud/FrameTicks/PresenceTelemetry are retired), so the
-   rule's only surviving effect was to lift the LANDING's WebGL canvas ~24-44px
-   off the CSS orb circle it is supposed to fill — the crystal and the circle
-   rendered as two separate, overlapping orbs. The landing centres its own orb
-   block (.hl-orb) in normal flow; nothing needs the lift. */
 
 /* Radial telemetry overlay — decorative, non-interactive, fades in on boot. */
 .telemetry {

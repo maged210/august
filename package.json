@@ -7,12 +7,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts tests/ideas.test.ts tests/transcripts.test.ts tests/tape.test.ts tests/headlines.test.ts tests/pit-engine.test.ts tests/pit-daily.test.ts tests/pit-share.test.ts tests/route-gates.test.ts tests/regime.test.ts tests/levels.test.ts tests/pit-review.test.ts tests/calendar-feed.test.ts tests/calendar-actuals.test.ts tests/train.test.ts tests/call.test.ts tests/push.test.ts tests/command-bar.test.ts tests/ask.test.ts tests/transcript-fetch.test.ts tests/symbol-check.test.ts tests/idea-card.test.ts tests/quote-book.test.ts"
+    "test": "node --import ./tests/ts-resolve.mjs --test tests/intel.test.ts tests/tracker.test.ts tests/threads.test.ts tests/user-scope.test.ts tests/ideas.test.ts tests/transcripts.test.ts tests/tape.test.ts tests/headlines.test.ts tests/pit-engine.test.ts tests/pit-daily.test.ts tests/pit-share.test.ts tests/route-gates.test.ts tests/regime.test.ts tests/levels.test.ts tests/pit-review.test.ts tests/calendar-feed.test.ts tests/train.test.ts tests/call.test.ts tests/push.test.ts tests/command-bar.test.ts tests/ask.test.ts tests/transcript-fetch.test.ts tests/symbol-check.test.ts tests/idea-card.test.ts tests/quote-book.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
     "@auth/upstash-redis-adapter": "2.11.3",
-    "@types/three": "^0.184.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "lightweight-charts": "^5.2.0",
@@ -20,7 +19,6 @@
     "next-auth": "^5.0.0-beta.31",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "three": "^0.184.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
 // The daily settle pass. PROTECTED. Settles the tracked set (chore/terminal-cut:
 // the TRACKED lane is retired and every row is CLOSED, so this is housekeeping
 // over a frozen set — it no longer ingests), then evaluates the
-// live book (INTEGRITY-1), warms the FRED actuals, settles THE CALL and
+// live book (INTEGRITY-1), settles THE CALL and
 // flushes the day's push. Idempotent and cheap — snapshot dedupe makes
 // double-pings no-ops.
 //
@@ -25,7 +25,6 @@
 // AUTH: identical model to /api/cron/watchers — `Authorization: Bearer
 // <CRON_SECRET>`, timing-safe compare, refuses in production when unset.
 import { timingSafeEqual } from "node:crypto";
-import { backfillPrintedWeek } from "@/lib/calendar-actuals";
 import { runCallPass } from "@/lib/call";
 import { flushCallPush, registerCallPush } from "@/lib/call-push";
 import { runBookPass } from "@/lib/ideas-eval";
@@ -71,15 +70,6 @@ async function handle(req: Request): Promise<Response> {
     // daily pass: every LIVE idea's stated trigger vs the daily close, stale
     // marking, and conflict demotion to REVIEW. See lib/ideas-eval.ts.
     const book = await runBookPass();
-    // fix/whats-coming — the daily pass also warms the FRED actuals cache for
-    // the week's printed majors, so released cards carry the print. Non-fatal:
-    // a FRED or feed outage never breaks the tracker pass.
-    let actuals = -1;
-    try {
-      actuals = await backfillPrintedWeek();
-    } catch (err) {
-      console.warn("[cron/intel-track] actuals backfill skipped:", err instanceof Error ? err.message : err);
-    }
     // THE CALL (feature/the-call) — the same daily pass (22:10 UTC, after
     // Yahoo's bar is final in both EST and EDT) settles today's call against
     // today's close, then generates tomorrow's from the regime state at this
@@ -105,7 +95,7 @@ async function handle(req: Request): Promise<Response> {
       console.warn("[cron/intel-track] call push skipped:", err instanceof Error ? err.message : err);
     }
     console.log(
-      `[cron/intel-track] configured=${result.configured} tracked=${result.tracked.length} quoted=${result.quoted ?? 0} transitions=${result.transitions ?? 0} book=${book.live} bookCounts=${JSON.stringify(book.counts)} review=${book.demotedToReview} actuals=${actuals} call=${call.settled ?? "-"}/${call.generated ?? "-"}`,
+      `[cron/intel-track] configured=${result.configured} tracked=${result.tracked.length} quoted=${result.quoted ?? 0} transitions=${result.transitions ?? 0} book=${book.live} bookCounts=${JSON.stringify(book.counts)} review=${book.demotedToReview} call=${call.settled ?? "-"}/${call.generated ?? "-"}`,
     );
     // Do NOT echo the full tracked set to the pinger — summary only.
     return new Response(
@@ -117,7 +107,6 @@ async function handle(req: Request): Promise<Response> {
         transitions: result.transitions ?? 0,
         evicted: result.evicted ?? 0,
         book,
-        actuals,
         call: { settled: call.settled, generated: call.generated },
         push: push ? { recipients: push.recipients, sent: push.sent, pruned: push.pruned, failed: push.failed } : null,
       }),

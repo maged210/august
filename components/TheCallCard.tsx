@@ -24,6 +24,8 @@ type Side = "HIGHER" | "LOWER";
 type CallResp = {
   ok: boolean;
   now: number;
+  /** the store read threw — the tallies below are empty, not real */
+  readFailed?: boolean;
   record: { august: Tally; you: Tally };
   active: {
     forDate: string;
@@ -96,9 +98,15 @@ export default function TheCallCard() {
     const id = window.setInterval(() => {
       if (!document.hidden) pull();
     }, 60_000);
+    // the command bar takes a side through the same route (app/page.tsx
+    // runCallSide) — without this the card sits on OPEN buttons it can no
+    // longer honour until the next poll
+    const onTaken = () => pull();
+    window.addEventListener("aug:call-taken", onTaken);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener("aug:call-taken", onTaken);
     };
   }, []);
 
@@ -177,9 +185,14 @@ export default function TheCallCard() {
             kind="calc"
             title="direction was derived deterministically from the regime model at the pass that opened this call — the sign of its vote sum; dead even = no call. The current read below is AUGUST's live read."
           />
+          {st.readFailed ? <DataTag kind="unavail" title="the call store didn't answer — the record and today's call are not shown" /> : null}
           {misses >= 2 ? <DataTag kind="stale" title="the card can't reach the server — showing the last good state" /> : null}
         </span>
       </div>
+
+      {st.readFailed && !a && !s ? (
+        <p className="td-meta">The call and the record can&apos;t be read right now.</p>
+      ) : null}
 
       {a ? (
         <>
@@ -292,11 +305,19 @@ export default function TheCallCard() {
         </div>
       ) : null}
 
-      {/* the record — from day one, from 0–0, win or lose */}
+      {/* the record — from day one, from 0–0, win or lose. A store read that
+          THREW carries empty tallies, not real ones: the record says so rather
+          than printing a 0–0 nobody earned. */}
       <div className="td-foot">
-        <span className="td-record" title="settled calls only; pushes and void days count for nobody">
-          YOU {fmtRec(st.record.you)} · AUG {fmtRec(st.record.august)}
-        </span>
+        {st.readFailed ? (
+          <span className="td-record">
+            YOU — · AUG — <DataTag kind="unavail" compact title="the record store didn't answer — this is not a 0–0" />
+          </span>
+        ) : (
+          <span className="td-record" title="settled calls only; pushes and void days count for nobody">
+            YOU {fmtRec(st.record.you)} · AUG {fmtRec(st.record.august)}
+          </span>
+        )}
       </div>
 
       {/* THE CALL publishes a dated directional call. It carries the line. */}

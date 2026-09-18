@@ -58,6 +58,11 @@ export function resolveTarget(id: string): NavTarget {
 // and stale "?screen=" bookmarks keep landing somewhere sensible: the market
 // words go to the Terminal view, everything else goes to Chat. null = unknown
 // name; callers should no-op.
+/** The presence state the shell tracks: boot → idle, and thinking while an
+ *  ask streams (the command bar's ONLY model lane). It used to live in
+ *  components/Presence3D.tsx, deleted with the orb in feat/v4-2-today. */
+export type AugustState = "boot" | "idle" | "thinking";
+
 export type ViewId = "chat" | "terminal" | "pit";
 
 export function resolveView(id: string): ViewId | null {

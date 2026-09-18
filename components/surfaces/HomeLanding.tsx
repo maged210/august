@@ -11,14 +11,13 @@
 // The theme menu (MATRIX / DARK / LIGHT / GOTHAM + the rain dial) is retired:
 // one theme, one front page (archive/theme-menu is the rebuild point).
 //
-// The orb stays the living WebGL Presence3D (CLAUDE.md, "Kept deliberately"):
-// the canvas is mounted in a larger square around the 190px circle so the
-// corona can breathe past the rim (ORB_GL_* below size the sphere to the circle).
+// The orb is gone (feat/v4-2-today, the owner's strike): it carried no data,
+// and its WebGL crystal was the last of the retired dark-cinematic language.
+// The regime card is the first card under the day line now.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { signOut } from "next-auth/react";
-import type { AugustState } from "@/components/Presence3D";
+import type { AugustState } from "@/lib/screens";
 import HomeBrief, { PULSE, REGIME_SYMBOLS, chgTone, fmtPx } from "@/components/HomeBrief";
 import { suggestFor, type Suggestion } from "@/lib/command-bar";
 import { fmtPct } from "@/lib/idea-card";
@@ -29,13 +28,6 @@ import DataTag from "@/components/DataTag";
 import Disclaimer from "@/components/Disclaimer";
 import DeleteAccount from "@/components/DeleteAccount";
 import "@/app/today.css";
-
-const Presence3D = dynamic(() => import("@/components/Presence3D"), { ssr: false });
-
-// The WebGL mount extends 65px past the 190px orb circle on every side
-// (320px square); the sphere's on-screen radius must equal the circle's 95px.
-const ORB_GL_BLEED = 65;
-const ORB_GL_FRACTION = 95 / (190 + 2 * ORB_GL_BLEED);
 
 // WATCHING — the PUBLIC DEFAULT: signed out, or on an instance where auth isn't
 // configured, the pills show exactly this macro five — symbols lib/markets
@@ -343,14 +335,6 @@ export default function HomeLanding({
       </header>
 
       <div className="td-main">
-        {/* the orb — a small live-status mark; "thinking" is wired to the ask
-            lane only (commands resolve locally, instantly) */}
-        <div className="td-orb">
-          <div className="td-orb-gl">
-            <Presence3D state={state} orbFraction={ORB_GL_FRACTION} />
-          </div>
-        </div>
-
         <HomeBrief
           quotes={quotes}
           onAsk={(t) => onSend(t)}

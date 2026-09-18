@@ -6,10 +6,9 @@ import IdeasRail from "@/components/IdeasRail";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
 import PitSurface from "@/components/surfaces/PitSurface";
-import { resolveView, type ViewId } from "@/lib/screens";
+import { resolveView, type AugustState, type ViewId } from "@/lib/screens";
 import { parseCommand } from "@/lib/command-bar";
 import { deskSymbolFor } from "@/lib/desk-symbols";
-import type { AugustState } from "@/components/Presence3D";
 import { latMark, latReset } from "@/lib/latency";
 import {
   disablePush,
@@ -586,6 +585,9 @@ export default function Home() {
         if (j.ok) {
           // the fourth copy of the settle claim — bound to the cron like the card
           say(`TAKEN: ${side} — SETTLES ON THE ${SETTLE_UTC_LABEL} PASS.`);
+          // the card is a separate component with its own 60s poll: tell it the
+          // take landed so it never sits on OPEN buttons it can no longer honour
+          window.dispatchEvent(new CustomEvent("aug:call-taken"));
           scrollFloorTo(".td-call");
         } else if (j.error === "locked") sayError("LOCKED — 09:30 ET HAS PASSED. TOMORROW'S CALL OPENS TONIGHT.");
         else if (j.error === "already_taken") sayError("ALREADY TAKEN TODAY — ONE SIDE PER TRADING DAY.");
@@ -600,7 +602,7 @@ export default function Home() {
 
   // --- THE ASK LANE — the only path that ever touches the model -------------
   // gen comes from runInput (one generation per input, shared with commands).
-  async function runAsk(text: string, gen: number, calendarAskId?: string) {
+  async function runAsk(text: string, gen: number) {
     latReset();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -612,7 +614,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, ...(calendarAskId ? { calendarAsk: calendarAskId } : {}) }),
+        body: JSON.stringify({ message: text }),
         signal: controller.signal,
       });
       if (gen !== genRef.current) return;
@@ -658,15 +660,13 @@ export default function Home() {
   // claims a fresh generation and aborts any in-flight ask; async executors
   // check the generation before painting, so a late result can never
   // overwrite a newer input's card.
-  async function runInput(raw: string, calendarAskId?: string) {
+  async function runInput(raw: string) {
     abortRef.current?.abort();
     const gen = ++genRef.current;
     // a superseded ask can no longer stand the orb down — if THIS input is a
     // command (which never owns the orb), reset thinking → idle here; runAsk
     // re-raises it for the ask lane.
     setState((s) => (s === "thinking" ? "idle" : s));
-    // a calendar-card ask button is an ASK by construction
-    if (calendarAskId) return runAsk(raw.trim(), gen, calendarAskId);
     const parsed = parseCommand(raw);
     if (!parsed) return;
     // any non-matching submission drops a stale arm/close confirm
