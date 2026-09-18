@@ -4913,6 +4913,14 @@ button.pulse-line:focus-visible {
 .adm-trrepeats li {
   overflow-wrap: anywhere;
 }
+/* narrow: the meta takes its own line rather than wrapping into a ribbon
+ beside the status word. /admin is the back room and was never a phone design
+ (L8), but a failure has to be readable wherever it is read. */
+@media (max-width: 700px) {
+  .adm-trmeta {
+    flex: 1 0 100%;
+  }
+}
 .adm-trerr {
   flex: 0 0 100%;
   white-space: normal;
