@@ -171,8 +171,11 @@ reactions + FRED actuals, and the orphan heatmap comment (deleted — it named n
 - A take made from the command bar doesn't refresh THE CALL card (up to 60s of stale OPEN
   buttons); `call_full` / `rate_limited` rejections are silent on the card and read
   "UNREACHABLE" in the bar; single letters `h` / `l` take a side.
-- `lib/markets` serves the last cached quote when Yahoo errors, with no age — a "DELAYED 60s"
-  price can be older than it says; only a server timestamp can fix that.
+- ~~`lib/markets` serves the last cached quote when Yahoo errors, with no age~~ — FIXED in
+  fix/quote-age (merged): every quote carries its own `asOf`, cache hits included, and
+  lib/quote-book ages each price from that stamp (aligned to the server clock by the response's
+  Date header) instead of from when the round was asked. A price of unknown age reads
+  UNAVAILABLE.
 - `/api/headlines` answers `200 []` when every feed fails, so a blackout reads "No headlines
   right now".
 - `/api/ideas` swallows Redis errors into `[]` — "0 live calls" on an outage.

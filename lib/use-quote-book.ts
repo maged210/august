@@ -58,12 +58,20 @@ export function useQuoteBook(symbols: readonly string[], opts: { closes?: boolea
         inflight.add(ctl);
         const timer = window.setTimeout(() => ctl.abort(), QUOTE_TIMEOUT_MS);
         fetch(`/api/intel/quotes?symbols=${encodeURIComponent(c)}`, { cache: "no-store", signal: ctl.signal })
-          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+          .then(async (r) => {
+            if (!r.ok) throw new Error(String(r.status));
+            // the server's own clock at send time — every asOf in this
+            // response is on that timeline (fix/quote-age)
+            const serverNow = Date.parse(r.headers.get("date") ?? "");
+            const j = (await r.json()) as { quotes?: QuoteBatch["quotes"] };
+            return { j, serverNow };
+          })
           .then(
-            (j: { quotes?: QuoteBatch["quotes"] }): QuoteBatch => ({
+            ({ j, serverNow }): QuoteBatch => ({
               symbols: c.split(","),
               ok: true,
               quotes: j.quotes ?? {},
+              serverNow: Number.isFinite(serverNow) ? serverNow : undefined,
             }),
             (): QuoteBatch => ({ symbols: c.split(","), ok: false }),
           )

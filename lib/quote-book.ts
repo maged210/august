@@ -5,11 +5,14 @@
 // the same logic is how the stop-regex bug happened. Pure — no network, no
 // React; the client loop that feeds it is lib/use-quote-book.ts.
 //
-// Per SYMBOL, not per round: each slot carries its own last-seen time and the
-// time its batch was last asked. A symbol is fresh only when the latest
-// attempt that included it answered with a price, and that answer is recent.
-// A failed batch nulls its symbols' prices — an older round's price is never
-// kept around to be mistaken for a fresh one.
+// Per SYMBOL, not per round: each slot carries the time its batch was last
+// asked, the round that answered it, and — since fix/quote-age — the price's
+// OWN as-of time from the route. A symbol is fresh only when the latest
+// attempt that included it answered with a price AND that price is recent BY
+// ITS OWN AGE. The route's 60s cache (and its serve-stale-on-error path) means
+// an answer that arrives now can carry a price from minutes ago: arrival is
+// never freshness. A failed batch nulls its symbols' prices — an older round's
+// price is never kept around to be mistaken for a fresh one.
 
 /** the book, the tape and the quotes poll together */
 export const QUOTE_REFRESH_MS = 60_000;
@@ -34,7 +37,10 @@ export type QuoteSlot = {
   price: number | null;
   /** today's % move, when the route carried one */
   chgPct: number | null;
-  /** when this symbol last came back with a price (epoch ms) */
+  /** when this price came off the wire, on the CLIENT's clock (the route's
+   *  per-quote asOf, aligned by alignAsOf) — the one basis for freshness */
+  asOf: number | null;
+  /** which round answered this symbol with a price (epoch ms, the ask time) */
   seenAt: number | null;
   /** when this symbol's batch was last asked, answered or not (epoch ms) */
   checkedAt: number;
@@ -44,8 +50,23 @@ export type QuoteBook = Record<string, QuoteSlot>;
 export type QuoteBatch = {
   symbols: readonly string[];
   ok: boolean;
-  quotes?: Record<string, { price?: number; chgPct?: number; closes?: number[] } | undefined>;
+  quotes?: Record<string, { price?: number; chgPct?: number; closes?: number[]; asOf?: number } | undefined>;
+  /** the server's clock when it answered (the response's Date header). Every
+   *  asOf in this batch is on THAT timeline, so the merge translates it to the
+   *  client's before storing — a device clock minutes off must not decide
+   *  whether a price is stale. Absent = trust the timestamps as given. */
+  serverNow?: number;
 };
+
+/** PURE. A quote's as-of time on the CLIENT's clock. The route stamps asOf on
+ *  the server's clock and says what time it was there (the Date header), so
+ *  the difference between the two clocks — not the price's age — is what this
+ *  removes. Without a usable server time the stamp is taken as given. */
+export function alignAsOf(asOf: number, serverNow: number | undefined, localNow: number): number {
+  if (!Number.isFinite(asOf)) return NaN;
+  if (serverNow === undefined || !Number.isFinite(serverNow)) return asOf;
+  return asOf + (localNow - serverNow);
+}
 
 /** `now` is when the batch was ASKED (feat/v4-1b-integrity), not when it
  *  landed: batches merge one at a time as they settle, so a slow batch never
@@ -61,11 +82,21 @@ export function mergeQuoteRound(prev: QuoteBook, batches: readonly QuoteBatch[],
       if (prev[sym] && prev[sym].checkedAt > now) continue; // a newer round already asked — this one is history
       const q = b.ok ? b.quotes?.[sym] : undefined;
       const price = q && Number.isFinite(q.price) && (q.price as number) > 0 ? (q.price as number) : null;
-      if (price != null) {
-        next[sym] = { price, chgPct: Number.isFinite(q!.chgPct) ? (q!.chgPct as number) : null, seenAt: now, checkedAt: now };
+      // a price with no usable as-of time is a price of unknown age, and an
+      // unknown age cannot be called fresh — it is no price at all
+      const asOf = price != null ? alignAsOf(q!.asOf as number, b.serverNow, now) : NaN;
+      if (price != null && Number.isFinite(asOf)) {
+        next[sym] = {
+          price,
+          chgPct: Number.isFinite(q!.chgPct) ? (q!.chgPct as number) : null,
+          asOf,
+          seenAt: now,
+          checkedAt: now,
+        };
       } else {
-        // the batch failed, or answered without this symbol: no price at all
-        next[sym] = { price: null, chgPct: null, seenAt: prev[sym]?.seenAt ?? null, checkedAt: now };
+        // the batch failed, or answered without this symbol (or without its
+        // age): no price at all
+        next[sym] = { price: null, chgPct: null, asOf: null, seenAt: prev[sym]?.seenAt ?? null, checkedAt: now };
       }
     }
   }
@@ -74,17 +105,22 @@ export function mergeQuoteRound(prev: QuoteBook, batches: readonly QuoteBatch[],
 
 export type QuoteRead =
   | { state: "pending" }
-  | { state: "ok"; price: number; chgPct: number | null; seenAt: number }
+  | { state: "ok"; price: number; chgPct: number | null; asOf: number; seenAt: number }
   | { state: "unavailable"; seenAt: number | null };
 
-/** pending: never asked yet · ok: answered by its latest attempt, within
- *  maxAgeMs (a poll that stalls — a hidden tab — ages a price out) ·
+/** pending: never asked yet · ok: answered by its latest attempt AND the price
+ *  itself is younger than maxAgeMs (a 60s server cache, a stalled poll in a
+ *  hidden tab, or a serve-stale-on-error hit all age a price out) ·
  *  unavailable: everything else */
 export function readQuote(book: QuoteBook, symbol: string, now: number, maxAgeMs: number): QuoteRead {
   const slot = book[symbol.trim().toUpperCase()];
   if (!slot) return { state: "pending" };
-  if (slot.price != null && slot.seenAt != null && slot.seenAt === slot.checkedAt && now - slot.seenAt <= maxAgeMs) {
-    return { state: "ok", price: slot.price, chgPct: slot.chgPct, seenAt: slot.seenAt };
+  const answered = slot.price != null && slot.seenAt != null && slot.seenAt === slot.checkedAt;
+  const age = slot.asOf != null ? now - slot.asOf : null;
+  // a stamp from the near future is a clock, not a price: age 0, never a
+  // negative age that could outlive the threshold in the other direction
+  if (answered && age != null && Math.max(0, age) <= maxAgeMs) {
+    return { state: "ok", price: slot.price as number, chgPct: slot.chgPct, asOf: slot.asOf as number, seenAt: slot.seenAt as number };
   }
   return { state: "unavailable", seenAt: slot.seenAt };
 }
