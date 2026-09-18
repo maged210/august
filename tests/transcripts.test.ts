@@ -18,11 +18,15 @@ import {
   applyEntryRule,
   applyIdeaFloor,
   normalizeCandidates,
+  readPublicIngests,
+  readTranscripts,
   stopMasqueradingAsEntry,
   storeTranscript,
   transcriptsConfigured,
   updateTranscript,
   validateTranscriptBody,
+  type TranscriptKv,
+  type TranscriptRecord,
 } from "../lib/transcripts";
 
 // --- validateTranscriptBody -------------------------------------------------
@@ -290,4 +294,104 @@ test("floor: runs BEFORE the per-transcript cap, so commentary can't eat the ide
     normalizeCandidates([...commentary, ...real], MAX_IDEAS_PER_TRANSCRIPT * 4),
   );
   assert.deepEqual(ideas.map((i) => i.instrument), ["ORCL", "BTG"]);
+});
+
+// --- fix/route-failure-honesty · L11 ----------------------------------------
+// A dead ingest store and an empty ingest log are different answers. The wire
+// card published the second one through every outage of the first.
+
+const NS = "august:ideas:v1:transcripts";
+
+function rec(id: string, over: Partial<TranscriptRecord> = {}): TranscriptRecord {
+  return {
+    id,
+    source: "Morning tape",
+    chars: 4200,
+    receivedAt: 1_757_000_000_000,
+    status: "processed",
+    ideaIds: [],
+    ...over,
+  };
+}
+
+/** A store that answers, holding exactly these records newest-first. */
+function fakeIngestKv(rows: TranscriptRecord[]): TranscriptKv {
+  const byKey = new Map(rows.map((r) => [`${NS}:${r.id}`, JSON.stringify(r)]));
+  return {
+    async zrange() {
+      return rows.map((r) => r.id);
+    },
+    async get(key: string) {
+      return byKey.get(key) ?? null;
+    },
+  };
+}
+
+test("wire read: a store that throws is UNAVAILABLE carrying the cause", async () => {
+  const dead: TranscriptKv = {
+    async zrange() {
+      throw new Error("upstash: ECONNREFUSED");
+    },
+    async get() {
+      return null;
+    },
+  };
+  const r = await readTranscripts(10, { kv: dead });
+  assert.equal(r.state, "unavailable");
+  if (r.state === "unavailable") assert.doesNotMatch(r.reason, /ECONNREFUSED/, "the store's words stay off the public wire");
+
+  const pub = await readPublicIngests(12, { kv: dead });
+  assert.equal(pub.state, "unavailable"); // the processed-only filter never launders a failure
+  if (pub.state === "unavailable") assert.doesNotMatch(pub.reason, /ECONNREFUSED/, "no store words on the public wire");
+});
+
+test("wire read: an unconfigured store is UNAVAILABLE, not an empty ok", async () => {
+  assert.equal(transcriptsConfigured(), false);
+  const r = await readTranscripts();
+  assert.equal(r.state, "unavailable");
+  if (r.state === "unavailable") assert.ok(r.reason.trim().length > 0);
+  assert.equal((await readPublicIngests()).state, "unavailable");
+  // the old callers (the daily pass, the duplicate check) still see []
+  assert.deepEqual(await listTranscripts(), []);
+});
+
+test("wire read: rows exist but none processed is a real OK with zero rows", async () => {
+  const kv = fakeIngestKv([
+    rec("tr_a", { status: "failed", error: "400 this API key is not scoped to a workspace" }),
+    rec("tr_b", { status: "failed", error: "pending" }),
+  ]);
+  const records = await readTranscripts(10, { kv });
+  assert.equal(records.state, "ok");
+  if (records.state === "ok") assert.equal(records.rows.length, 2); // the log itself is not empty
+
+  const pub = await readPublicIngests(12, { kv });
+  assert.equal(pub.state, "ok"); // nothing to show yet — that is an answer, not a failure
+  if (pub.state === "ok") {
+    assert.equal(pub.rows.length, 0);
+    assert.equal(pub.failed.length, 0);
+  }
+});
+
+test("wire read: processed rows ride out redacted — no raw text, no failure detail", async () => {
+  const kv = fakeIngestKv([
+    rec("tr_ok", { ideaIds: ["i1", "i2"], tapeIds: ["t1"], source: "Sept 17 recap" }),
+    rec("tr_bad", { status: "failed", error: "400 this API key is not scoped to a workspace" }),
+  ]);
+  const pub = await readPublicIngests(12, { kv });
+  assert.equal(pub.state, "ok");
+  if (pub.state === "ok") {
+    assert.equal(pub.rows.length, 1);
+    assert.deepEqual(Object.keys(pub.rows[0]).sort(), [
+      "id",
+      "ideaDrafts",
+      "source",
+      "tapeDrafts",
+      "ts",
+    ]);
+    assert.equal(pub.rows[0].ideaDrafts, 2);
+    assert.equal(pub.rows[0].tapeDrafts, 1);
+    // chars, error and the failed row's cause are admin facts — never on the wire
+    assert.ok(!JSON.stringify(pub.rows).includes("API key"));
+    assert.ok(!JSON.stringify(pub.rows).includes("4200"));
+  }
 });

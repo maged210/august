@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isDeskHeadline, mergeHeadlines, parseRss, type Headline } from "../lib/headlines";
+import { isDeskHeadline, mergeHeadlines, parseRss, readHeadlines, type Headline } from "../lib/headlines";
 
 const RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>Feed</title>
@@ -67,4 +67,89 @@ test("isDeskHeadline: personal-finance chum drops, market headlines survive", ()
   for (const title of chum) assert.equal(isDeskHeadline({ title, link: "https://x.com/a" }), false, title);
   for (const title of desk) assert.equal(isDeskHeadline({ title, link: "https://x.com/a" }), true, title);
   assert.equal(isDeskHeadline({ title: "Markets wrap", link: "https://www.marketwatch.com/personal-finance/story" }), false);
+});
+
+// --- L11: a dead feed is NAMED, never dropped (fix/route-failure-honesty) ---
+//
+// readHeadlines fetches over the network and caches ~15 min in-process off
+// Date.now, so each case would otherwise read the previous one's answer. No
+// test hook was added to the library for that: these cases step a fake clock
+// past CACHE_MS before every read, which expires the cache exactly the way
+// fifteen real minutes would. fetch and Date.now are both restored after.
+
+type Reply = { status?: number; xml?: string; throws?: string };
+
+const CACHE_STEP_MS = 15 * 60_000 + 1;
+let clock = Date.parse("2026-09-18T13:30:00Z");
+
+const feed = (title: string, when = "Fri, 18 Sep 2026 13:00:00 GMT") =>
+  `<rss version="2.0"><channel><title>F</title>` +
+  `<item><title>${title}</title><link>https://ex.com/${encodeURIComponent(title)}</link><pubDate>${when}</pubDate></item>` +
+  `</channel></rss>`;
+
+const EMPTY_FEED = `<rss version="2.0"><channel><title>F</title></channel></rss>`;
+
+async function readWith(replies: { cnbc: Reply; yahoo: Reply }, opts: { step?: boolean } = {}) {
+  const realFetch = globalThis.fetch;
+  const realNow = Date.now;
+  if (opts.step !== false) clock += CACHE_STEP_MS; // expire whatever the last case cached
+  Date.now = () => clock;
+  globalThis.fetch = (async (input: unknown) => {
+    const r = String(input).includes("cnbc") ? replies.cnbc : replies.yahoo;
+    if (r.throws) throw new Error(r.throws);
+    const status = r.status ?? 200;
+    return { ok: status < 400, status, text: async () => r.xml ?? "" } as unknown as Response;
+  }) as unknown as typeof fetch;
+  try {
+    return await readHeadlines();
+  } finally {
+    globalThis.fetch = realFetch;
+    Date.now = realNow;
+  }
+}
+
+test("readHeadlines: every feed down is UNAVAILABLE with each publisher's cause, never an empty list", async () => {
+  const r = await readWith({ cnbc: { status: 403 }, yahoo: { throws: "getaddrinfo ENOTFOUND" } });
+  assert.equal(r.state, "unavailable");
+  const reason = r.state === "unavailable" ? r.reason : "";
+  assert.ok(reason.trim().length > 0, "a blackout is never reported without a reason");
+  assert.ok(reason.includes("CNBC") && reason.includes("403"), reason);
+  assert.ok(reason.includes("Yahoo Finance") && reason.includes("ENOTFOUND"), reason);
+});
+
+test("readHeadlines: one feed down is PARTIAL — the survivor's rows AND the dead publisher named", async () => {
+  const r = await readWith({ cnbc: { xml: feed("Nasdaq futures slip before the open") }, yahoo: { status: 429 } });
+  assert.equal(r.state, "ok");
+  if (r.state !== "ok") return; // narrowing; the assert above already threw
+  assert.deepEqual(r.rows.map((h) => h.title), ["Nasdaq futures slip before the open"]);
+  assert.deepEqual(r.failed.map((f) => f.source), ["Yahoo Finance"]);
+  assert.ok(r.failed[0].reason.includes("429"), r.failed[0].reason);
+});
+
+test("readHeadlines: the cached PARTIAL still names the dead feed — survivors are never served alone", async () => {
+  const live = await readWith({ cnbc: { xml: feed("Oil steadies after OPEC+ surprise") }, yahoo: { status: 500 } });
+  // inside the 15-min window: no fetch may run, so a throwing stub proves the
+  // answer came from the cache — and it must carry the failure, not just rows
+  const cached = await readWith({ cnbc: { throws: "no fetch" }, yahoo: { throws: "no fetch" } }, { step: false });
+  assert.equal(live.state, "ok");
+  assert.equal(cached.state, "ok");
+  if (live.state !== "ok" || cached.state !== "ok") return;
+  assert.deepEqual(cached.rows.map((h) => h.title), live.rows.map((h) => h.title));
+  assert.deepEqual(cached.failed.map((f) => f.source), ["Yahoo Finance"]);
+});
+
+test("readHeadlines: every feed healthy is ok with an EMPTY failed list", async () => {
+  const r = await readWith({ cnbc: { xml: feed("Fed minutes land at 2pm") }, yahoo: { xml: feed("Treasury yields jump", "Fri, 18 Sep 2026 12:00:00 GMT") } });
+  assert.equal(r.state, "ok");
+  if (r.state !== "ok") return;
+  assert.deepEqual(r.rows.map((h) => h.publisher), ["CNBC", "Yahoo Finance"]);
+  assert.deepEqual(r.failed, []);
+});
+
+test("readHeadlines: healthy feeds that published nothing are zero rows, NOT unreachable", async () => {
+  const r = await readWith({ cnbc: { xml: EMPTY_FEED }, yahoo: { xml: EMPTY_FEED } });
+  assert.equal(r.state, "ok"); // the distinction the branch exists for
+  if (r.state !== "ok") return;
+  assert.deepEqual(r.rows, []);
+  assert.deepEqual(r.failed, []);
 });

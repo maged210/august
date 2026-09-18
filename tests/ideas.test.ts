@@ -25,6 +25,8 @@ import {
   inboxBuckets,
   needsLevelReason,
   readEntry,
+  readIdeas,
+  readLiveIdeas,
   getIdea,
   ideasConfigured,
   listIdeas,
@@ -854,4 +856,129 @@ test("inbox buckets: a crossing refused against the stated side lands in NEEDS L
     row("stop", { entry: AGI_ENTRY }),
   ]);
   assert.deepEqual(new Set(b.needsLevel.map((i) => i.id)), new Set(["refused", "stop"]));
+});
+
+// --- fix/route-failure-honesty — the book's failure is a state, not an absence
+
+// The store surface readIdeas takes (lib/push's injection pattern): the real
+// client is memoized at first use, so a suite that has already touched the
+// unconfigured path can never swap env back in.
+const kvOf = (ideas: Idea[]) => ({
+  zrange: async () => ideas.map((i) => i.id),
+  get: async (key: string) => ideas.find((i) => key.endsWith(`:${i.id}`)) ?? null,
+});
+
+test("L11/book: a store that throws is UNAVAILABLE with the cause, never an empty book", async () => {
+  const down = {
+    zrange: async () => {
+      throw new Error("ECONNREFUSED upstash-io");
+    },
+    get: async () => null,
+  };
+
+  const read = await readIdeas(undefined, { kv: down });
+  assert.ok(read.state === "unavailable");
+  // THE LEAK THIS PINS: /api/ideas is unauthenticated and republished, so
+  // the store's own words — its host, its command, our key namespace — must
+  // NOT ride the body. The operator reads them in the log (storeDown); the
+  // reader is told the desk's store didn't answer.
+  assert.ok(read.reason.trim().length > 0, "a failure always states something");
+  assert.equal(read.reason.includes("ECONNREFUSED"), false, "the store's words stay off the wire");
+  assert.equal(read.reason.includes("upstash-io"), false, "no host on the public wire");
+
+  const live = await readLiveIdeas({ kv: down });
+  assert.ok(live.state === "unavailable");
+  assert.equal(live.reason.includes("ECONNREFUSED"), false);
+});
+
+test("L11/book: an unconfigured store is UNAVAILABLE, and says which fact that is", async () => {
+  assert.equal(ideasConfigured(), false);
+  const read = await readIdeas();
+  assert.ok(read.state === "unavailable");
+  assert.ok(read.reason.includes("configured"), "not-configured is a different fact from an outage");
+
+  const live = await readLiveIdeas();
+  assert.ok(live.state === "unavailable");
+  // the internal callers keep their old best-effort shape
+  assert.deepEqual(await listIdeas(), []);
+  assert.deepEqual(await listLiveIdeas(), []);
+});
+
+test("L11/book: a healthy store with no live rows is OK with zero rows", async () => {
+  // the distinction the whole branch exists for: this desk really has no open
+  // calls, and saying so is true — the two outcomes above are not
+  const kv = kvOf([mkIdea({ id: "idea_closed1", status: "closed" }), mkIdea({ id: "idea_draft1", status: "draft" })]);
+
+  const live = await readLiveIdeas({ kv });
+  assert.ok(live.state === "ok");
+  assert.equal(live.rows.length, 0);
+  assert.equal(live.failed.length, 0);
+
+  // …and an index with nothing in it at all is the same answer
+  const empty = await readIdeas(undefined, { kv: kvOf([]) });
+  assert.ok(empty.state === "ok");
+  assert.deepEqual(empty.rows, []);
+});
+
+test("L11/book: live rows read OK and leave redacted — the wire shape doesn't move", async () => {
+  const kv = kvOf([
+    mkIdea({ id: "idea_live01", status: "live", side: "long", source: "extracted", symbolNote: "unconfirmed" }),
+    mkIdea({ id: "idea_draft1", status: "draft" }),
+  ]);
+
+  const live = await readLiveIdeas({ kv });
+  assert.ok(live.state === "ok");
+  assert.equal(live.rows.length, 1);
+  const row = live.rows[0] as unknown as Record<string, unknown>;
+  assert.equal(row.id, "idea_live01");
+  assert.equal(row.side, "long");
+  assert.ok(!("status" in row), "status never reaches the public wire");
+  assert.ok(!("source" in row), "provenance never reaches the public wire");
+  assert.ok(!("symbolNote" in row));
+
+  // unfiltered reads carry the whole book
+  const all = await readIdeas(undefined, { kv });
+  assert.ok(all.state === "ok");
+  assert.equal(all.rows.length, 2);
+});
+
+test("L11/book: rows that didn't read are NAMED, and every row failing is an outage", async () => {
+  const kept = mkIdea({ id: "idea_live01", status: "live" });
+  const flaky = {
+    zrange: async () => [kept.id, "idea_lost01"],
+    get: async (key: string) => {
+      if (key.endsWith(":idea_lost01")) throw new Error("read timeout");
+      return kept;
+    },
+  };
+
+  const partial = await readLiveIdeas({ kv: flaky });
+  assert.ok(partial.state === "ok");
+  assert.equal(partial.rows.length, 1);
+  assert.equal(partial.failed.length, 1);
+  assert.equal(partial.failed[0].source, "Upstash");
+  assert.ok(partial.failed[0].reason.includes("1 of 2"));
+  // the COUNT is the reader's fact; the timeout text is the log's
+  assert.equal(partial.failed[0].reason.includes("read timeout"), false, "no store words in the named gap");
+
+  // a blob that is simply GONE is an absence, not a failure — the index
+  // outlives a deleted row, and that is not the store refusing to answer
+  const gone = await readIdeas(undefined, {
+    kv: { zrange: async () => ["idea_ghost1"], get: async () => null },
+  });
+  assert.ok(gone.state === "ok");
+  assert.deepEqual(gone.rows, []);
+  assert.equal(gone.failed.length, 0);
+
+  // nothing readable at all is the same fact as the index failing
+  const allDown = await readIdeas(undefined, {
+    kv: {
+      zrange: async () => ["idea_a", "idea_b"],
+      get: async () => {
+        throw new Error("connection reset");
+      },
+    },
+  });
+  assert.ok(allDown.state === "unavailable");
+  assert.equal(allDown.reason.includes("connection reset"), false, "an outage states the fact, not the store's words");
 });

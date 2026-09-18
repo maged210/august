@@ -8,9 +8,19 @@
 //
 // Wire contract: GET /api/ideas serves ONLY status="live" ideas, newest first,
 // in the redacted PublicIdea shape — draft/closed rows and provenance (source)
-// never reach the public wire.
+// never reach the public wire. A book that can't be read answers as a failure,
+// not as an empty book (readIdeas, DESIGN_LAWS L11).
 
 import { Redis } from "@upstash/redis";
+import {
+  rowsUnread,
+  storeDown,
+  wireDown,
+  wireOk,
+  STORE_UNCONFIGURED,
+  type SourceFailure,
+  type WireRead,
+} from "@/lib/wire";
 
 /** ADMIN-1: "invalidated" joins the lifecycle — a call that broke its premise.
  *  Like closed it never reaches the public wire (only "live" is served); the
@@ -368,8 +378,10 @@ export function validateIdeaPatch(body: unknown): Ok<IdeaPatchInput> | Err {
 
 // --- store ------------------------------------------------------------------
 // `august:ideas:v1` zset (score = createdAt) indexes `august:ideas:v1:{id}`
-// JSON blobs. Lazy client, best-effort: unconfigured or erroring Redis
-// degrades to []/null — the app never 500s over the rail.
+// JSON blobs. Lazy client, best-effort on the WRITE side: unconfigured or
+// erroring Redis degrades to null — the app never 500s over the rail.
+// The READ side no longer degrades to [] (fix/route-failure-honesty): a book
+// nobody can read is not an empty book. See readIdeas.
 
 const NS = "august:ideas:v1";
 const K = {
@@ -429,24 +441,95 @@ export async function getIdea(id: string): Promise<Idea | null> {
   }
 }
 
-/** Newest first by createdAt. Optionally filter by status. Empty when unconfigured. */
-export async function listIdeas(status?: IdeaStatus): Promise<Idea[]> {
-  const redis = getRedis();
-  if (!redis) return [];
+/** The minimal store surface the book's read needs — injectable so node:test
+ *  drives every failure path without Redis (the lib/push pattern). The client
+ *  is memoized at first use, so a suite can never swap env in mid-file. */
+export type IdeasKv = {
+  zrange(key: string, start: number, stop: number, opts: { rev: boolean }): Promise<unknown>;
+  get(key: string): Promise<unknown>;
+};
+
+/** The source name a reader sees when the book is missing rows. */
+const IDEAS_SOURCE = "Upstash";
+/** One stored blob through the injected store. Distinct from getIdea: a throw
+ *  PROPAGATES here, because readIdeas is the caller that must tell a row that
+ *  isn't there from a row it couldn't read. */
+async function fetchIdea(kv: IdeasKv, id: string): Promise<Idea | null> {
+  const raw = await kv.get(K.idea(id));
+  return raw ? parseIdea(raw) : null;
+}
+
+/**
+ * The book as a wire read (fix/route-failure-honesty, DESIGN_LAWS L11).
+ * Newest first by createdAt, optionally filtered by status.
+ *
+ * An unreachable or unconfigured store is `unavailable` with its cause — never
+ * an empty book. An empty book is the desk STATING it has no open calls, and
+ * that is a false statement about the desk's own record when the truth is that
+ * it cannot see them.
+ *
+ * A row whose blob is gone is an absence (the index outlives a deleted blob);
+ * a row whose read THREW is a failure, and it is named in `failed` rather than
+ * dropped from a list that then looks complete. Every row failing is the same
+ * fact as the index failing: nothing answered.
+ */
+export async function readIdeas(
+  status?: IdeaStatus,
+  opts?: { kv?: IdeasKv | null },
+): Promise<WireRead<Idea>> {
+  const kv = opts?.kv !== undefined ? opts.kv : getRedis();
+  if (!kv) return wireDown(STORE_UNCONFIGURED);
   try {
-    const ids = await redis.zrange<string[]>(K.index, 0, MAX_IDEAS - 1, { rev: true });
-    if (!ids || ids.length === 0) return [];
-    const rows = await Promise.all(ids.map((id) => getIdea(id)));
-    const ideas = rows.filter((i): i is Idea => i !== null);
-    return status ? ideas.filter((i) => i.status === status) : ideas;
-  } catch {
-    return [];
+    const ids = (await kv.zrange(K.index, 0, MAX_IDEAS - 1, { rev: true })) as string[] | null;
+    if (!ids || ids.length === 0) return wireOk([]);
+    const reads = await Promise.allSettled(ids.map((id) => fetchIdea(kv, id)));
+    const ideas: Idea[] = [];
+    let unread = 0;
+    let firstCause: unknown = null;
+    for (const r of reads) {
+      if (r.status === "rejected") {
+        unread += 1;
+        if (!firstCause) firstCause = r.reason;
+        continue;
+      }
+      if (r.value) ideas.push(r.value);
+    }
+    // every row failing is the same blindness as the index failing
+    if (unread === ids.length) return storeDown("ideas", firstCause);
+    // a PARTIAL read states how much is missing, in rows. The store's own
+    // words stay in the log (storeDown) — this wire is public and republished.
+    const failed: SourceFailure[] = [];
+    if (unread > 0) {
+      console.error("[ideas] partial read:", rowsUnread(unread, ids.length), "—", firstCause);
+      failed.push({ source: IDEAS_SOURCE, reason: rowsUnread(unread, ids.length) });
+    }
+    return wireOk(status ? ideas.filter((i) => i.status === status) : ideas, failed);
+  } catch (e) {
+    return storeDown("ideas", e);
   }
 }
 
-/** The public wire: live only, redacted, newest first. */
+/** The public wire: live only, redacted, newest first — as a wire read. The
+ *  redaction is toPublicIdea's, unchanged: a failure never widens it. */
+export async function readLiveIdeas(opts?: { kv?: IdeasKv | null }): Promise<WireRead<PublicIdea>> {
+  const read = await readIdeas("live", opts);
+  if (read.state === "unavailable") return read;
+  return wireOk(read.rows.map(toPublicIdea), read.failed);
+}
+
+/** Newest first by createdAt. Optionally filter by status. Empty when the
+ *  store is unconfigured or down — kept for the internal callers (the daily
+ *  pass, lib/call.ts, lib/desk-snapshot.ts) that already render their own
+ *  absence. Anything on the PUBLIC wire reads readIdeas instead. */
+export async function listIdeas(status?: IdeaStatus): Promise<Idea[]> {
+  const read = await readIdeas(status);
+  return read.state === "ok" ? read.rows : [];
+}
+
+/** The public wire's rows, as a plain list. Same caveat as listIdeas. */
 export async function listLiveIdeas(): Promise<PublicIdea[]> {
-  return (await listIdeas("live")).map(toPublicIdea);
+  const read = await readLiveIdeas();
+  return read.state === "ok" ? read.rows : [];
 }
 
 export async function createIdea(input: IdeaCreateInput): Promise<Idea | null> {

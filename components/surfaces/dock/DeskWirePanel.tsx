@@ -16,6 +16,7 @@
 // ~10 rows visible; the rest sit behind SHOW ALL.
 
 import { useState } from "react";
+import DataTag from "@/components/DataTag";
 import type { PublicIdea } from "@/lib/ideas";
 import type { PublicTapeEntry } from "@/lib/tape";
 
@@ -78,9 +79,14 @@ function fmtTime(ms: number): string {
 
 export default function DeskWirePanel({
   events,
+  missing = null,
 }: {
   /** null = still loading (all sources pending) */
   events: WireEvent[] | null;
+  /** L11 — this wire MERGES two public stores. When one of them didn't
+   *  answer, the merged list is short by everything that source carries, and
+   *  a reverse-chron list that looks whole is the lie. Name it instead. */
+  missing?: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [openBatch, setOpenBatch] = useState<string | null>(null);
@@ -98,7 +104,14 @@ export default function DeskWirePanel({
         <span className="ifm-tag" title="activity from the desk's own stores — counts, titles, statuses only">
           DESK ACTIVITY
         </span>
+        {missing !== null ? <DataTag kind="unavail" compact title={missing} /> : null}
       </div>
+      {/* rendered, not hover-gated: a short wire says so where it is read */}
+      {missing !== null ? (
+        <div className="ifm-body">
+          <span className="if-abs">{missing}</span>
+        </div>
+      ) : null}
       {rows === null ? (
         <div className="ifm-body" aria-hidden="true">
           {[0, 1, 2].map((i) => (

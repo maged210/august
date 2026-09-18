@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
-import { getHeadlines } from "@/lib/headlines";
+import { readHeadlines } from "@/lib/headlines";
+import { wireBody } from "@/lib/wire";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,9 +23,16 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
 
-  const headlines = await getHeadlines();
-  return Response.json(
-    { ok: true, headlines },
-    { headers: { "Cache-Control": "public, max-age=0, s-maxage=300" } },
-  );
+  // L11 — three answers, not two: rows, rows-with-the-dead-feeds-named
+  // (`degraded`), or 503 with the cause. An empty list now means the wires
+  // published nothing, and only that.
+  const { body, status } = wireBody(await readHeadlines(), "headlines");
+  return Response.json(body, {
+    status,
+    headers: {
+      // the CDN must never hold a 503: the outage would outlive itself by five
+      // minutes and every retry behind that edge would be answered from it
+      "Cache-Control": status === 200 ? "public, max-age=0, s-maxage=300" : "no-store",
+    },
+  });
 }
