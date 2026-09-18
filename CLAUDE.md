@@ -91,6 +91,22 @@ Guidance for Claude Code working in this repo.
 
 ## Decided
 
+- FAILURE IS A STATE (fix/failure-visibility, 2026-09-18) — DESIGN_LAWS L9.
+  No surface renders a failed fetch, a swallowed exception or a missing
+  credential as emptiness. THE CALL renders a failed thesis as UNAVAILABLE with
+  its chip (getThesis returns ok / unavailable(reason) / none and STORES the
+  failure for the no-spend window, so it is not just the first viewer who sees
+  it); /admin carries the provider's real error on its own unclipped line and
+  can RE-RUN a failed extraction from the stored raw text (PATCH, failed rows
+  only — no second provider fetch, no second row; repeat attempts collapse per
+  videoId); /api/chat names the grounding it answered without on x-aug-degraded
+  and its dead-stream sentinel is a shared constant the card renders as an error
+  instead of prose; lib/memory reports every write (the /forget wipe no longer
+  claims a success it didn't have) and never overwrites a profile it failed to
+  read; lib/intel names the feeds that didn't answer instead of asserting
+  "Wires are live." over zero articles. The motion law moved to L11; L10 is
+  cited by number in auth.ts and /login and did not move.
+
 - THE PAPER SHELL + TODAY (feat/v4-2-today, 2026-09-17) — DESIGN_LAWS L1 is
   PAPER LANGUAGE: paper is the desk, dark is the arena (THE PIT holds a dark
   arena as a class; /admin is exempt). The shared palette and the type scale
