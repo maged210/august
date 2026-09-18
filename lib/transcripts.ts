@@ -669,6 +669,53 @@ export async function storeTranscript(
   }
 }
 
+/**
+ * PURE (DESIGN_LAWS L9). What the /admin console is told when an extraction
+ * fails: the REAL cause, every time.
+ *
+ * It used to be the flat string "extraction_failed", while the actual message
+ * ("400 … This API key is not scoped to a workspace …") went only to the log
+ * and the stored record. The one console that could act on the failure was the
+ * one surface that couldn't see it. `code` stays stable for callers that
+ * branch on the KIND of failure; `error` is the cause, in the provider's own
+ * words. This route is admin-gated, so provider detail is the operator's to
+ * see — a public wire would carry the code alone.
+ */
+export function extractionFailure(
+  e: unknown,
+  transcriptId: string,
+): { ok: false; error: string; code: "extraction_failed"; transcriptId: string } {
+  const raw = e instanceof Error ? e.message : String(e);
+  const error = raw.trim() ? raw.trim() : "extraction failed with no message";
+  return { ok: false, error, code: "extraction_failed", transcriptId };
+}
+
+/** fix/failure-visibility — the raw text stored BEFORE extraction ran, read
+ *  back by id. This is what makes a failed row recoverable without paying the
+ *  transcript provider a second time: storeTranscript writes it with no TTL,
+ *  so every failed row still holds the exact text its extraction choked on. */
+export async function readTranscriptText(id: string): Promise<string | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const raw = await redis.get(K.rawText(id));
+    return typeof raw === "string" && raw.trim() ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One record by id. */
+export async function readTranscript(id: string): Promise<TranscriptRecord | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    return parseRecord(await redis.get(K.transcript(id)));
+  } catch {
+    return null;
+  }
+}
+
 export async function updateTranscript(
   id: string,
   patch: Partial<Pick<TranscriptRecord, "status" | "ideaIds" | "tapeIds" | "error">>,

@@ -4883,9 +4883,52 @@ button.pulse-line:focus-visible {
 }
 .adm-trmeta {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* shrink-to-fit so the caret stays on the first line: only .adm-trerr is
+     allowed to claim a row of its own */
+  flex: 1 1 0;
+}
+/* DESIGN_LAWS L9 — the FAILURE REASON gets its own line and wraps. It used to
+   ride the end of .adm-trmeta, which was nowrap + ellipsis: the cause was
+   rendered and then clipped off the end of the row, so every failure read as
+   the generic status word. A cause is never past an ellipsis. */
+/* the re-run control on a failed intake, and the earlier attempts it
+   collapsed (fix/failure-visibility) */
+.adm-trrerun {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+.adm-trrepeats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 6px 0 0;
+  list-style: none;
+  font-size: var(--fs-micro);
+  color: var(--ash);
+}
+.adm-trrepeats li {
+  overflow-wrap: anywhere;
+}
+/* narrow: the meta takes its own line rather than wrapping into a ribbon
+ beside the status word. /admin is the back room and was never a phone design
+ (L8), but a failure has to be readable wherever it is read. */
+@media (max-width: 700px) {
+  .adm-trmeta {
+    flex: 1 0 100%;
+  }
+}
+.adm-trerr {
+  flex: 0 0 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--neg);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  padding-top: 2px;
 }
 
 /* desk tape (G3 round 4) — quick-add row + dense flow-style rows */
@@ -5068,6 +5111,8 @@ button.pulse-line:focus-visible {
   width: 100%;
   text-align: left;
   padding: 3px 0;
+  /* the reason line wraps onto its own row (L9) */
+  flex-wrap: wrap;
 }
 .adm-trrow:hover .adm-trmeta {
   color: var(--bone);

@@ -253,41 +253,121 @@ test("thesis: ONE model call per regime flip — cached, never per view", async 
     return `thesis ${calls}`;
   };
   const riskOn = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
-  assert.equal(await getThesis(riskOn, { kv, gen, now: 1 }), "thesis 1");
-  assert.equal(await getThesis(riskOn, { kv, gen, now: 2 }), "thesis 1"); // view 2: cache
-  assert.equal(await getThesis(riskOn, { kv, gen, now: 3 }), "thesis 1"); // view 3: cache
+  assert.deepEqual(await getThesis(riskOn, { kv, gen, now: 1 }), { state: "ok", text: "thesis 1" });
+  assert.deepEqual(await getThesis(riskOn, { kv, gen, now: 2 }), { state: "ok", text: "thesis 1" }); // view 2: cache
+  assert.deepEqual(await getThesis(riskOn, { kv, gen, now: 3 }), { state: "ok", text: "thesis 1" }); // view 3: cache
   assert.equal(calls, 1);
   const riskOff = read("RISK OFF", [["VIX LEVEL", -1], ["INDEX TREND (1mo)", -1]]);
   // a flip INSIDE the 5-minute window serves nothing rather than spend —
-  // per-instance cache flapping must not degenerate to one call per view
-  assert.equal(await getThesis(riskOff, { kv, gen, now: 4 }), null);
+  // per-instance cache flapping must not degenerate to one call per view.
+  // "none" is the desk DECIDING not to spend: no line, and NOT a failure —
+  // the card must not cry UNAVAILABLE over a cost decision (L9).
+  assert.deepEqual(await getThesis(riskOff, { kv, gen, now: 4 }), { state: "none" });
   assert.equal(calls, 1);
   kv.data.delete("august:call:v1:thesis:lock"); // window expired
-  assert.equal(await getThesis(riskOff, { kv, gen, now: 5 }), "thesis 2"); // flip → one call
+  assert.deepEqual(await getThesis(riskOff, { kv, gen, now: 5 }), { state: "ok", text: "thesis 2" }); // flip → one call
   assert.equal(calls, 2);
   // value drift with identical votes is NOT a flip
   const drifted = read("RISK OFF", [["VIX LEVEL", -1], ["INDEX TREND (1mo)", -1]]);
   drifted.because[0].value = "VIX 31.2 instead of 28.9";
-  assert.equal(await getThesis(drifted, { kv, gen, now: 6 }), "thesis 2");
+  assert.deepEqual(await getThesis(drifted, { kv, gen, now: 6 }), { state: "ok", text: "thesis 2" });
   assert.equal(calls, 2);
-  // unavailable regime carries no thesis and spends nothing
-  assert.equal(await getThesis(read("UNAVAILABLE", []), { kv, gen, now: 7 }), null);
+  // an unavailable regime carries no thesis and spends nothing — there is
+  // nothing to read FROM, which is not the same as a read that failed
+  assert.deepEqual(await getThesis(read("UNAVAILABLE", []), { kv, gen, now: 7 }), { state: "none" });
   assert.equal(calls, 2);
   assert.equal(shouldRegenerateThesis(null, "x"), true);
   assert.equal(shouldRegenerateThesis({ fingerprint: "x" }, "x"), false);
 });
 
-test("thesis: a failed generation omits the line and the lock throttles retries", async () => {
+test("L9 thesis: a generation that THREW reads UNAVAILABLE with its cause, for every view", async () => {
   const kv = fakeKv();
   let calls = 0;
   const gen = async () => {
     calls++;
-    return null; // model unavailable
+    throw new Error("400 this API key is not scoped to a workspace");
   };
   const r = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
-  assert.equal(await getThesis(r, { kv, gen, now: 1 }), null);
-  assert.equal(await getThesis(r, { kv, gen, now: 2 }), null); // lock held — no second spend
+  const first = await getThesis(r, { kv, gen, now: 1 });
+  assert.deepEqual(first, {
+    state: "unavailable",
+    reason: "400 this API key is not scoped to a workspace",
+  });
+  // THE REGRESSION THIS PINS: the failure is STORED, so the next view inside
+  // the no-spend window reads the same UNAVAILABLE instead of a blank line.
+  // Before, view 1 logged a warning and views 2..n for five minutes showed a
+  // card with no read and no way to know why.
+  assert.deepEqual(await getThesis(r, { kv, gen, now: 2 }), {
+    state: "unavailable",
+    reason: "400 this API key is not scoped to a workspace",
+  });
+  assert.equal(calls, 1, "the stored failure must not re-spend");
+});
+
+test("L9 thesis: a generation that answered with nothing usable is a failure, not a silence", async () => {
+  const kv = fakeKv();
+  let calls = 0;
+  const gen = async () => {
+    calls++;
+    return null; // the model produced no usable line
+  };
+  const r = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
+  assert.deepEqual(await getThesis(r, { kv, gen, now: 1 }), {
+    state: "unavailable",
+    reason: "the model returned no usable line",
+  });
+  assert.deepEqual(await getThesis(r, { kv, gen, now: 2 }), {
+    state: "unavailable",
+    reason: "the model returned no usable line",
+  }); // lock held — no second spend
   assert.equal(calls, 1);
+});
+
+test("L9 thesis: the stored failure EXPIRES, so a fixed provider heals on its own", async () => {
+  const kv = fakeKv();
+  let boom = true;
+  const gen = async () => {
+    if (boom) throw new Error("provider down");
+    return "back on the tape";
+  };
+  const r = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
+  assert.equal((await getThesis(r, { kv, gen, now: 1 })).state, "unavailable");
+  // the failure and the lock share a window; when it passes, the desk retries
+  boom = false;
+  kv.data.delete("august:call:v1:thesis");
+  kv.data.delete("august:call:v1:thesis:lock");
+  assert.deepEqual(await getThesis(r, { kv, gen, now: 2 }), { state: "ok", text: "back on the tape" });
+});
+
+test("L9 thesis: THE CALL card carries the failure — a missing line is never silent", async () => {
+  const kv = fakeKv();
+  const riskOn = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
+  const dead = async () => {
+    throw new Error("provider down");
+  };
+  await runCallPass({ kv, now: passAt(MON), readRegime: async () => riskOn, thesisGen: dead, bars: [] });
+  const broken = await readCallState("v:me", {
+    kv,
+    now: passAt(MON) + 3600_000,
+    readRegime: async () => riskOn,
+    thesisGen: dead,
+  });
+  assert.ok(broken.active, "the call itself still stands — only its read failed");
+  assert.equal(broken.active?.thesis, null);
+  assert.equal(broken.active?.thesisFailed, true, "the card must be able to say UNAVAILABLE");
+
+  // and a working generation leaves the flag down
+  const kv2 = fakeKv();
+  const good = async () => "tape is heavy into the close";
+  await runCallPass({ kv: kv2, now: passAt(MON), readRegime: async () => riskOn, thesisGen: good, bars: [] });
+  const fine = await readCallState("v:me", {
+    kv: kv2,
+    now: passAt(MON) + 3600_000,
+    readRegime: async () => riskOn,
+    thesisGen: good,
+  });
+  assert.equal(fine.active?.thesis, "tape is heavy into the close");
+  assert.equal(fine.active?.thesisFailed, false);
 });
 
 // --- the full loop: generate → take → lock → settle → records ---------------

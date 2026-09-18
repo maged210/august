@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
+import { ASK_DEGRADED_HEADER, ASK_STREAM_FAILURE, degradedNote } from "@/lib/ask-stream";
 import IdeasRail from "@/components/IdeasRail";
 import HomeLanding from "@/components/surfaces/HomeLanding";
 import IntelDeckSurface from "@/components/surfaces/IntelDeckSurface";
@@ -30,7 +31,18 @@ import {
 // law); ASKS hit /api/chat once and render as ONE answer card that the next
 // input replaces. No threads, no history, no conversation UI anywhere.
 export type AnswerCard =
-  | { kind: "ask"; text: string; streaming: boolean }
+  | {
+      kind: "ask";
+      text: string;
+      streaming: boolean;
+      /** L9 — the answer arrived, but the desk was missing a grounding source
+       *  when it wrote it (x-aug-degraded). Rendered under the answer: an
+       *  answer given without your memory, or without the tape, is a different
+       *  answer and the card says so rather than reading fully-informed. */
+      note?: string | null;
+      /** the stream died mid-answer — what is above is a FRAGMENT, not a reply */
+      broke?: boolean;
+    }
   | { kind: "info"; text: string }
   | { kind: "error"; text: string }
   | {
@@ -631,6 +643,9 @@ export default function Home() {
         return;
       }
 
+      // L9 — what the desk answered WITHOUT travels on the response header
+      const note = degradedNote(res.headers.get(ASK_DEGRADED_HEADER));
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let full = "";
@@ -643,9 +658,24 @@ export default function Home() {
         }
         latMark("t2");
         full += decoder.decode(value, { stream: true });
-        setAnswer({ kind: "ask", text: full, streaming: true });
+        setAnswer({ kind: "ask", text: full, streaming: true, note });
       }
-      setAnswer(full.trim() ? { kind: "ask", text: full.trim(), streaming: false } : null);
+      // L9 — three endings, three states, none of them silence:
+      //   the stream carried the failure sentinel → what arrived is a FRAGMENT
+      //   the stream carried nothing at all       → an error, not a vanished card
+      //   otherwise                               → the answer
+      const broke = full.includes(ASK_STREAM_FAILURE);
+      const body = broke ? full.split(ASK_STREAM_FAILURE).join("").trim() : full.trim();
+      if (broke) {
+        if (body) setAnswer({ kind: "ask", text: body, streaming: false, note, broke: true });
+        else sayError("THE DESK IS UNREACHABLE — TRY AGAIN.");
+      } else if (body) {
+        setAnswer({ kind: "ask", text: body, streaming: false, note });
+      } else {
+        // an empty stream used to clear the card, which read as "nothing
+        // happened" — it is a failed answer and says so
+        sayError("THE DESK ANSWERED WITH NOTHING — TRY AGAIN.");
+      }
       setState("idle");
     } catch (err) {
       if (gen !== genRef.current) return;

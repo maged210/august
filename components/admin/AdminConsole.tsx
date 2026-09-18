@@ -41,6 +41,7 @@ import {
 } from "@/lib/tape";
 // type-only: lib/transcripts is server code (Anthropic/Redis) — the type erases
 import type { TranscriptRecord } from "@/lib/transcripts";
+import { markRepeats } from "@/lib/transcript-repeats";
 // type-only for the same reason (lib/call-push is the server-side sender)
 import type { CallPushLogEntry } from "@/lib/call-push";
 import Disclaimer from "@/components/Disclaimer";
@@ -431,6 +432,37 @@ export default function AdminConsole() {
       const { [id]: _gone, ...rest } = m;
       return rest;
     });
+  };
+
+  // fix/failure-visibility — RE-RUN a failed extraction from the raw text
+  // already in the store. No second transcript-provider fetch (that costs
+  // credits for a video already bought), no second row: the same record is
+  // updated in place. Only failed rows offer it.
+  const [rerunId, setRerunId] = useState<string | null>(null);
+  const rerun = async (id: string) => {
+    setRerunId(id);
+    setActionError("");
+    setTrResult("");
+    try {
+      const res = await fetch("/api/admin/transcripts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ id }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; drafts?: number; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? String(res.status));
+      setTrResult(
+        j.drafts === 0
+          ? "Re-ran — no trade ideas or tape callouts found in that transcript."
+          : `Re-ran — ${j.drafts} draft${j.drafts === 1 ? "" : "s"} created, review on the right.`,
+      );
+      await Promise.all([load(), loadTranscripts(), loadTape()]);
+    } catch (err) {
+      // L9 — the real reason, on the row, never a category word
+      setActionError(`Re-run failed: ${(err as Error).message}`);
+    } finally {
+      setRerunId(null);
+    }
   };
 
   // feature/ingest-transcripts — resolve a YouTube link to transcript text and
@@ -1093,7 +1125,13 @@ export default function AdminConsole() {
               </form>
               {transcripts.length > 0 ? (
                 <ul className="adm-trlog">
-                  {transcripts.map((t) => {
+                  {/* THE REPEAT RULE — eight rows for two videos read as two
+                      intakes with their history. Older attempts on the same
+                      video collapse under the newest one and are listed inside
+                      it; nothing is hidden, and nothing is counted twice. */}
+                  {markRepeats(transcripts).map((t, _i, all) => {
+                    if (t.repeatOf) return null;
+                    const repeats = all.filter((r) => r.repeatOf === t.id);
                     const open = openIngest === t.id;
                     const linked = [
                       ...t.ideaIds.map((id) => ({ id, kind: "idea" as const })),
@@ -1116,18 +1154,51 @@ export default function AdminConsole() {
                             {t.status === "processed"
                               ? ` · ${t.ideaIds.length} idea${t.ideaIds.length === 1 ? "" : "s"} · ${t.tapeIds?.length ?? 0} tape`
                               : ""}
-                            {t.status === "failed" && t.error && t.error !== "pending"
-                              ? ` · ${t.error}`
+                            {repeats.length > 0
+                              ? ` · ${t.attempts} attempts on this video`
                               : ""}
                           </span>
                           <span className="adm-trcaret" aria-hidden="true">
                             {open ? "▾" : "▸"}
                           </span>
+                          {/* L9 — the cause, in full, on its own line. Never
+                              appended to the clipped meta line. */}
+                          {t.status === "failed" && t.error && t.error !== "pending" ? (
+                            <span className="adm-trerr">{t.error}</span>
+                          ) : null}
                         </button>
                         {open ? (
                           <div className="adm-trdetail">
+                            {t.status === "failed" ? (
+                              <div className="adm-trrerun">
+                                <button
+                                  type="button"
+                                  className="adm-btn"
+                                  disabled={rerunId !== null}
+                                  onClick={() => rerun(t.id)}
+                                >
+                                  {rerunId === t.id ? "RE-RUNNING…" : "RE-RUN EXTRACTION"}
+                                </button>
+                                <span className="adm-hint">
+                                  re-reads the stored transcript — no new fetch, no new row
+                                </span>
+                              </div>
+                            ) : null}
+                            {repeats.length > 0 ? (
+                              <ul className="adm-trrepeats">
+                                {repeats.map((r) => (
+                                  <li key={r.id}>
+                                    {relativeTime(r.receivedAt)} ·{" "}
+                                    {r.status === "failed" ? "FAILED" : "OK"}
+                                    {r.error && r.error !== "pending" ? ` · ${r.error}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
                             {linked.length === 0 ? (
-                              <span className="adm-empty">nothing extracted from this one</span>
+                              t.status === "failed" ? null : (
+                                <span className="adm-empty">nothing extracted from this one</span>
+                              )
                             ) : (
                               linked.map((l) => {
                                 const idea = l.kind === "idea" ? rows.find((i) => i.id === l.id) : null;

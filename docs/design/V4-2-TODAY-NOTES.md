@@ -266,3 +266,61 @@ Branch `fix/quote-age` off main at `7e276bd`. Code `4de75b1`, docs `666432e`, me
 - **Production, after the deploy went success**: repeated GETs of
   `/api/intel/quotes?symbols=SPY` return the SAME `asOf` while the response `Date` header
   advances — a cache hit is visibly older than its response, which is the whole point.
+
+## fix/failure-visibility — L9 (branch off main `00be3b5`)
+
+The transcript ingest broke on 2026-09-17 and the /admin console could not say
+why. The cause was never in this repo: `ANTHROPIC_API_KEY` is an
+organization-level key and the Anthropic API now rejects unscoped keys that
+don't send `anthropic-workspace-id`, so EVERY model call — extraction, the ask
+lane, THE CALL's thesis, memory, intel — 400s before the model or the token cap
+is looked at. What this branch fixes is the second failure: that a person could
+not see any of it.
+
+- **DESIGN_LAWS L9 — FAILURE IS A STATE, NOT AN ABSENCE** (the owner's wording,
+  verbatim). NOTE: the file already had an L9 (MOTION WITH RESTRAINT). It moved
+  to **L11** — nothing in the code cites it by number, while L10 is cited twice
+  (`auth.ts`, `/login`) and was left alone.
+- **THE CALL's thesis is a three-state read.** `anthropicThesis` throws instead
+  of reporting a dead key as "no line"; `getThesis` returns
+  `ok` / `unavailable(reason)` / `none` and STORES the failure against the
+  regime fingerprint with a 5-minute expiry, so every view inside the no-spend
+  window reads UNAVAILABLE rather than the first viewer getting a warn log and
+  the rest a blank card. `none` stays reserved for the two things that are not
+  failures: no regime to read from, and a generation already in flight. The card
+  renders the failed state with its chip; the call itself is untouched, because
+  the direction is derived from the regime model, not written by a model.
+- **The transcript route returns the cause** (`extractionFailure`, shared by
+  POST and the new PATCH). `code` stays stable for branching.
+- **`.adm-trmeta` no longer clips the reason.** It was `nowrap` +
+  `text-overflow: ellipsis`, and the cause was appended to the END of that line:
+  rendered, then thrown away. It now has its own wrapping line (`.adm-trerr`).
+- **RE-RUN EXTRACTION** (`PATCH /api/admin/transcripts`) re-reads the raw text
+  already in the store — no second Supadata fetch, no second row, failed rows
+  only (re-running a processed row would mint duplicate drafts). Repeated
+  attempts at one video collapse under the newest with their history
+  (`markRepeats`, pure, in its own module so the client console never imports
+  the server module).
+- **/api/chat** names the grounding it answered WITHOUT (`x-aug-degraded` →
+  a line under the answer), stops filing a failed enqueue as a consumer cancel
+  (which had suppressed the error branch and froze the card mid-sentence), makes
+  the dead-stream sentinel a shared constant the card renders as an error
+  instead of prose, turns an empty stream into an error instead of a vanished
+  card, and logs the cache read/write and no-store paths it used to swallow.
+- **lib/memory** reports every write. The wipe is the one that mattered:
+  `clearMemory` returned void, so `/forget` printed "MEMORY CLEARED." whether or
+  not anything was deleted. It also no longer overwrites a profile it failed to
+  read (that path could erase everything the desk knew and report success).
+- **lib/intel** names the feeds that didn't answer, stops asserting "Wires are
+  live." over zero articles, returns `synthesis: null` + a reason instead of a
+  cheerful placeholder, and ages a served-stale round from its real fetch time.
+
+**Gate:** suite 394/394 (5 new: the extraction cause, the degraded note, the
+repeat rule, and the thesis states including the stored-failure regression).
+`npx tsc --noEmit` clean. Production build green. Screenshots at 390 from a
+KEYLESS worktree with every `/api/*` answered from a fixture and unmatched ones
+FAILED, never sent: THE CALL with `thesisFailed` (CURRENT READ · DATA
+UNAVAILABLE, the call and record intact) and an /admin row carrying the real 400.
+The same /admin fixture shot against a main build is the before: `FAILED NQ
+ope… ▸` with the cause gone entirely. /admin's cramped 390 layout is unchanged
+from main — pre-existing, not this branch.

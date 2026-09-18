@@ -385,11 +385,34 @@ export async function readServerRegime(): Promise<RegimeRead> {
 const THESIS_MODEL = "claude-sonnet-4-6";
 
 export type ThesisGen = (read: RegimeRead) => Promise<string | null>;
-type StoredThesis = { text: string; fingerprint: string; at: number };
+
+/** DESIGN_LAWS L9 — a thesis that could not be generated is a STATE, not an
+ *  absence. `none` is the desk deciding not to spend (no regime to read from,
+ *  or another request is generating inside the no-spend window); it is the
+ *  only one of the three that renders no line. `unavailable` carries the
+ *  reason and renders UNAVAILABLE with its chip. */
+export type ThesisRead =
+  | { state: "ok"; text: string }
+  | { state: "unavailable"; reason: string }
+  | { state: "none" };
+
+/** The stored record: either a line or the reason there isn't one. A failure
+ *  is stored against the SAME fingerprint (with its own short expiry) so every
+ *  view inside the no-spend window reads UNAVAILABLE instead of a blank —
+ *  before this, the first failure went to a warn log and the next five minutes
+ *  of viewers saw a card with no read line and no way to know why. */
+type StoredThesis = { text: string; error?: string; fingerprint: string; at: number };
+
+/** How long a stored FAILURE stands. Matches the generation lock, so the
+ *  attempt after it expires retries rather than serving a stale failure —
+ *  a fixed key or a recovered provider heals on its own. */
+const THESIS_FAIL_TTL_S = 300;
 
 function asThesis(raw: unknown): StoredThesis | null {
   const t = (typeof raw === "string" ? safeJson(raw) : raw) as StoredThesis | null;
-  if (!t || typeof t.text !== "string" || typeof t.fingerprint !== "string" || !t.text.trim()) return null;
+  if (!t || typeof t.fingerprint !== "string") return null;
+  if (typeof t.error === "string" && t.error.trim()) return t;
+  if (typeof t.text !== "string" || !t.text.trim()) return null;
   return t;
 }
 
@@ -399,52 +422,73 @@ export function shouldRegenerateThesis(stored: { fingerprint: string } | null, f
 }
 
 let _anthropic: Anthropic | null = null;
+/** THROWS on every failure (L9). A missing key, a provider error and an
+ *  unusable answer are three different causes and none of them is "the desk
+ *  had nothing to say" — the caller records the cause and the card says so. */
 async function anthropicThesis(read: RegimeRead): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  try {
-    if (!_anthropic || (_anthropic.apiKey as string | null) !== apiKey) {
-      _anthropic = new Anthropic({ apiKey });
-    }
-    const inputs = read.because
-      .map((b) => `${b.input}: ${b.value} (${b.vote > 0 ? "risk-on" : b.vote < 0 ? "risk-off" : "neutral"})`)
-      .join("; ");
-    const msg = await _anthropic.messages.create({
-      model: THESIS_MODEL,
-      max_tokens: 120,
-      system:
-        "You are AUGUST, a market desk. Write EXACTLY ONE sentence: your read of the tape right now, grounded ONLY in the inputs given. " +
-        "Declarative, specific, like a desk — not a chatbot. No hedging filler, no emoji, no preamble, no surrounding quotes, no invented numbers beyond the inputs. Under 30 words.",
-      messages: [{ role: "user", content: `Regime: ${read.label}. Inputs: ${inputs}.` }],
-    });
-    const text = msg.content
-      .filter((c): c is Anthropic.TextBlock => c.type === "text")
-      .map((c) => c.text)
-      .join(" ")
-      .trim();
-    if (!text || text.length > 240) return null; // ignored the constraint — omit rather than ramble
-    return text;
-  } catch (err) {
-    console.warn("[call] thesis generation failed:", err instanceof Error ? err.message : err);
-    return null;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
+  if (!_anthropic || (_anthropic.apiKey as string | null) !== apiKey) {
+    _anthropic = new Anthropic({ apiKey });
   }
+  const inputs = read.because
+    .map((b) => `${b.input}: ${b.value} (${b.vote > 0 ? "risk-on" : b.vote < 0 ? "risk-off" : "neutral"})`)
+    .join("; ");
+  const msg = await _anthropic.messages.create({
+    model: THESIS_MODEL,
+    max_tokens: 120,
+    system:
+      "You are AUGUST, a market desk. Write EXACTLY ONE sentence: your read of the tape right now, grounded ONLY in the inputs given. " +
+      "Declarative, specific, like a desk — not a chatbot. No hedging filler, no emoji, no preamble, no surrounding quotes, no invented numbers beyond the inputs. Under 30 words.",
+    messages: [{ role: "user", content: `Regime: ${read.label}. Inputs: ${inputs}.` }],
+  });
+  const text = msg.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join(" ")
+    .trim();
+  // ignored the constraint — a rambling answer is a failed generation, not
+  // a quiet omission
+  if (!text) throw new Error("the model returned an empty line");
+  if (text.length > 240) throw new Error("the model ignored the one-sentence constraint");
+  return text;
 }
 
 /** The current thesis line. Cache hit on matching fingerprint; a flip makes
  *  ONE model call (NX-locked against stampedes — concurrent views during a
- *  flip serve nothing rather than double-spend). Failure omits the line and
- *  the 90s lock throttles retries. */
+ *  flip serve nothing rather than double-spend).
+ *
+ *  L9: a failure is a STATE. It is logged at error level, stored against this
+ *  fingerprint so concurrent and subsequent views inside the window read the
+ *  same UNAVAILABLE, and returned with its reason. Only two things render no
+ *  line at all, and neither is a failure: no regime to read from, and another
+ *  request already generating. */
 export async function getThesis(
   read: RegimeRead,
   opts?: { kv?: CallKv | null; gen?: ThesisGen; now?: number },
-): Promise<string | null> {
-  if (read.label === "UNAVAILABLE") return null;
+): Promise<ThesisRead> {
+  // the regime line itself already reads UNAVAILABLE — a thesis about nothing
+  // is not a failure of the thesis
+  if (read.label === "UNAVAILABLE") return { state: "none" };
   const kv = opts?.kv !== undefined ? opts.kv : defaultKv();
-  if (!kv) return null;
+  if (!kv) return { state: "unavailable", reason: "the call store isn't configured" };
   const fp = regimeFingerprint(read);
+  const fail = async (reason: string): Promise<ThesisRead> => {
+    console.error("[call] thesis unavailable:", reason);
+    // best-effort: if the store is the thing that broke, the state is still
+    // returned — it is never downgraded to silence
+    await kv
+      .set(K.thesis, { text: "", error: reason, fingerprint: fp, at: opts?.now ?? Date.now() }, { ex: THESIS_FAIL_TTL_S })
+      .catch(() => {});
+    return { state: "unavailable", reason };
+  };
   try {
     const stored = asThesis(await kv.get(K.thesis));
-    if (stored && !shouldRegenerateThesis(stored, fp)) return stored.text;
+    if (stored && !shouldRegenerateThesis(stored, fp)) {
+      return stored.error
+        ? { state: "unavailable", reason: stored.error }
+        : { state: "ok", text: stored.text };
+    }
     // ONE generation attempt per 5 minutes, success or failure — the lock is
     // NOT released on success: per-instance quote caches can straddle a vote
     // threshold and alternate the fingerprint per request, and without a
@@ -452,13 +496,21 @@ export async function getThesis(
     // flip inside the window serves no line briefly; the next attempt after
     // expiry regenerates.
     const lock = await kv.set(K.thesisLock, "x", { nx: true, ex: 300 });
-    if (lock === null) return null; // inside the window — no spend
-    const text = await (opts?.gen ?? anthropicThesis)(read);
-    if (!text) return null;
+    // inside the window with nothing stored for this fingerprint: another
+    // request is generating right now. No line, no spend, nothing failed.
+    if (lock === null) return { state: "none" };
+    let text: string | null;
+    try {
+      text = await (opts?.gen ?? anthropicThesis)(read);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+    if (!text) return fail("the model returned no usable line");
     await kv.set(K.thesis, { text, fingerprint: fp, at: opts?.now ?? Date.now() });
-    return text;
-  } catch {
-    return null;
+    return { state: "ok", text };
+  } catch (err) {
+    // the STORE failed, not the model — still a state, never a blank line
+    return fail(err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -607,6 +659,12 @@ export type CallState = {
     locked: boolean;
     youSide: CallSide | null;
     thesis: string | null;
+    /** fix/failure-visibility (L9): the read could not be generated. The card
+     *  renders UNAVAILABLE with its chip — never a silently missing line. The
+     *  reason is logged server-side and deliberately NOT published here: this
+     *  wire is public and republished, and a provider's raw error text is
+     *  infrastructure detail, not a desk fact. */
+    thesisFailed: boolean;
   } | null;
   noCall: { reason: "no_session" | "dead_even" | "unavailable" | "not_generated"; nextDate: string } | null;
   settled: {
@@ -711,14 +769,23 @@ export async function readCallState(
       const youSide = take?.side === "HIGHER" || take?.side === "LOWER" ? (take.side as CallSide) : null;
       // the thesis rides the card — regime read is 60s-cached; model only on flip
       let thesis: string | null = null;
+      let thesisFailed = false;
       try {
-        thesis = await getThesis(await (opts?.readRegime ?? readServerRegime)(), {
+        const t = await getThesis(await (opts?.readRegime ?? readServerRegime)(), {
           kv,
           gen: opts?.thesisGen,
           now,
         });
-      } catch {
-        thesis = null;
+        thesis = t.state === "ok" ? t.text : null;
+        thesisFailed = t.state === "unavailable";
+      } catch (err) {
+        // reading the REGIME threw (getThesis itself never throws) — the card
+        // says the read is unavailable rather than dropping the line (L9)
+        console.error(
+          "[call] regime read for the thesis failed:",
+          err instanceof Error ? err.message : err,
+        );
+        thesisFailed = true;
       }
       state.active = {
         forDate: day.forDate,
@@ -727,6 +794,7 @@ export async function readCallState(
         locked: !canTake(day.forDate, now),
         youSide,
         thesis,
+        thesisFailed,
       };
     } else if (day && !day.settle && day.side === null && day.forDate >= today) {
       state.noCall = { reason: day.noCallReason ?? "dead_even", nextDate: nextWeekday(day.forDate) };
