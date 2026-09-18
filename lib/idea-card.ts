@@ -14,7 +14,7 @@
 //     TRIGGER (evaluation.level/dir) → the trigger question; else the
 //     ticker + a thesis excerpt. No model touches it.
 //   - a LAST PRICE is fresh only when its own symbol was answered by the
-//     latest quotes round that asked for it (readQuote); a symbol whose
+//     latest quotes round that asked for it (lib/quote-book readQuote); a symbol whose
 //     batch failed is UNAVAILABLE, never an older round's price.
 //   - "% OF THE WAY" is (last − stop) / (target − stop), clamped 0–100, and
 //     exists ONLY when target, stop and last are all real numbers. The
@@ -658,80 +658,8 @@ export function chartGeometry(
   return { width, height, points, ys, min, max, first: bars[0], last: bars[bars.length - 1] };
 }
 
-/** quotes are fetched in chunks the route accepts (20 symbols per call);
- *  a longer book must never silently lose its tail */
-export function chunkSymbols(symbols: readonly string[], size = 20): string[][] {
-  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))].sort();
-  const out: string[][] = [];
-  for (let i = 0; i < uniq.length; i += size) out.push(uniq.slice(i, i + size));
-  return out;
-}
-
-// ── last quotes — ONE freshness policy for every surface that shows a price ──
-//
-// The card list and the dock heatmap read the same book through readQuote,
-// so a failure can never be honest in one place and silent in the other.
-// Per SYMBOL, not per round: each slot carries its own last-seen time and the
-// time its batch was last asked. A symbol is fresh only when the latest
-// attempt that included it answered with a price, and that answer is recent.
-// A failed batch nulls its symbols' prices — an older round's price is never
-// kept around to be mistaken for a fresh one.
-
-export type QuoteSlot = {
-  price: number | null;
-  /** today's % move, when the route carried one */
-  chgPct: number | null;
-  /** when this symbol last came back with a price (epoch ms) */
-  seenAt: number | null;
-  /** when this symbol's batch was last asked, answered or not (epoch ms) */
-  checkedAt: number;
-};
-export type QuoteBook = Record<string, QuoteSlot>;
-/** one chunk's outcome: ok=false when the request itself failed */
-export type QuoteBatch = {
-  symbols: readonly string[];
-  ok: boolean;
-  quotes?: Record<string, { price?: number; chgPct?: number } | undefined>;
-};
-
-/** `now` is when the batch was ASKED (feat/v4-1b-integrity), not when it
- *  landed: batches merge one at a time as they settle, so a slow batch never
- *  holds the rest of the book back, and a batch from an OLDER round that lands
- *  after a newer round has already asked for a symbol is dropped for that
- *  symbol — an older round's price can never overwrite a newer answer (or a
- *  newer failure) and be stamped fresh. */
-export function mergeQuoteRound(prev: QuoteBook, batches: readonly QuoteBatch[], now: number): QuoteBook {
-  const next: QuoteBook = { ...prev };
-  for (const b of batches) {
-    for (const raw of b.symbols) {
-      const sym = raw.trim().toUpperCase();
-      if (prev[sym] && prev[sym].checkedAt > now) continue; // a newer round already asked — this one is history
-      const q = b.ok ? b.quotes?.[sym] : undefined;
-      const price = q && Number.isFinite(q.price) && (q.price as number) > 0 ? (q.price as number) : null;
-      if (price != null) {
-        next[sym] = { price, chgPct: Number.isFinite(q!.chgPct) ? (q!.chgPct as number) : null, seenAt: now, checkedAt: now };
-      } else {
-        // the batch failed, or answered without this symbol: no price at all
-        next[sym] = { price: null, chgPct: null, seenAt: prev[sym]?.seenAt ?? null, checkedAt: now };
-      }
-    }
-  }
-  return next;
-}
-
-export type QuoteRead =
-  | { state: "pending" }
-  | { state: "ok"; price: number; chgPct: number | null; seenAt: number }
-  | { state: "unavailable"; seenAt: number | null };
-
-/** pending: never asked yet · ok: answered by its latest attempt, within
- *  maxAgeMs (a poll that stalls — a hidden tab — ages a price out) ·
- *  unavailable: everything else */
-export function readQuote(book: QuoteBook, symbol: string, now: number, maxAgeMs: number): QuoteRead {
-  const slot = book[symbol.trim().toUpperCase()];
-  if (!slot) return { state: "pending" };
-  if (slot.price != null && slot.seenAt != null && slot.seenAt === slot.checkedAt && now - slot.seenAt <= maxAgeMs) {
-    return { state: "ok", price: slot.price, chgPct: slot.chgPct, seenAt: slot.seenAt };
-  }
-  return { state: "unavailable", seenAt: slot.seenAt };
-}
+// ── last quotes ──────────────────────────────────────────────────────────────
+// chunkSymbols / mergeQuoteRound / readQuote and the QuoteBook types moved to
+// lib/quote-book.ts (feat/v4-2-today) — the front page and the terminal import
+// the one copy. Nothing here re-exports them: an importer names the module the
+// policy lives in.

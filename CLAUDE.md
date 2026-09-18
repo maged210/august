@@ -64,16 +64,49 @@ Guidance for Claude Code working in this repo.
   the pivot and went with the chain. `lib/intel/brief.ts` was NOT this — it
   was the owner desk's brief compiler, deleted with the desk (chore/terminal-cut).
 - The MapLibre globe. The dep is gone too; the code went several releases ago.
+- THE ORB. `components/Presence3D.tsx` and the `three` dependency are gone
+  (feat/v4-2-today, the owner's strike): it carried no data, its only signal
+  (THINKING during an ask) is the answer card's, and its WebGL crystal was the
+  last of the retired dark-cinematic language. The regime card is the front
+  page's first card. Do not re-add a decorative hero.
+- The calendar's UNRENDERED computation: the 15-minute NQ reaction on released
+  prints, the FRED `actual` backfill (`lib/calendar-actuals.ts`), the daily
+  pass step that warmed it, and the calendar-ask seam (`/api/chat`'s
+  `calendarAsk` branch + the canonical prompts in `lib/calendar-feed`) — no
+  rendered control could reach any of it. `/api/calendar` serves the week's
+  high-impact rows and nothing else; CountdownRow renders them.
+- The front page's EARNINGS row — a permanent DATA UNAVAILABLE with no
+  provider anywhere. If earnings return, they return as "what's reporting that
+  could move the live book", not a market-wide list.
+- The theme menu (MATRIX / DARK / LIGHT / GOTHAM), MatrixRain + its rain dial,
+  the mood axis, and the orb's night looks — retired feat/v4-2-today (tag
+  `archive/theme-menu` on main is the rebuild point). ONE paper theme; do not
+  reintroduce a theme switcher or a second palette (DESIGN_LAWS L1).
 
 ## Kept deliberately, after being proposed for deletion
 
-- `three` and `components/Presence3D.tsx` — the orb is LIVE. HomeLanding
-  dynamic-imports it and the root page mounts HomeLanding.
 - `/api/cron/watchers` + `lib/watchers.ts` — unscheduled and uncalled, but
   CLAUDE.md names Watchers as planned work on the push seam. Documented intent
   beats an import graph.
 
 ## Decided
+
+- THE PAPER SHELL + TODAY (feat/v4-2-today, 2026-09-17) — DESIGN_LAWS L1 is
+  PAPER LANGUAGE: paper is the desk, dark is the arena (THE PIT holds a dark
+  arena as a class; /admin is exempt). The shared palette and the type scale
+  live ONCE in `app/globals.css` :root (`--paper-*`, `--type-*`, chip edges);
+  `app/intel/frame.css`'s paper block points its `--rd-*` names at them, and
+  the terminal pins its own pre-v4-2 shell values (chips, disclaimer, base
+  text) so its output did not move. `<html data-theme="light">` is
+  server-rendered and never changes. The front page is `app/today.css` +
+  `td-*` cards: one card per module, a provenance chip on market data, an
+  as-of time on August's stored records (desk, tape), UNAVAILABLE instead of
+  blank. ONE QUOTE BOOK: `lib/quote-book.ts` (pure policy) +
+  `lib/use-quote-book.ts` (the loop) are imported by the terminal AND the
+  front page — never copy the functions. STALE is retired for prices. THE
+  CALL shows no reference while open; a settled call reads the stored close
+  and prev close it was scored against. LATEST INGEST is /admin-only (owner
+  parity on the floor too: the ADMIN chip is the only owner difference).
 
 - THE TERMINAL CUT (chore/terminal-cut, 2026-09-15) — ONE terminal for every
   role: `IntelDeckSurface` renders `IdeasFeed`, and the July owner desk

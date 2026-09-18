@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeRegime, parseStatedLevel, sparkTrendPct, sparkTrendPts, vixBucket } from "../lib/regime";
+import { computeRegime, parseStatedLevel, regimeGauge, sparkTrendPct, sparkTrendPts, vixBucket } from "../lib/regime";
 
 const BASE = {
   spyTrendPct: null, qqqTrendPct: null, vix: null, vixTrendPts: null,
@@ -74,4 +74,28 @@ test("spark trends: % and points, honest null when thin", () => {
   assert.equal(sparkTrendPct([100]), null);
   assert.equal(sparkTrendPct(undefined), null);
   assert.equal(sparkTrendPts([20, 14.5]), -5.5);
+});
+
+test("regime gauge: five steps from the vote sum, clamped at the label thresholds; none when UNAVAILABLE", () => {
+  const on = computeRegime({
+    ...BASE, spyTrendPct: 2.4, qqqTrendPct: 3.1, vix: 13.8, vixTrendPts: -2.2,
+    bookLongs: 6, bookShorts: 1, nqVsLevelPct: 1.4,
+  });
+  assert.equal(on.label, "RISK ON");
+  assert.equal(regimeGauge(on), 2); // sum 5 reads the same step as sum 2 — lean, not strength
+  const off = computeRegime({ ...BASE, spyTrendPct: -3.2, vix: 31.0, vixTrendPts: 6.5 });
+  assert.equal(off.label, "RISK OFF");
+  assert.equal(regimeGauge(off), -2);
+  // NEUTRAL leaning on: +1
+  const leanOn = computeRegime({ ...BASE, spyTrendPct: 1.8, vix: 18.0 });
+  assert.equal(leanOn.label, "NEUTRAL");
+  assert.equal(regimeGauge(leanOn), 1);
+  const leanOff = computeRegime({ ...BASE, spyTrendPct: -1.8, vix: 18.0 });
+  assert.equal(regimeGauge(leanOff), -1);
+  // dead even
+  const even = computeRegime({ ...BASE, spyTrendPct: 1.8, vix: 27.0 });
+  assert.equal(even.label, "NEUTRAL");
+  assert.equal(regimeGauge(even), 0);
+  // no data, no needle
+  assert.equal(regimeGauge(computeRegime({ ...BASE, vix: 18 })), null);
 });

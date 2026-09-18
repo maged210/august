@@ -18,9 +18,10 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     display: "standalone",
     orientation: "portrait",
-    // Match the dark stage (--charcoal) so the install splash hands off seamlessly.
-    background_color: "#13151A",
-    theme_color: "#13151A",
+    // Match the paper stage (--paper-stage) so the install splash hands off
+    // seamlessly (feat/v4-2-today; was the retired dark stage #13151A).
+    background_color: "#f4f5f7",
+    theme_color: "#f4f5f7",
     icons: [
       { src: "/icon-192", sizes: "192x192", type: "image/png" },
       { src: "/icon-512", sizes: "512x512", type: "image/png" },

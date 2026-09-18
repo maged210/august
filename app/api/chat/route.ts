@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Redis } from "@upstash/redis";
 import { askCacheKey, askCapFor, recordAskStat, takeAskBudget, ASK_CACHE_TTL_S } from "@/lib/ask";
-import { askCacheKey as calAskCacheKey, getCalendarWeek, matchAskPrompt } from "@/lib/calendar-feed";
 import { SYSTEM_PROMPT } from "@/lib/persona";
 import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { getMarketsSnapshot } from "@/lib/markets";
@@ -74,14 +73,9 @@ export async function POST(req: Request): Promise<Response> {
   if (!rl.ok) return rateLimitedResponse(rl.reset);
 
   let message = "";
-  let calendarAsk: string | null = null;
   try {
-    const body = (await req.json()) as { message?: unknown; calendarAsk?: unknown };
+    const body = (await req.json()) as { message?: unknown };
     message = typeof body.message === "string" ? body.message.trim() : "";
-    calendarAsk =
-      typeof body.calendarAsk === "string" && body.calendarAsk.length > 0 && body.calendarAsk.length <= 160
-        ? body.calendarAsk
-        : null;
   } catch {
     return new Response("Invalid request body.", { status: 400 });
   }
@@ -96,30 +90,6 @@ export async function POST(req: Request): Promise<Response> {
     if (setCookie) res.headers.append("Set-Cookie", setCookie);
     return res;
   };
-
-  // Calendar-card ask (whats-coming) — one shared spend per event per day.
-  // Honored only for the exact canonical prompt + a state-consistent kind;
-  // shared across identities because its answers are memory- and
-  // snapshot-free by construction.
-  let calAskKey: string | null = null;
-  if (calendarAsk && kv) {
-    const ev = (await getCalendarWeek().catch(() => [])).find((e) => e.id === calendarAsk);
-    const kind = ev ? matchAskPrompt(ev, message) : null;
-    const stateOk = ev && kind ? (kind === "released" ? ev.ts <= Date.now() : ev.ts > Date.now()) : false;
-    if (ev && kind && stateOk) {
-      calAskKey = calAskCacheKey(ev.id, new Date().toISOString().slice(0, 10), kind, message);
-      try {
-        const hit = await kv.get<string>(calAskKey);
-        if (typeof hit === "string" && hit.trim()) {
-          console.log("[ask] calendar-ask cache hit");
-          if (cid) void recordAskStat(kv, cid, "cache");
-          return withCookie(textStream(hit));
-        }
-      } catch {
-        /* fail open */
-      }
-    }
-  }
 
   // Per-identity 10-minute cache — an identical normalized repeat is free and
   // does not touch the cap. Per identity BY LAW: the grounding carries the
@@ -170,21 +140,15 @@ export async function POST(req: Request): Promise<Response> {
   const timeBox = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
   const t0 = Date.now();
-  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = calAskKey
-    ? [EMPTY_MEM, "", "", ""]
-    : await Promise.all([
-        timeBox(loadMemory(principal).catch(() => EMPTY_MEM), 300, EMPTY_MEM),
-        timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
-        timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
-        timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
-      ]);
+  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = await Promise.all([
+    timeBox(loadMemory(principal).catch(() => EMPTY_MEM), 300, EMPTY_MEM),
+    timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
+    timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
+    timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
+  ]);
   const prepMs = Date.now() - t0;
 
-  const CAL_ASK_GUIDANCE =
-    "\n\n---\nThis is a calendar-card question about a scheduled economic release. You have NO live tape, NO printed value, and no personal memory in context, and this answer may be replayed to other visitors today. Explain the mechanics and the scenarios plainly; do NOT state current prices or levels, and do NOT invent the printed value.";
-  const dynamicSystem = calAskKey
-    ? CAL_ASK_GUIDANCE
-    : buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
+  const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
   ];
@@ -246,8 +210,7 @@ export async function POST(req: Request): Promise<Response> {
         // write so Upstash's get()-side auto-JSON-parse round-trips answers
         // that happen to BE valid JSON (the "1"-sentinel lesson).
         if (modelDone && full.trim() && kv) {
-          if (calAskKey) await kv.set(calAskKey, JSON.stringify(full), { ex: 86_400 }).catch(() => {});
-          else if (cacheKey) await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch(() => {});
+          if (cacheKey) await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch(() => {});
         }
       } catch (err) {
         if (!aborted) {
@@ -256,7 +219,7 @@ export async function POST(req: Request): Promise<Response> {
         }
       } finally {
         console.log(
-          `[ask] model=${MODEL} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms chars=${full.length}${calAskKey ? " calask" : ""}${modelDone ? "" : " (aborted mid-stream)"}`,
+          `[ask] model=${MODEL} prep=${prepMs}ms ttft=${ttftMs >= 0 ? `${ttftMs}ms` : "n/a"} total=${Date.now() - t0}ms chars=${full.length}${modelDone ? "" : " (aborted mid-stream)"}`,
         );
         try {
           controller.close();

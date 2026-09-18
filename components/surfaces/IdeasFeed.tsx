@@ -9,7 +9,7 @@
 //          pass (INTEGRITY-1). They ARE the board.
 //   LAST — a DELAYED quote per instrument (GET /api/intel/quotes), chunked at
 //          the route's 20-symbol cap, merged into ONE quote book with a
-//          per-symbol freshness policy (lib/idea-card mergeQuoteRound /
+//          per-symbol freshness policy (lib/quote-book mergeQuoteRound /
 //          readQuote). The dock's heatmap reads the same book — one fetch,
 //          one policy, so a failed batch is UNAVAILABLE in both places.
 //   BARS — 1M daily candles for the open idea (GET /api/intel/bars), on the
@@ -59,35 +59,24 @@ import { SETTLE_UTC_LABEL } from "@/lib/settle-cron";
 import {
   BOOK_FILTERS,
   bookStats,
-  chunkSymbols,
   filterCounts,
   filterIdeas,
   fmtLevel,
   headlineOf,
   headlineTone,
   levelIsParsed,
-  mergeQuoteRound,
   progressOf,
   questionOf,
-  readQuote,
   sideOf,
   statusOf,
   statusText,
   type BookFilter,
-  type QuoteBatch,
-  type QuoteBook,
-  type QuoteRead,
 } from "@/lib/idea-card";
+import { QUOTE_REFRESH_MS } from "@/lib/quote-book";
+import { useQuoteBook } from "@/lib/use-quote-book";
 import "@/app/intel/feed.css";
 
-const REFRESH_MS = 60_000; // the book, the tape and the quotes poll together
-/** a symbol answered longer ago than this reads UNAVAILABLE even if no newer
- *  round has failed — a stalled poll (a hidden tab) must not keep a price
- *  standing as DELAYED */
-const QUOTE_MAX_AGE_MS = 3 * REFRESH_MS;
-/** a quotes batch still out after this is a failed batch — its symbols read
- *  UNAVAILABLE instead of sitting on "loading" until the platform times out */
-const QUOTE_TIMEOUT_MS = 20_000;
+const REFRESH_MS = QUOTE_REFRESH_MS; // the book, the tape and the quotes poll together
 
 export default function IdeasFeed({
   active = true,
@@ -118,10 +107,6 @@ export default function IdeasFeed({
   // card sits under visibility:hidden while the page is up)
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [filter, setFilter] = useState<BookFilter>("all");
-  // the quote book — per-symbol slots (price, last seen, last asked); a tick
-  // each poll re-reads freshness even when no round has landed
-  const [quotes, setQuotes] = useState<QuoteBook>({});
-  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 700px)");
@@ -173,75 +158,11 @@ export default function IdeasFeed({
 
   // ── last quotes ─────────────────────────────────────────────────────────────
   // one DELAYED price per instrument, in ≤20-symbol chunks (the route slices
-  // anything longer — the old heatmap call lost its tail past twenty).
-  const symChunks = useMemo(() => chunkSymbols(liveIdeas.map((i) => chartSymbolFor(i.instrument))), [liveIdeas]);
-  const symKey = symChunks.map((c) => c.join(",")).join("|");
-  useEffect(() => {
-    if (!symKey) return;
-    const chunks = symKey.split("|");
-    let cancelled = false;
-    const inflight = new Set<AbortController>();
-    const pull = () => {
-      // feat/v4-1b-integrity — every batch merges ON ITS OWN, stamped with
-      // the time its round was ASKED: a slow batch never holds the rest of
-      // the book at "loading", a batch that hangs past the timeout is a
-      // failed batch (UNAVAILABLE on its own symbols), and a batch from an
-      // older round that lands after a newer one is dropped by
-      // mergeQuoteRound rather than stamped fresh
-      const askedAt = Date.now();
-      for (const c of chunks) {
-        const ctl = new AbortController();
-        inflight.add(ctl);
-        const timer = window.setTimeout(() => ctl.abort(), QUOTE_TIMEOUT_MS);
-        fetch(`/api/intel/quotes?symbols=${encodeURIComponent(c)}`, { cache: "no-store", signal: ctl.signal })
-          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-          .then(
-            (j: { quotes?: Record<string, { price?: number; chgPct?: number }> }): QuoteBatch => ({
-              symbols: c.split(","),
-              ok: true,
-              quotes: j.quotes ?? {},
-            }),
-            (): QuoteBatch => ({ symbols: c.split(","), ok: false }),
-          )
-          .then((batch) => {
-            window.clearTimeout(timer);
-            inflight.delete(ctl);
-            if (cancelled) return;
-            // a failed batch nulls exactly its symbols (UNAVAILABLE), an
-            // answered one refreshes exactly its own
-            setQuotes((prev) => mergeQuoteRound(prev, [batch], askedAt));
-          });
-      }
-    };
-    pull();
-    const id = window.setInterval(() => {
-      setTick((t) => t + 1);
-      if (!document.hidden) pull();
-    }, REFRESH_MS);
-    // a tab coming back re-asks at once, so a price that aged out while the
-    // poll was paused is replaced within a round-trip instead of a minute
-    const onVisible = () => {
-      if (!document.hidden) {
-        setTick((t) => t + 1);
-        pull();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-      for (const ctl of inflight) ctl.abort();
-    };
-  }, [symKey]);
-
-  // ONE reader for every surface that shows a price from the book
-  const quoteFor = useCallback(
-    (symbol: string): QuoteRead => readQuote(quotes, symbol, Date.now(), QUOTE_MAX_AGE_MS),
-    // tick re-reads freshness every poll even when no round has landed
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quotes, tick],
-  );
+  // anything longer — the old heatmap call lost its tail past twenty). The
+  // loop and the per-symbol freshness policy are lib/use-quote-book +
+  // lib/quote-book (feat/v4-2-today): the front page runs the same code.
+  const bookSymbols = useMemo(() => liveIdeas.map((i) => chartSymbolFor(i.instrument)), [liveIdeas]);
+  const { quoteFor } = useQuoteBook(bookSymbols);
   const lastFor = useCallback(
     (idea: PublicIdea): LastQuote => {
       const q = quoteFor(chartSymbolFor(idea.instrument));

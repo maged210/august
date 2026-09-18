@@ -36,7 +36,10 @@ export const metadata: Metadata = {
   title: "AUGUST",
   description: TAGLINE,
   applicationName: "AUGUST",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "AUGUST" },
+  // feat/v4-2-today — the stage is paper: "default" gives the installed PWA a
+  // light status bar with dark text. ("black-translucent" drew WHITE status
+  // text over the paper stage — unreadable.)
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "AUGUST" },
   openGraph: {
     title: "AUGUST",
     description: TAGLINE,
@@ -51,7 +54,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#13151A",
+  themeColor: "#f4f5f7", // the paper stage (--paper-stage): browser + PWA chrome match the page
   width: "device-width",
   initialScale: 1,
   // No maximumScale — pinch-zoom must stay available (a11y). Inputs are ≥16px,
@@ -69,31 +72,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${mono.variable} ${sans.variable} ${geist.variable}`} suppressHydrationWarning>
+    // ONE THEME (feat/v4-2-today, DESIGN_LAWS L1): the paper stage is set on
+    // the server-rendered <html> — no pre-paint choice, no flash. The attribute
+    // stays because the terminal's paper block keys on it. The theme menu, the
+    // mood axis and the rain dial are retired (tag archive/theme-menu).
+    <html
+      lang="en"
+      data-theme="light"
+      className={`${mono.variable} ${sans.variable} ${geist.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        {/* Set the theme + mood attributes before first paint so neither flashes. */}
+        {/* Pre-paint: the rail's persisted collapse (below) — plus a one-time
+            sweep of the retired theme / mood / rain preferences, so no stale
+            key lingers in a visitor's storage. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              // THEME — matrix is the CORE V2 default stage; the toggle cycles
-              // matrix → dark → light → gotham(batman) → matrix. One-time
-              // migration (the house lightdefault precedent): every stored
-              // theme is reset to matrix once so the new default actually
-              // lands; an explicit re-pick after that is honored forever.
-              // Unknown/absent values also resolve to matrix.
-              // MOOD — orthogonal to the theme (it re-tints only the accent
-              // family); same pre-paint contract so a saved mood boots without
-              // a flash. A theme failure must not cost the mood, and vice versa,
-              // so each resolves in its own try/catch with its own safe default.
               "(function(){var d=document.documentElement;" +
-              // feature/paper-theme — PAPER is the stage now. data-theme is
-              // always set, so :root's base values are never the effective
-              // stage; flipping the stage means flipping the DEFAULT. Same
-              // one-time migration the matrix switch used, new flag key, so a
-              // stored 'matrix' resets once and the new default actually
-              // lands. An explicit later choice still sticks.
-              "try{var f=localStorage.getItem('aug-theme-paperdefault');var t=localStorage.getItem('aug-theme');if(!f){localStorage.setItem('aug-theme-paperdefault','1');t='light';localStorage.setItem('aug-theme','light');}d.setAttribute('data-theme',t==='dark'?'dark':t==='batman'?'batman':t==='matrix'?'matrix':'light');}catch(e){d.setAttribute('data-theme','light');}" +
-              "try{var m=localStorage.getItem('aug-mood');d.setAttribute('data-mood',m==='ember'||m==='phosphor'||m==='graphite'?m:'steel');}catch(e){d.setAttribute('data-mood','steel');}" +
+              "try{['aug-theme','aug-theme-paperdefault','aug-mood','aug-rain-level'].forEach(function(k){localStorage.removeItem(k);});}catch(e){}" +
               // RAIL (UX1) — a persisted collapse must apply before first paint,
               // exactly like the theme, or the sidebar flashes open then slides shut.
               "try{if(localStorage.getItem('aug-rail')==='collapsed'){d.setAttribute('data-rail','collapsed');}}catch(e){}" +

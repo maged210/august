@@ -1,0 +1,1041 @@
+/* ==========================================================================
+   TODAY — the front page (feat/v4-2-today). Frame 01 of docs/design/"August
+   Mobile v4 Markets.dc.html" on the paper stage (DESIGN_LAWS L1): white cards
+   with one hairline border, ink text, one card per module; per card ONE big
+   number or ONE headline, a small label, one accent with one job.
+   Every colour and size reads the shared PAPER + TYPE tokens in app/globals.css
+   (:root) — nothing here defines a palette. Mobile-first at 390; desktop keeps
+   the centred column. Imported by components/surfaces/HomeLanding.tsx.
+   ========================================================================== */
+
+.home-landing {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--paper-stage);
+  color: var(--paper-ink);
+  font-family: var(--font-geist), "Geist", system-ui, sans-serif;
+}
+
+/* — shared type tiers ---------------------------------------------------- */
+.td-label {
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-track);
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.td-sublabel {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-track);
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.td-figure {
+  font-size: var(--type-figure);
+  font-weight: var(--type-figure-weight);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper-ink);
+}
+.td-headline {
+  font-size: var(--type-headline);
+  font-weight: var(--type-headline-weight);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--paper-ink);
+}
+.td-title {
+  font-size: var(--type-title);
+  font-weight: var(--type-title-weight);
+  line-height: 1.35;
+  color: var(--paper-ink);
+}
+.td-body {
+  margin: 0;
+  font-size: var(--type-body);
+  line-height: 1.55;
+  color: var(--paper-ink);
+}
+.td-meta {
+  margin: 0;
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  color: var(--paper-mute);
+}
+.td-num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-row);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--paper-ink);
+}
+.td-tkr {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-foot);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--paper-ink);
+}
+.td-muted {
+  color: var(--paper-mute);
+}
+.td-chg.up,
+.td-call-side .up,
+.td-settled .up {
+  color: var(--paper-up);
+}
+.td-chg.down,
+.td-call-side .down,
+.td-settled .down {
+  color: var(--paper-down);
+}
+
+/* — controls --------------------------------------------------------------- */
+.td-link,
+.td-textbtn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: var(--type-row);
+  font-weight: 500;
+  color: var(--paper-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.td-link:hover,
+.td-textbtn:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.td-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius-sm);
+  background: var(--paper-card);
+  font-family: inherit;
+  font-size: var(--type-title);
+  font-weight: 500;
+  color: var(--paper-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.td-btn:hover:not(:disabled) {
+  background: var(--paper-stage);
+}
+.td-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.td-btn-danger {
+  color: var(--paper-down);
+  border-color: rgb(var(--paper-down-rgb) / 0.35);
+}
+.td-link:focus-visible,
+.td-textbtn:focus-visible,
+.td-btn:focus-visible,
+.td-take:focus-visible,
+.td-ctl:focus-visible,
+.td-sug:focus-visible,
+.td-x:focus-visible,
+.td-admin:focus-visible,
+.td-news-title:focus-visible {
+  outline: 2px solid var(--paper-accent);
+  outline-offset: 2px;
+}
+
+/* — header ---------------------------------------------------------------- */
+.td-top {
+  width: 100%;
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 12px) 6px
+    calc(env(safe-area-inset-left, 0px) + 16px);
+}
+.td-wordmark {
+  flex: none;
+  font-size: 18px; /* the wordmark — identity, not a tier (frame 01: 18px) */
+  font-weight: 600; /* the frame draws 700; Geist loads 400/500/600 — 600, as v4-1 did */
+  letter-spacing: -0.01em;
+  color: var(--paper-ink);
+}
+.td-top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.td-clock {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-track);
+  color: var(--paper-mute);
+  white-space: nowrap;
+}
+.td-thinking {
+  color: var(--paper-accent);
+}
+.td-signin {
+  min-height: 44px;
+}
+.td-session {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.td-email {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  color: var(--paper-mute);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the owner's ONE difference (terminal-cut parity): a link to /admin */
+.td-admin {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid var(--paper-hair);
+  border-radius: 999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  letter-spacing: 0.08em;
+  color: var(--paper-mute);
+  text-decoration: none;
+}
+.td-admin:hover {
+  color: var(--paper-ink);
+}
+.td-ctls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.td-ctl {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--paper-ink);
+  cursor: pointer;
+}
+.td-ctl:hover {
+  background: rgb(15 17 21 / 0.05);
+}
+.td-ctl.on {
+  color: var(--paper-accent);
+}
+
+/* — the column ------------------------------------------------------------- */
+.td-main {
+  width: 100%;
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px;
+}
+/* — the column of cards ---------------------------------------------------- */
+.td {
+  width: min(var(--chat-col, 720px), 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0 16px;
+}
+.td-dayline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+.td-date {
+  font-size: var(--type-title);
+  font-weight: var(--type-title-weight);
+  color: var(--paper-ink);
+}
+.td-market {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  font-weight: var(--type-label-weight);
+  letter-spacing: var(--type-label-track);
+  color: var(--paper-mute);
+  white-space: nowrap;
+}
+.td-market-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.td-market.on {
+  color: var(--paper-up);
+}
+
+.td-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius);
+}
+.td-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 20px;
+}
+.td-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.td-figure-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.td-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--paper-rule);
+  font-size: var(--type-foot);
+  line-height: 1.4;
+  color: var(--paper-mute);
+}
+.td-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.td-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  border-top: 1px solid var(--paper-rule);
+  font-size: var(--type-row);
+  color: var(--paper-ink);
+}
+.td-row-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--paper-mute);
+}
+.td-row-v {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-align: right;
+}
+.td-chg {
+  min-width: 6ch;
+  text-align: right;
+}
+
+/* — MARKET REGIME ----------------------------------------------------------- */
+.td-regime-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.td-regime-read {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.td-gauge {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.td-gauge-steps {
+  display: flex;
+  gap: 3px;
+}
+.td-gauge-step {
+  width: 22px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(15 17 21 / 0.08);
+}
+/* the card's one accent — its one job: which way the vote sum leans */
+.td-gauge-step.off.lit {
+  background: var(--paper-down);
+}
+.td-gauge-step.even.lit {
+  background: var(--paper-ink);
+}
+.td-gauge-step.on.lit {
+  background: var(--paper-up);
+}
+.td-gauge-cap {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--paper-mute);
+}
+.td-why {
+  align-self: flex-start;
+  min-height: 32px;
+}
+.td-inputs .td-row {
+  min-height: 44px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+.td-inputs .td-row-v {
+  color: var(--paper-ink);
+  font-variant-numeric: tabular-nums;
+}
+.td-vote {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: var(--type-meta);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.td-vote.on {
+  background: rgb(var(--paper-up-rgb) / 0.12);
+  color: var(--paper-up);
+}
+.td-vote.off {
+  background: rgb(var(--paper-down-rgb) / 0.1);
+  color: var(--paper-down);
+}
+.td-vote.even {
+  background: rgb(15 17 21 / 0.06);
+  color: var(--paper-mute);
+}
+
+/* — THE CALL ---------------------------------------------------------------- */
+.td-call-q {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.td-call-none {
+  flex-direction: column;
+  gap: 4px;
+}
+.td-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--paper-ink);
+  color: #fff;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  font-weight: 500; /* mono loads 400/500 — no synthesized bold */
+  letter-spacing: 0.02em;
+}
+.td-call-qtext {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.td-call-side {
+  margin: 0;
+  font-size: var(--type-title);
+  color: var(--paper-ink);
+}
+.td-call-side b {
+  font-weight: 600;
+}
+.td-call-read {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.td-call-acts {
+  display: flex;
+  gap: 8px;
+}
+.td-take {
+  appearance: none;
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--paper-radius-sm);
+  font-family: inherit;
+  font-size: var(--type-title);
+  font-weight: 600;
+  cursor: pointer;
+}
+.td-take.up {
+  background: rgb(var(--paper-up-rgb) / 0.12);
+  color: var(--paper-up);
+}
+.td-take.down {
+  background: rgb(var(--paper-down-rgb) / 0.1);
+  color: var(--paper-down);
+}
+.td-take.up:hover:not(:disabled) {
+  background: rgb(var(--paper-up-rgb) / 0.18);
+}
+.td-take.down:hover:not(:disabled) {
+  background: rgb(var(--paper-down-rgb) / 0.16);
+}
+.td-take:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.td-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: var(--paper-radius-sm);
+  background: var(--paper-stage);
+}
+.td-settled {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.td-settled .td-num {
+  font-size: var(--type-title);
+  font-weight: 500;
+}
+.td-record {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--paper-mute);
+}
+.td-call .aug-disc-card {
+  padding: 0;
+}
+
+/* — THE COMMAND BAR (restyle only — behaviour lives in HomeLanding/page) -- */
+.td-cb {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.td-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 0 8px 0 16px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius);
+}
+.td-bar:focus-within {
+  border-color: rgb(var(--paper-accent-rgb) / 0.5);
+  box-shadow: 0 0 0 3px rgb(var(--paper-accent-rgb) / 0.12);
+}
+.td-input {
+  flex: 1;
+  min-width: 0;
+  height: 50px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px; /* ≥16px: iOS never zooms on focus (app/layout.tsx relies on it) */
+  color: var(--paper-ink);
+}
+.td-input::placeholder {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  letter-spacing: 0.06em;
+  color: var(--paper-mute);
+}
+.td-kbd {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--paper-hair);
+  border-radius: 6px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  color: var(--paper-mute);
+}
+/* suggestions open ABOVE the input so the phone keyboard never covers them */
+.td-sugs {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius-sm);
+  box-shadow: 0 8px 24px rgb(15 17 21 / 0.08);
+}
+.td-sug {
+  appearance: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-meta);
+  letter-spacing: 0.04em;
+  color: var(--paper-mute);
+  cursor: pointer;
+}
+.td-sug + .td-sug {
+  border-top: 1px solid var(--paper-rule);
+}
+.td-sug:hover {
+  background: var(--paper-stage);
+  color: var(--paper-ink);
+}
+/* the one answer card — replaced by the next input, dismissed by Esc/✕; its
+   one accent is the left rule: blue for AUGUST's voice, red for a failure */
+.td-answer {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 8px 14px 16px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-left: 3px solid var(--paper-accent);
+  border-radius: var(--paper-radius-sm);
+  animation: td-in 180ms var(--ease-snappy);
+}
+.td-answer-error {
+  border-left-color: var(--paper-down);
+}
+.td-answer-info {
+  border-left-color: var(--paper-mute);
+}
+@keyframes td-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.td-answer-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--type-body);
+  line-height: 1.55;
+  color: var(--paper-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.td-answer-info .td-answer-text,
+.td-answer-error .td-answer-text {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-foot);
+  letter-spacing: 0.04em;
+}
+.td-caret {
+  display: inline-block;
+  margin-left: 2px;
+  animation: td-blink 1s steps(2) infinite;
+}
+@keyframes td-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.td-answer-quote {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.td-answer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.td-answer-px {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.td-answer-last {
+  font-family: inherit;
+  font-size: var(--type-headline);
+  font-weight: var(--type-headline-weight);
+}
+.td-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--paper-mute);
+  font-size: var(--type-foot);
+  cursor: pointer;
+}
+.td-x:hover {
+  color: var(--paper-ink);
+  background: var(--paper-stage);
+}
+
+/* — NEXT ------------------------------------------------------------------- */
+.td-next-event {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* — NQ LEVELS · condition word (the card's one accent) --------------------- */
+.td-condition {
+  font-size: var(--type-row);
+  font-weight: 600;
+}
+.td-condition.b-bullish {
+  color: var(--paper-up);
+}
+.td-condition.b-bearish {
+  color: var(--paper-down);
+}
+.td-condition.b-neutral {
+  color: var(--paper-ink);
+}
+.td-condition.b-unavailable {
+  color: var(--paper-mute);
+  font-weight: 400;
+}
+
+/* — headlines / desk tape -------------------------------------------------- */
+.td-news-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--paper-rule);
+}
+.td-news-row:last-child {
+  padding-bottom: 0;
+}
+.td-news-title {
+  text-decoration: none;
+}
+.td-news-title:hover {
+  color: var(--paper-accent);
+}
+.td-news-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: var(--type-meta);
+  color: var(--paper-mute);
+}
+.td-news-src {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--type-label);
+  letter-spacing: var(--type-label-track);
+  text-transform: uppercase;
+}
+.td-news-meta .td-tkr {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--paper-stage);
+  font-size: var(--type-meta);
+}
+.td-news-meta .td-textbtn {
+  font-size: var(--type-foot);
+}
+
+/* — the disclaimers on the page -------------------------------------------- */
+/* both blocks span their column: the brief's inside the card column, the
+   landing's in the page gutter (the global rule caps them at 68ch) */
+.home-landing .td > .aug-disc-block,
+.home-landing > .aug-disc-block {
+  box-sizing: border-box;
+  max-width: none;
+  border-top-color: var(--paper-rule);
+}
+.home-landing .td > .aug-disc-block {
+  width: 100%;
+}
+.home-landing > .aug-disc-block {
+  width: min(var(--chat-col, 720px), calc(100% - 32px));
+}
+
+/* — WATCHING ---------------------------------------------------------------- */
+.td-watch {
+  width: min(var(--chat-col, 720px), calc(100% - 32px));
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius);
+}
+.td-watch-head {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.td-watch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.td-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--paper-stage);
+  white-space: nowrap;
+}
+.td-pill .td-num {
+  font-size: var(--type-foot);
+}
+.td-pill .td-chg {
+  min-width: 0;
+}
+
+/* — ACCOUNT (phones) + delete account ------------------------------------- */
+.td-account {
+  display: none;
+  width: min(var(--chat-col, 720px), 100%);
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}
+.td-email-full {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.td-account-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.td-del-link {
+  color: var(--paper-mute);
+}
+.td-del {
+  max-width: 46ch;
+  padding: 12px 14px;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-hair);
+  border-radius: var(--paper-radius-sm);
+}
+/* in the desktop header the confirmation opens as a card below the cluster,
+   never inside the header row */
+.td-session .td-del {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, 80vw);
+  box-sizing: border-box;
+  box-shadow: 0 12px 32px rgb(15 17 21 / 0.12);
+}
+.td-del-head {
+  margin: 0 0 6px;
+  font-size: var(--type-title);
+  font-weight: var(--type-title-weight);
+}
+.td-del-line {
+  margin: 0 0 8px;
+  font-size: var(--type-row);
+  line-height: 1.5;
+  color: var(--paper-ink);
+}
+.td-del-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: var(--type-foot);
+  line-height: 1.5;
+  color: var(--paper-mute);
+}
+.td-del-err {
+  margin: 0 0 8px;
+  font-size: var(--type-foot);
+  color: var(--paper-down);
+}
+.td-del-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* — desktop ----------------------------------------------------------------- */
+@media (min-width: 701px) {
+  /* the header row sits BELOW the floating view bar (fixed, top 14px, ~33px
+     tall): side by side, a signed-in cluster ran under it (main already hid
+     the clock there) */
+  .td-top {
+    padding: 62px 32px 10px;
+  }
+  .td-ctl {
+    width: 40px;
+    height: 40px;
+  }
+  .td-signin {
+    min-height: 0;
+  }
+  .td-main {
+    padding: 0 24px;
+  }
+  .td {
+    gap: 14px;
+  }
+  .td-card {
+    padding: 18px 20px;
+  }
+}
+
+/* — phones (≤700px): 44px targets, the Account card, WATCHING pinned ------ */
+@media (max-width: 700px) {
+  .td-session,
+  .td-gear,
+  .td-kbd {
+    display: none;
+  }
+  .td-account {
+    display: flex;
+  }
+  .td-textbtn,
+  .td-sug,
+  .td-why {
+    min-height: 44px;
+  }
+  .td-x {
+    width: 44px;
+    height: 44px;
+  }
+  .td-regime-body {
+    align-items: flex-start;
+  }
+  /* WATCHING rides above the tab bar; its provenance chip stays visible */
+  .td-watch {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--tabbar-h);
+    z-index: 20;
+    width: auto;
+    margin: 0;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 0;
+    border-top: 1px solid var(--paper-hair);
+    border-radius: 0;
+    background: rgb(255 255 255 / 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .td-watch::-webkit-scrollbar {
+    display: none;
+  }
+  .td-watch-label {
+    display: none; /* the chip names what the strip is; the pills speak */
+  }
+  .td-watch-pills {
+    flex-wrap: nowrap;
+  }
+  .td-pill {
+    min-height: 36px;
+    align-items: center;
+    box-sizing: border-box;
+  }
+  /* the landing's last line clears the pinned strip (it used to end under it) */
+  .home-landing > .aug-disc-block {
+    margin-bottom: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-answer,
+  .td-caret {
+    animation: none;
+  }
+}

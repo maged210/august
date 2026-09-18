@@ -345,6 +345,9 @@ test("loop: open → take → POST refused after lock → settle → both record
 
   const settled = await readCallState("v:me", { kv, now: passAt(TUE) + 60_000, readRegime: riskOn, thesisGen: gen });
   assert.equal(settled.settled?.forDate, TUE);
+  // the reference is read back from the stored settle — the exact bars it scored
+  assert.equal(settled.settled?.close, 101);
+  assert.equal(settled.settled?.prevClose, 100);
   assert.equal(settled.settled?.augustWin, true);
   assert.equal(settled.settled?.youWin, false);
   assert.equal(settled.settled?.disagree, "INDEX TREND and VIX sided with AUGUST");
@@ -543,4 +546,27 @@ test("settle time: an unreadable schedule names the pass instead of inventing a 
   assert.equal(parseDailyCron("0 */2 * * *"), null);
   assert.equal(parseDailyCron("not a cron"), null);
   assert.deepEqual(parseDailyCron("10 22 * * *"), { hour: 22, minute: 10 });
+});
+
+test("a store read that throws never prints a record: readFailed, empty tallies", async () => {
+  // Upstash unreachable mid-read — the old behaviour answered ok:true with a
+  // 0–0 record, which the card showed as a real one.
+  const kv: CallKv = {
+    get: async () => {
+      throw new Error("ECONNRESET");
+    },
+    set: async () => {},
+    sadd: async () => {},
+    srem: async () => {},
+    scard: async () => 0,
+    smembers: async () => [],
+    expire: async () => {},
+    del: async () => {},
+  };
+  const s = await readCallState("v:me", { kv, now: Date.parse("2026-09-16T14:00:00.000Z"), readonly: true });
+  assert.equal(s.readFailed, true);
+  assert.equal(s.active, null);
+  assert.equal(s.settled, null);
+  assert.deepEqual(s.record.august, EMPTY_TALLY); // empty, and FLAGGED as unread
+  assert.deepEqual(s.record.you, EMPTY_TALLY);
 });
