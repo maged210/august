@@ -386,7 +386,7 @@ const THESIS_MODEL = "claude-sonnet-4-6";
 
 export type ThesisGen = (read: RegimeRead) => Promise<string | null>;
 
-/** DESIGN_LAWS L9 — a thesis that could not be generated is a STATE, not an
+/** DESIGN_LAWS L11 — a thesis that could not be generated is a STATE, not an
  *  absence. `none` is the desk deciding not to spend (no regime to read from,
  *  or another request is generating inside the no-spend window); it is the
  *  only one of the three that renders no line. `unavailable` carries the
@@ -422,7 +422,7 @@ export function shouldRegenerateThesis(stored: { fingerprint: string } | null, f
 }
 
 let _anthropic: Anthropic | null = null;
-/** THROWS on every failure (L9). A missing key, a provider error and an
+/** THROWS on every failure (L11). A missing key, a provider error and an
  *  unusable answer are three different causes and none of them is "the desk
  *  had nothing to say" — the caller records the cause and the card says so. */
 async function anthropicThesis(read: RegimeRead): Promise<string | null> {
@@ -458,7 +458,7 @@ async function anthropicThesis(read: RegimeRead): Promise<string | null> {
  *  ONE model call (NX-locked against stampedes — concurrent views during a
  *  flip serve nothing rather than double-spend).
  *
- *  L9: a failure is a STATE. It is logged at error level, stored against this
+ *  L11: a failure is a STATE. It is logged at error level, stored against this
  *  fingerprint so concurrent and subsequent views inside the window read the
  *  same UNAVAILABLE, and returned with its reason. Only two things render no
  *  line at all, and neither is a failure: no regime to read from, and another
@@ -659,7 +659,7 @@ export type CallState = {
     locked: boolean;
     youSide: CallSide | null;
     thesis: string | null;
-    /** fix/failure-visibility (L9): the read could not be generated. The card
+    /** fix/failure-visibility (L11): the read could not be generated. The card
      *  renders UNAVAILABLE with its chip — never a silently missing line. The
      *  reason is logged server-side and deliberately NOT published here: this
      *  wire is public and republished, and a provider's raw error text is
@@ -780,7 +780,7 @@ export async function readCallState(
         thesisFailed = t.state === "unavailable";
       } catch (err) {
         // reading the REGIME threw (getThesis itself never throws) — the card
-        // says the read is unavailable rather than dropping the line (L9)
+        // says the read is unavailable rather than dropping the line (L11)
         console.error(
           "[call] regime read for the thesis failed:",
           err instanceof Error ? err.message : err,

@@ -34,7 +34,7 @@ type CallResp = {
     locked: boolean;
     youSide: Side | null;
     thesis: string | null;
-    /** fix/failure-visibility (L9): the read could not be generated */
+    /** fix/failure-visibility (L11): the read could not be generated */
     thesisFailed?: boolean;
   } | null;
   noCall: { reason: "no_session" | "dead_even" | "unavailable" | "not_generated"; nextDate: string } | null;
@@ -217,7 +217,7 @@ export default function TheCallCard() {
           <p className="td-call-side">
             August says <b className={a.side === "HIGHER" ? "up" : "down"}>{sideWord(a.side)}</b>
           </p>
-          {/* L9 — the read is a STATE. A generation that failed says so with
+          {/* L11 — the read is a STATE. A generation that failed says so with
               its chip; only a desk that deliberately didn't spend (no regime,
               or a generation already in flight) shows no read block at all. */}
           {a.thesis ? (

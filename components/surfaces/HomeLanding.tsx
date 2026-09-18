@@ -427,7 +427,7 @@ export default function HomeLanding({
                           </span>
                         ) : null}
                       </p>
-                      {/* L9 — a broken stream is a fragment, and an answer
+                      {/* L11 — a broken stream is a fragment, and an answer
                           written without a source says which one. Neither is
                           allowed to read as a finished, fully-grounded reply. */}
                       {answer.kind === "ask" && answer.broke ? (

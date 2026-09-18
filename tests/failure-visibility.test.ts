@@ -1,4 +1,4 @@
-// DESIGN_LAWS L9 — FAILURE IS A STATE, NOT AN ABSENCE.
+// DESIGN_LAWS L11 — FAILURE IS A STATE, NOT AN ABSENCE.
 //
 // The pure surfaces of fix/failure-visibility: what a failed extraction TELLS
 // the console, what the ask card says it answered without, and how repeated
@@ -18,7 +18,7 @@ import { markRepeats } from "../lib/transcript-repeats.ts";
 
 // --- 1. the extraction failure carries the CAUSE ---------------------------
 
-test("L9: a failed extraction reports the provider's own words, never a category", () => {
+test("L11: a failed extraction reports the provider's own words, never a category", () => {
   const real =
     '400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace"}}';
   const out = extractionFailure(new Error(real), "tr_abc123");
@@ -34,7 +34,7 @@ test("L9: a failed extraction reports the provider's own words, never a category
   assert.equal(out.transcriptId, "tr_abc123");
 });
 
-test("L9: a non-Error throw still produces a readable cause, never an empty one", () => {
+test("L11: a non-Error throw still produces a readable cause, never an empty one", () => {
   assert.equal(extractionFailure("boom", "tr_1").error, "boom");
   assert.equal(extractionFailure({ toString: () => "weird" }, "tr_1").error, "weird");
   // the one case with nothing to say says THAT, rather than rendering blank
@@ -46,7 +46,7 @@ test("L9: a non-Error throw still produces a readable cause, never an empty one"
 
 // --- 2. the ask card says what it answered WITHOUT -------------------------
 
-test("L9: degraded grounding is named on the card, and silence means nothing was missing", () => {
+test("L11: degraded grounding is named on the card, and silence means nothing was missing", () => {
   assert.equal(degradedNote(null), null, "no header = the desk had everything");
   assert.equal(degradedNote(""), null);
   assert.equal(degradedNote("nonsense"), null, "an unknown name is not a claim about the answer");
@@ -70,7 +70,7 @@ test("L9: degraded grounding is named on the card, and silence means nothing was
 
 const row = (id: string, videoId?: string) => ({ id, videoId, receivedAt: 0 });
 
-test("L9/dedupe: repeated attempts collapse under the newest, with the full count", () => {
+test("L11/dedupe: repeated attempts collapse under the newest, with the full count", () => {
   // newest-first, exactly as listTranscripts returns them
   const rows = [
     row("tr_8", "AAA"),
@@ -101,7 +101,7 @@ test("L9/dedupe: repeated attempts collapse under the newest, with the full coun
   assert.equal(marked.length, rows.length);
 });
 
-test("L9/dedupe: a hand-pasted row is never grouped with anything", () => {
+test("L11/dedupe: a hand-pasted row is never grouped with anything", () => {
   const marked = markRepeats([row("tr_3"), row("tr_2", ""), row("tr_1", "   ")]);
   assert.deepEqual(
     marked.map((m) => [m.repeatOf, m.attempts]),

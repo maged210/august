@@ -508,7 +508,7 @@
   flex-direction: column;
   gap: 4px;
 }
-/* the read's label can carry its own integrity chip (L9) */
+/* the read's label can carry its own integrity chip (L11) */
 .td-call-read .td-sublabel {
   display: flex;
   align-items: center;
@@ -698,7 +698,7 @@
     transform: none;
   }
 }
-/* the answer and anything the card must say ABOUT the answer (L9: a broken
+/* the answer and anything the card must say ABOUT the answer (L11: a broken
    stream, a missing grounding source) share one column beside the dismiss */
 .td-answer-body {
   flex: 1;

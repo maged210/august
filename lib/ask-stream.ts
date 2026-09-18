@@ -1,4 +1,4 @@
-// THE ASK STREAM's failure vocabulary (fix/failure-visibility, DESIGN_LAWS L9).
+// THE ASK STREAM's failure vocabulary (fix/failure-visibility, DESIGN_LAWS L11).
 //
 // /api/chat answers as a plain text stream, which means the headers are gone
 // by the time a mid-stream failure happens: a 200 has already been promised.

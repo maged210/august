@@ -25,7 +25,7 @@ const SUMMARIES_KEY = "august:summaries";
 /** AUTH-1a CLAIM — move a visitor's memory into an account's namespace.
  *  The account's existing profile wins; the visitor's summaries append as
  *  older context. Source keys are deleted (one-way). */
-/** DESIGN_LAWS L9 — every memory WRITE says what happened. A store that isn't
+/** DESIGN_LAWS L11 — every memory WRITE says what happened. A store that isn't
  *  configured, a Redis that threw and a model that refused are three different
  *  facts, and none of them is "done". `ok:false` always carries its reason so
  *  the surface above can say it instead of printing success. */
@@ -100,7 +100,7 @@ export function memoryEnabled(): boolean {
 // Load (used by the chat route to inject memory into the system prompt)
 // ---------------------------------------------------------------------------
 
-/** L9: `failed` is the reason the memory could not be READ. Without it a
+/** L11: `failed` is the reason the memory could not be READ. Without it a
  *  store outage is byte-identical to a first-time visitor — the desk answers
  *  as if it had never met you and nothing anywhere says why. */
 export async function loadMemory(email: StorePrincipal): Promise<{
@@ -299,7 +299,7 @@ export async function updateMemoryFromExchange(input: {
   } catch (e) {
     // NEVER proceed with empties: the write below REPLACES the profile, so a
     // transient read failure here would erase everything the desk knows about
-    // this person and report success (L9).
+    // this person and report success (L11).
     console.error("[memory] update aborted — profile read failed:", why(e));
     return { ok: false, reason: why(e) };
   }
@@ -370,7 +370,7 @@ export async function updateMemoryFromExchange(input: {
 // Wipe
 // ---------------------------------------------------------------------------
 
-/** THE WIPE. L9 applies hardest here: this is a privacy affordance, and it
+/** THE WIPE. L11 applies hardest here: this is a privacy affordance, and it
  *  used to return void — an unconfigured store and a Redis that threw both
  *  ended with the surface printing "MEMORY CLEARED." while the data sat
  *  untouched. Saying a wipe happened when it didn't is the worst version of

@@ -4887,7 +4887,7 @@ button.pulse-line:focus-visible {
      allowed to claim a row of its own */
   flex: 1 1 0;
 }
-/* DESIGN_LAWS L9 — the FAILURE REASON gets its own line and wraps. It used to
+/* DESIGN_LAWS L11 — the FAILURE REASON gets its own line and wraps. It used to
    ride the end of .adm-trmeta, which was nowrap + ellipsis: the cause was
    rendered and then clipped off the end of the row, so every failure read as
    the generic status word. A cause is never past an ellipsis. */
@@ -5111,7 +5111,7 @@ button.pulse-line:focus-visible {
   width: 100%;
   text-align: left;
   padding: 3px 0;
-  /* the reason line wraps onto its own row (L9) */
+  /* the reason line wraps onto its own row (L11) */
   flex-wrap: wrap;
 }
 .adm-trrow:hover .adm-trmeta {

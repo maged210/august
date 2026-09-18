@@ -31,7 +31,7 @@ export type ClaimResult =
       ok: true;
       already: boolean;
       threads: number;
-      /** L9 — the records claimed but the MEMORY migration didn't, and this is
+      /** L11 — the records claimed but the MEMORY migration didn't, and this is
        *  why. null when it moved (or when there was nothing to move). A claim
        *  that silently drops a visitor's memory must not read as a clean one. */
       memoryFailed?: string | null;
@@ -48,7 +48,7 @@ export async function claimVisitor(emailRaw: string, visitorId: string): Promise
     const marked = await redis.get<string>(MARKER(visitorId));
     if (marked) return { ok: true, already: true, threads: 0 };
     const threads = await migrateThreads({ visitorId }, email);
-    // L9 — the answer is no longer discarded: a claim that moved the records
+    // L11 — the answer is no longer discarded: a claim that moved the records
     // but NOT the memory says so, instead of reporting a clean success.
     const memory = await migrateMemory({ visitorId }, email);
     await claimPitPlayer(`v:${visitorId}`, `u:${email}`);

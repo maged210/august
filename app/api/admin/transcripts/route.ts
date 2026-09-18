@@ -155,7 +155,7 @@ export async function POST(req: Request): Promise<Response> {
   //    on the transcript and reported honestly — the caller can re-paste
   //    later; nothing half-created.
   //
-  //    DESIGN_LAWS L9 — `error` carries the REAL cause, not a category. The
+  //    DESIGN_LAWS L11 — `error` carries the REAL cause, not a category. The
   //    message was already stored on the record and logged; returning the flat
   //    "extraction_failed" to the one console that can act on it meant the
   //    owner read "extraction_failed" while the record held "400 … API key is

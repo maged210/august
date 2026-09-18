@@ -267,7 +267,7 @@ Branch `fix/quote-age` off main at `7e276bd`. Code `4de75b1`, docs `666432e`, me
   `/api/intel/quotes?symbols=SPY` return the SAME `asOf` while the response `Date` header
   advances — a cache hit is visibly older than its response, which is the whole point.
 
-## fix/failure-visibility — L9 (branch off main `00be3b5`)
+## fix/failure-visibility — L11 (branch off main `00be3b5`)
 
 The transcript ingest broke on 2026-09-17 and the /admin console could not say
 why. The cause was never in this repo: `ANTHROPIC_API_KEY` is an
@@ -277,10 +277,12 @@ lane, THE CALL's thesis, memory, intel — 400s before the model or the token ca
 is looked at. What this branch fixes is the second failure: that a person could
 not see any of it.
 
-- **DESIGN_LAWS L9 — FAILURE IS A STATE, NOT AN ABSENCE** (the owner's wording,
-  verbatim). NOTE: the file already had an L9 (MOTION WITH RESTRAINT). It moved
-  to **L11** — nothing in the code cites it by number, while L10 is cited twice
-  (`auth.ts`, `/login`) and was left alone.
+- **DESIGN_LAWS L11 — FAILURE IS A STATE, NOT AN ABSENCE** (the owner's wording,
+  verbatim), added at the END as the next free number. It briefly shipped as
+  L9, which displaced MOTION WITH RESTRAINT to L11; that was wrong and is
+  reverted — a law's number is a reference other notes and decisions already
+  hold, so an existing law never moves to make room. MOTION keeps **L9**, L10
+  is unchanged, and the failure law is **L11**.
 - **THE CALL's thesis is a three-state read.** `anthropicThesis` throws instead
   of reporting a dead key as "no line"; `getThesis` returns
   `ok` / `unavailable(reason)` / `none` and STORES the failure against the

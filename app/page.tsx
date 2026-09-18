@@ -35,7 +35,7 @@ export type AnswerCard =
       kind: "ask";
       text: string;
       streaming: boolean;
-      /** L9 — the answer arrived, but the desk was missing a grounding source
+      /** L11 — the answer arrived, but the desk was missing a grounding source
        *  when it wrote it (x-aug-degraded). Rendered under the answer: an
        *  answer given without your memory, or without the tape, is a different
        *  answer and the card says so rather than reading fully-informed. */
@@ -643,7 +643,7 @@ export default function Home() {
         return;
       }
 
-      // L9 — what the desk answered WITHOUT travels on the response header
+      // L11 — what the desk answered WITHOUT travels on the response header
       const note = degradedNote(res.headers.get(ASK_DEGRADED_HEADER));
 
       const reader = res.body.getReader();
@@ -660,7 +660,7 @@ export default function Home() {
         full += decoder.decode(value, { stream: true });
         setAnswer({ kind: "ask", text: full, streaming: true, note });
       }
-      // L9 — three endings, three states, none of them silence:
+      // L11 — three endings, three states, none of them silence:
       //   the stream carried the failure sentinel → what arrived is a FRAGMENT
       //   the stream carried nothing at all       → an error, not a vanished card
       //   otherwise                               → the answer

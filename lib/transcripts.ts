@@ -670,7 +670,7 @@ export async function storeTranscript(
 }
 
 /**
- * PURE (DESIGN_LAWS L9). What the /admin console is told when an extraction
+ * PURE (DESIGN_LAWS L11). What the /admin console is told when an extraction
  * fails: the REAL cause, every time.
  *
  * It used to be the flat string "extraction_failed", while the actual message

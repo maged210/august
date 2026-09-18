@@ -52,7 +52,7 @@ function getClient(apiKey: string): Anthropic {
 // Lazy route-local Redis (cache + caps + stats + the calendar ask cache) —
 // standard fail-open contract: unconfigured/broken → no cache, no caps.
 //
-// L9: fail-open is a DECISION, not a silence. Without the store there is no
+// L11: fail-open is a DECISION, not a silence. Without the store there is no
 // per-identity day cap at all, and that is worth a line in the log every time
 // the route serves without one — an uncapped ask lane that looks exactly like
 // a capped one is how a spend goes unnoticed.
@@ -114,7 +114,7 @@ export async function POST(req: Request): Promise<Response> {
       // fail open, but never quietly: this is indistinguishable from a genuine
       // miss at the call site, so the log is the only place it can be seen. A
       // swallowed miss re-spends on an answer that was already bought AND
-      // decrements the caller's day cap (L9).
+      // decrements the caller's day cap (L11).
       console.error("[ask] cache read failed — re-spending:", e instanceof Error ? e.message : e);
     }
   }
@@ -148,7 +148,7 @@ export async function POST(req: Request): Promise<Response> {
   // calendar-ask path stays memory- and snapshot-free (its guidance block
   // replaces them) so its cached answers can serve every identity.
   //
-  // L9 — grounding that FAILED is not grounding that was empty. The desk
+  // L11 — grounding that FAILED is not grounding that was empty. The desk
   // answering with no memory of you, or with no read of the tape, is a
   // materially different answer and the card says which piece was missing
   // (the x-aug-degraded header below). Every branch here is also logged: a
@@ -210,7 +210,7 @@ export async function POST(req: Request): Promise<Response> {
   let aborted = false;
   /** the socket refused our bytes — a failure of OURS, and it used to be
    *  filed as a consumer cancel, which suppressed the error branch below and
-   *  froze the answer card mid-sentence with no error at all (L9) */
+   *  froze the answer card mid-sentence with no error at all (L11) */
   let sendFailed = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -277,7 +277,7 @@ export async function POST(req: Request): Promise<Response> {
           console.error("[ask] stream error:", err instanceof Error ? err.message : "unknown");
           // the sentinel is a SHARED constant the client matches on, so a
           // failed answer renders as an error card instead of arriving as the
-          // last sentence of the desk's prose (L9)
+          // last sentence of the desk's prose (L11)
           send(encoder.encode(ASK_STREAM_FAILURE));
         }
       } finally {
@@ -298,7 +298,7 @@ export async function POST(req: Request): Promise<Response> {
     "Cache-Control": "no-store, no-transform",
     "X-Accel-Buffering": "no",
   };
-  // L9 — the answer card shows which grounding the desk answered WITHOUT.
+  // L11 — the answer card shows which grounding the desk answered WITHOUT.
   // Names only (memory / markets / command / desk); the causes are in the log.
   if (missing.length) headers[ASK_DEGRADED_HEADER] = [...new Set(missing)].join(",");
   return withCookie(new Response(stream, { headers }));

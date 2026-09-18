@@ -30,7 +30,7 @@ export async function POST(req: Request): Promise<Response> {
   const action = b.action;
 
   if (action === "forget") {
-    // L9 — 204 used to mean both "wiped" and "there is no store to wipe". The
+    // L11 — 204 used to mean both "wiped" and "there is no store to wipe". The
     // caller renders what this says, so it has to be true.
     const wiped = await clearMemory(principal);
     const headers: Record<string, string> = { "Content-Type": "application/json" };

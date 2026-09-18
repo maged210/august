@@ -458,7 +458,7 @@ export default function AdminConsole() {
       );
       await Promise.all([load(), loadTranscripts(), loadTape()]);
     } catch (err) {
-      // L9 — the real reason, on the row, never a category word
+      // L11 — the real reason, on the row, never a category word
       setActionError(`Re-run failed: ${(err as Error).message}`);
     } finally {
       setRerunId(null);
@@ -1161,7 +1161,7 @@ export default function AdminConsole() {
                           <span className="adm-trcaret" aria-hidden="true">
                             {open ? "▾" : "▸"}
                           </span>
-                          {/* L9 — the cause, in full, on its own line. Never
+                          {/* L11 — the cause, in full, on its own line. Never
                               appended to the clipped meta line. */}
                           {t.status === "failed" && t.error && t.error !== "pending" ? (
                             <span className="adm-trerr">{t.error}</span>

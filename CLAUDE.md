@@ -91,7 +91,7 @@ Guidance for Claude Code working in this repo.
 
 ## Decided
 
-- FAILURE IS A STATE (fix/failure-visibility, 2026-09-18) — DESIGN_LAWS L9.
+- FAILURE IS A STATE (fix/failure-visibility, 2026-09-18) — DESIGN_LAWS L11.
   No surface renders a failed fetch, a swallowed exception or a missing
   credential as emptiness. THE CALL renders a failed thesis as UNAVAILABLE with
   its chip (getThesis returns ok / unavailable(reason) / none and STORES the
@@ -104,8 +104,9 @@ Guidance for Claude Code working in this repo.
   instead of prose; lib/memory reports every write (the /forget wipe no longer
   claims a success it didn't have) and never overwrites a profile it failed to
   read; lib/intel names the feeds that didn't answer instead of asserting
-  "Wires are live." over zero articles. The motion law moved to L11; L10 is
-  cited by number in auth.ts and /login and did not move.
+  "Wires are live." over zero articles. The failure law is the LAST number,
+  not an insertion: MOTION WITH RESTRAINT keeps L9, which it has held since it
+  was written and which notes outside this repo cite.
 
 - THE PAPER SHELL + TODAY (feat/v4-2-today, 2026-09-17) — DESIGN_LAWS L1 is
   PAPER LANGUAGE: paper is the desk, dark is the arena (THE PIT holds a dark

@@ -20,7 +20,7 @@ const UA =
 
 // ---- TTL cache (same pattern as lib/markets.ts) -------------------------
 // Every entry remembers WHEN its value came off the wire (the fix/quote-age
-// lesson, now a law: L9). Serve-stale-on-error keeps the ORIGINAL time — a
+// lesson, now a law: L11). Serve-stale-on-error keeps the ORIGINAL time — a
 // dead feed served for hours must not report itself as fresh.
 type Entry = { exp: number; at: number; data: unknown };
 const cache = new Map<string, Entry>();
@@ -40,7 +40,7 @@ async function cachedEntry<T>(
     if (hit) {
       // stale-on-error: the value stands, its AGE stands with it, and the
       // caller is told — serving hours-old wires as current is the exact
-      // failure-as-absence L9 forbids
+      // failure-as-absence L11 forbids
       console.error(`[intel] ${key} failed — serving the cached value from ${new Date(hit.at).toISOString()}:`, e instanceof Error ? e.message : e);
       return { data: hit.data as T, at: hit.at, stale: true };
     }
@@ -66,7 +66,7 @@ export type Article = {
 
 export type Intel = {
   articles: Article[];
-  /** null when it could not be written — never a cheerful placeholder (L9) */
+  /** null when it could not be written — never a cheerful placeholder (L11) */
   synthesis: string | null;
   briefLine: string | null;
   /** why there is no synthesis, when there isn't one */
@@ -153,7 +153,7 @@ async function fetchFeed(feed: { name: string; url: string }): Promise<Article[]
       },
       cache: "no-store",
     });
-    // L9 — a 403/429/500 is the outlet REFUSING us, not the outlet publishing
+    // L11 — a 403/429/500 is the outlet REFUSING us, not the outlet publishing
     // nothing. Returning [] here cached the lie for five minutes; throwing
     // lets the caller count this feed as failed and say so.
     if (!res.ok) throw new Error(`${feed.name} answered ${res.status}`);
@@ -272,7 +272,7 @@ Use the well-known coordinates of that named place. Same grounding rules: never 
 // ---- Public API ----------------------------------------------------------
 export async function getIntel(): Promise<Intel> {
   const round = await cachedEntry("intel:all", 5 * 60_000, async (): Promise<Intel> => {
-    // Fetch all feeds concurrently. L9 — a rejected feed is NAMED, not erased:
+    // Fetch all feeds concurrently. L11 — a rejected feed is NAMED, not erased:
     // six silent failures used to produce an empty list under the sentence
     // "Wires are live."
     const results = await Promise.allSettled(FEEDS.map(fetchFeed));
@@ -302,7 +302,7 @@ export async function getIntel(): Promise<Intel> {
     }
 
     // No placeholder asserts health. A synthesis that was never written is
-    // null with its reason, and the brief line is null with it (L9).
+    // null with its reason, and the brief line is null with it (L11).
     let synthesis: string | null = null;
     let briefLine: string | null = null;
     let synthesisError: string | null =

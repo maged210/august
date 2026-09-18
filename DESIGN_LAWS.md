@@ -65,8 +65,10 @@ project's memory; the working tree is its stage.
 panels, thumb-reachable actions, and the no-overlap hard rule. If a desktop
 arrangement can't be operated with a thumb, it forks, it doesn't scale.
 
-## L9 — FAILURE IS A STATE, NOT AN ABSENCE
-No surface may render a failed fetch, a swallowed exception, or a missing credential as emptiness, zero, or a clean blank. Failure renders UNAVAILABLE with its chip and, where the cause is known, the cause. A catch that logs and returns null, [], or 0 is a bug regardless of what it protects. The honest value usually already exists; the surface throws it away.
+## L9 — MOTION WITH RESTRAINT
+Animation serves tension and reward — price movement, P&L, alerts, unlocks,
+transitions — and nothing else. `prefers-reduced-motion` is always honored
+with a static equivalent. One canvas per scene, rAF, pause on blur.
 
 ## L10 — IDENTITY IS CLAIM-READY
 Anonymous first: everything works without an account. Every persistent record
@@ -75,7 +77,5 @@ is copy + repoint — one-way, idempotent — never a rebuild. Sign-in adds
 continuity across devices; it never gates what anonymous already had (until
 AUTH-1b's triggers fire, and then only per L6).
 
-## L11 — MOTION WITH RESTRAINT
-Animation serves tension and reward — price movement, P&L, alerts, unlocks,
-transitions — and nothing else. `prefers-reduced-motion` is always honored
-with a static equivalent. One canvas per scene, rAF, pause on blur.
+## L11 — FAILURE IS A STATE, NOT AN ABSENCE
+No surface may render a failed fetch, a swallowed exception, or a missing credential as emptiness, zero, or a clean blank. Failure renders UNAVAILABLE with its chip and, where the cause is known, the cause. A catch that logs and returns null, [], or 0 is a bug regardless of what it protects. The honest value usually already exists; the surface throws it away.

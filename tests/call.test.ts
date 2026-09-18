@@ -261,7 +261,7 @@ test("thesis: ONE model call per regime flip — cached, never per view", async 
   // a flip INSIDE the 5-minute window serves nothing rather than spend —
   // per-instance cache flapping must not degenerate to one call per view.
   // "none" is the desk DECIDING not to spend: no line, and NOT a failure —
-  // the card must not cry UNAVAILABLE over a cost decision (L9).
+  // the card must not cry UNAVAILABLE over a cost decision (L11).
   assert.deepEqual(await getThesis(riskOff, { kv, gen, now: 4 }), { state: "none" });
   assert.equal(calls, 1);
   kv.data.delete("august:call:v1:thesis:lock"); // window expired
@@ -280,7 +280,7 @@ test("thesis: ONE model call per regime flip — cached, never per view", async 
   assert.equal(shouldRegenerateThesis({ fingerprint: "x" }, "x"), false);
 });
 
-test("L9 thesis: a generation that THREW reads UNAVAILABLE with its cause, for every view", async () => {
+test("L11 thesis: a generation that THREW reads UNAVAILABLE with its cause, for every view", async () => {
   const kv = fakeKv();
   let calls = 0;
   const gen = async () => {
@@ -304,7 +304,7 @@ test("L9 thesis: a generation that THREW reads UNAVAILABLE with its cause, for e
   assert.equal(calls, 1, "the stored failure must not re-spend");
 });
 
-test("L9 thesis: a generation that answered with nothing usable is a failure, not a silence", async () => {
+test("L11 thesis: a generation that answered with nothing usable is a failure, not a silence", async () => {
   const kv = fakeKv();
   let calls = 0;
   const gen = async () => {
@@ -323,7 +323,7 @@ test("L9 thesis: a generation that answered with nothing usable is a failure, no
   assert.equal(calls, 1);
 });
 
-test("L9 thesis: the stored failure EXPIRES, so a fixed provider heals on its own", async () => {
+test("L11 thesis: the stored failure EXPIRES, so a fixed provider heals on its own", async () => {
   const kv = fakeKv();
   let boom = true;
   const gen = async () => {
@@ -339,7 +339,7 @@ test("L9 thesis: the stored failure EXPIRES, so a fixed provider heals on its ow
   assert.deepEqual(await getThesis(r, { kv, gen, now: 2 }), { state: "ok", text: "back on the tape" });
 });
 
-test("L9 thesis: THE CALL card carries the failure — a missing line is never silent", async () => {
+test("L11 thesis: THE CALL card carries the failure — a missing line is never silent", async () => {
   const kv = fakeKv();
   const riskOn = read("RISK ON", [["VIX LEVEL", 1], ["INDEX TREND (1mo)", 1]]);
   const dead = async () => {
