@@ -1196,7 +1196,9 @@ export default function AdminConsole() {
                               </ul>
                             ) : null}
                             {linked.length === 0 ? (
-                              <span className="adm-empty">nothing extracted from this one</span>
+                              t.status === "failed" ? null : (
+                                <span className="adm-empty">nothing extracted from this one</span>
+                              )
                             ) : (
                               linked.map((l) => {
                                 const idea = l.kind === "idea" ? rows.find((i) => i.id === l.id) : null;
