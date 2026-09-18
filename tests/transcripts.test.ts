@@ -395,3 +395,34 @@ test("wire read: processed rows ride out redacted — no raw text, no failure de
     assert.ok(!JSON.stringify(pub.rows).includes("4200"));
   }
 });
+
+test("L11/money: an unreadable ingest log never reads as 'never ingested'", async () => {
+  // THE MONEY BUG THIS PINS: the duplicate guard runs BEFORE the desk spends a
+  // transcript-provider credit. It used to read the log through a function
+  // that answered [] on an outage, so an unreachable store looked exactly like
+  // a video nobody had ever fetched — and the route went on to buy a
+  // transcript the desk already owned. "I cannot see the log" must never
+  // resolve to "it is not in the log".
+  const down: TranscriptKv = {
+    async zrange() {
+      throw new Error("ECONNREFUSED");
+    },
+    async get() {
+      return null;
+    },
+  };
+  const read = await readTranscripts(100, { kv: down });
+  assert.equal(read.state, "unavailable", "the guard's own read must fail loudly");
+  assert.equal(
+    read.state === "unavailable" && read.reason.includes("ECONNREFUSED"),
+    false,
+    "and still without the store's words",
+  );
+
+  // a well-formed id against a HEALTHY but empty log is the opposite answer:
+  // genuinely not ingested, and safe to spend on
+  const emptyLog: TranscriptKv = { async zrange() { return []; }, async get() { return null; } };
+  const ok = await readTranscripts(100, { kv: emptyLog });
+  assert.equal(ok.state, "ok");
+  assert.deepEqual(ok.state === "ok" && ok.rows, []);
+});

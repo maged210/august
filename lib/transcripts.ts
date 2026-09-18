@@ -802,10 +802,13 @@ export function recordMatchesVideo(rec: TranscriptRecord, videoId: string): bool
  * Scans the whole retained index (MAX_TRANSCRIPTS), not just the recent page,
  * so the duplicate warning doesn't go quiet once a video scrolls off the log.
  */
-export async function findTranscriptsForVideo(videoId: string): Promise<TranscriptRecord[]> {
-  if (!YOUTUBE_ID_RE.test(videoId)) return [];
-  const rows = await listTranscripts(MAX_TRANSCRIPTS);
-  return rows.filter((r) => recordMatchesVideo(r, videoId));
+export async function findTranscriptsForVideo(videoId: string): Promise<WireRead<TranscriptRecord>> {
+  // a malformed id matches nothing, and that is an ANSWER: there is nothing to
+  // look up, not a lookup that failed
+  if (!YOUTUBE_ID_RE.test(videoId)) return wireOk([]);
+  const read = await readTranscripts(MAX_TRANSCRIPTS);
+  if (read.state !== "ok") return read;
+  return wireOk(read.rows.filter((r) => recordMatchesVideo(r, videoId)), read.failed);
 }
 
 /** The store surface this read needs — injectable so node:test drives the
