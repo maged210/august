@@ -18,20 +18,33 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 
 // --- tiny TTL cache -------------------------------------------------------
-type Entry = { exp: number; data: unknown };
+// Every entry remembers WHEN its value came off the wire (`at`), because a
+// cache hit and a serve-stale-on-error hit are otherwise indistinguishable
+// from a fresh fetch (fix/quote-age). `at` is the observation time and NEVER
+// moves on a hit: a price served from cache is exactly as old as its fetch.
+type Entry = { exp: number; at: number; data: unknown };
 const cache = new Map<string, Entry>();
-async function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+async function cachedEntry<T>(
+  key: string,
+  ttlMs: number,
+  fetcher: () => Promise<T>,
+): Promise<{ data: T; at: number }> {
   const now = Date.now();
   const hit = cache.get(key);
-  if (hit && hit.exp > now) return hit.data as T;
+  if (hit && hit.exp > now) return { data: hit.data as T, at: hit.at };
   try {
     const data = await fetcher();
-    cache.set(key, { exp: now + ttlMs, data });
-    return data;
+    cache.set(key, { exp: now + ttlMs, data, at: Date.now() });
+    return { data, at: cache.get(key)!.at };
   } catch (e) {
-    if (hit) return hit.data as T;
+    // serve-stale keeps the ORIGINAL age — the caller decides what to do with
+    // a price this old; it is never re-stamped as new
+    if (hit) return { data: hit.data as T, at: hit.at };
     throw e;
   }
+}
+async function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  return (await cachedEntry<T>(key, ttlMs, fetcher)).data;
 }
 
 async function getJson(url: string): Promise<any> {
@@ -113,6 +126,11 @@ type Chart = {
 };
 async function yahooChart(symbol: string): Promise<Chart> {
   return cached(`ychart:${symbol}`, 60_000, () => fetchYahooChart(symbol));
+}
+/** The same 60s-cached chart, with the moment it was actually fetched. */
+async function yahooChartAt(symbol: string): Promise<{ chart: Chart; at: number }> {
+  const e = await cachedEntry(`ychart:${symbol}`, 60_000, () => fetchYahooChart(symbol));
+  return { chart: e.data, at: e.at };
 }
 
 // Crypto shorthands → Yahoo pairs; everything else passes through upper-cased
@@ -244,13 +262,22 @@ export async function probeInstrument(symbol: string): Promise<InstrumentProbe> 
 // Reuses the same 60s-cached yahooChart fetch — no extra network calls.
 export async function getQuoteWithSpark(
   symbol: string,
-): Promise<{ symbol: string; price: number; prevClose: number; chgPct: number; closes: number[] } | null> {
+): Promise<{
+  symbol: string;
+  price: number;
+  prevClose: number;
+  chgPct: number;
+  closes: number[];
+  /** when this price came off the wire (epoch ms) — a cache hit carries the
+   *  age of the fetch behind it, not the age of this call (fix/quote-age) */
+  asOf: number;
+} | null> {
   const sym = normalizeYahooSymbol(symbol);
   if (!sym) return null;
   try {
-    const c = await yahooChart(sym);
+    const { chart: c, at } = await yahooChartAt(sym);
     if (!Number.isFinite(c.price) || c.price <= 0) return null;
-    return { symbol: sym, price: c.price, prevClose: c.prevClose, chgPct: c.chgPct, closes: c.closes };
+    return { symbol: sym, price: c.price, prevClose: c.prevClose, chgPct: c.chgPct, closes: c.closes, asOf: at };
   } catch {
     return null;
   }
