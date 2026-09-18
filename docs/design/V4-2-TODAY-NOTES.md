@@ -248,3 +248,21 @@ push, chat, watchlist or feeds route was ever forwarded). The clock is frozen at
   Account card with Delete account; the desktop header with the ADMIN chip and the delete
   confirmation).
 - The branch front page fixes main's 1280 header collision (the clock ran under the view bar).
+
+## fix/quote-age — gate (merged `83171fd`, 2026-09-18)
+
+Branch `fix/quote-age` off main at `7e276bd`. Code `4de75b1`, docs `666432e`, merge `83171fd`.
+
+- **Suite** 386/386 (8 in `tests/quote-book.test.ts`, four of them new: a cached-but-old price,
+  a re-ask with no newer stamp, a price of unknown age, and `alignAsOf` skew both ways plus a
+  near-future stamp). **Type check** `npx tsc --noEmit` clean. **Production build** green.
+- **Pixel gate** — the same keyless-worktree + fixture-replay rig as the v4-2 gate, with one
+  trick: the recorded fixtures predate `asOf`, so each quote was stamped with its own fixture's
+  `fetchedAt` for the fresh-price comparison. Front page 390 (top + three scrolls) and terminal
+  390 + 1280, base `7e276bd` vs branch `4de75b1`: **0 changed pixels on all six pairs**.
+- **Negative check** — replaying the UNSTAMPED fixtures (a price of unknown age) turns every
+  price off: the terminal cards read "last — DATA UNAVAILABLE" and the front page's Pulse rows
+  and WATCHING pills read UNAVAILABLE. Nothing infers freshness from arrival any more.
+- **Production, after the deploy went success**: repeated GETs of
+  `/api/intel/quotes?symbols=SPY` return the SAME `asOf` while the response `Date` header
+  advances — a cache hit is visibly older than its response, which is the whole point.
