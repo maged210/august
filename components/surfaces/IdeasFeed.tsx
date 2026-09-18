@@ -74,6 +74,7 @@ import {
 } from "@/lib/idea-card";
 import { QUOTE_REFRESH_MS } from "@/lib/quote-book";
 import { useQuoteBook } from "@/lib/use-quote-book";
+import { degradedLine, listSurfaceState, readWire } from "@/lib/wire";
 import "@/app/intel/feed.css";
 
 const REFRESH_MS = QUOTE_REFRESH_MS; // the book, the tape and the quotes poll together
@@ -87,12 +88,15 @@ export default function IdeasFeed({
 }) {
   const [live, setLive] = useState<PublicIdea[] | null>(null);
   const [liveErr, setLiveErr] = useState(false);
+  /** the book answered short — which source did not hand over its rows */
+  const [liveGap, setLiveGap] = useState<string | null>(null);
   // the desk's ONE selection — drives the dock chart AND the detail panel on
   // desktop, and names the open idea page on phones
   const [selection, setSelection] = useState<ChartSelection | null>(null);
   // desk tape — fetched here, rendered by the dock's TapeModule / the wire
   const [tapeRows, setTapeRows] = useState<PublicTapeEntry[] | null>(null);
   const [tapeErr, setTapeErr] = useState(false);
+  const [tapeGap, setTapeGap] = useState<string | null>(null);
   // the ONE owner truth on this surface: the ADMIN chip (decision 5)
   const isOwner = useOwner();
   // (the tablet DOCK toggle is gone: 701–1179px stacks the dock above the
@@ -122,20 +126,48 @@ export default function IdeasFeed({
   const load = useCallback(() => {
     // two independent sources — one failing never blanks the other; a refresh
     // blip never blanks already-live data (sticky-live, no cached fakes)
+    //
+    // The book's answer is read through the wire vocabulary (lib/wire), not
+    // off the status line: a store outage reaches us as `ok: false` — on a 503
+    // or on a 200 — and both land in UNREACHABLE. The body is parsed even when
+    // the response isn't ok, because that is where the cause is. `live` stays
+    // null on a failed read, so the EMPTY state — which claims the desk has
+    // published nothing — can never be rendered from a blind one.
     fetch("/api/ideas", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { ideas?: PublicIdea[] }) => {
-        setLive(Array.isArray(j.ideas) ? j.ideas : []);
-        setLiveErr(false);
-      })
-      .catch(() => setLiveErr(true));
+      .then((r) => r.json().then(
+        (body: unknown) => readWire<PublicIdea>(r, body, "ideas"),
+        // a body that isn't JSON tells us nothing; the response still does
+        () => readWire<PublicIdea>(r, null, "ideas"),
+      ))
+      .catch(() => readWire<PublicIdea>(null, null, "ideas"))
+      .then((read) => {
+        if (read.state === "ok") {
+          setLive(read.rows);
+          setLiveErr(false);
+          // a PARTIAL book is not a book: the count and the bias tiles below
+          // are computed from these rows, so a short read has to say so
+          setLiveGap(degradedLine(read.failed));
+        } else {
+          setLiveErr(true);
+        }
+      });
+    // the tape reads the SAME vocabulary — it is a public list route too, and
+    // a 200 saying ok:false must not land as an empty tape
     fetch("/api/tape", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { entries?: PublicTapeEntry[] }) => {
-        setTapeRows(Array.isArray(j.entries) ? j.entries : []);
-        setTapeErr(false);
-      })
-      .catch(() => setTapeErr(true));
+      .then((r) => r.json().then(
+        (body: unknown) => readWire<PublicTapeEntry>(r, body, "entries"),
+        () => readWire<PublicTapeEntry>(r, null, "entries"),
+      ))
+      .catch(() => readWire<PublicTapeEntry>(null, null, "entries"))
+      .then((read) => {
+        if (read.state === "ok") {
+          setTapeRows(read.rows);
+          setTapeErr(false);
+          setTapeGap(degradedLine(read.failed));
+        } else {
+          setTapeErr(true);
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -150,11 +182,13 @@ export default function IdeasFeed({
 
   const liveIdeas = live ?? [];
 
-  const loading = live === null && !liveErr;
-  const unreachable = live === null && liveErr;
-  // EMPTY is a factual claim about the product, so it requires that the book
-  // actually answered — never derived from a failed request.
-  const empty = live !== null && liveIdeas.length === 0;
+  // ONE decision, shared with the front page and unit-tested (lib/wire):
+  // EMPTY claims the desk published nothing; UNREACHABLE claims only that
+  // the read failed. Deriving them here by hand is how they drifted.
+  const board = listSurfaceState({ answered: live !== null, failed: liveErr, rows: liveIdeas.length });
+  const loading = board === "loading";
+  const unreachable = board === "unreachable";
+  const empty = board === "empty";
 
   // ── last quotes ─────────────────────────────────────────────────────────────
   // one DELAYED price per instrument, in ≤20-symbol chunks (the route slices
@@ -330,6 +364,19 @@ export default function IdeasFeed({
     if (tapeRows === null && live === null) return null;
     return buildWire(liveIdeas, tapeRows ?? []);
   }, [liveIdeas, tapeRows, live]);
+  // L11 — the merge above substitutes an empty list for a source that didn't
+  // answer, which renders a SHORT wire as a complete one. Whatever is missing
+  // from it is named on the panel rather than silently dropped.
+  const wireMissing = useMemo(() => {
+    const out: string[] = [];
+    if (liveErr) out.push("the book");
+    if (tapeErr) out.push("the tape");
+    if (!liveErr && liveGap) out.push("some of the book");
+    if (!tapeErr && tapeGap) out.push("some of the tape");
+    if (out.length === 0) return null;
+    const list = out.length === 1 ? out[0] : `${out.slice(0, -1).join(", ")} and ${out[out.length - 1]}`;
+    return `${list} didn't answer — this wire is missing what they carry.`;
+  }, [liveErr, tapeErr, liveGap, tapeGap]);
 
   // the selected row's full object
   const selLive =
@@ -494,7 +541,7 @@ export default function IdeasFeed({
             {!loading && !unreachable && !empty ? (
               <div className="if-band">
                 <IdeaDetailPanel live={selLive} last={selLive ? lastFor(selLive) : NO_QUOTE} />
-                <DeskWirePanel events={wireEvents} />
+                <DeskWirePanel events={wireEvents} missing={wireMissing} />
               </div>
             ) : null}
           </section>

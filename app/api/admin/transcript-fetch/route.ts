@@ -64,8 +64,27 @@ export async function POST(req: Request): Promise<Response> {
 
   // Duplicate guard — BEFORE spending a credit. The owner decides; this route
   // never silently proceeds and never silently refuses.
+  //
+  // L11, and it costs real money here: this guard used to read the log through
+  // a function that answered [] when the store was unreachable, so an outage
+  // read as "never ingested" and the route went on to BUY a transcript the
+  // desk already owns. A log that cannot be read is not a log that says no.
+  // The owner is told, and FORCE is still theirs — the refusal is never
+  // silent and never final.
   if (!force && transcriptsConfigured()) {
-    const priors = await findTranscriptsForVideo(videoId);
+    const priorRead = await findTranscriptsForVideo(videoId);
+    if (priorRead.state !== "ok") {
+      return Response.json({
+        ok: false,
+        kind: "duplicate_check_failed",
+        videoId,
+        url,
+        message:
+          `The ingest log couldn't be read (${priorRead.reason}), so the desk can't tell whether ` +
+          "this video was already bought. Nothing was spent. Fetch anyway?",
+      });
+    }
+    const priors = priorRead.rows;
     if (priors.length > 0) {
       const newest = priors[0];
       return Response.json({

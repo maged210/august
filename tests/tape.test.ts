@@ -1,17 +1,23 @@
 // lib/tape pure helpers — validators + redaction (G3 round 4). Mirrors
-// tests/ideas.test.ts: node:test over the pure layer only; the store is
-// best-effort Upstash and stays untested here (no network in tests).
+// tests/ideas.test.ts: node:test over the pure layer. The store's READ path is
+// covered too (fix/route-failure-honesty), through an injected kv — still no
+// network in tests.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MAX_TAPE,
   MAX_TAPE_NOTE_CHARS,
   MAX_TAPE_SYMBOL_CHARS,
+  readLiveTape,
+  readTape,
   toPublicTapeEntry,
   validateTapeCreate,
   validateTapePatch,
   type TapeEntry,
+  type TapeKv,
 } from "../lib/tape";
+import { wireBody } from "../lib/wire";
 import { normalizeTapeCandidates } from "../lib/transcripts";
 
 const GOOD = {
@@ -153,4 +159,142 @@ test("tape candidates: malformed rows dropped, non-arrays empty", () => {
   assert.equal(out[0].symbol, "OK");
   assert.deepEqual(normalizeTapeCandidates(undefined), []);
   assert.deepEqual(normalizeTapeCandidates({}), []);
+});
+
+// --- readTape / readLiveTape -------------------------------------------------
+// DESIGN_LAWS L11 — FAILURE IS A STATE, NOT AN ABSENCE. The store is injected
+// (house pattern, cf. tests/push.test.ts): every branch is driven on purpose,
+// with no network and no env dependence.
+
+const entry = (id: string, ts: number, status: "draft" | "live" = "live"): TapeEntry => ({
+  id,
+  ts,
+  symbol: "SPX",
+  note: `row ${id}`,
+  kind: "sweep",
+  sentiment: "bear",
+  source: "desk",
+  status,
+  updatedAt: ts,
+});
+
+/** A healthy store: the zset newest-first, blobs by key. */
+function fakeTapeKv(entries: TapeEntry[]): TapeKv {
+  const blobs = new Map(entries.map((e) => [`august:tape:v1:${e.id}`, JSON.stringify(e)]));
+  const ids = [...entries].sort((a, b) => b.ts - a.ts).map((e) => e.id);
+  return {
+    async get(key: string) {
+      return blobs.get(key) ?? null;
+    },
+    async zrange(_key: string, start: number, stop: number) {
+      return ids.slice(start, stop + 1);
+    },
+  };
+}
+
+/** A store that is there but cannot be talked to — the Redis outage. */
+function deadTapeKv(message: string): TapeKv {
+  return {
+    async get() {
+      throw new Error(message);
+    },
+    async zrange() {
+      throw new Error(message);
+    },
+  };
+}
+
+test("L11: an unreachable tape store is unavailable WITH the cause, never an empty tape", async () => {
+  const kv = deadTapeKv("fetch failed: ECONNRESET");
+  const read = await readTape(undefined, MAX_TAPE, { kv });
+  assert.equal(read.state, "unavailable");
+  if (read.state === "unavailable") assert.doesNotMatch(read.reason, /ECONNRESET/, "the store's words stay off the public wire");
+
+  // the public wire carries the same answer: a stated failure, not a clean list
+  const live = await readLiveTape(50, { kv });
+  assert.equal(live.state, "unavailable");
+  const { body, status } = wireBody(live, "entries");
+  assert.equal(status, 503);
+  assert.equal(body.ok, false);
+  // the ROUTE body is the public surface — it states the fact, never the store
+  assert.doesNotMatch(String(body.error), /ECONNRESET/, "the 503 body carries no store internals");
+  assert.ok(String(body.error).trim().length > 0, "but it does state something");
+  assert.equal(body.entries, undefined, "a failure answers with the failure, not with rows");
+});
+
+test("L11: an unconfigured tape store is unavailable, NOT an empty ok", async () => {
+  const read = await readTape(undefined, MAX_TAPE, { kv: null });
+  assert.equal(read.state, "unavailable");
+  if (read.state === "unavailable") assert.ok(read.reason.trim().length > 0, "the cause is never silence");
+
+  const { body, status } = wireBody(await readLiveTape(50, { kv: null }), "entries");
+  assert.equal(status, 503);
+  assert.equal(body.ok, false);
+  // the bug this replaces: no credentials read as "the desk said nothing today"
+  assert.notDeepEqual(body, { ok: true, entries: [] });
+});
+
+test("L11: a healthy but genuinely empty tape is ok with zero rows", async () => {
+  const read = await readLiveTape(50, { kv: fakeTapeKv([]) });
+  assert.equal(read.state, "ok");
+  if (read.state === "ok") {
+    assert.deepEqual(read.rows, []);
+    assert.deepEqual(read.failed, []);
+  }
+  const { body, status } = wireBody(read, "entries");
+  assert.equal(status, 200);
+  assert.deepEqual(body, { ok: true, entries: [] });
+  assert.equal(body.degraded, undefined, "nothing failed, so nothing is named");
+});
+
+test("L11: a healthy tape answers ok — live only, redacted, newest first, capped", async () => {
+  const kv = fakeTapeKv([entry("a", 3), entry("b", 2), entry("c", 1), entry("d", 4, "draft")]);
+  const read = await readLiveTape(2, { kv });
+  assert.equal(read.state, "ok");
+  if (read.state !== "ok") return;
+  assert.deepEqual(
+    read.rows.map((r) => r.id),
+    ["a", "b"],
+    "newest first, limit respected, the draft never on the wire",
+  );
+  const first = read.rows[0] as Record<string, unknown>;
+  assert.equal(first.status, undefined, "provenance stays redacted through the read path");
+  assert.equal(first.source, undefined);
+  assert.deepEqual(read.failed, []);
+});
+
+test("L11: rows that didn't answer are NAMED, never quietly dropped from the list", async () => {
+  const healthy = fakeTapeKv([entry("a", 3), entry("b", 2), entry("c", 1)]);
+  const flaky: TapeKv = {
+    zrange: healthy.zrange,
+    async get(key: string) {
+      if (key.endsWith(":b")) throw new Error("blob read timed out");
+      return healthy.get(key);
+    },
+  };
+  const read = await readLiveTape(50, { kv: flaky });
+  assert.equal(read.state, "ok");
+  if (read.state !== "ok") return;
+  assert.deepEqual(read.rows.map((r) => r.id), ["a", "c"]);
+  assert.equal(read.failed.length, 1);
+  assert.equal(read.failed[0].source, "Upstash");
+  assert.match(read.failed[0].reason, /1 of 3 rows didn't read/);
+
+  const { body, status } = wireBody(read, "entries");
+  assert.equal(status, 200, "rows exist, so the reader gets them");
+  assert.ok(Array.isArray(body.degraded), "and the list says what is missing from it");
+});
+
+test("L11: every blob failing is the same blindness as the index failing", async () => {
+  const healthy = fakeTapeKv([entry("a", 2), entry("b", 1)]);
+  const read = await readTape("live", MAX_TAPE, {
+    kv: {
+      zrange: healthy.zrange,
+      async get() {
+        throw new Error("blob read timed out");
+      },
+    },
+  });
+  assert.equal(read.state, "unavailable");
+  if (read.state === "unavailable") assert.doesNotMatch(read.reason, /timed out/, "the cause is logged, not published");
 });

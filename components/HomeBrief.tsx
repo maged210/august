@@ -17,7 +17,11 @@
 //   • WHAT'S BEING SAID — headlines (or the desk's own tape, env-flagged)
 //
 // HONESTY (the law, L2): a card with no data renders its UNAVAILABLE state,
-// never a blank or a placeholder; loading says so. Prices come from the ONE
+// never a blank or a placeholder; loading says so. Those states now fire on
+// the ROUTE'S OWN ANSWER (lib/wire), not only on a dead fetch: a store outage
+// arrives as a well-formed answer saying ok:false, and reading only the
+// transport rendered it as "no calls / no headlines" — the exact lie L11
+// forbids. Zero rows and unreachable are different cards. Prices come from the ONE
 // quote book (lib/use-quote-book, shared with the terminal): per symbol, a
 // failed batch is UNAVAILABLE, never an older round's price. Market data wears
 // its provenance chip at every width; August's own stored records (desk, tape)
@@ -31,6 +35,7 @@ import type { PublicTapeEntry } from "@/lib/tape";
 import type { Headline } from "@/lib/headlines";
 import { relativeTime } from "@/lib/ideas";
 import { fmtPct } from "@/lib/idea-card";
+import { degradedLine, readWire, type WireFetch } from "@/lib/wire";
 import type { QuoteReader } from "@/lib/use-quote-book";
 import DataTag from "@/components/DataTag";
 import CountdownRow from "@/components/CountdownRow";
@@ -153,6 +158,22 @@ function readSlot<T>(slot: Slot<T>, now: number, maxAge: number): { state: "pend
 
 type Levels = { levels: SessionLevels; bias: BiasRead };
 
+/** ONE public-wire GET, read the way lib/wire says every consumer must. The
+ *  body is parsed EVEN when the status isn't ok, because that is where the
+ *  desk states its cause; a body that won't parse is itself a failure, not an
+ *  empty list. The raw body rides along for the one field that isn't rows —
+ *  the headlines route's `mode`. Never rejects: the failure IS the answer. */
+function pullWire<T>(url: string, key: string): Promise<{ read: WireFetch<T>; body: unknown }> {
+  return fetch(url, { cache: "no-store" }).then(
+    (res) =>
+      res.json().then(
+        (body: unknown) => ({ read: readWire<T>(res, body, key), body }),
+        () => ({ read: readWire<T>(res, null, key), body: null }),
+      ),
+    () => ({ read: readWire<T>(null, null, key), body: null }),
+  );
+}
+
 export default function HomeBrief({
   askBar,
   onAsk,
@@ -166,20 +187,34 @@ export default function HomeBrief({
   const [now, setNow] = useState(() => sessionNow());
   const [clock, setClock] = useState(() => Date.now());
   const [live, setLive] = useState<PublicIdea[] | null>(null);
-  const [liveErr, setLiveErr] = useState(false);
+  // the three *Err states hold the desk's STATED cause, not a flag: the chip
+  // that fires from them can then name why the source is missing instead of
+  // only that it is. null = the last read answered.
+  const [liveErr, setLiveErr] = useState<string | null>(null);
+  /** the book answered, but short: which source didn't hand over its rows.
+   *  A count of "live calls" taken from a partial read is a wrong number
+   *  stated as the desk's own record (L11). */
+  const [liveGap, setLiveGap] = useState<string | null>(null);
   const [liveAt, setLiveAt] = useState<number | null>(null);
   const [why, setWhy] = useState(false);
   const [levels, setLevels] = useState<Slot<Levels>>(null);
-  // undefined = pending; null = answered with nothing (or failed — the desk
-  // line then falls back to the book alone)
+  // undefined = not read yet; null = the wire answered with nothing. A failed
+  // wire read never lands here: it leaves a known ingest standing and simply
+  // adds no timestamp to the desk line.
   const [ingest, setIngest] = useState<PublicIngest | null | undefined>(undefined);
   const [news, setNews] = useState<Headline[] | null>(null);
   const [newsAt, setNewsAt] = useState<number | null>(null);
-  const [newsErr, setNewsErr] = useState(false);
+  const [newsErr, setNewsErr] = useState<string | null>(null);
+  // a PARTIAL headlines read: rows exist and some feeds are missing from them.
+  // The list is served AND the gap is named — a short list that looks whole is
+  // the failure L11 forbids. null = every feed answered.
+  const [newsGap, setNewsGap] = useState<string | null>(null);
   // P2 — the env-flagged desk-only feed (the desk's tape instead of headlines)
   const [deskFeed, setDeskFeed] = useState(false);
   const [tapeNotes, setTapeNotes] = useState<PublicTapeEntry[] | null>(null);
-  const [tapeErr, setTapeErr] = useState(false);
+  const [tapeErr, setTapeErr] = useState<string | null>(null);
+  /** same for the tape: a short tape must never read as the whole tape */
+  const [tapeGap, setTapeGap] = useState<string | null>(null);
 
   // the session line + every relative time follow the clock
   useEffect(() => {
@@ -208,17 +243,20 @@ export default function HomeBrief({
     let cancelled = false;
     const pull = () => {
       const askedAt = Date.now();
-      fetch("/api/ideas", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { ideas?: PublicIdea[] }) => {
-          if (cancelled) return;
-          setLive(Array.isArray(j.ideas) ? j.ideas : []);
-          setLiveErr(false);
+      // `live` stays null on a failed read so the DESK card can never print a
+      // count of 0 live calls that the store never actually answered.
+      pullWire<PublicIdea>("/api/ideas", "ideas").then(({ read }) => {
+        if (cancelled) return;
+        if (read.state === "ok") {
+          setLive(read.rows);
+          setLiveErr(null);
+          // null when every row answered, so a recovered round clears itself
+          setLiveGap(degradedLine(read.failed));
           setLiveAt(Date.now());
-        })
-        .catch(() => {
-          if (!cancelled) setLiveErr(true);
-        });
+        } else {
+          setLiveErr(read.reason);
+        }
+      });
       fetch("/api/intel/levels", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : Promise.reject(r)))
         .then(
@@ -229,14 +267,14 @@ export default function HomeBrief({
         .then((data) => {
           if (!cancelled) setLevels((prev) => landSlot(prev, data, askedAt));
         });
-      fetch("/api/wire", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { ingests?: PublicIngest[] }) => {
-          if (!cancelled) setIngest(Array.isArray(j.ingests) && j.ingests.length > 0 ? j.ingests[0] : null);
-        })
-        .catch(() => {
-          if (!cancelled) setIngest((prev) => (prev === undefined ? null : prev));
-        });
+      pullWire<PublicIngest>("/api/wire", "ingests").then(({ read }) => {
+        if (cancelled) return;
+        // an ANSWER of no ingests is a fact about the wire and lands; a failed
+        // read is not that fact, so it never clears a known ingest — it only
+        // leaves the desk's "updated" time to the book alone.
+        if (read.state === "ok") setIngest(read.rows.length > 0 ? read.rows[0] : null);
+        else setIngest((prev) => (prev === undefined ? null : prev));
+      });
     };
     pull();
     const id = window.setInterval(() => {
@@ -253,31 +291,38 @@ export default function HomeBrief({
   useEffect(() => {
     let cancelled = false;
     const pull = () => {
-      fetch("/api/headlines", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-        .then((j: { headlines?: Headline[]; mode?: string }) => {
-          if (cancelled) return;
-          if (j.mode === "desk") {
-            setDeskFeed(true);
-            fetch("/api/tape", { cache: "no-store" })
-              .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-              .then((t: { entries?: PublicTapeEntry[] }) => {
-                if (cancelled) return;
-                setTapeNotes(Array.isArray(t.entries) ? t.entries : []);
-                setTapeErr(false);
-              })
-              .catch(() => {
-                if (!cancelled) setTapeErr(true);
-              });
-            return;
-          }
-          setNews(Array.isArray(j.headlines) ? j.headlines : []);
+      pullWire<Headline>("/api/headlines", "headlines").then(({ read, body }) => {
+        if (cancelled) return;
+        // the mode rides beside the rows, so it is read from the body itself.
+        // A failed headlines read can't state a mode at all — the headlines
+        // card then says it is unreachable rather than silently staying on a
+        // feed it never confirmed.
+        const mode = body && typeof body === "object" ? (body as { mode?: unknown }).mode : undefined;
+        if (mode === "desk") {
+          setDeskFeed(true);
+          pullWire<PublicTapeEntry>("/api/tape", "entries").then(({ read: tape }) => {
+            if (cancelled) return;
+            if (tape.state === "ok") {
+              setTapeNotes(tape.rows);
+              setTapeErr(null);
+              setTapeGap(degradedLine(tape.failed));
+            } else {
+              setTapeErr(tape.reason);
+            }
+          });
+          return;
+        }
+        if (read.state === "ok") {
+          setNews(read.rows);
           setNewsAt(Date.now());
-          setNewsErr(false);
-        })
-        .catch(() => {
-          if (!cancelled) setNewsErr(true);
-        });
+          setNewsErr(null);
+          // degradedLine is null when every feed answered, so a recovered
+          // round clears the gap line by itself
+          setNewsGap(degradedLine(read.failed));
+        } else {
+          setNewsErr(read.reason);
+        }
+      });
     };
     pull();
     const id = window.setInterval(() => {
@@ -295,7 +340,7 @@ export default function HomeBrief({
   // own input. Pure math in lib/regime.
   const { quoteFor, closesFor } = quotes;
   const regimePending =
-    REGIME_SYMBOLS.some((s) => quoteFor(s).state === "pending") || (live === null && !liveErr);
+    REGIME_SYMBOLS.some((s) => quoteFor(s).state === "pending") || (live === null && liveErr === null);
   const regime = useMemo(() => {
     if (regimePending) return null;
     const px = (s: string) => {
@@ -486,10 +531,14 @@ export default function HomeBrief({
       <section className="td-card" aria-label="Desk">
         <div className="td-head">
           <h2 className="td-label">Desk</h2>
-          {live === null && liveErr ? <DataTag kind="unavail" title="the ideas board is unreachable" /> : null}
+          {liveErr !== null ? (
+            <DataTag kind="unavail" title={`the ideas board is unreachable — ${liveErr}`} />
+          ) : liveGap !== null ? (
+            <DataTag kind="unavail" title={liveGap} />
+          ) : null}
         </div>
         {live === null ? (
-          <p className="td-meta">{liveErr ? "The desk can't be reached right now." : "loading…"}</p>
+          <p className="td-meta">{liveErr !== null ? "The desk can't be reached right now." : "loading…"}</p>
         ) : (
           (() => {
             const etDay = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
@@ -505,6 +554,7 @@ export default function HomeBrief({
                 <p className="td-meta">
                   {fresh} new today{newest > 0 ? ` · updated ${relativeTime(newest, clock)}` : ""}
                 </p>
+                {liveGap !== null ? <p className="td-meta">{liveGap}</p> : null}
               </>
             );
           })()
@@ -523,10 +573,14 @@ export default function HomeBrief({
         <section className="td-card" aria-label="From the desk">
           <div className="td-head">
             <h2 className="td-label">From the desk</h2>
-            {tapeNotes === null && tapeErr ? <DataTag kind="unavail" title="the desk tape is unreachable" /> : null}
+            {tapeErr !== null ? (
+              <DataTag kind="unavail" title={`the desk tape is unreachable — ${tapeErr}`} />
+            ) : tapeGap !== null ? (
+              <DataTag kind="unavail" title={tapeGap} />
+            ) : null}
           </div>
           {tapeNotes === null ? (
-            <p className="td-meta">{tapeErr ? "The tape can't be reached right now." : "loading…"}</p>
+            <p className="td-meta">{tapeErr !== null ? "The tape can't be reached right now." : "loading…"}</p>
           ) : tapeNotes.length === 0 ? (
             <p className="td-meta">Nothing on the tape yet.</p>
           ) : (
@@ -558,15 +612,31 @@ export default function HomeBrief({
           <div className="td-head">
             <h2 className="td-label">What&apos;s being said</h2>
             {newsFresh && news !== null && news.length > 0 ? (
-              <DataTag kind="delayed" detail="15m" title="free RSS · 15m server cache" />
-            ) : !newsFresh && newsErr ? (
-              <DataTag kind="unavail" title="headlines unreachable" />
+              // a partial list keeps its provenance chip — the rows on screen
+              // ARE 15m-cached RSS — and wears the gap next to it; compact so
+              // both chips fit the head at 390
+              <span className="td-chips">
+                <DataTag kind="delayed" detail="15m" title="free RSS · 15m server cache" />
+                {newsGap !== null ? <DataTag kind="unavail" compact title={newsGap} /> : null}
+              </span>
+            ) : newsFresh && newsGap !== null ? (
+              <DataTag kind="unavail" title={newsGap} />
+            ) : !newsFresh && newsErr !== null ? (
+              <DataTag kind="unavail" title={`headlines unreachable — ${newsErr}`} />
             ) : null}
           </div>
+          {/* the rows below are only the feeds that ANSWERED — the ones that
+              didn't are named here, where a reader counting five headlines can
+              see that the list is short by something */}
+          {newsFresh && newsGap !== null && news !== null && news.length > 0 ? (
+            <p className="td-meta">{newsGap}</p>
+          ) : null}
           {!newsFresh ? (
-            <p className="td-meta">{newsErr ? "Headlines can't be reached right now." : "loading…"}</p>
+            <p className="td-meta">{newsErr !== null ? "Headlines can't be reached right now." : "loading…"}</p>
           ) : news === null || news.length === 0 ? (
-            <p className="td-meta">No headlines right now.</p>
+            // "no headlines right now" is a claim about the feeds. When some of
+            // them never answered, the desk names them instead of making it.
+            <p className="td-meta">{newsGap ?? "No headlines right now."}</p>
           ) : (
             <ul className="td-rows td-news">
               {news.slice(0, 5).map((h) => {

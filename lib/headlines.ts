@@ -2,8 +2,15 @@
 // (the single sanctioned exception to "zero new data sources"): 2–3 quality
 // feeds fetched server-side, parsed with a minimal tolerant XML read (no new
 // dependencies, no scraping), merged newest-first and cached in-process for
-// ~15 minutes. A feed that fails or changes shape simply contributes nothing
-// — the block renders whatever survived, or an honest empty state.
+// ~15 minutes.
+//
+// L11 (fix/route-failure-honesty) — a feed that fails is NAMED, never silently
+// dropped. Some feeds down serves what survived AND says who is missing; every
+// feed down is `unavailable` with each publisher's own cause. The one thing
+// this module will not do is answer a blackout with an empty list, which the
+// front page renders as a quiet news day.
+
+import { causeOf, wireDown, wireOk, type SourceFailure, type WireRead } from "@/lib/wire";
 
 export type Headline = {
   title: string;
@@ -28,7 +35,8 @@ const MAX_PER_FEED = 8;
 const MAX_TOTAL = 15;
 const MAX_TITLE_CHARS = 200;
 
-let _cache: { at: number; rows: Headline[] } | null = null;
+// the failures ride WITH the rows they are missing from — see readHeadlines
+let _cache: { at: number; rows: Headline[]; failed: SourceFailure[] } | null = null;
 
 // --- minimal, tolerant RSS parsing (pure — exported for tests) --------------
 
@@ -115,7 +123,10 @@ export function mergeHeadlines(lists: Headline[][], max: number = MAX_TOTAL): He
 
 // --- the cached fetch --------------------------------------------------------
 
-async function fetchFeed(url: string, publisher: string): Promise<Headline[]> {
+/** ONE feed's read: the items it published, or why it didn't answer. A 403
+ *  from a publisher and a feed that published nothing are different facts and
+ *  stay different all the way to the reader. */
+async function fetchFeed(url: string, publisher: string): Promise<WireRead<Headline>> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -124,21 +135,64 @@ async function fetchFeed(url: string, publisher: string): Promise<Headline[]> {
       headers: { "User-Agent": "AUGUST/0.0.6 (personal desk; rss reader)" },
       cache: "no-store",
     });
-    if (!res.ok) return [];
-    return parseRss(await res.text(), publisher);
-  } catch {
-    return [];
+    if (!res.ok) return wireDown(`answered ${res.status}`);
+    const body = await res.text();
+    const rows = parseRss(body, publisher);
+    // A 200 IS NOT AN ANSWER. Publishers behind a CDN serve consent walls,
+    // challenge pages and "we'll be right back" HTML with a 200 and no feed in
+    // them; parseRss finds no <item> and returns [], which is indistinguishable
+    // from a publisher who genuinely posted nothing. Treating that as an answer
+    // is how a whole publisher drops out of the list silently — so a body that
+    // isn't a feed at all is a failure, while a real feed with no items today
+    // stays an honest empty.
+    if (rows.length === 0 && !/<(rss|feed|rdf:RDF)[\s>]/i.test(body)) {
+      return wireDown("answered 200 with no feed in it");
+    }
+    return wireOk(rows);
+  } catch (e) {
+    // an AbortError's message says only that something was aborted — WE are
+    // what aborted it, so the cause a reader gets is the timeout we imposed
+    return wireDown(ctl.signal.aborted ? `timed out after ${FETCH_TIMEOUT_MS / 1000}s` : causeOf(e));
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Top headlines, in-process cached ~15 min. [] when every feed failed. */
+/** Top headlines with the feeds that didn't answer named beside them.
+ *  `unavailable` ONLY when no feed answered at all. In-process cached ~15 min. */
+export async function readHeadlines(): Promise<WireRead<Headline>> {
+  if (_cache && Date.now() - _cache.at < CACHE_MS) return wireOk(_cache.rows, _cache.failed);
+
+  const reads = await Promise.all(FEEDS.map((f) => fetchFeed(f.url, f.publisher)));
+  const lists: Headline[][] = [];
+  const failed: SourceFailure[] = [];
+  reads.forEach((r, i) => {
+    // the publisher name is what a reader is shown — "CNBC", not the feed URL
+    if (r.state === "ok") lists.push(r.rows.filter(isDeskHeadline));
+    else failed.push({ source: FEEDS[i].publisher, reason: r.reason });
+  });
+
+  // nothing answered. This used to return [] and the front page printed "No
+  // headlines right now" — a total blackout reading as a slow news day.
+  if (lists.length === 0 && failed.length > 0) {
+    return wireDown(`no feed answered — ${failed.map((f) => `${f.source}: ${f.reason}`).join("; ")}`);
+  }
+
+  const rows = mergeHeadlines(lists);
+  // don't cache an answer with nothing in it — retry on the next request
+  // instead (unchanged rule; a blackout now returns above and never reaches
+  // here). A PARTIAL is cached WITH its failures and never the rows alone:
+  // serving fifteen minutes of survivors while dropping the names would
+  // republish the exact clean-looking list this branch exists to remove, and a
+  // shortened TTL would re-hit a publisher that is already rate-limiting us.
+  if (rows.length > 0) _cache = { at: Date.now(), rows, failed };
+  return wireOk(rows, failed);
+}
+
+/** Top headlines, in-process cached ~15 min. [] when every feed failed — the
+ *  desk snapshot already states HEADLINES: unavailable for an empty list.
+ *  Anything that must tell empty from unreachable reads readHeadlines(). */
 export async function getHeadlines(): Promise<Headline[]> {
-  if (_cache && Date.now() - _cache.at < CACHE_MS) return _cache.rows;
-  const lists = await Promise.all(FEEDS.map((f) => fetchFeed(f.url, f.publisher)));
-  const rows = mergeHeadlines(lists.map((l) => l.filter(isDeskHeadline)));
-  // don't cache a total blackout — retry on the next request instead
-  if (rows.length > 0) _cache = { at: Date.now(), rows };
-  return rows;
+  const read = await readHeadlines();
+  return read.state === "ok" ? read.rows : [];
 }

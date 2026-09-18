@@ -16,6 +16,15 @@
 // (PublicTapeEntry) and the UI above it don't change.
 
 import { Redis } from "@upstash/redis";
+import {
+  rowsUnread,
+  storeDown,
+  wireDown,
+  wireOk,
+  STORE_UNCONFIGURED,
+  type SourceFailure,
+  type WireRead,
+} from "@/lib/wire";
 
 export type TapeKind = "sweep" | "block" | "split" | "note";
 export type TapeSentiment = "bull" | "bear" | "neutral";
@@ -218,8 +227,11 @@ export function validateTapePatch(body: unknown): Ok<TapePatchInput> | Err {
 
 // --- store ------------------------------------------------------------------
 // `august:tape:v1` zset (score = ts) indexes `august:tape:v1:{id}` JSON blobs.
-// Lazy client, best-effort: unconfigured or erroring Redis degrades to
-// []/null — the app never 500s over the tape.
+// Lazy client. The WRITE paths stay best-effort (an unconfigured or erroring
+// Redis returns null — the admin form reports the refusal). The READ paths do
+// NOT: readTape states the failure, because an empty tape and an unreadable
+// tape are different answers (DESIGN_LAWS L11) and only listTape/listLiveTape
+// still flatten them, for the callers that never rendered the difference.
 
 const NS = "august:tape:v1";
 const K = {
@@ -244,6 +256,17 @@ export function tapeConfigured(): boolean {
   return getRedis() !== null;
 }
 
+/** The minimal store surface the tape READS through — injectable so node:test
+ *  drives the outage path without a network (house pattern, cf. PushKv in
+ *  lib/push.ts). The real Upstash client stays assignable. */
+export type TapeKv = {
+  get(key: string): Promise<unknown>;
+  zrange(key: string, start: number, stop: number, opts?: { rev?: boolean }): Promise<unknown>;
+};
+
+/** What a reader sees named when the tape doesn't answer. */
+const TAPE_SOURCE = "Upstash";
+
 function newTapeId(): string {
   const rand =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -264,36 +287,101 @@ function parseEntry(raw: unknown): TapeEntry | null {
   }
 }
 
+// One blob read. It THROWS — classifying the throw is the caller's job, and
+// the two callers classify it differently: getTapeEntry's null means "no such
+// entry" to a writer about to overwrite it, while readTape names the failure.
+async function fetchEntry(kv: TapeKv, id: string): Promise<TapeEntry | null> {
+  const raw = await kv.get(K.entry(id));
+  return raw ? parseEntry(raw) : null;
+}
+
 export async function getTapeEntry(id: string): Promise<TapeEntry | null> {
   const redis = getRedis();
   if (!redis || !id) return null;
   try {
-    const raw = await redis.get(K.entry(id));
-    return raw ? parseEntry(raw) : null;
+    return await fetchEntry(redis, id);
   } catch {
     return null;
   }
 }
 
-/** Newest first by ts. Optionally filter by status. Empty when unconfigured. */
-export async function listTape(status?: TapeStatus, limit = MAX_TAPE): Promise<TapeEntry[]> {
-  const redis = getRedis();
-  if (!redis) return [];
+/**
+ * Newest first by ts, optionally filtered by status, WITH the reason when the
+ * tape could not be read (DESIGN_LAWS L11). The old `return []` on an
+ * unconfigured or erroring store made a Redis outage arrive at the dock as
+ * "nothing on the public tape" — a claim about what the desk said, made while
+ * the desk could not be read at all.
+ */
+export async function readTape(
+  status?: TapeStatus,
+  limit = MAX_TAPE,
+  opts?: { kv?: TapeKv | null },
+): Promise<WireRead<TapeEntry>> {
+  const kv = opts?.kv !== undefined ? opts.kv : getRedis();
+  if (!kv) return wireDown(STORE_UNCONFIGURED);
+
+  let ids: string[] | null;
   try {
     const n = Math.max(1, Math.min(MAX_TAPE, Math.floor(limit)));
-    const ids = await redis.zrange<string[]>(K.index, 0, n - 1, { rev: true });
-    if (!ids || ids.length === 0) return [];
-    const rows = await Promise.all(ids.map((id) => getTapeEntry(id)));
-    const entries = rows.filter((e): e is TapeEntry => e !== null);
-    return status ? entries.filter((e) => e.status === status) : entries;
-  } catch {
-    return [];
+    ids = (await kv.zrange(K.index, 0, n - 1, { rev: true })) as string[] | null;
+  } catch (e) {
+    return storeDown("tape", e);
   }
+  if (!ids || ids.length === 0) return wireOk([]);
+
+  // The index answered, so the tape is not blind — but a blob read can still
+  // fail on its own. The rows that answered are served AND the count that
+  // didn't is stated, so a short tape is never passed off as the whole tape.
+  // Every one of them failing is the same blindness as the index failing.
+  let failed = 0;
+  let firstCause: unknown = null;
+  const rows = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        return await fetchEntry(kv, id);
+      } catch (e) {
+        failed += 1;
+        if (!firstCause) firstCause = e;
+        return null;
+      }
+    }),
+  );
+  if (failed === ids.length) return storeDown("tape", firstCause);
+
+  const entries = rows.filter((e): e is TapeEntry => e !== null);
+  const kept = status ? entries.filter((e) => e.status === status) : entries;
+  // the count is the reader's fact; the store's words go to the log only
+  const missing: SourceFailure[] = [];
+  if (failed > 0) {
+    console.error("[tape] partial read:", rowsUnread(failed, ids.length), "—", firstCause);
+    missing.push({ source: TAPE_SOURCE, reason: rowsUnread(failed, ids.length) });
+  }
+  return wireOk(kept, missing);
+}
+
+/** The public wire: live only, redacted, newest first, capped — with the
+ *  failure state intact. */
+export async function readLiveTape(
+  limit = 50,
+  opts?: { kv?: TapeKv | null },
+): Promise<WireRead<PublicTapeEntry>> {
+  const read = await readTape("live", MAX_TAPE, opts);
+  if (read.state === "unavailable") return read;
+  return wireOk(read.rows.slice(0, limit).map(toPublicTapeEntry), read.failed);
+}
+
+/** Newest first by ts. Optionally filter by status. Empty when unconfigured —
+ *  callers that RENDER the tape read it through readTape instead, so a reader
+ *  is never shown an outage as an empty desk. */
+export async function listTape(status?: TapeStatus, limit = MAX_TAPE): Promise<TapeEntry[]> {
+  const read = await readTape(status, limit);
+  return read.state === "ok" ? read.rows : [];
 }
 
 /** The public wire: live only, redacted, newest first, capped. */
 export async function listLiveTape(limit = 50): Promise<PublicTapeEntry[]> {
-  return (await listTape("live")).slice(0, limit).map(toPublicTapeEntry);
+  const read = await readLiveTape(limit);
+  return read.state === "ok" ? read.rows : [];
 }
 
 export async function createTapeEntry(input: TapeCreateInput): Promise<TapeEntry | null> {

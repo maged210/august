@@ -32,6 +32,15 @@ import {
   type TapeCreateInput,
 } from "@/lib/tape";
 import { checkSymbol, type SymbolRefusal } from "@/lib/symbol-check";
+import {
+  rowsUnread,
+  storeDown,
+  wireDown,
+  wireOk,
+  STORE_UNCONFIGURED,
+  type SourceFailure,
+  type WireRead,
+} from "@/lib/wire";
 
 export const MAX_TRANSCRIPT_CHARS = 120_000;
 export const MAX_TRANSCRIPTS = 100;
@@ -745,10 +754,20 @@ export type PublicIngest = {
   tapeDrafts: number;
 };
 
-/** Public wire view: PROCESSED ingests only, newest first, redacted. */
-export async function listPublicIngests(limit = 12): Promise<PublicIngest[]> {
-  const rows = await listTranscripts(limit);
-  return rows
+/**
+ * DESIGN_LAWS L11. The public wire's read: PROCESSED ingests only, newest
+ * first, redacted — and a failed store read stays failed. Filtering a failure
+ * down to zero rows is exactly how the wire card came to say "nothing has been
+ * ingested" while Upstash was unreachable, which is a claim about the desk, not
+ * about the store.
+ */
+export async function readPublicIngests(
+  limit = 12,
+  opts?: { kv?: TranscriptKv | null },
+): Promise<WireRead<PublicIngest>> {
+  const read = await readTranscripts(limit, opts);
+  if (read.state !== "ok") return read;
+  const rows = read.rows
     .filter((r) => r.status === "processed")
     .map((r) => ({
       id: r.id,
@@ -757,6 +776,13 @@ export async function listPublicIngests(limit = 12): Promise<PublicIngest[]> {
       ideaDrafts: r.ideaIds.length,
       tapeDrafts: r.tapeIds?.length ?? 0,
     }));
+  return wireOk(rows, read.failed);
+}
+
+/** Public wire view: PROCESSED ingests only, newest first, redacted. */
+export async function listPublicIngests(limit = 12): Promise<PublicIngest[]> {
+  const read = await readPublicIngests(limit);
+  return read.state === "ok" ? read.rows : [];
 }
 
 /**
@@ -776,25 +802,76 @@ export function recordMatchesVideo(rec: TranscriptRecord, videoId: string): bool
  * Scans the whole retained index (MAX_TRANSCRIPTS), not just the recent page,
  * so the duplicate warning doesn't go quiet once a video scrolls off the log.
  */
-export async function findTranscriptsForVideo(videoId: string): Promise<TranscriptRecord[]> {
-  if (!YOUTUBE_ID_RE.test(videoId)) return [];
-  const rows = await listTranscripts(MAX_TRANSCRIPTS);
-  return rows.filter((r) => recordMatchesVideo(r, videoId));
+export async function findTranscriptsForVideo(videoId: string): Promise<WireRead<TranscriptRecord>> {
+  // a malformed id matches nothing, and that is an ANSWER: there is nothing to
+  // look up, not a lookup that failed
+  if (!YOUTUBE_ID_RE.test(videoId)) return wireOk([]);
+  const read = await readTranscripts(MAX_TRANSCRIPTS);
+  if (read.state !== "ok") return read;
+  return wireOk(read.rows.filter((r) => recordMatchesVideo(r, videoId)), read.failed);
 }
 
-/** Newest first. Records only — raw text stays server-side unless asked for. */
-export async function listTranscripts(limit = 10): Promise<TranscriptRecord[]> {
-  const redis = getRedis();
-  if (!redis) return [];
+/** The store surface this read needs — injectable so node:test drives the
+ *  unreachable path without Redis (house pattern, lib/push.ts). */
+export type TranscriptKv = {
+  zrange(key: string, start: number, stop: number, opts?: { rev?: boolean }): Promise<unknown>;
+  get(key: string): Promise<unknown>;
+};
+
+/**
+ * DESIGN_LAWS L11. The read behind listTranscripts, carrying the reason it
+ * failed. Upstash is the only source in this store, so there is no partial
+ * read here: either the index answered or nothing did, and `failed` stays
+ * empty. Newest first; records only — raw text stays server-side unless asked
+ * for.
+ */
+/** The source name a reader sees when the ingest log is missing rows. */
+const INGEST_SOURCE = "Upstash";
+
+export async function readTranscripts(
+  limit = 10,
+  opts?: { kv?: TranscriptKv | null },
+): Promise<WireRead<TranscriptRecord>> {
+  const kv = opts?.kv !== undefined ? opts.kv : getRedis();
+  if (!kv) return wireDown(STORE_UNCONFIGURED);
+  let ids: string[] | null;
   try {
     const n = Math.max(1, Math.min(MAX_TRANSCRIPTS, Math.floor(limit)));
-    const ids = await redis.zrange<string[]>(K.index, 0, n - 1, { rev: true });
-    if (!ids || ids.length === 0) return [];
-    const rows = await Promise.all(
-      ids.map(async (id) => parseRecord(await redis.get(K.transcript(id)))),
-    );
-    return rows.filter((r): r is TranscriptRecord => r !== null);
-  } catch {
-    return [];
+    ids = (await kv.zrange(K.index, 0, n - 1, { rev: true })) as string[] | null;
+  } catch (e) {
+    return storeDown("wire", e);
   }
+  if (!ids || ids.length === 0) return wireOk<TranscriptRecord>([]);
+
+  // Per-row, not Promise.all: each blob is its own HTTP call, so ONE row
+  // failing must not turn a readable log into a total blackout. The rows that
+  // answered are served and the count that didn't is stated.
+  let unread = 0;
+  let firstCause: unknown = null;
+  const rows = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        return parseRecord(await kv.get(K.transcript(id)));
+      } catch (e) {
+        unread += 1;
+        if (!firstCause) firstCause = e;
+        return null;
+      }
+    }),
+  );
+  if (unread === ids.length) return storeDown("wire", firstCause);
+  const failed: SourceFailure[] = [];
+  if (unread > 0) {
+    console.error("[wire] partial read:", rowsUnread(unread, ids.length), "—", firstCause);
+    failed.push({ source: INGEST_SOURCE, reason: rowsUnread(unread, ids.length) });
+  }
+  return wireOk(rows.filter((r): r is TranscriptRecord => r !== null), failed);
+}
+
+/** Newest first. Records only — raw text stays server-side unless asked for.
+ *  The daily pass and the duplicate check read the log to ACT on it, not to
+ *  publish it, so they keep taking [] when it can't be read. */
+export async function listTranscripts(limit = 10): Promise<TranscriptRecord[]> {
+  const read = await readTranscripts(limit);
+  return read.state === "ok" ? read.rows : [];
 }
