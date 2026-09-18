@@ -103,7 +103,10 @@ Guidance for Claude Code working in this repo.
   as-of time on August's stored records (desk, tape), UNAVAILABLE instead of
   blank. ONE QUOTE BOOK: `lib/quote-book.ts` (pure policy) +
   `lib/use-quote-book.ts` (the loop) are imported by the terminal AND the
-  front page — never copy the functions. STALE is retired for prices. THE
+  front page — never copy the functions. STALE is retired for prices. Every
+  quote carries its own `asOf` from /api/intel/quotes (fix/quote-age) and the
+  policy ages a price from THAT, never from when the round was asked: a cache
+  hit is as old as its fetch, and a price of unknown age is UNAVAILABLE. THE
   CALL shows no reference while open; a settled call reads the stored close
   and prev close it was scored against. LATEST INGEST is /admin-only (owner
   parity on the floor too: the ADMIN chip is the only owner difference).
