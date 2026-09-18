@@ -326,3 +326,61 @@ UNAVAILABLE, the call and record intact) and an /admin row carrying the real 400
 The same /admin fixture shot against a main build is the before: `FAILED NQ
 ope… ▸` with the cause gone entirely. /admin's cramped 390 layout is unchanged
 from main — pre-existing, not this branch.
+
+## fix/route-failure-honesty — L11 on the wire (branch off main `be00ea1`)
+
+Four public list routes answered `{ ok: true, <rows>: [] }` whether the source was
+empty or unreachable. A Redis outage therefore reached the front page as
+"0 live calls" and the terminal as "the desk has published nothing" — claims
+about the desk's own record, made while blind. The consumers already HAD the
+UNAVAILABLE states; the wire just never gave them anything to fire on.
+
+**One vocabulary — `lib/wire.ts`.** Three answers, never two: `ok` (zero rows is
+a real answer), `partial` (rows served AND the dead sources named in
+`degraded`), `unavailable` (503 + `{ ok: false, error }`). `readWire` reads the
+same three on the consumer side, so a 200 whose body says `ok:false` lands
+exactly where a dead socket does.
+
+**The four sites.** `lib/headlines`, `lib/ideas`, `lib/tape` and
+`lib/transcripts` each gained a `read*` returning `WireRead` with the existing
+`list*` re-expressed on top, so `lib/ideas-eval`, `lib/call` and
+`lib/desk-snapshot` are untouched. Blob reads are settled per row: one
+unreadable row is counted and named, not allowed to blind a whole store.
+
+**What a public wire may say.** The fact, never the store's words. These routes
+are unauthenticated and republished, and the driver's message carries our key
+namespace and the literal command, so `storeDown()` logs the cause for the
+operator and publishes "the desk's store didn't answer" — the same split
+/admin already makes in the other direction. A 200 that isn't a feed at all
+(a consent wall, a challenge page) is a failed feed, not an empty one.
+
+**The consumers.** `HomeBrief` and `IdeasFeed` render their existing states from
+the route's answer, and no longer gate them on "never answered once" — a
+surface that polls spends most of an outage holding a stale successful read.
+`listSurfaceState` is the one decision, unit-tested: EMPTY claims the desk
+published nothing, and only the LATEST read may say it. The desk wire names
+which of its two stores is missing instead of merging an empty list into a
+clean one.
+
+**Also fixed, because it spends money:** the transcript duplicate guard read the
+ingest log through the flattening `listTranscripts`, so an outage read as
+"never ingested" and the route bought a transcript the desk already owned. It
+now refuses with the reason and leaves FORCE to the owner.
+
+**Gate:** 426/426 (a new `tests/wire.test.ts` plus per-domain route tests), tsc
+clean, build green. 390 screenshots from a keyless worktree with every `/api/*`
+answered from a fixture and unmatched ones failed, never sent:
+- outage → DESK and WHAT'S BEING SAID both DATA UNAVAILABLE with their copy;
+  prices still render, because the quote provider was healthy and only the
+  store was down.
+- outage → the terminal reads BOOK UNREACHABLE with "— live" and "—" tiles,
+  where it used to read NO IDEAS ON THE BOARD with `0 live` and `0 L · 0 S`.
+- partial → the surviving Reuters headline renders WITH its DELAYED chip, an
+  UNAVAILABLE chip beside it, and the rendered line "BBC and AP didn't answer
+  — this list is missing what they carry."
+
+**Found on the way, not fixed here:** /api/admin/ideas and /api/admin/tape still
+read through the flattening `list*`, so the OWNER's queue shows an empty board
+during an outage — the operator surface is the one place that matters most, and
+it is a separate branch. The front page renders the shared disclaimer TWICE
+(HomeBrief and HomeLanding each mount one); it predates this branch.
