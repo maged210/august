@@ -30,8 +30,15 @@ export async function POST(req: Request): Promise<Response> {
   const action = b.action;
 
   if (action === "forget") {
-    await clearMemory(principal);
-    return new Response(null, { status: 204, headers: setCookie ? { "Set-Cookie": setCookie } : {} });
+    // L9 — 204 used to mean both "wiped" and "there is no store to wipe". The
+    // caller renders what this says, so it has to be true.
+    const wiped = await clearMemory(principal);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (setCookie) headers["Set-Cookie"] = setCookie;
+    return new Response(JSON.stringify(wiped.ok ? { ok: true } : { ok: false, error: wiped.reason }), {
+      status: wiped.ok ? 200 : 502,
+      headers,
+    });
   }
 
   if (action === "update") {
@@ -43,8 +50,13 @@ export async function POST(req: Request): Promise<Response> {
     }
     // The CLIENT fires this without awaiting, so the reply is never blocked. We
     // await here so the function stays alive until the write completes.
-    await updateMemoryFromExchange({ email: principal, sessionId, userText, assistantText });
-    return new Response(null, { status: 204, headers: setCookie ? { "Set-Cookie": setCookie } : {} });
+    const wrote = await updateMemoryFromExchange({ email: principal, sessionId, userText, assistantText });
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (setCookie) headers["Set-Cookie"] = setCookie;
+    return new Response(JSON.stringify(wrote.ok ? { ok: true } : { ok: false, error: wrote.reason }), {
+      status: wrote.ok ? 200 : 502,
+      headers,
+    });
   }
 
   return new Response("Unknown action.", { status: 400 });

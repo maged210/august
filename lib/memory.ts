@@ -25,12 +25,20 @@ const SUMMARIES_KEY = "august:summaries";
 /** AUTH-1a CLAIM — move a visitor's memory into an account's namespace.
  *  The account's existing profile wins; the visitor's summaries append as
  *  older context. Source keys are deleted (one-way). */
+/** DESIGN_LAWS L9 — every memory WRITE says what happened. A store that isn't
+ *  configured, a Redis that threw and a model that refused are three different
+ *  facts, and none of them is "done". `ok:false` always carries its reason so
+ *  the surface above can say it instead of printing success. */
+export type MemoryWrite = { ok: true } | { ok: false; reason: string };
+
+const why = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 export async function migrateMemory(
   from: StorePrincipal,
   to: StorePrincipal,
-): Promise<boolean> {
+): Promise<MemoryWrite> {
   const redis = getRedis();
-  if (!redis) return false;
+  if (!redis) return { ok: false, reason: "the memory store isn't configured" };
   try {
     const fromProfile = scopePrincipalKey(from, PROFILE_KEY);
     const toProfile = scopePrincipalKey(to, PROFILE_KEY);
@@ -45,9 +53,12 @@ export async function migrateMemory(
     if (sums.length) await redis.rpush(toSums, ...sums);
     await redis.del(fromProfile);
     await redis.del(fromSums);
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (e) {
+    // a half-migration is possible here (profile copied, summaries not) — the
+    // caller is told, and logs it, rather than reading a discarded false
+    console.error("[memory] migrate failed:", why(e));
+    return { ok: false, reason: why(e) };
   }
 }
 const SUMMARIES_CAP = 50; // how many session summaries we retain
@@ -89,12 +100,16 @@ export function memoryEnabled(): boolean {
 // Load (used by the chat route to inject memory into the system prompt)
 // ---------------------------------------------------------------------------
 
+/** L9: `failed` is the reason the memory could not be READ. Without it a
+ *  store outage is byte-identical to a first-time visitor — the desk answers
+ *  as if it had never met you and nothing anywhere says why. */
 export async function loadMemory(email: StorePrincipal): Promise<{
   profile: Profile | null;
   summaries: SessionSummary[];
+  failed: string | null;
 }> {
   const redis = getRedis();
-  if (!redis) return { profile: null, summaries: [] };
+  if (!redis) return { profile: null, summaries: [], failed: "the memory store isn't configured" };
   try {
     // One HTTP round trip, not two. MGET can't combine these (GET + LRANGE are
     // different types), but an Upstash pipeline ships both in a single request.
@@ -102,9 +117,10 @@ export async function loadMemory(email: StorePrincipal): Promise<{
     pipe.get(scopePrincipalKey(email, PROFILE_KEY));
     pipe.lrange(scopePrincipalKey(email, SUMMARIES_KEY), 0, SUMMARIES_LOAD - 1);
     const [profile, summaries] = await pipe.exec<[Profile | null, SessionSummary[]]>();
-    return { profile: profile ?? null, summaries: summaries ?? [] };
-  } catch {
-    return { profile: null, summaries: [] };
+    return { profile: profile ?? null, summaries: summaries ?? [], failed: null };
+  } catch (e) {
+    console.error("[memory] read failed:", why(e));
+    return { profile: null, summaries: [], failed: why(e) };
   }
 }
 
@@ -257,11 +273,11 @@ export async function updateMemoryFromExchange(input: {
   sessionId: string;
   userText: string;
   assistantText: string;
-}): Promise<void> {
+}): Promise<MemoryWrite> {
   const redis = getRedis();
-  if (!redis) return;
+  if (!redis) return { ok: false, reason: "the memory store isn't configured" };
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return;
+  if (!apiKey) return { ok: false, reason: "ANTHROPIC_API_KEY is not set" };
 
   const profileKey = scopePrincipalKey(input.email, PROFILE_KEY);
   const summariesKey = scopePrincipalKey(input.email, SUMMARIES_KEY);
@@ -280,8 +296,12 @@ export async function updateMemoryFromExchange(input: {
       currentSummary = head.text || "";
       headIsSameSession = true;
     }
-  } catch {
-    /* proceed with empties */
+  } catch (e) {
+    // NEVER proceed with empties: the write below REPLACES the profile, so a
+    // transient read failure here would erase everything the desk knows about
+    // this person and report success (L9).
+    console.error("[memory] update aborted — profile read failed:", why(e));
+    return { ok: false, reason: why(e) };
   }
 
   // Ask the cheap model to produce an updated summary + merged profile.
@@ -313,10 +333,11 @@ export async function updateMemoryFromExchange(input: {
         newProfile = sanitizeProfile(parsed.profile);
       }
     } else {
-      return; // couldn't parse — don't write garbage
+      return { ok: false, reason: "the model returned no parsable memory update" };
     }
-  } catch {
-    return; // model/network failure — leave memory untouched
+  } catch (e) {
+    console.error("[memory] update failed:", why(e));
+    return { ok: false, reason: why(e) };
   }
 
   // Write back: upsert this session's summary, save the merged profile.
@@ -338,8 +359,10 @@ export async function updateMemoryFromExchange(input: {
       pipe.ltrim(summariesKey, 0, SUMMARIES_CAP - 1);
     }
     await pipe.exec();
-  } catch {
-    /* ignore write failures */
+    return { ok: true };
+  } catch (e) {
+    console.error("[memory] write failed:", why(e));
+    return { ok: false, reason: why(e) };
   }
 }
 
@@ -347,12 +370,19 @@ export async function updateMemoryFromExchange(input: {
 // Wipe
 // ---------------------------------------------------------------------------
 
-export async function clearMemory(email: StorePrincipal): Promise<void> {
+/** THE WIPE. L9 applies hardest here: this is a privacy affordance, and it
+ *  used to return void — an unconfigured store and a Redis that threw both
+ *  ended with the surface printing "MEMORY CLEARED." while the data sat
+ *  untouched. Saying a wipe happened when it didn't is the worst version of
+ *  a failure dressed as an absence. */
+export async function clearMemory(email: StorePrincipal): Promise<MemoryWrite> {
   const redis = getRedis();
-  if (!redis) return;
+  if (!redis) return { ok: false, reason: "the memory store isn't configured" };
   try {
     await redis.del(scopePrincipalKey(email, PROFILE_KEY), scopePrincipalKey(email, SUMMARIES_KEY));
-  } catch {
-    /* ignore */
+    return { ok: true };
+  } catch (e) {
+    console.error("[memory] wipe failed:", why(e));
+    return { ok: false, reason: why(e) };
   }
 }

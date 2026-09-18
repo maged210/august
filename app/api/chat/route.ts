@@ -6,6 +6,7 @@ import { loadMemory, buildMemorySection } from "@/lib/memory";
 import { getMarketsSnapshot } from "@/lib/markets";
 import { getCommandSnapshot } from "@/lib/command";
 import { getDeskSnapshot } from "@/lib/desk-snapshot";
+import { ASK_DEGRADED_HEADER, ASK_STREAM_FAILURE } from "@/lib/ask-stream";
 import {
   checkChatDailyCap,
   checkRateLimit,
@@ -50,6 +51,11 @@ function getClient(apiKey: string): Anthropic {
 
 // Lazy route-local Redis (cache + caps + stats + the calendar ask cache) —
 // standard fail-open contract: unconfigured/broken → no cache, no caps.
+//
+// L9: fail-open is a DECISION, not a silence. Without the store there is no
+// per-identity day cap at all, and that is worth a line in the log every time
+// the route serves without one — an uncapped ask lane that looks exactly like
+// a capped one is how a spend goes unnoticed.
 let _redis: Redis | null | undefined;
 function getKv(): Redis | null {
   if (_redis !== undefined) return _redis;
@@ -57,7 +63,9 @@ function getKv(): Redis | null {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   try {
     _redis = url && token && url.startsWith("https://") ? new Redis({ url, token }) : null;
-  } catch {
+    if (!_redis) console.error("[ask] no ask store — serving with NO cache and NO per-identity cap");
+  } catch (e) {
+    console.error("[ask] ask store unusable — NO cache, NO cap:", e instanceof Error ? e.message : e);
     _redis = null;
   }
   return _redis;
@@ -102,8 +110,12 @@ export async function POST(req: Request): Promise<Response> {
         void recordAskStat(kv, cid, "cache");
         return withCookie(textStream(hit));
       }
-    } catch {
-      /* fail open */
+    } catch (e) {
+      // fail open, but never quietly: this is indistinguishable from a genuine
+      // miss at the call site, so the log is the only place it can be seen. A
+      // swallowed miss re-spends on an answer that was already bought AND
+      // decrements the caller's day cap (L9).
+      console.error("[ask] cache read failed — re-spending:", e instanceof Error ? e.message : e);
     }
   }
 
@@ -135,17 +147,54 @@ export async function POST(req: Request): Promise<Response> {
   // displayed read, timeboxed so nothing stalls the answer. The shared
   // calendar-ask path stays memory- and snapshot-free (its guidance block
   // replaces them) so its cached answers can serve every identity.
+  //
+  // L9 — grounding that FAILED is not grounding that was empty. The desk
+  // answering with no memory of you, or with no read of the tape, is a
+  // materially different answer and the card says which piece was missing
+  // (the x-aug-degraded header below). Every branch here is also logged: a
+  // timeout and a thrown error are both "missing", and both are named.
   type Mem = Awaited<ReturnType<typeof loadMemory>>;
-  const EMPTY_MEM: Mem = { profile: null, summaries: [] };
+  const EMPTY_MEM: Mem = { profile: null, summaries: [], failed: "the memory read timed out" };
+  const missing: string[] = [];
   const timeBox = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+  /** a grounding block that answered with nothing BECAUSE it failed */
+  const ground = (name: string, p: Promise<string>, ms: number): Promise<string> =>
+    timeBox(
+      p.catch((e) => {
+        console.error(`[ask] grounding ${name} failed:`, e instanceof Error ? e.message : e);
+        missing.push(name);
+        return "";
+      }),
+      ms,
+      `\u0000timeout:${name}`,
+    ).then((v) => {
+      if (v.startsWith("\u0000timeout:")) {
+        console.error(`[ask] grounding ${name} timed out after ${ms}ms`);
+        missing.push(name);
+        return "";
+      }
+      return v;
+    });
   const t0 = Date.now();
-  const [{ profile, summaries }, marketsSnapshot, commandSnapshot, deskSnapshot] = await Promise.all([
-    timeBox(loadMemory(principal).catch(() => EMPTY_MEM), 300, EMPTY_MEM),
-    timeBox(getMarketsSnapshot().catch(() => ""), 1200, ""),
-    timeBox(getCommandSnapshot().catch(() => ""), 1200, ""),
-    timeBox(getDeskSnapshot().catch(() => ""), 1500, ""),
+  const [mem, marketsSnapshot, commandSnapshot, deskSnapshot] = await Promise.all([
+    timeBox(
+      loadMemory(principal).catch((e): Mem => {
+        console.error("[ask] grounding memory failed:", e instanceof Error ? e.message : e);
+        return { profile: null, summaries: [], failed: e instanceof Error ? e.message : String(e) };
+      }),
+      300,
+      EMPTY_MEM,
+    ),
+    ground("markets", getMarketsSnapshot(), 1200),
+    ground("command", getCommandSnapshot(), 1200),
+    ground("desk", getDeskSnapshot(), 1500),
   ]);
+  const { profile, summaries } = mem;
+  if (mem.failed) {
+    console.error("[ask] grounding memory unavailable:", mem.failed);
+    missing.push("memory");
+  }
   const prepMs = Date.now() - t0;
 
   const dynamicSystem = buildMemorySection(profile, summaries) + marketsSnapshot + commandSnapshot + deskSnapshot;
@@ -157,7 +206,12 @@ export async function POST(req: Request): Promise<Response> {
   const client = getClient(apiKey);
   const encoder = new TextEncoder();
   let ttftMs = -1;
+  /** the CONSUMER went away — a fact about them, not a failure of ours */
   let aborted = false;
+  /** the socket refused our bytes — a failure of OURS, and it used to be
+   *  filed as a consumer cancel, which suppressed the error branch below and
+   *  froze the answer card mid-sentence with no error at all (L9) */
+  let sendFailed = false;
 
   const stream = new ReadableStream<Uint8Array>({
     cancel() {
@@ -165,11 +219,12 @@ export async function POST(req: Request): Promise<Response> {
     },
     async start(controller) {
       const send = (bytes: Uint8Array) => {
-        if (aborted) return;
+        if (aborted || sendFailed) return;
         try {
           controller.enqueue(bytes);
-        } catch {
-          aborted = true;
+        } catch (e) {
+          sendFailed = true;
+          console.error("[ask] stream enqueue failed:", e instanceof Error ? e.message : e);
         }
       };
       let full = "";
@@ -195,7 +250,7 @@ export async function POST(req: Request): Promise<Response> {
         // superseded/errored streams don't underreport spend
         if (cid && kv) void recordAskStat(kv, cid, "model");
         for await (const event of s) {
-          if (aborted) break;
+          if (aborted || sendFailed) break;
           if (event.type === "content_block_start") blockOpen = true;
           else if (event.type === "content_block_stop") blockOpen = false;
           else if (event.type === "message_stop") modelDone = true;
@@ -210,12 +265,20 @@ export async function POST(req: Request): Promise<Response> {
         // write so Upstash's get()-side auto-JSON-parse round-trips answers
         // that happen to BE valid JSON (the "1"-sentinel lesson).
         if (modelDone && full.trim() && kv) {
-          if (cacheKey) await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch(() => {});
+          if (cacheKey)
+            await kv.set(cacheKey, JSON.stringify(full), { ex: ASK_CACHE_TTL_S }).catch((e) => {
+              // the answer is fine; the SAVING of it failed. Next identical ask
+              // pays again and eats a cap slot, so it is logged, not dropped.
+              console.error("[ask] cache write failed:", e instanceof Error ? e.message : e);
+            });
         }
       } catch (err) {
         if (!aborted) {
           console.error("[ask] stream error:", err instanceof Error ? err.message : "unknown");
-          send(encoder.encode("\n[THE DESK IS UNREACHABLE]"));
+          // the sentinel is a SHARED constant the client matches on, so a
+          // failed answer renders as an error card instead of arriving as the
+          // last sentence of the desk's prose (L9)
+          send(encoder.encode(ASK_STREAM_FAILURE));
         }
       } finally {
         console.log(
@@ -230,13 +293,13 @@ export async function POST(req: Request): Promise<Response> {
     },
   });
 
-  return withCookie(
-    new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store, no-transform",
-        "X-Accel-Buffering": "no",
-      },
-    }),
-  );
+  const headers: Record<string, string> = {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store, no-transform",
+    "X-Accel-Buffering": "no",
+  };
+  // L9 — the answer card shows which grounding the desk answered WITHOUT.
+  // Names only (memory / markets / command / desk); the causes are in the log.
+  if (missing.length) headers[ASK_DEGRADED_HEADER] = [...new Set(missing)].join(",");
+  return withCookie(new Response(stream, { headers }));
 }

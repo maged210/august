@@ -418,14 +418,31 @@ export default function HomeLanding({
                       ) : null}
                     </div>
                   ) : (
-                    <p className="td-answer-text">
-                      {answer.text}
-                      {answer.kind === "ask" && answer.streaming ? (
-                        <span className="td-caret" aria-hidden>
-                          ▌
-                        </span>
+                    <div className="td-answer-body">
+                      <p className="td-answer-text">
+                        {answer.text}
+                        {answer.kind === "ask" && answer.streaming ? (
+                          <span className="td-caret" aria-hidden>
+                            ▌
+                          </span>
+                        ) : null}
+                      </p>
+                      {/* L9 — a broken stream is a fragment, and an answer
+                          written without a source says which one. Neither is
+                          allowed to read as a finished, fully-grounded reply. */}
+                      {answer.kind === "ask" && answer.broke ? (
+                        <p className="td-answer-note">
+                          <DataTag kind="unavail" title="the answer stream failed partway" />
+                          The desk stopped mid-answer — what&apos;s above is incomplete.
+                        </p>
                       ) : null}
-                    </p>
+                      {answer.kind === "ask" && !answer.streaming && answer.note ? (
+                        <p className="td-answer-note">
+                          <DataTag kind="unavail" title="a grounding source didn't answer" />
+                          {answer.note}
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                   <button type="button" className="td-x" aria-label="Dismiss" onClick={onClearAnswer}>
                     ✕

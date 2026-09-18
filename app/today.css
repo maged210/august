@@ -508,6 +508,16 @@
   flex-direction: column;
   gap: 4px;
 }
+/* the read's label can carry its own integrity chip (L9) */
+.td-call-read .td-sublabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* a state, not a line of prose: the read that could not be generated */
+.td-unavail {
+  color: var(--paper-mute);
+}
 .td-call-acts {
   display: flex;
   gap: 8px;
@@ -688,8 +698,26 @@
     transform: none;
   }
 }
-.td-answer-text {
+/* the answer and anything the card must say ABOUT the answer (L9: a broken
+   stream, a missing grounding source) share one column beside the dismiss */
+.td-answer-body {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.td-answer-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  color: var(--paper-mute);
+}
+.td-answer-text {
   min-width: 0;
   margin: 0;
   font-size: var(--type-body);

@@ -34,6 +34,8 @@ type CallResp = {
     locked: boolean;
     youSide: Side | null;
     thesis: string | null;
+    /** fix/failure-visibility (L9): the read could not be generated */
+    thesisFailed?: boolean;
   } | null;
   noCall: { reason: "no_session" | "dead_even" | "unavailable" | "not_generated"; nextDate: string } | null;
   settled: {
@@ -215,10 +217,27 @@ export default function TheCallCard() {
           <p className="td-call-side">
             August says <b className={a.side === "HIGHER" ? "up" : "down"}>{sideWord(a.side)}</b>
           </p>
+          {/* L9 — the read is a STATE. A generation that failed says so with
+              its chip; only a desk that deliberately didn't spend (no regime,
+              or a generation already in flight) shows no read block at all. */}
           {a.thesis ? (
             <div className="td-call-read">
               <span className="td-sublabel">Current read</span>
               <p className="td-body">{a.thesis}</p>
+            </div>
+          ) : a.thesisFailed ? (
+            <div className="td-call-read">
+              <span className="td-sublabel">
+                Current read
+                <DataTag
+                  kind="unavail"
+                  title="the read couldn't be generated — the call and the record above are unaffected"
+                />
+              </span>
+              <p className="td-body td-unavail">
+                August&apos;s read of the tape couldn&apos;t be generated right now. The call
+                itself stands — it is derived from the regime model, not written by one.
+              </p>
             </div>
           ) : null}
           {a.youSide ? (

@@ -19,20 +19,36 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 
 // ---- TTL cache (same pattern as lib/markets.ts) -------------------------
-type Entry = { exp: number; data: unknown };
+// Every entry remembers WHEN its value came off the wire (the fix/quote-age
+// lesson, now a law: L9). Serve-stale-on-error keeps the ORIGINAL time — a
+// dead feed served for hours must not report itself as fresh.
+type Entry = { exp: number; at: number; data: unknown };
 const cache = new Map<string, Entry>();
-async function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+async function cachedEntry<T>(
+  key: string,
+  ttlMs: number,
+  fetcher: () => Promise<T>,
+): Promise<{ data: T; at: number; stale: boolean }> {
   const now = Date.now();
   const hit = cache.get(key);
-  if (hit && hit.exp > now) return hit.data as T;
+  if (hit && hit.exp > now) return { data: hit.data as T, at: hit.at, stale: false };
   try {
     const data = await fetcher();
-    cache.set(key, { exp: now + ttlMs, data });
-    return data;
+    cache.set(key, { exp: now + ttlMs, data, at: Date.now() });
+    return { data, at: cache.get(key)!.at, stale: false };
   } catch (e) {
-    if (hit) return hit.data as T; // stale-on-error
+    if (hit) {
+      // stale-on-error: the value stands, its AGE stands with it, and the
+      // caller is told — serving hours-old wires as current is the exact
+      // failure-as-absence L9 forbids
+      console.error(`[intel] ${key} failed — serving the cached value from ${new Date(hit.at).toISOString()}:`, e instanceof Error ? e.message : e);
+      return { data: hit.data as T, at: hit.at, stale: true };
+    }
     throw e;
   }
+}
+async function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  return (await cachedEntry<T>(key, ttlMs, fetcher)).data;
 }
 
 // ---- Types ---------------------------------------------------------------
@@ -50,9 +66,20 @@ export type Article = {
 
 export type Intel = {
   articles: Article[];
-  synthesis: string;
-  briefLine: string;
+  /** null when it could not be written — never a cheerful placeholder (L9) */
+  synthesis: string | null;
+  briefLine: string | null;
+  /** why there is no synthesis, when there isn't one */
+  synthesisError: string | null;
+  /** feeds that did NOT answer this round, by name. An empty article list with
+   *  an empty `failed` is a genuinely quiet wire; with names in it, it is an
+   *  outage — the two used to be the same value. */
+  failed: string[];
+  /** when these articles actually came off the wire (a stale-on-error hit
+   *  keeps its original time, so this can be older than "now") */
   updatedAt: number;
+  /** the whole round was served from a cache after a failure */
+  stale: boolean;
 };
 
 // ---- RSS feeds -----------------------------------------------------------
@@ -126,7 +153,10 @@ async function fetchFeed(feed: { name: string; url: string }): Promise<Article[]
       },
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    // L9 — a 403/429/500 is the outlet REFUSING us, not the outlet publishing
+    // nothing. Returning [] here cached the lie for five minutes; throwing
+    // lets the caller count this feed as failed and say so.
+    if (!res.ok) throw new Error(`${feed.name} answered ${res.status}`);
     const xml = await res.text();
     return parseRss(xml, feed.name);
   });
@@ -241,9 +271,23 @@ Use the well-known coordinates of that named place. Same grounding rules: never 
 
 // ---- Public API ----------------------------------------------------------
 export async function getIntel(): Promise<Intel> {
-  return cached("intel:all", 5 * 60_000, async () => {
-    // Fetch all feeds concurrently; failures are silent (fulfilled with [])
+  const round = await cachedEntry("intel:all", 5 * 60_000, async (): Promise<Intel> => {
+    // Fetch all feeds concurrently. L9 — a rejected feed is NAMED, not erased:
+    // six silent failures used to produce an empty list under the sentence
+    // "Wires are live."
     const results = await Promise.allSettled(FEEDS.map(fetchFeed));
+    const failed = results
+      .map((r, i) => (r.status === "rejected" ? FEEDS[i].name : null))
+      .filter((n): n is string => n !== null);
+    if (failed.length) {
+      console.error(
+        "[intel] feeds did not answer:",
+        results
+          .map((r, i) => (r.status === "rejected" ? `${FEEDS[i].name}: ${r.reason}` : null))
+          .filter(Boolean)
+          .join(" · "),
+      );
+    }
     const all = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
 
     // Dedupe by URL, sort newest-first, cap at 12
@@ -257,25 +301,52 @@ export async function getIntel(): Promise<Intel> {
       if (articles.length >= 12) break;
     }
 
-    let synthesis = "Feeds loaded — synthesis pending.";
-    let briefLine = "Wires are live.";
+    // No placeholder asserts health. A synthesis that was never written is
+    // null with its reason, and the brief line is null with it (L9).
+    let synthesis: string | null = null;
+    let briefLine: string | null = null;
+    let synthesisError: string | null =
+      articles.length === 0
+        ? failed.length
+          ? `no feed answered (${failed.join(", ")})`
+          : "no articles to read"
+        : !process.env.ANTHROPIC_API_KEY
+          ? "ANTHROPIC_API_KEY is not set"
+          : null;
+    if (synthesisError) console.error("[intel] no synthesis:", synthesisError);
 
     if (articles.length > 0 && process.env.ANTHROPIC_API_KEY) {
       try {
         const s = await getSynthesis(articles);
         synthesis = s.synthesis;
         briefLine = s.briefLine;
+        synthesisError = null;
         // Pin each grounded geolocation onto its headline. Indices track
         // headlineKey's order, so a synthCache hit maps onto the same list;
         // `?.` keeps an old/stale cache entry without geo from crashing.
         s.geo?.forEach((g, i) => {
           if (articles[i]) articles[i].geo = g;
         });
-      } catch {
-        synthesis = "Feeds loaded — synthesis temporarily unavailable.";
+      } catch (e) {
+        synthesis = null;
+        briefLine = null;
+        synthesisError = e instanceof Error ? e.message : String(e);
+        console.error("[intel] synthesis failed:", synthesisError);
       }
     }
 
-    return { articles, synthesis, briefLine, updatedAt: Date.now() } as Intel;
+    return {
+      articles,
+      synthesis,
+      briefLine,
+      synthesisError,
+      failed,
+      updatedAt: Date.now(),
+      stale: false,
+    };
   });
+  // a served-stale round keeps the age it was fetched at, and says so
+  return round.stale
+    ? { ...round.data, updatedAt: round.at, stale: true }
+    : { ...round.data, updatedAt: round.at };
 }
